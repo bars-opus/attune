@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:attune/core/ui/neon/glow_stroke.dart';
 import 'package:attune/core/ui/neon/neon_quality.dart';
 import 'package:attune/core/ui/neon/neon_tokens.dart';
@@ -169,12 +171,21 @@ class _FieldFigureState extends State<FieldFigure>
                 ? Curves.easeInOut.transform(1 - (2 * t - 1).abs())
                 : (widget.isAiming ? 1.0 : 0.0);
 
+        // Sized in `.r` on BOTH axes. `.w` by `.h` gave the silhouette a
+        // different aspect on every screen shape -- and on the 800x600
+        // test surface drew it stretched nearly 3:1, which is the
+        // distortion three figure redesigns were judged against.
+        final figureSize = Size(
+          FieldFigurePainter.kWidth.r,
+          FieldFigurePainter.kHeight.r,
+        );
+
         final x = figureCentreX(
               rowWidth: widget.rowWidth,
               coverWidth: widget.coverWidth,
               column: column,
             ) -
-            12.w;
+            figureSize.width / 2;
 
         // Both rows shelter under their own dome and the domes face each
         // other, so "tucked in" is measured from opposite edges. A
@@ -207,7 +218,7 @@ class _FieldFigureState extends State<FieldFigure>
                 curve: Curves.easeOut,
                 turns: widget.isAiming ? widget.tilt : 0,
                 child: CustomPaint(
-                  size: Size(24.w, 36.h),
+                  size: figureSize,
                   painter: FieldFigurePainter(
                     color: widget.ownerColor,
                     pointsUp: !widget.isOpponent,
@@ -223,12 +234,23 @@ class _FieldFigureState extends State<FieldFigure>
   }
 }
 
-/// The figure itself: a lit arrowhead.
+/// The figure itself: a head over shoulders, lit.
 ///
 /// Public, with public fields, so a test never needs `as dynamic`
-/// (spec §3.6.1). An arrowhead rather than a body because it has to say
-/// which way the player is facing at 20 logical pixels, and because
-/// §2.1 allows no illustration to lean on.
+/// (spec §3.6.1).
+///
+/// The silhouette is the one every avatar placeholder uses -- a round
+/// head, a neck gap, wide flat-topped shoulders cut off below -- because
+/// it is the only two-shape arrangement people reliably read as "a
+/// person" at sixteen pixels. Three earlier attempts all put a small
+/// circle on a body that WIDENED toward the base, and a shape that
+/// widens toward the base under a small circle is a pawn, a bell or a
+/// bowling pin whatever its proportions. Shoulders are the widest part
+/// of a person; everything below them is cut off, which also means the
+/// figure keeps reading from its top half alone.
+///
+/// Drawn in a unit space scaled to fit the box, so the proportions hold
+/// whatever size it is given -- and the aim tilt only rotates it.
 class FieldFigurePainter extends CustomPainter {
   FieldFigurePainter({
     required this.color,
@@ -240,66 +262,71 @@ class FieldFigurePainter extends CustomPainter {
   final bool pointsUp;
   final NeonQuality quality;
 
+  /// The box a figure is given, in design points (scaled by `.r`). Wide
+  /// enough to hold the bay's mouth (55pt) without crowding it.
+  static const double kWidth = 28;
+  static const double kHeight = 30;
+
+  // The silhouette in units of its own width. Material's `person` glyph
+  // proportions, with a slightly deeper neck gap so the core stroke
+  // (1.6pt, straddling each edge) cannot close it.
+  static const double _headRadius = 0.24;
+  static const double _neckGap = 0.13;
+  static const double _shoulderRise = 0.24;
+  static const double _chest = 0.22;
+  static const double _aspect =
+      2 * _headRadius + _neckGap + _shoulderRise + _chest;
+
   @override
   void paint(Canvas canvas, Size size) {
     if (size.isEmpty) return;
 
-    // A head and a body, not a triangle.
-    //
-    // The first golden showed the triangle for what it was: a legible UI
-    // marker and not a person. Spec §5 had already flagged that as this
-    // design's least defensible claim, and §2.1 leaves nothing to lean
-    // on -- no illustration, no texture -- so the silhouette has to do
-    // the whole job of saying "someone is here" at twenty logical pixels.
-    //
-    // Two shapes are enough at this size, and only two survive the aim
-    // tilt: a circle reads as a head from any angle, and a rounded
-    // shoulder line reads as a torso. Limbs at 20px become noise.
-    //
-    // [pointsUp] puts the head at the top for the viewer's own row and
-    // at the bottom for the opponent's, so the two rows face each other
-    // the way their cover does.
-    // Proportions chosen by measurement, not by eye. The first attempt
-    // gave the head 45% of the total height and a torso wider than it
-    // was tall, which draws a mushroom however the curve is tuned. A
-    // head near 22% over an upright torso is the smallest arrangement
-    // that still reads as a person at this size.
-    final headRadius = size.height * 0.11;
-    final headCentre = Offset(
-      size.width / 2,
-      pointsUp ? headRadius : size.height - headRadius,
-    );
-
-    // The torso rises from the head toward the far edge: a dome whose
-    // flat side is the figure's base. Drawn as one path so the glow
-    // outlines the whole silhouette rather than each piece.
-    final neck = size.height * 0.04;
-    final shoulderTop =
-        pointsUp ? headCentre.dy + headRadius + neck : headCentre.dy - headRadius - neck;
-    final baseY = pointsUp ? size.height : 0.0;
-    final halfWidth = size.width * 0.40;
-
-    // Shoulders slope IN toward the neck rather than bulging out: the
-    // earlier control point pushed the curve away from the head, which
-    // is what fused head and torso into one blob.
-    final shoulderHalf = halfWidth * 0.62;
-    final body =
-        Path()
-          ..moveTo(size.width / 2 - halfWidth, baseY)
-          ..lineTo(size.width / 2 - shoulderHalf, shoulderTop)
-          ..quadraticBezierTo(
-            size.width / 2,
-            shoulderTop + (pointsUp ? -neck : neck),
-            size.width / 2 + shoulderHalf,
-            shoulderTop,
-          )
-          ..lineTo(size.width / 2 + halfWidth, baseY)
-          ..close();
+    // Fit the unit silhouette into whatever box we were given, centred
+    // across and anchored to the head's end.
+    final s = math.min(size.width, size.height / _aspect);
+    double x(double u) => size.width / 2 + (u - 0.5) * s;
+    double y(double v) => pointsUp ? v * s : size.height - v * s;
 
     final head = Path()..addOval(
-      Rect.fromCircle(center: headCentre, radius: headRadius),
+      Rect.fromCircle(
+        center: Offset(x(0.5), y(_headRadius)),
+        radius: _headRadius * s,
+      ),
     );
 
+    final shoulderTop = 2 * _headRadius + _neckGap;
+    final shoulderFlat = shoulderTop + _shoulderRise;
+    final base = shoulderFlat + _chest;
+
+    // Flat on top, rounded only at the outer corners: the curve leaves
+    // each side vertically and arrives at the centre horizontally, so
+    // the shoulders are as wide at the top as at the base.
+    final body =
+        Path()
+          ..moveTo(x(0), y(base))
+          ..lineTo(x(0), y(shoulderFlat))
+          ..cubicTo(
+            x(0),
+            y(shoulderTop + _shoulderRise / 3),
+            x(1 / 3),
+            y(shoulderTop),
+            x(0.5),
+            y(shoulderTop),
+          )
+          ..cubicTo(
+            x(2 / 3),
+            y(shoulderTop),
+            x(1),
+            y(shoulderTop + _shoulderRise / 3),
+            x(1),
+            y(shoulderFlat),
+          )
+          ..lineTo(x(1), y(base))
+          ..close();
+
+    // One path, so the glow outlines the whole silhouette once. The two
+    // pieces do not touch; their halos meet across the neck gap, which
+    // is what makes them one lit body rather than two marks.
     final silhouette = Path.combine(PathOperation.union, body, head);
 
     // Filled, then outlined in its own glow: an actor is the brightest

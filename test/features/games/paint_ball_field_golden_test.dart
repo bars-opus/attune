@@ -16,6 +16,19 @@ import 'package:flutter_test/flutter_test.dart';
 /// These are the Stage 2 checkpoint frames. They answer one question the
 /// tests cannot: does cover-as-darkness actually work?
 void main() {
+  /// Renders on a phone-shaped surface, not the 800x600 test default.
+  ///
+  /// The field scales with ScreenUtil against a 375x812 design, so on the
+  /// default surface `.w` runs at x2.13 and `.h` at x0.74: anything sized
+  /// in both units draws stretched nearly 3:1. Three rounds of figure
+  /// redesign were judged against that distortion. A golden exists to be
+  /// looked at, so it has to show what a phone shows.
+  Future<void> onPhone(WidgetTester tester) async {
+    tester.view.physicalSize = const Size(375, 812);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+  }
+
   Widget host(Widget child, {NeonQuality quality = NeonQuality.rich}) =>
       ScreenUtilInit(
         designSize: const Size(375, 812),
@@ -34,6 +47,7 @@ void main() {
       );
 
   testWidgets('at rest, nobody aiming', (tester) async {
+    await onPhone(tester);
     // The still frame. §2.5 says the field at rest IS a still image, so
     // this is what a couple sees most of the time.
     await tester.pumpWidget(
@@ -57,6 +71,7 @@ void main() {
   });
 
   testWidgets('aiming at their middle cover', (tester) async {
+    await onPhone(tester);
     // THE question for the checkpoint. With no Fire button the aimed bay
     // is the only confirmation that a target is chosen, so if this frame
     // does not read as obviously committed, §2.3 needs rethinking.
@@ -84,6 +99,7 @@ void main() {
   });
 
   testWidgets('mid-replay, both shots in the air', (tester) async {
+    await onPhone(tester);
     // The hero moment, such as it is before Stage 4 rebuilds it.
     await tester.pumpWidget(
       host(
@@ -112,6 +128,7 @@ void main() {
   });
 
   testWidgets('a hit, with paint on the board', (tester) async {
+    await onPhone(tester);
     await tester.pumpWidget(
       host(
         const PaintBallField(
@@ -136,6 +153,7 @@ void main() {
   });
 
   testWidgets('the plain tier, for a low-end device', (tester) async {
+    await onPhone(tester);
     // ATTUNE_THESIS §6.10 makes this a launch gate, so the degraded
     // frame has to be LOOKED at too. It must still read as a playable
     // board, not as a broken one.
@@ -163,6 +181,7 @@ void main() {
   });
 
   testWidgets('under reduce motion', (tester) async {
+    await onPhone(tester);
     await tester.pumpWidget(
       ScreenUtilInit(
         designSize: const Size(375, 812),
