@@ -2,6 +2,7 @@ import 'dart:math' as math;
 
 import 'package:attune/app/theme/design_tokens.dart';
 import 'package:attune/core/ui/motion/reduce_motion.dart';
+import 'package:attune/core/ui/neon/bloom_flash.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 
@@ -248,7 +249,11 @@ class PaintBallField extends StatelessWidget {
                   // shots cross rather than take turns -- watching them
                   // pass is the moment the round becomes a duel rather
                   // than two separate moves.
-                  if (beats.firing)
+                  // The ball stops being drawn the moment it lands: the
+                  // bloom takes over. Left up, it sat ON its own impact
+                  // and the frame read as a ball wearing a glow rather
+                  // than as something arriving.
+                  if (beats.firing && !beats.impacting)
                     Positioned.fill(
                       child: IgnorePointer(
                         child: CustomPaint(
@@ -268,7 +273,7 @@ class PaintBallField extends StatelessWidget {
                         ),
                       ),
                     ),
-                  if (beats.firing && theirRevealedShot != null)
+                  if (beats.firing && !beats.impacting && theirRevealedShot != null)
                     Positioned.fill(
                       child: IgnorePointer(
                         child: CustomPaint(
@@ -311,6 +316,35 @@ class PaintBallField extends StatelessWidget {
                             color: PaintBallPalette.mine,
                           ),
                         ),
+                      ),
+                    ),
+
+                  // Beats 5 and 6: the shots land. §2.6's hero moment --
+                  // a white instant, then the shooter's paint blooming
+                  // outward. The bloom carries the SHOOTER's hue, not
+                  // the target's: it is their paint arriving.
+                  if (beats.impacting && selectedShot != null)
+                    Positioned.fill(
+                      child: BloomFlash(
+                        at: Offset(
+                          columnX(selectedShot, isOpponent: true),
+                          height * 0.20,
+                        ),
+                        color: PaintBallPalette.mine,
+                        progress: beats.impactProgress ?? 0,
+                        hit: revealedPartnerPosition == selectedShot,
+                      ),
+                    ),
+                  if (beats.impacting && theirRevealedShot != null)
+                    Positioned.fill(
+                      child: BloomFlash(
+                        at: Offset(
+                          columnX(theirRevealedShot, isOpponent: false),
+                          height * 0.80,
+                        ),
+                        color: PaintBallPalette.theirs,
+                        hit: myPosition == theirRevealedShot,
+                        progress: beats.impactProgress ?? 0,
                       ),
                     ),
                 ],

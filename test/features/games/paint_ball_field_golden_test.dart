@@ -127,6 +127,36 @@ void main() {
     );
   });
 
+  testWidgets('the instant a hit lands', (tester) async {
+    // §2.6 beats 5 and 6, at 0.90 -- between beatFlightEnd (0.86) and
+    // beatImpactEnd (0.94). White is reserved for exactly this moment
+    // and appears nowhere else on the field, which is what should make a
+    // hit unmistakable. If this frame reads as a glow SITTING on the
+    // board rather than as something arriving, the bloom is wrong.
+    onPhone(tester);
+    await tester.pumpWidget(
+      host(
+        const PaintBallField(
+          splats: [],
+          myPosition: 0,
+          selectedShot: 2,
+          revealedPartnerPosition: 2,
+          theirRevealedShot: 0,
+          isMyTurn: false,
+          isReplaying: true,
+          replayProgress: 0.90,
+          partnerName: 'Ama',
+        ),
+      ),
+    );
+    await tester.pump();
+
+    await expectLater(
+      find.byType(PaintBallField),
+      matchesGoldenFile('goldens/paint_ball_field_impact.png'),
+    );
+  });
+
   testWidgets('a hit, with paint on the board', (tester) async {
     await onPhone(tester);
     await tester.pumpWidget(

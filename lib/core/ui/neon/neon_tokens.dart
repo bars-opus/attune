@@ -85,4 +85,9 @@ class NeonTokens {
   /// Impact occupies the tail the previous implementation left unused;
   /// settle runs from here to 1.0.
   static const beatImpactEnd = 0.94;
+
+  /// How far a landing paintball spreads. A hit spreads wider than a
+  /// miss, so the two outcomes differ at the moment they matter most.
+  static const bloomRadiusHit = 44.0;
+  static const bloomRadiusMiss = 26.0;
 }

@@ -4905,9 +4905,412 @@ EOF
 
 ---
 
+## Task 14: The impact bloom — beats 5 and 6
+
+`ReplayBeats` already reports `impacting` and `impactProgress`, and nothing
+draws them. This is the hero moment §2.6 describes: **white flash, then a
+coloured bloom, then settle.** White is reserved for exactly this instant and
+appears nowhere else on the field (§2.2).
+
+**Files:**
+- Create: `lib/core/ui/neon/bloom_flash.dart`
+- Test: `test/core/ui/neon/bloom_flash_test.dart`
+- Modify: `lib/features/games/paint_ball/presentation/widgets/paint_ball_field.dart`
+- Modify: `test/features/games/paint_ball_field_golden_test.dart` (one frame at impact)
+
+**Interfaces:**
+- Consumes: `NeonTokens`, `NeonQuality`.
+- Produces:
+  - `class BloomFlash extends StatelessWidget` — `const BloomFlash({required Offset at, required Color color, required double progress, required bool hit})`.
+  - `class BloomFlashPainter extends CustomPainter` — public final `at`, `color`, `progress`, `hit`, `quality`.
+  - `double bloomRadiusAt(double progress, {required bool hit})` — pure, so the curve is testable without a canvas.
+
+- [ ] **Step 1: Write the failing test**
+
+Create `test/core/ui/neon/bloom_flash_test.dart`:
+
+```dart
+import 'dart:ui';
+
+import 'package:attune/core/ui/neon/bloom_flash.dart';
+import 'package:attune/core/ui/neon/neon_quality.dart';
+import 'package:flutter/material.dart';
+import 'package:flutter_test/flutter_test.dart';
+
+class _RecordingCanvas implements Canvas {
+  final circles = <({Offset centre, double radius, Paint paint})>[];
+
+  @override
+  void drawCircle(Offset c, double radius, Paint paint) =>
+      circles.add((centre: c, radius: radius, paint: paint));
+
+  @override
+  noSuchMethod(Invocation invocation) => null;
+}
+
+void main() {
+  const mint = Color(0xFF5EEAD4);
+
+  group('the bloom curve', () {
+    test('it expands, fast at first', () {
+      // An impact that grew linearly reads as a balloon inflating. Paint
+      // hits hardest at the moment of contact and the spread decelerates,
+      // so the curve has to be front-loaded.
+      final early = bloomRadiusAt(0.25, hit: true);
+      final mid = bloomRadiusAt(0.5, hit: true);
+      final late = bloomRadiusAt(1.0, hit: true);
+
+      expect(early, lessThan(mid));
+      expect(mid, lessThan(late));
+      expect(
+        mid / late,
+        greaterThan(0.5),
+        reason: 'more than half the spread happens in the first half',
+      );
+    });
+
+    test('it starts at nothing', () {
+      expect(bloomRadiusAt(0, hit: true), closeTo(0, 0.01));
+    });
+
+    test('a hit blooms wider than a miss', () {
+      // A miss that bloomed as large as a hit would make the two
+      // outcomes indistinguishable at the one moment they matter most.
+      expect(
+        bloomRadiusAt(1.0, hit: true),
+        greaterThan(bloomRadiusAt(1.0, hit: false)),
+      );
+    });
+
+    test('out-of-range progress stays bounded', () {
+      // The replay's impactProgress is clamped upstream, but a radius
+      // that could run away would be a crash rather than a glitch.
+      for (final p in [-1.0, -0.0, 1.5, 100.0, double.nan]) {
+        final r = bloomRadiusAt(p, hit: true);
+        expect(r.isFinite, isTrue, reason: 'at $p');
+        expect(r, greaterThanOrEqualTo(0), reason: 'at $p');
+        expect(
+          r,
+          lessThanOrEqualTo(bloomRadiusAt(1.0, hit: true) + 0.01),
+          reason: 'at $p the bloom must not exceed its full size',
+        );
+      }
+    });
+  });
+
+  group('what gets drawn', () {
+    _RecordingCanvas render(double progress, {NeonQuality quality = NeonQuality.rich}) {
+      final canvas = _RecordingCanvas();
+      BloomFlashPainter(
+        at: const Offset(100, 100),
+        color: mint,
+        progress: progress,
+        hit: true,
+        quality: quality,
+      ).paint(canvas, const Size(200, 200));
+      return canvas;
+    }
+
+    test('the first instant is WHITE, and only the first instant', () {
+      // §2.2 reserves white for the instant of impact and nothing else
+      // on the field. That is what makes a hit unmistakable -- but a
+      // white core that lingered would turn the field's one special
+      // colour into a third palette entry.
+      final flash = render(0.05);
+      final later = render(0.8);
+
+      bool hasWhite(_RecordingCanvas c) => c.circles.any(
+        (d) => d.paint.color.r > 0.9 && d.paint.color.g > 0.9 && d.paint.color.b > 0.9,
+      );
+
+      expect(flash.circles, isNotEmpty, reason: 'a positive control');
+      expect(hasWhite(flash), isTrue, reason: 'the flash is white');
+      expect(later.circles, isNotEmpty, reason: 'a positive control');
+      expect(hasWhite(later), isFalse, reason: 'and it does not linger');
+    });
+
+    test('the bloom carries the shooter’s colour', () {
+      final bloom = render(0.6);
+
+      expect(bloom.circles, isNotEmpty);
+      expect(
+        bloom.circles.any((d) => d.paint.color.g > d.paint.color.r),
+        isTrue,
+        reason: 'mint is greener than it is red',
+      );
+    });
+
+    test('it fades to nothing by the end', () {
+      // The bloom is an event, not a state (§2.5). A bloom still visible
+      // at rest would schedule frames forever.
+      final done = render(1.0);
+
+      for (final draw in done.circles) {
+        expect(
+          draw.paint.color.a,
+          lessThan(0.15),
+          reason: 'the bloom has faded out, not frozen at full strength',
+        );
+      }
+    });
+
+    test('nothing is drawn before the impact', () {
+      final canvas = _RecordingCanvas();
+      BloomFlashPainter(
+        at: const Offset(100, 100),
+        color: mint,
+        progress: 0,
+        hit: true,
+        quality: NeonQuality.rich,
+      ).paint(canvas, const Size(200, 200));
+
+      // A positive control lives in the sibling tests above, which prove
+      // this painter DOES draw at other progress values.
+      expect(canvas.circles.where((d) => d.radius > 0.5), isEmpty);
+    });
+
+    test('the plain tier draws fewer layers', () {
+      // §6.10's launch gate. A full-screen bloom is the single most
+      // expensive effect in this language.
+      final rich = render(0.5);
+      final plain = render(0.5, quality: NeonQuality.plain);
+
+      expect(rich.circles, isNotEmpty, reason: 'a positive control');
+      expect(plain.circles.length, lessThan(rich.circles.length));
+      expect(plain.circles, isNotEmpty, reason: 'but a hit still registers');
+    });
+  });
+
+  testWidgets('the widget renders without a canvas of its own', (tester) async {
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: Scaffold(
+          body: SizedBox(
+            width: 200,
+            height: 200,
+            child: BloomFlash(
+              at: Offset(100, 100),
+              color: mint,
+              progress: 0.5,
+              hit: true,
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    expect(tester.takeException(), isNull);
+    expect(find.byType(BloomFlash), findsOneWidget);
+  });
+}
+```
+
+- [ ] **Step 2: Run test to verify it fails**
+
+Run: `flutter test test/core/ui/neon/bloom_flash_test.dart`
+Expected: FAIL — `bloom_flash.dart` does not resolve.
+
+- [ ] **Step 3: Write the implementation**
+
+Create `lib/core/ui/neon/bloom_flash.dart`:
+
+```dart
+import 'package:flutter/material.dart';
+
+import 'neon_quality.dart';
+import 'neon_tokens.dart';
+
+/// How far a bloom has spread, 0 to 1 of its full radius.
+///
+/// Pure, so the curve is checkable without a canvas.
+///
+/// Front-loaded on purpose: paint hits hardest at contact and the spread
+/// decelerates. A linear expansion reads as a balloon inflating, which
+/// is the opposite of an impact.
+double bloomRadiusAt(double progress, {required bool hit}) {
+  // NaN compares false against everything, so it has to be caught rather
+  // than clamped.
+  final t = progress.isNaN ? 0.0 : progress.clamp(0.0, 1.0);
+
+  // A hit spreads wider than a miss. Identical blooms would make the two
+  // outcomes indistinguishable at the one moment they matter most.
+  final full = hit ? NeonTokens.bloomRadiusHit : NeonTokens.bloomRadiusMiss;
+
+  // easeOutCubic: most of the travel in the first half.
+  final eased = 1 - ((1 - t) * (1 - t) * (1 - t));
+  return full * eased;
+}
+
+/// The instant a paintball lands.
+///
+/// Spec §2.6 beats 5 and 6: a white flash, then a coloured bloom, then
+/// settle. §2.2 reserves white for exactly this and nowhere else on the
+/// field, which is what makes a hit unmistakable -- and why the white
+/// core must not linger, or the field gains a third palette colour.
+///
+/// Event motion (§2.5): it runs once off the replay's own progress and
+/// schedules no frames of its own.
+class BloomFlash extends StatelessWidget {
+  const BloomFlash({
+    super.key,
+    required this.at,
+    required this.color,
+    required this.progress,
+    required this.hit,
+  });
+
+  /// Where the shot landed, in the painter's own coordinates.
+  final Offset at;
+
+  /// The shooter's hue. The bloom is their paint, not the target's.
+  final Color color;
+
+  /// 0 to 1 across impact and settle.
+  final double progress;
+
+  final bool hit;
+
+  @override
+  Widget build(BuildContext context) {
+    return IgnorePointer(
+      child: CustomPaint(
+        size: Size.infinite,
+        painter: BloomFlashPainter(
+          at: at,
+          color: color,
+          progress: progress,
+          hit: hit,
+          quality: neonQualityOf(context),
+        ),
+      ),
+    );
+  }
+}
+
+/// Public, with public fields, so a test asserts on it without reaching
+/// through `as dynamic` (spec §3.6.1).
+class BloomFlashPainter extends CustomPainter {
+  BloomFlashPainter({
+    required this.at,
+    required this.color,
+    required this.progress,
+    required this.hit,
+    required this.quality,
+  });
+
+  final Offset at;
+  final Color color;
+  final double progress;
+  final bool hit;
+  final NeonQuality quality;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (size.isEmpty) return;
+
+    final t = progress.isNaN ? 0.0 : progress.clamp(0.0, 1.0);
+    final radius = bloomRadiusAt(t, hit: hit);
+    if (radius < 0.5) return;
+
+    // The coloured bloom, fading as it spreads.
+    final fade = (1 - t);
+    canvas.drawCircle(
+      at,
+      radius,
+      Paint()
+        ..color = color.withValues(alpha: (0.45 * fade * fade).clamp(0.0, 1.0))
+        ..maskFilter = MaskFilter.blur(
+          BlurStyle.normal,
+          NeonTokens.haloBlurOuter,
+        ),
+    );
+
+    // A tighter, brighter core behind it. Dropped first on a cheap
+    // device: a second blurred pass over a large radius is the most
+    // expensive thing this language draws (§6.10).
+    if (quality != NeonQuality.plain) {
+      canvas.drawCircle(
+        at,
+        radius * 0.55,
+        Paint()
+          ..color = color.withValues(alpha: (0.6 * fade).clamp(0.0, 1.0))
+          ..maskFilter = MaskFilter.blur(
+            BlurStyle.normal,
+            NeonTokens.haloBlurInner,
+          ),
+      );
+    }
+
+    // The white instant. §2.2's one exception, and it has to leave
+    // quickly or it stops being an instant.
+    const flashWindow = 0.22;
+    if (t < flashWindow) {
+      final flash = 1 - (t / flashWindow);
+      canvas.drawCircle(
+        at,
+        radius * 0.4,
+        Paint()
+          ..color = const Color(
+            0xFFFFFFFF,
+          ).withValues(alpha: (flash * flash).clamp(0.0, 1.0)),
+      );
+    }
+  }
+
+  @override
+  bool shouldRepaint(BloomFlashPainter old) =>
+      old.progress != progress ||
+      old.at != at ||
+      old.color != color ||
+      old.hit != hit ||
+      old.quality != quality;
+}
+```
+
+Add to `neon_tokens.dart`:
+
+```dart
+  /// How far a landing paintball spreads. A hit spreads wider than a
+  /// miss, so the two outcomes differ at the moment they matter most.
+  static const bloomRadiusHit = 44.0;
+  static const bloomRadiusMiss = 26.0;
+```
+
+- [ ] **Step 4: Run test to verify it passes**
+
+Run: `flutter test test/core/ui/neon/bloom_flash_test.dart`
+Expected: PASS, 10 tests.
+
+- [ ] **Step 5: Wire it into the field**
+
+In `paint_ball_field.dart`, after the projectile blocks, add a bloom per side
+driven by `beats.impactProgress`, positioned at that shot's target column via
+the existing `columnX` helper. Your own shot blooms at `columnX(selectedShot,
+isOpponent: true)` on the opponent's row (`height * 0.20`); theirs at
+`columnX(theirRevealedShot, isOpponent: false)` on yours (`height * 0.80`).
+Use `PaintBallPalette.mine` and `.theirs` respectively — the bloom is the
+shooter's paint. Gate each on `beats.impacting` and the relevant position being
+non-null.
+
+- [ ] **Step 6: Add an impact golden and look at it**
+
+Add a seventh frame to `paint_ball_field_golden_test.dart` at
+`replayProgress: 0.90` (between `beatFlightEnd` 0.86 and `beatImpactEnd` 0.94),
+named `paint_ball_field_impact.png`. Regenerate with `--update-goldens`, then
+**open the PNG and look at it.** The flash should read as a hit landing, not as
+a glow sitting on the field.
+
+- [ ] **Step 7: Run everything and commit**
+
+Run: `flutter test test/features/games/ test/core/ui/`
+Expected: all pass bar the three known `session_game_*` concurrency flakes.
+
+---
+
 ## Remaining tasks
 
-Task 14 adds the impact bloom and the six-beat choreography on top of these beats; Task 15 regenerates the five sound cues; Task 16 is Sliding Scale plus the `GAMES.md` reconciliation. Their scope and boundaries are fixed:
+Task 15 regenerates the five sound cues; Task 16 is Sliding Scale plus the `GAMES.md` reconciliation. Their scope and boundaries are fixed:
 
 | Task | Stage | Deliverable |
 |---|---|---|
