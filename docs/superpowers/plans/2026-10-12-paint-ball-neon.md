@@ -4511,9 +4511,403 @@ EOF
 
 ---
 
-## Remaining tasks: Stages 3–7
+## Task 13: `ReplayBeats` — the replay's timing, extracted and tested
 
-Tasks 12–14 cover the rest. Task 12 rewrites the 25 legacy field tests against the Task 0 map and completes Stage 2; Tasks 13–14 follow the Stage 2 checkpoint. Their scope and boundaries are fixed:
+Stage 4's foundation. The six beats currently live as inline threshold
+comparisons in the field's build method; §3.2 says timing belongs in one place
+that other parts *read*. Owns **Review Focus #1 and #2**, the two inputs most
+likely to bite: `replayProgress` at exactly `1.0` (where a skip lands) and
+outside `[0,1]`.
+
+**Files:**
+- Create: `lib/features/games/paint_ball/presentation/widgets/field/field_replay.dart`
+- Test: `test/features/games/paint_ball_replay_beats_test.dart`
+- Modify: `lib/features/games/paint_ball/presentation/widgets/paint_ball_field.dart` (read the beats instead of computing them)
+
+**Interfaces:**
+- Consumes: `NeonTokens` beat thresholds.
+- Produces:
+  - `class ReplayBeats` — immutable, public final fields `emerged`, `aimed`, `firing`, `impacting`, `settled` (all `bool`), `flightProgress` and `impactProgress` (both `double?`), and `isReplaying` (`bool`).
+  - `factory ReplayBeats.from(double? progress)` — the single mapping from one controller value to six beat states.
+  - `static const ReplayBeats idle` — the not-replaying state, where everything is at rest and visible.
+
+- [ ] **Step 1: Write the failing test**
+
+Create `test/features/games/paint_ball_replay_beats_test.dart`:
+
+```dart
+import 'package:attune/core/ui/neon/neon_tokens.dart';
+import 'package:attune/features/games/paint_ball/presentation/widgets/field/field_replay.dart';
+import 'package:flutter_test/flutter_test.dart';
+
+void main() {
+  group('a round that is not replaying', () {
+    test('shows everything at rest, hiding nothing', () {
+      // Between rounds the board is static and fully visible: a figure
+      // that stayed hidden because no replay was running would make the
+      // player invisible to themselves.
+      const beats = ReplayBeats.idle;
+
+      expect(beats.isReplaying, isFalse);
+      expect(beats.emerged, isTrue);
+      expect(beats.aimed, isTrue);
+      expect(beats.firing, isFalse, reason: 'nothing is in the air');
+      expect(beats.flightProgress, isNull);
+    });
+
+    test('a null progress is the idle state', () {
+      expect(ReplayBeats.from(null).isReplaying, isFalse);
+      expect(ReplayBeats.from(null).emerged, isTrue);
+    });
+  });
+
+  group('the beats in order', () {
+    test('nothing has happened at the very start', () {
+      final beats = ReplayBeats.from(0);
+
+      expect(beats.isReplaying, isTrue);
+      expect(beats.emerged, isFalse, reason: 'still behind cover');
+      expect(beats.aimed, isFalse);
+      expect(beats.firing, isFalse);
+      expect(beats.flightProgress, isNull);
+    });
+
+    test('each beat turns on after its own threshold and stays on', () {
+      // Monotonic by construction: a beat that switched back off would
+      // make the replay flicker rather than build.
+      var sawEmerged = false;
+      var sawAimed = false;
+      var sawFiring = false;
+
+      for (var t = 0.0; t <= 1.0; t += 0.01) {
+        final beats = ReplayBeats.from(t);
+
+        if (beats.emerged) sawEmerged = true;
+        if (beats.aimed) sawAimed = true;
+        if (beats.firing) sawFiring = true;
+
+        expect(
+          beats.emerged,
+          sawEmerged ? isTrue : isFalse,
+          reason: 'emerged must not switch back off at $t',
+        );
+        expect(
+          beats.aimed,
+          sawAimed ? isTrue : isFalse,
+          reason: 'aimed must not switch back off at $t',
+        );
+        expect(
+          beats.firing,
+          sawFiring ? isTrue : isFalse,
+          reason: 'firing must not switch back off at $t',
+        );
+      }
+
+      // A positive control: without these the loop above would pass on a
+      // ReplayBeats that never turned anything on at all.
+      expect(sawEmerged, isTrue);
+      expect(sawAimed, isTrue);
+      expect(sawFiring, isTrue);
+    });
+
+    test('aiming never precedes emerging, nor firing the aim', () {
+      // The replay's whole point is seeing the two decisions MEET. A
+      // shot that left before the aim landed would skip the part worth
+      // watching, which is why the thresholds are spread the way they
+      // are rather than evenly.
+      for (var t = 0.0; t <= 1.0; t += 0.01) {
+        final beats = ReplayBeats.from(t);
+
+        if (beats.aimed) {
+          expect(beats.emerged, isTrue, reason: 'aimed before emerging at $t');
+        }
+        if (beats.firing) {
+          expect(beats.aimed, isTrue, reason: 'fired before aiming at $t');
+        }
+      }
+    });
+
+    test('flight runs a full 0 to 1 inside its own slice', () {
+      // The paintball has to cross the WHOLE field in the slice the
+      // replay gives it, so the remap has to reach both ends.
+      expect(ReplayBeats.from(NeonTokens.beatFire).flightProgress, isNull);
+
+      final justFired = ReplayBeats.from(NeonTokens.beatFire + 0.001);
+      expect(justFired.flightProgress, closeTo(0, 0.01));
+
+      final landing = ReplayBeats.from(NeonTokens.beatFlightEnd);
+      expect(landing.flightProgress, closeTo(1, 0.01));
+    });
+  });
+
+  group('the frame a skip lands on', () {
+    test('every beat is complete at exactly 1.0', () {
+      // REVIEW FOCUS #1. Tapping to skip sets the controller to exactly
+      // 1 (`_skipReplay` in paint_ball_battle_screen.dart), so this is
+      // not an edge case -- it is the frame a player sees whenever they
+      // are impatient, which is often.
+      final beats = ReplayBeats.from(1);
+
+      expect(beats.isReplaying, isTrue);
+      expect(beats.emerged, isTrue);
+      expect(beats.aimed, isTrue);
+      expect(beats.firing, isTrue);
+      expect(
+        beats.flightProgress,
+        closeTo(1, 0.001),
+        reason: 'the shot has landed, not frozen mid-air',
+      );
+      expect(beats.settled, isTrue);
+    });
+
+    test('the resolved frame is reachable and stable', () {
+      // Pumped twice because a skip can rebuild at 1.0 repeatedly; the
+      // frame must be identical each time rather than depending on how
+      // it was arrived at.
+      expect(ReplayBeats.from(1).emerged, ReplayBeats.from(1).emerged);
+      expect(
+        ReplayBeats.from(1).flightProgress,
+        ReplayBeats.from(1).flightProgress,
+      );
+    });
+  });
+
+  group('a controller driven out of bounds', () {
+    test('progress above one clamps rather than overshooting', () {
+      // REVIEW FOCUS #2. An easeOutBack curve overshoots past 1, and a
+      // flightProgress above 1 would push the paintball off the far edge
+      // of the field.
+      for (final over in [1.0001, 1.4, 2.0, 100.0]) {
+        final beats = ReplayBeats.from(over);
+
+        expect(beats.emerged, isTrue, reason: 'at $over');
+        expect(
+          beats.flightProgress,
+          lessThanOrEqualTo(1.0),
+          reason: 'at $over the shot must not fly past the field',
+        );
+        expect(beats.flightProgress, isNotNull);
+      }
+    });
+
+    test('negative progress is the start, not a shot flying backwards', () {
+      // Reachable as -0.0 from a controller reset, and as a genuine
+      // negative from a reversed animation.
+      for (final under in [-0.0, -0.001, -1.0]) {
+        final beats = ReplayBeats.from(under);
+
+        expect(beats.emerged, isFalse, reason: 'at $under');
+        expect(beats.firing, isFalse, reason: 'at $under');
+        expect(
+          beats.flightProgress,
+          isNull,
+          reason: 'at $under nothing has been fired to have progress',
+        );
+      }
+    });
+
+    test('a NaN progress does not propagate into the field', () {
+      // A NaN offset thrown into Positioned crashes the screen rather
+      // than drawing wrongly, so it is worth one branch.
+      final beats = ReplayBeats.from(double.nan);
+
+      expect(beats.flightProgress, anyOf(isNull, predicate<double>((v) => !v.isNaN)));
+      expect(beats.isReplaying, isTrue);
+    });
+  });
+}
+```
+
+- [ ] **Step 2: Run test to verify it fails**
+
+Run: `flutter test test/features/games/paint_ball_replay_beats_test.dart`
+Expected: FAIL — `field/field_replay.dart` does not resolve.
+
+- [ ] **Step 3: Write the implementation**
+
+Create `lib/features/games/paint_ball/presentation/widgets/field/field_replay.dart`:
+
+```dart
+import 'package:attune/core/ui/neon/neon_tokens.dart';
+import 'package:flutter/foundation.dart';
+
+/// Where a replay has got to, as six beats rather than one number.
+///
+/// Spec §3.2: timing lives in ONE place that the field's parts read. It
+/// was previously six threshold comparisons inline in the field's build
+/// method, which meant the only way to test "what does the frame a skip
+/// lands on look like" was to pump a whole field and inspect it.
+///
+/// Deliberately a value object with no rendering logic. §3.2 names the
+/// hazard it was written to avoid: a replay class that accumulates
+/// per-beat drawing parameters becomes the god-object the file split
+/// existed to prevent. If something here starts deciding how a thing
+/// looks rather than when it happens, it is in the wrong file.
+@immutable
+class ReplayBeats {
+  const ReplayBeats._({
+    required this.isReplaying,
+    required this.emerged,
+    required this.aimed,
+    required this.firing,
+    required this.impacting,
+    required this.settled,
+    this.flightProgress,
+    this.impactProgress,
+  });
+
+  /// Between rounds: everything visible, nothing in the air.
+  ///
+  /// `emerged` and `aimed` are TRUE here, which looks odd until you
+  /// consider what false would mean -- a player hidden from themselves
+  /// because no replay happens to be running.
+  static const ReplayBeats idle = ReplayBeats._(
+    isReplaying: false,
+    emerged: true,
+    aimed: true,
+    firing: false,
+    impacting: false,
+    settled: false,
+  );
+
+  /// Maps the battle screen's single 0→1 controller value onto the
+  /// beats. The only place that mapping exists.
+  factory ReplayBeats.from(double? progress) {
+    if (progress == null) return idle;
+
+    // A NaN reaches Positioned as a NaN offset and crashes the screen
+    // rather than drawing wrongly, so it resolves to the resolved frame
+    // -- the same place a skip lands, which is the safest wrong answer.
+    if (progress.isNaN) return ReplayBeats.from(1);
+
+    final t = progress.clamp(0.0, 1.0);
+
+    final firing = t > NeonTokens.beatFire;
+
+    return ReplayBeats._(
+      isReplaying: true,
+      emerged: t > NeonTokens.beatEmerge,
+      aimed: t > NeonTokens.beatAim,
+      firing: firing,
+      impacting: t > NeonTokens.beatFlightEnd,
+      settled: t >= NeonTokens.beatImpactEnd,
+      // Remapped so the paintball still crosses the whole field in the
+      // slice of the replay given to flight.
+      flightProgress:
+          firing
+              ? ((t - NeonTokens.beatFire) /
+                      (NeonTokens.beatFlightEnd - NeonTokens.beatFire))
+                  .clamp(0.0, 1.0)
+              : null,
+      impactProgress:
+          t > NeonTokens.beatFlightEnd
+              ? ((t - NeonTokens.beatFlightEnd) /
+                      (1.0 - NeonTokens.beatFlightEnd))
+                  .clamp(0.0, 1.0)
+              : null,
+    );
+  }
+
+  /// False between rounds.
+  final bool isReplaying;
+
+  /// Both players have stepped out of cover.
+  final bool emerged;
+
+  /// Both aims have landed on their chosen bay.
+  final bool aimed;
+
+  /// Both shots have left. A round is a simultaneous duel, so this is
+  /// never true for one side alone.
+  final bool firing;
+
+  /// The shots have arrived and the paint is blooming.
+  final bool impacting;
+
+  /// The replay has run its course.
+  final bool settled;
+
+  /// 0→1 across the flight slice, or null before anything is fired.
+  final double? flightProgress;
+
+  /// 0→1 across impact and settle, or null before the shots land.
+  final double? impactProgress;
+}
+```
+
+- [ ] **Step 4: Run test to verify it passes**
+
+Run: `flutter test test/features/games/paint_ball_replay_beats_test.dart`
+Expected: PASS, 11 tests.
+
+- [ ] **Step 5: Have the field read the beats instead of computing them**
+
+In `paint_ball_field.dart`, replace the inline block:
+
+```dart
+          final replay = replayProgress;
+          final emerged = replay == null || replay > NeonTokens.beatEmerge;
+          final aimed = replay == null || replay > NeonTokens.beatAim;
+          final firing = replay != null && replay > NeonTokens.beatFire;
+          final flightProgress = firing ? ... : null;
+```
+
+with:
+
+```dart
+          // One mapping from the controller's value to the beats, so the
+          // field reads timing rather than deciding it (§3.2).
+          final beats = ReplayBeats.from(replayProgress);
+```
+
+and update the four use sites: `emerged` → `beats.emerged`, `aimed` →
+`beats.aimed`, `flightProgress != null` → `beats.firing`, and
+`flightProgress` → `beats.flightProgress!`. Add the import. Remove the
+`neon_tokens.dart` import if nothing else in the file uses it.
+
+- [ ] **Step 6: Run the field and composition tests**
+
+Run: `flutter test test/features/games/paint_ball_field_test.dart test/features/games/paint_ball_field_composition_test.dart`
+Expected: 25 + 10 pass. These exercise the replay at `0.05` and `0.7`, so a
+mis-wired beat shows up here.
+
+- [ ] **Step 7: Commit**
+
+```bash
+git add lib/features/games/paint_ball/presentation/widgets/ test/features/games/paint_ball_replay_beats_test.dart
+git commit -m "$(cat <<'EOF'
+feat(paintball): the replay's timing becomes a value object
+
+Six threshold comparisons inline in the field's build method become one
+ReplayBeats.from(progress). §3.2 wanted timing in one place the parts
+read, and the practical gain is that the frame a skip lands on is now
+testable without pumping a field.
+
+Which matters, because that frame is not an edge case: _skipReplay sets
+the controller to exactly 1, so it is what a player sees whenever they
+are impatient. Review Focus #1 is now a test, and so is #2 -- an
+easeOutBack curve overshoots past 1, and a flightProgress above 1 would
+push the paintball off the far edge of the field.
+
+A NaN resolves to the frame a skip lands on rather than propagating: a
+NaN offset reaches Positioned and crashes the screen instead of drawing
+wrongly, so the safest wrong answer is the one the player can already
+reach deliberately.
+
+idle reports emerged and aimed as TRUE, which reads oddly until you ask
+what false would mean between rounds: a player hidden from themselves
+because no replay happens to be running.
+
+Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
+EOF
+)"
+```
+
+---
+
+## Remaining tasks
+
+Task 14 adds the impact bloom and the six-beat choreography on top of these beats; Task 15 regenerates the five sound cues; Task 16 is Sliding Scale plus the `GAMES.md` reconciliation. Their scope and boundaries are fixed:
 
 | Task | Stage | Deliverable |
 |---|---|---|

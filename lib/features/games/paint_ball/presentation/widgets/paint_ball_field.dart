@@ -2,7 +2,6 @@ import 'dart:math' as math;
 
 import 'package:attune/app/theme/design_tokens.dart';
 import 'package:attune/core/ui/motion/reduce_motion.dart';
-import 'package:attune/core/ui/neon/neon_tokens.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 
@@ -10,6 +9,7 @@ import 'field/cover_row.dart';
 import 'field/field_figure.dart' show figureCentreX;
 import 'field/field_ground.dart';
 import 'field/field_paint.dart';
+import 'field/field_replay.dart';
 import 'field/paint_ball_field_keys.dart';
 
 /// The three positions a player can take, drawn as shields.
@@ -146,16 +146,9 @@ class PaintBallField extends StatelessWidget {
           // read before anything is fired: the point of the replay is
           // seeing the two decisions meet, and a shot that left before
           // the aim landed would skip the part worth watching.
-          final replay = replayProgress;
-          final emerged = replay == null || replay > NeonTokens.beatEmerge;
-          final aimed = replay == null || replay > NeonTokens.beatAim;
-          final firing = replay != null && replay > NeonTokens.beatFire;
-          final flightProgress =
-              firing
-                  ? ((replay - NeonTokens.beatFire) /
-                          (NeonTokens.beatFlightEnd - NeonTokens.beatFire))
-                      .clamp(0.0, 1.0)
-                  : null;
+          // One mapping from the controller's value to the beats, so the
+          // field reads timing rather than deciding it (§3.2).
+          final beats = ReplayBeats.from(replayProgress);
 
           // Both rows' geometry comes from the one formula the figures
           // and paint already use, so a projectile cannot leave from
@@ -210,8 +203,8 @@ class PaintBallField extends StatelessWidget {
                       isOpponent: true,
                       hiddenAt: revealedPartnerPosition,
                       aimedAt: selectedShot,
-                      aimingAt: aimed ? theirRevealedShot : null,
-                      emerged: emerged,
+                      aimingAt: beats.aimed ? theirRevealedShot : null,
+                      emerged: beats.emerged,
                       enabled: isMyTurn && onSelectShot != null,
                       ownerColor: PaintBallPalette.theirs,
                       reduceMotion: reduceMotion,
@@ -240,8 +233,8 @@ class PaintBallField extends StatelessWidget {
                       // Your own figure leans toward whatever you are
                       // aiming at, so the aim is visible on the field
                       // rather than only in a control strip.
-                      aimingAt: aimed ? selectedShot : null,
-                      emerged: emerged,
+                      aimingAt: beats.aimed ? selectedShot : null,
+                      emerged: beats.emerged,
                       enabled: isMyTurn && onSelectHide != null,
                       ownerColor: PaintBallPalette.mine,
                       reduceMotion: reduceMotion,
@@ -255,13 +248,13 @@ class PaintBallField extends StatelessWidget {
                   // shots cross rather than take turns -- watching them
                   // pass is the moment the round becomes a duel rather
                   // than two separate moves.
-                  if (flightProgress != null)
+                  if (beats.firing)
                     Positioned.fill(
                       child: IgnorePointer(
                         child: CustomPaint(
                           key: PaintBallFieldKeys.projectile(isMine: true),
                           painter: ProjectilePainter(
-                            progress: flightProgress,
+                            progress: beats.flightProgress!,
                             from: Offset(
                               columnX(myPosition, isOpponent: false),
                               height * 0.80,
@@ -275,13 +268,13 @@ class PaintBallField extends StatelessWidget {
                         ),
                       ),
                     ),
-                  if (flightProgress != null && theirRevealedShot != null)
+                  if (beats.firing && theirRevealedShot != null)
                     Positioned.fill(
                       child: IgnorePointer(
                         child: CustomPaint(
                           key: PaintBallFieldKeys.projectile(isMine: false),
                           painter: ProjectilePainter(
-                            progress: flightProgress,
+                            progress: beats.flightProgress!,
                             from: Offset(
                               columnX(
                                 revealedPartnerPosition,
