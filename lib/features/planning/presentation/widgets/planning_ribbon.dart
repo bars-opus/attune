@@ -14,8 +14,11 @@ import 'planning_quill.dart';
 /// Home formats the text the cursor is in; Insert adds a block where the
 /// cursor is.
 class PlanningRibbon extends StatefulWidget {
-  const PlanningRibbon({super.key, required this.onInsert});
+  const PlanningRibbon({super.key, required this.onInsert, this.tools = planningBlockTools});
   final ValueChanged<PlanningBlockType> onInsert;
+
+  /// What Insert offers (Planning: every block; the journal: text and photo).
+  final List<(PlanningBlockType, IconData, String)> tools;
 
   /// Highlight and text-colour tokens (spec §6.1): the only colours applied.
   static const tokens = ['yellow', 'green', 'blue', 'pink', 'purple'];
@@ -209,7 +212,7 @@ class _PlanningRibbonState extends State<PlanningRibbon> {
       scrollDirection: Axis.horizontal,
       padding: const EdgeInsets.symmetric(horizontal: Spacing.sm),
       child: Row(children: [
-        for (final (type, icon, label) in planningBlockTools)
+        for (final (type, icon, label) in widget.tools)
           InkWell(
             borderRadius: BorderRadiusTokens.smAll,
             onTap: () => widget.onInsert(type),

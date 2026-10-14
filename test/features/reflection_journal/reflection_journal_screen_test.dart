@@ -1,107 +1,71 @@
-// test/features/reflection_journal/reflection_journal_screen_test.dart
-import 'package:attune/features/reflection_journal/data/models/journal_entry.dart';
-import 'package:attune/features/reflection_journal/presentation/providers/reflection_journal_providers.dart';
-import 'package:attune/features/reflection_journal/presentation/screens/reflection_journal_screen.dart';
-import 'package:flutter/material.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:flutter_screenutil/flutter_screenutil.dart';
+import 'package:attune/core/notes/note_section.dart';
+import 'package:attune/core/widgets/info_row_widget.dart';
+import 'package:attune/features/reflection_journal/presentation/screens/journal_entry_screen.dart';
+import 'package:attune/features/reflection_journal/presentation/widgets/journal_entry_row.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-/// journalEntriesProvider is an AsyncNotifierProvider (cache-then-refresh —
-/// see JournalEntriesNotifier), so overriding it in tests means supplying a
-/// fake notifier rather than a plain async callback.
-class _FakeJournalEntriesNotifier extends JournalEntriesNotifier {
-  _FakeJournalEntriesNotifier(this._entries);
-  final List<JournalEntry> _entries;
-
-  @override
-  Future<List<JournalEntry>> build() async => _entries;
-}
+import 'support/fake_journal.dart';
+import 'support/journal_test_app.dart';
 
 void main() {
-  Widget wrap(List<Override> overrides) {
-    return ProviderScope(
-      overrides: overrides,
-      child: MaterialApp(
-        home: ScreenUtilInit(
-          designSize: const Size(390, 844),
-          builder: (_, __) => const ReflectionJournalScreen(),
-        ),
-      ),
-    );
-  }
-
-  testWidgets('shows empty state when there are no entries', (tester) async {
-    await tester.pumpWidget(
-      wrap([
-        journalEntriesProvider.overrideWith(
-          () => _FakeJournalEntriesNotifier(const []),
-        ),
-        journalPatternsProvider.overrideWith(
-          (ref) async => (status: 'insufficient_evidence', summary: null, entryCount: 0),
-        ),
-      ]),
-    );
-    await tester.pumpAndSettle();
-
-    expect(find.textContaining('Write'), findsWidgets);
+  testWidgets('entries are grouped by the day written, each group a card of rows', (t) async {
+    final repo = FakeJournalRepository(now: DateTime.now());
+    final now = DateTime.now();
+    repo.addEntry(title: 'Evening', text: 'Long day, good talk', createdAt: now.subtract(const Duration(minutes: 5)));
+    repo.addEntry(text: 'Untitled thoughts', createdAt: now.subtract(const Duration(days: 1)));
+    repo.addEntry(title: 'Pinned', text: 'Keep this', pinned: true, createdAt: now.subtract(const Duration(days: 40)));
+    await pumpJournal(t, repo: repo);
+    expect(find.text('Pinned'), findsWidgets);
+    expect(find.text('Today'), findsOneWidget);
+    expect(find.text('Yesterday'), findsWidgets);
+    expect(find.byType(NoteSection), findsNWidgets(3));
+    expect(find.byType(InfoRowWidget), findsNWidgets(3));
+    expect(find.textContaining('Long day, good talk'), findsOneWidget); // the first words, in the row
   });
 
-  testWidgets('shows entry cards when entries are present', (tester) async {
-    final entry = JournalEntryFixture.one();
-    await tester.pumpWidget(
-      wrap([
-        journalEntriesProvider.overrideWith(
-          () => _FakeJournalEntriesNotifier([entry]),
-        ),
-        journalPatternsProvider.overrideWith(
-          (ref) async => (status: 'insufficient_evidence', summary: null, entryCount: 1),
-        ),
-      ]),
-    );
-    await tester.pumpAndSettle();
-
-    expect(find.text(entry.content), findsOneWidget);
+  testWidgets('an untitled entry is called by its day', (t) async {
+    final repo = FakeJournalRepository(now: DateTime.now());
+    repo.addEntry(text: 'No title here', createdAt: DateTime(2026, 3, 3, 10));
+    await pumpJournal(t, repo: repo);
+    expect(find.text('Tuesday, 3 March'), findsOneWidget);
   });
 
-  testWidgets('patterns tab shows not-enough-entries state below threshold', (
-    tester,
-  ) async {
-    await tester.pumpWidget(
-      wrap([
-        journalEntriesProvider.overrideWith(
-          () => _FakeJournalEntriesNotifier(const []),
-        ),
-        journalPatternsProvider.overrideWith(
-          (ref) async => (status: 'insufficient_evidence', summary: null, entryCount: 1),
-        ),
-      ]),
-    );
-    await tester.pumpAndSettle();
-
-    await tester.tap(find.text('Patterns'));
-    await tester.pumpAndSettle();
-
-    expect(find.textContaining('Not enough entries'), findsOneWidget);
+  testWidgets('swipe right deletes with Undo; swipe left pins', (t) async {
+    final repo = FakeJournalRepository(now: DateTime.now());
+    final e = repo.addEntry(title: 'Swipe me', text: 'x');
+    await pumpJournal(t, repo: repo);
+    await t.drag(find.text('Swipe me'), const Offset(500, 0));
+    await t.pumpAndSettle();
+    expect(find.text('Swipe me'), findsNothing);
+    expect(repo.softDeleted, {e.id});
+    await t.tap(find.text('Undo'));
+    await t.pumpAndSettle();
+    expect(find.text('Swipe me'), findsOneWidget);
+    await t.drag(find.text('Swipe me'), const Offset(-500, 0));
+    await t.pumpAndSettle();
+    expect(repo.entries[e.id]!.pinnedAt, isNotNull);
+    expect(find.text('Pinned'), findsOneWidget);
+    await t.pump(JournalEntryRow.undoWindow); // the purge timer runs out (Undo was used: nothing purged)
+    expect(repo.purged, isEmpty);
   });
-}
 
-class JournalEntryFixture {
-  static JournalEntry one() {
-    return _fixtureEntry;
-  }
-}
+  testWidgets('opening the journal sweeps old deletions once', (t) async {
+    final repo = FakeJournalRepository(now: DateTime.now());
+    await pumpJournal(t, repo: repo);
+    expect(repo.sweeps, 1);
+  });
 
-final _fixtureEntry = _buildEntry();
+  testWidgets('+ creates an entry and opens it, ready to write', (t) async {
+    final repo = FakeJournalRepository(now: DateTime.now());
+    await pumpJournal(t, repo: repo);
+    await t.tap(find.byTooltip('New entry'));
+    await t.pumpAndSettle();
+    expect(find.byType(JournalEntryScreen), findsOneWidget);
+    expect(repo.entries, hasLength(1));
+  });
 
-JournalEntry _buildEntry() {
-  return JournalEntry(
-    id: 'entry-1',
-    userId: 'user-1',
-    content: 'Today I noticed I felt calmer than usual.',
-    promptUsed: null,
-    tone: null,
-    createdAt: DateTime(2026, 8, 1),
-    updatedAt: DateTime(2026, 8, 1),
-  );
+  testWidgets('the empty journal says nothing is shared', (t) async {
+    await pumpJournal(t, repo: FakeJournalRepository(now: DateTime.now()));
+    expect(find.textContaining('Nothing here is ever shared with anyone.'), findsOneWidget);
+  });
 }

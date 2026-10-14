@@ -6,7 +6,11 @@ import 'package:flutter/material.dart';
 enum ConflictChoice { keepMine, useTheirs, copyMine }
 
 /// Spec §4 "Conflicts": the second save never silently overwrites.
-Future<ConflictChoice?> showConflictSheet(BuildContext context, {required String theirs}) =>
+Future<ConflictChoice?> showConflictSheet(
+  BuildContext context, {
+  required String theirs,
+  String title = 'Your partner just changed this',
+}) =>
     showModalBottomSheet<ConflictChoice>(
       context: context,
       showDragHandle: true,
@@ -15,7 +19,7 @@ Future<ConflictChoice?> showConflictSheet(BuildContext context, {required String
         child: Padding(
           padding: Spacing.pagePadding,
           child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-            Text('Your partner just changed this', style: Theme.of(c).textTheme.titleLarge),
+            Text(title, style: Theme.of(c).textTheme.titleLarge),
             const Gap(Spacing.sm),
             Text('Their version:', style: Theme.of(c).textTheme.labelLarge),
             const Gap(Spacing.xs),

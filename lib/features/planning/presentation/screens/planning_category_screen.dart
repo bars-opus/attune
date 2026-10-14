@@ -1,3 +1,4 @@
+import 'package:attune/core/notes/note_section.dart';
 import 'package:attune/core/widgets/bottom_sheet_header.dart';
 import 'package:attune/core/utils/bottom_sheet_utils.dart';
 import 'package:attune/app/theme/app_theme.dart';
@@ -8,7 +9,6 @@ import 'package:attune/core/widgets/feedback/export_extensions.dart';
 
 import 'package:attune/app/theme/design_tokens.dart';
 import 'package:attune/core/widgets/buttons/app_fab.dart';
-import 'package:attune/core/widgets/card_inkwell.dart';
 import 'package:attune/core/widgets/info_row_widget.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/semantics.dart';
@@ -390,7 +390,7 @@ List<Widget> _entryTiles(
   void Function(String) onOpen,
 ) {
   final now = DateTime.now();
-  Widget section(String title, List<PlanningEntrySummary> entries) => _Section(
+  Widget section(String title, List<PlanningEntrySummary> entries) => NoteSection(
     title: title,
     children: [
       for (var i = 0; i < entries.length; i++)
@@ -408,45 +408,6 @@ List<Widget> _entryTiles(
     for (final g in planningDateSections(s.entries, now))
       section(g.title, g.entries),
   ];
-}
-
-/// A section title with its rows in one CardInkWell, as in Settings.
-class _Section extends StatelessWidget {
-  const _Section({required this.title, required this.children});
-  final String title;
-  final List<Widget> children;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(
-            Spacing.lg,
-            Spacing.md,
-            Spacing.lg,
-            0,
-          ),
-          child: Text(
-            title,
-            style: theme.textTheme.titleSmall?.copyWith(
-              fontWeight: FontWeight.w600,
-              color: theme.colorScheme.onSurface.withValues(alpha: 0.8),
-            ),
-          ),
-        ),
-        Padding(
-          padding: Spacing.allMd,
-          child: CardInkWell(
-            margin: EdgeInsets.zero,
-            child: Column(children: children),
-          ),
-        ),
-      ],
-    );
-  }
 }
 
 enum _EntryAction { pin, delete }

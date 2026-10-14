@@ -49,8 +49,7 @@ import 'package:attune/features/chat/presentation/screens/starred_messages_scree
 import 'package:attune/features/chat/presentation/screens/video_trim_screen.dart';
 import 'package:attune/features/chat/presentation/screens/video_viewer_screen.dart';
 import 'package:attune/features/healing/presentation/screens/healing_journey_screen.dart';
-import 'package:attune/features/reflection_journal/presentation/screens/journal_entry_compose_screen.dart';
-import 'package:attune/features/reflection_journal/presentation/screens/journal_entry_detail_screen.dart';
+import 'package:attune/features/reflection_journal/presentation/screens/journal_entry_screen.dart';
 import 'package:attune/features/reflection_journal/presentation/screens/reflection_journal_screen.dart';
 import 'package:attune/features/pulse/presentation/screens/checkin_complete_screen.dart';
 import 'package:attune/features/pulse/presentation/screens/pulse_tab.dart';
@@ -233,8 +232,7 @@ class RouteNames {
   static const String forumInsight = '/forumInsight';
   static const String healingJourney = '/healingJourney';
   static const String reflectionJournal = '/reflectionJournal';
-  static const String journalEntryCompose = '/journalEntryCompose';
-  static const String journalEntryDetail = '/journalEntryDetail';
+  static const String journalEntry = '/journalEntry';
   static const String pulse = '/pulse';
   static const String timeline = '/timeline';
   static const String together = '/together';
@@ -604,19 +602,11 @@ GoRouter createAppRouter(RoutingNotifier routingNotifier) {
         builder: (context, state) => const ReflectionJournalScreen(),
       ),
       GoRoute(
-        path: RouteNames.journalEntryCompose,
-        name: 'journalEntryCompose',
+        path: RouteNames.journalEntry,
+        name: 'journalEntry',
         builder: (context, state) {
-          final entryId = state.extra as String?;
-          return JournalEntryComposeScreen(entryId: entryId);
-        },
-      ),
-      GoRoute(
-        path: RouteNames.journalEntryDetail,
-        name: 'journalEntryDetail',
-        builder: (context, state) {
-          final entryId = state.extra as String;
-          return JournalEntryDetailScreen(entryId: entryId);
+          final args = state.extra! as JournalEntryArgs;
+          return JournalEntryScreen(entryId: args.entryId, isNew: args.isNew, prompt: args.prompt);
         },
       ),
       GoRoute(

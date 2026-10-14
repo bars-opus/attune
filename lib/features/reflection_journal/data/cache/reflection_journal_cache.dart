@@ -28,10 +28,12 @@ class ReflectionJournalCache extends FeedCacheStore<JournalEntry> {
   String get keyPrefix => 'reflection_journal_cache_';
 
   @override
-  int get schemaVersion => 1;
+  int get schemaVersion => 2;
 
+  /// List summaries only: the first words, never the full text (spec §6.4).
   @override
-  Map<String, dynamic> encode(JournalEntry item) => item.toJson();
+  Map<String, dynamic> encode(JournalEntry item) =>
+      {...item.toJson(), 'content': journalSnippet(item.content)};
 
   @override
   JournalEntry decode(Map<String, dynamic> json) =>

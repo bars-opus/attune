@@ -1,3 +1,4 @@
+import 'package:attune/features/reflection_journal/data/models/journal_entry.dart';
 import 'package:attune/app/routing/app_router.dart';
 import 'package:attune/app/theme/app_theme.dart';
 import 'package:attune/core/utils/exports/export_screens.dart';
@@ -374,7 +375,7 @@ class _LatestReflectionRow extends ConsumerWidget {
     final latest = entriesAsync.valueOrNull?.firstOrNull;
 
     return InfoRowWidget(
-      title: latest?.content ?? 'Start your first reflection',
+      title: journalRowTitle(latest),
       subtitle: 'Reflection Note',
       icon: Icons.edit,
       iconColor: colorScheme.onSurfaceVariant.withOpacity(.4),

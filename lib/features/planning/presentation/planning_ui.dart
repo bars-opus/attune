@@ -1,3 +1,4 @@
+import 'package:attune/core/notes/note_date_sections.dart';
 import 'package:attune/core/widgets/app_text_form_field.dart';
 import 'package:attune/app/theme/app_colors.dart';
 import 'package:gap/gap.dart';
@@ -505,43 +506,14 @@ class PlanningUnavailableScreen extends StatelessWidget {
 List<({String title, List<PlanningEntrySummary> entries})> planningDateSections(
   List<PlanningEntrySummary> entries,
   DateTime now,
-) {
-  final today = DateUtils.dateOnly(now);
-  String bucket(DateTime at) {
-    final day = DateUtils.dateOnly(at.toLocal());
-    final days = today.difference(day).inDays;
-    if (days <= 0) return 'Today';
-    if (days == 1) return 'Yesterday';
-    if (days <= 7) return 'Previous 7 Days';
-    if (days <= 30) return 'Previous 30 Days';
-    if (day.year == today.year) return DateFormat.MMMM().format(day);
-    return '${day.year}';
-  }
-
-  final groups = <String, List<PlanningEntrySummary>>{};
-  final newest = <String, DateTime>{};
-  for (final e in entries) {
-    final key = bucket(e.lastActivityAt);
-    (groups[key] ??= []).add(e);
-    final at = e.lastActivityAt;
-    if (newest[key] == null || at.isAfter(newest[key]!)) newest[key] = at;
-  }
-  final keys =
-      groups.keys.toList()..sort((a, b) => newest[b]!.compareTo(newest[a]!));
-  return [for (final k in keys) (title: k, entries: groups[k]!)];
-}
+) => [
+  for (final g in noteDateSections(entries, (e) => e.lastActivityAt, now))
+    (title: g.title, entries: g.items),
+];
 
 /// The date on a plan row: the time today, "Yesterday", the weekday this
 /// week, else the short date.
-String planningRowDate(DateTime at, DateTime now) {
-  final local = at.toLocal();
-  final days =
-      DateUtils.dateOnly(now).difference(DateUtils.dateOnly(local)).inDays;
-  if (days <= 0) return DateFormat.jm().format(local);
-  if (days == 1) return 'Yesterday';
-  if (days <= 7) return DateFormat.EEEE().format(local);
-  return DateFormat.yMd().format(local);
-}
+String planningRowDate(DateTime at, DateTime now) => noteRowDate(at, now);
 
 String planningCategoryHeroTag(String categoryId) =>
     'planning-category-title-$categoryId';

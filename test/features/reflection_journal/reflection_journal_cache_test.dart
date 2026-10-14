@@ -32,6 +32,15 @@ Future<ReflectionJournalCache> _makeCache() async {
 
 void main() {
   group('ReflectionJournalCache', () {
+    test('the cache keeps list summaries, never the full text', () async {
+      final cache = await _makeCache();
+      final long = 'word ' * 100;
+      await cache.writeEntries(_userA, [_entry('long', content: long)]);
+      final read = cache.readEntries(_userA).single;
+      expect(read.content.length, lessThanOrEqualTo(80));
+      expect(long.startsWith(read.content.substring(0, 20)), isTrue);
+    });
+
     test('round-trips every field an entry carries', () async {
       final cache = await _makeCache();
       final original = _entry('e1', content: 'Today I felt calmer.');
