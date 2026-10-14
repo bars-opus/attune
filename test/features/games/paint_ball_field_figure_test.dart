@@ -362,9 +362,20 @@ void main() {
       expect(positioned.bottom, isNull);
     });
 
-    testWidgets('the two rows point opposite ways', (tester) async {
-      // Confirmed at widget level: the player's row points up, the
-      // opponent's points down, so the two rows face each other.
+    testWidgets('both rows draw their figure upright', (tester) async {
+      // CHANGED from "the two rows point opposite ways", on evidence
+      // from the rendered golden rather than from reasoning.
+      //
+      // The partner's figure used to be inverted so it mirrored its
+      // cover. Drawn, it read as an exclamation mark: an upside-down
+      // bust is one you have to flip in your head, while the upright
+      // mint figure opposite is instant. A head has no upside-down
+      // version that still says "head".
+      //
+      // What makes the two sides face each other is the COVER, which
+      // still mirrors (see the field test's "the two rows of cover face
+      // each other"). The figures do not need to, because row position
+      // already says whose is whose and the field never flips.
       await tester.pumpWidget(host(position: 1));
       await tester.pump();
       final mine = tester
@@ -388,7 +399,11 @@ void main() {
           .painter as FieldFigurePainter;
 
       expect(mine.pointsUp, isTrue);
-      expect(theirs.pointsUp, isFalse);
+      expect(
+        theirs.pointsUp,
+        isTrue,
+        reason: 'a partner you cannot read at a glance is not a partner',
+      );
     });
 
     testWidgets('a figure that is not the fire control is transparent to taps', (

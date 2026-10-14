@@ -221,7 +221,22 @@ class _FieldFigureState extends State<FieldFigure>
                   size: figureSize,
                   painter: FieldFigurePainter(
                     color: widget.ownerColor,
-                    pointsUp: !widget.isOpponent,
+                    // BOTH rows draw upright.
+                    //
+                    // The partner used to be inverted so the two rows
+                    // mirrored their cover. Rendering it showed why that
+                    // fails: an upside-down bust reads as an exclamation
+                    // mark, not a person -- you have to flip it in your
+                    // head before it means anything, and the mint figure
+                    // opposite is instant. A head is the one shape with
+                    // no upside-down version that still says "head".
+                    //
+                    // Row position already carries whose figure it is,
+                    // unambiguously: yours is always the near row and
+                    // theirs the far one, and the field never flips. The
+                    // COVER still mirrors, which is what makes the two
+                    // sides face each other.
+                    pointsUp: true,
                     quality: quality,
                   ),
                 ),

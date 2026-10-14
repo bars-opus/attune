@@ -1,7 +1,6 @@
 import 'dart:math' as math;
 
 import 'package:attune/core/ui/neon/neon_quality.dart';
-import 'package:attune/core/ui/neon/neon_tokens.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 
