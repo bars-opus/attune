@@ -1,3 +1,4 @@
+import 'package:attune/core/ui/neon/attune_neon_quality.dart';
 import 'package:attune/core/ui/neon/neon_quality.dart';
 import 'package:flutter/material.dart';
 
@@ -32,24 +33,8 @@ class GameHubTheme {
   /// Wraps a subtree so Material widgets inside pick up dark defaults
   /// rather than inheriting the app's light theme and rendering black
   /// text on a black sheet.
-  /// How much light the games may spend here.
-  ///
-  /// ATTUNE_THESIS §6.10 makes performance budgets on representative
-  /// Ghanaian hardware a LAUNCH GATE, and NeonQuality exists to honour
-  /// it. The final review found the mechanism was complete, tested, and
-  /// obeyed by every consumer -- and installed nowhere, so every device
-  /// silently took neonQualityOf's fallback. A guard nothing declares is
-  /// a facility, not a guard.
-  ///
-  /// Hardcoded to [NeonQuality.glow] deliberately: picking a tier from
-  /// the device is a measurement task that the spec defers until there
-  /// is a real device to measure on (§5.1). What this does is make the
-  /// SEAM real, so that change is one line here rather than a hunt for
-  /// where it should have gone.
-  static const NeonQuality quality = NeonQuality.glow;
-
   static Widget wrap({required Widget child}) => NeonQualityScope(
-    quality: quality,
+    quality: AttuneNeonQuality.forDevice,
     child: Theme(
     data: ThemeData(
       brightness: Brightness.dark,

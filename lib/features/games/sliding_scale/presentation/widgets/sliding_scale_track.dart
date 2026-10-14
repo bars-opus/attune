@@ -1,3 +1,4 @@
+import 'package:attune/core/ui/neon/attune_neon_quality.dart';
 import 'package:attune/core/ui/neon/glow_stroke.dart';
 import 'package:attune/core/ui/neon/neon_quality.dart';
 import 'package:attune/core/ui/neon/neon_tokens.dart';
@@ -55,7 +56,9 @@ class SlidingScaleTrack extends StatelessWidget {
     // the unlit span at alpha 0.25 on near-white, with halo passes
     // dimmer still. The spectrum this widget exists to SHOW would be
     // close to invisible in half the app's themes.
-    return DecoratedBox(
+    return AttuneNeonQuality.wrap(
+      context,
+      child: DecoratedBox(
       decoration: BoxDecoration(
         color: NeonTokens.groundColor,
         borderRadius: BorderRadius.circular(14),
@@ -68,6 +71,7 @@ class SlidingScaleTrack extends StatelessWidget {
           highColor: highColor,
           quality: neonQualityOf(context),
         ),
+      ),
       ),
     );
   }

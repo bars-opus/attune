@@ -2,6 +2,7 @@ import 'dart:math' as math;
 
 import 'package:attune/app/theme/design_tokens.dart';
 import 'package:attune/core/ui/motion/reduce_motion.dart';
+import 'package:attune/core/ui/neon/attune_neon_quality.dart';
 import 'package:attune/core/ui/neon/bloom_flash.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
@@ -136,7 +137,14 @@ class PaintBallField extends StatelessWidget {
     // below it silently off.
     final reduceMotion = reduceMotionOf(context);
 
-    return AspectRatio(
+    // Declared HERE rather than at a route or a menu, because this is
+    // the widget that consumes the tiering and no routing decision can
+    // bypass it. The first attempt put it in the games hub's theme
+    // wrapper, which covers only the picker sheet -- the games are
+    // separate routes that never pass through it.
+    return AttuneNeonQuality.wrap(
+      context,
+      child: AspectRatio(
       aspectRatio: 1.05,
       child: LayoutBuilder(
         builder: (context, constraints) {
@@ -352,6 +360,7 @@ class PaintBallField extends StatelessWidget {
             ),
           );
         },
+      ),
       ),
     );
   }

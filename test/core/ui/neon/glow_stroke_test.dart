@@ -151,17 +151,25 @@ void main() {
     // halo built on saveLayer or clipPath would satisfy the count while
     // costing more. This asserts the painter reaches for nothing the
     // recorder does not model.
-    final canvas = _RecordingCanvas();
-    paintGlowPath(canvas, path, spec, NeonQuality.rich.haloPasses);
+    // Every tier, not just rich: a saveLayer reached for only on a
+    // cheaper path would otherwise slip through the contract.
+    for (final quality in NeonQuality.values) {
+      final canvas = _RecordingCanvas();
+      paintGlowPath(canvas, path, spec, quality.haloPasses);
 
-    expect(canvas.drawnPaths, isNotEmpty, reason: 'a positive control');
-    expect(
-      canvas.unmodelled,
-      isEmpty,
-      reason:
-          'paintGlowPath used a canvas call the cost contract cannot see: '
-          '${canvas.unmodelled}',
-    );
+      expect(
+        canvas.drawnPaths,
+        isNotEmpty,
+        reason: 'a positive control, at $quality',
+      );
+      expect(
+        canvas.unmodelled,
+        isEmpty,
+        reason:
+            'at $quality, paintGlowPath used a canvas call the cost '
+            'contract cannot see: ${canvas.unmodelled}',
+      );
+    }
   });
 
   test('the pass count helper agrees with the enum', () {

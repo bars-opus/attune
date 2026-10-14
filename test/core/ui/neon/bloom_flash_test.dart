@@ -150,16 +150,27 @@ void main() {
     });
 
     test('the cost contract counts every call, not just drawCircle', () {
-      final canvas = render(0.5);
+      // Across the whole bloom and every tier: the white flash, the
+      // bloom and the fade are three different code paths, and a
+      // saveLayer on any one of them would otherwise slip through.
+      for (final quality in NeonQuality.values) {
+        for (final progress in [0.05, 0.3, 0.6, 1.0]) {
+          final canvas = render(progress, quality: quality);
 
-      expect(canvas.circles, isNotEmpty, reason: 'a positive control');
-      expect(
-        canvas.unmodelled,
-        isEmpty,
-        reason:
-            'the bloom used a canvas call the cost contract cannot see: '
-            '${canvas.unmodelled}',
-      );
+          expect(
+            canvas.circles,
+            isNotEmpty,
+            reason: 'a positive control, at $quality progress $progress',
+          );
+          expect(
+            canvas.unmodelled,
+            isEmpty,
+            reason:
+                'at $quality progress $progress the bloom used a canvas '
+                'call the cost contract cannot see: ${canvas.unmodelled}',
+          );
+        }
+      }
     });
 
     test('the plain tier draws fewer layers', () {
