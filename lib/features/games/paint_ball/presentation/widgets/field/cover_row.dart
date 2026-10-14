@@ -89,6 +89,17 @@ class CoverRow extends StatelessWidget {
                     // undifferentiated strip instead of three targets.
                     container: true,
                     button: enabled,
+                    // With no Fire button, the aimed bay IS the only
+                    // confirmation that a target is chosen. A sighted
+                    // player gets it -- the bay brightens and its mouth
+                    // opens, pinned at 1.5x peak alpha by the cover-bay
+                    // test. Without this, a screen-reader user got
+                    // nothing at all.
+                    //
+                    // Deferred from this task to the composition, which
+                    // did not discharge it; caught again by the final
+                    // review.
+                    selected: aimedAt == index,
                     // Named by position, not index: a screen-reader user
                     // hears "Middle target" -- the thing on the board --
                     // rather than "cover 2".

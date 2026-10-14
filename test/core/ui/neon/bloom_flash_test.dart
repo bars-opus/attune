@@ -1,4 +1,3 @@
-import 'dart:ui';
 
 import 'package:attune/core/ui/neon/bloom_flash.dart';
 import 'package:attune/core/ui/neon/neon_quality.dart';
@@ -12,8 +11,21 @@ class _RecordingCanvas implements Canvas {
   void drawCircle(Offset c, double radius, Paint paint) =>
       circles.add((centre: c, radius: radius, paint: paint));
 
+  /// Every canvas call this recorder does NOT model.
+  ///
+  /// The cost contracts here are the branch's only evidence for the
+  /// §6.10 tier saving, and they work by counting draw calls -- so a
+  /// future implementation that reached for saveLayer, clipPath or a
+  /// transform would satisfy the count while costing more. Recording
+  /// the unmodelled calls turns a contract that can be bypassed into
+  /// one that cannot.
+  final unmodelled = <String>[];
+
   @override
-  noSuchMethod(Invocation invocation) => null;
+  noSuchMethod(Invocation invocation) {
+    unmodelled.add(invocation.memberName.toString());
+    return null;
+  }
 }
 
 void main() {
@@ -135,6 +147,19 @@ void main() {
       // A positive control lives in the sibling tests above, which prove
       // this painter DOES draw at other progress values.
       expect(canvas.circles.where((d) => d.radius > 0.5), isEmpty);
+    });
+
+    test('the cost contract counts every call, not just drawCircle', () {
+      final canvas = render(0.5);
+
+      expect(canvas.circles, isNotEmpty, reason: 'a positive control');
+      expect(
+        canvas.unmodelled,
+        isEmpty,
+        reason:
+            'the bloom used a canvas call the cost contract cannot see: '
+            '${canvas.unmodelled}',
+      );
     });
 
     test('the plain tier draws fewer layers', () {

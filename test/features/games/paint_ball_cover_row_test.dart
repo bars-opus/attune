@@ -5,6 +5,7 @@ import 'package:attune/features/games/paint_ball/presentation/widgets/field/pain
 import 'package:attune/features/games/paint_ball/presentation/widgets/paint_ball_field.dart'
     show kPaintBallPositions;
 import 'package:flutter/material.dart';
+import 'package:flutter/semantics.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -178,6 +179,40 @@ void main() {
     expect(states[2], CoverBayState.aimed);
     expect(states[0], CoverBayState.rest);
     expect(states[1], CoverBayState.rest);
+  });
+
+  testWidgets('a screen reader is told which target is chosen', (
+    tester,
+  ) async {
+    // With no Fire button the aimed bay is the ONLY confirmation that a
+    // target is chosen. A sighted player gets it from the bay widening
+    // and brightening; without `selected` a screen-reader user got
+    // nothing at all. Caught by the final whole-branch review after
+    // being deferred once.
+    final handle = tester.ensureSemantics();
+
+    await tester.pumpWidget(host(isOpponent: true, aimedAt: 2));
+    await tester.pump();
+
+    final aimed = tester.getSemantics(
+      find.bySemanticsLabel('Right target'),
+    );
+    final notAimed = tester.getSemantics(
+      find.bySemanticsLabel('Left target'),
+    );
+
+    expect(
+      aimed.hasFlag(SemanticsFlag.isSelected),
+      isTrue,
+      reason: 'the chosen target announces itself as chosen',
+    );
+    expect(
+      notAimed.hasFlag(SemanticsFlag.isSelected),
+      isFalse,
+      reason: 'and the others do not -- a positive control for the above',
+    );
+
+    handle.dispose();
   });
 
   testWidgets('a bay that is both aimed at and occupied reads as aimed', (

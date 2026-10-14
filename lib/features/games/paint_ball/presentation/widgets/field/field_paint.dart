@@ -5,7 +5,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 
 import '../paint_ball_field.dart'
-    show PaintSplat, kPaintBallCoverWidth, kPaintBallPositions;
+    show
+        PaintSplat,
+        kPaintBallCoverWidth,
+        kPaintBallPositions,
+        kPaintBallTargetScale;
 import 'field_figure.dart' show figureCentreX;
 import 'paint_ball_field_keys.dart';
 
@@ -40,7 +44,20 @@ Offset splatCentre({
   // tree -- `.w` throws LateInitializationError there. The widget layer
   // scales and passes it down; the default keeps the unscaled value for
   // callers that are already working in design units.
-  final cover = coverWidth ?? kPaintBallCoverWidth;
+  // Scaled per ROW, not once for the field. The opponent's bays are laid
+  // out at kPaintBallTargetScale (cover_row.dart), and figureCentreX
+  // derives its gap from the cover width -- so one width for two rows is
+  // exact at position 1 and wrong at 0 and 2, worsening with screen
+  // width. Measured before the fix: 4.07pt at 375pt, 4.67pt at 430pt.
+  //
+  // This is the THIRD instance of this bug class on this branch. The
+  // first was the slot-maths drift this file was created to fix; the
+  // second was the 28.4pt mixed-units regression the ScreenUtil pass
+  // introduced. Each time, the tests held isOpponent constant -- which
+  // is exactly the axis the asymmetry lives on.
+  final cover =
+      (coverWidth ?? kPaintBallCoverWidth) *
+      (splat.isMine ? 1 : kPaintBallTargetScale);
   // PaintSplat.position is a bare int off the wire with no validation,
   // so a stale or malformed round can carry 3 or -1. Clamping keeps a
   // bad row on the field instead of drawing off it.

@@ -3,7 +3,11 @@ import 'package:attune/features/games/paint_ball/presentation/widgets/field/fiel
 import 'package:attune/features/games/paint_ball/presentation/widgets/field/field_paint.dart';
 import 'package:attune/features/games/paint_ball/presentation/widgets/field/paint_ball_field_keys.dart';
 import 'package:attune/features/games/paint_ball/presentation/widgets/paint_ball_field.dart'
-    show PaintSplat, kPaintBallCoverWidth, kPaintBallPositions;
+    show
+        PaintSplat,
+        kPaintBallCoverWidth,
+        kPaintBallPositions,
+        kPaintBallTargetScale;
 import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -66,6 +70,52 @@ void main() {
                 'at width $rowWidth a hit on cover $position must land on '
                 'that cover, not on a notional slot centre',
           );
+        }
+      }
+    });
+
+    test('BOTH rows land on their own cover, at every width', () {
+      // The finding the final review caught, and the third instance of
+      // this bug class on this branch. Every earlier column assertion
+      // held isOpponent constant -- which is precisely the axis the
+      // asymmetry lives on, because the opponent's bays are scaled by
+      // kPaintBallTargetScale.
+      //
+      // Measured before the fix: 4.07pt off at 375pt, 4.67pt at 430pt,
+      // on positions 0 and 2. Position 1 drift is exactly zero, so the
+      // one combination every previous test used was the one where the
+      // bug is invisible twice over.
+      for (final isMine in [true, false]) {
+        for (final rowWidth in [360.0, 375.0, 430.0]) {
+          final cover =
+              kPaintBallCoverWidth * (isMine ? 1 : kPaintBallTargetScale);
+
+          for (var position = 0; position < kPaintBallPositions; position++) {
+            final expected = figureCentreX(
+              rowWidth: rowWidth,
+              coverWidth: cover,
+              column: position.toDouble(),
+            );
+
+            final centre = splatCentre(
+              splat: PaintSplat(
+                position: position,
+                isMine: isMine,
+                hit: true,
+                round: 1,
+              ),
+              size: Size(rowWidth, 400),
+              rowWidth: rowWidth,
+            );
+
+            expect(
+              centre.dx,
+              closeTo(expected, 0.001),
+              reason:
+                  '${isMine ? "your" : "their"} row at ${rowWidth.toInt()}pt, '
+                  'cover $position: paint must land on the cover it hit',
+            );
+          }
         }
       }
     });

@@ -1,6 +1,7 @@
 import 'dart:ui';
 
 import 'package:attune/core/ui/neon/neon_quality.dart';
+import 'package:attune/core/ui/neon/neon_tokens.dart';
 import 'package:attune/features/games/session_games/data/models/session_game_question.dart';
 import 'package:attune/features/games/sliding_scale/presentation/screens/sliding_scale_question_screen.dart';
 import 'package:attune/features/games/sliding_scale/presentation/widgets/sliding_scale_track.dart';
@@ -141,6 +142,54 @@ void main() {
       scaleLow: 'Not at all',
       scaleHigh: 'Completely',
     );
+
+    testWidgets('the track carries its own ground in BOTH themes', (
+      tester,
+    ) async {
+      // Found by the final review. The session games follow the app's
+      // brightness -- SessionGamePalette.of branches on it and the light
+      // canvas is #F8F6F2 -- while these hues are dark-only. Without its
+      // own ground the spectrum this widget exists to show would be
+      // close to invisible in light mode.
+      for (final brightness in [Brightness.dark, Brightness.light]) {
+        await tester.pumpWidget(
+          MaterialApp(
+            theme: ThemeData(brightness: brightness),
+            home: Scaffold(
+              body: SlidingScaleQuestionScreen(
+                question: question(),
+                onSubmit: (_) {},
+              ),
+            ),
+          ),
+        );
+        await tester.pump();
+
+        final grounds =
+            tester
+                .widgetList<DecoratedBox>(
+                  find.descendant(
+                    of: find.byType(SlidingScaleTrack),
+                    matching: find.byType(DecoratedBox),
+                    matchRoot: true,
+                  ),
+                )
+                .map((widget) => widget.decoration)
+                .whereType<BoxDecoration>()
+                .toList();
+
+        expect(
+          grounds,
+          isNotEmpty,
+          reason: 'a positive control, in $brightness',
+        );
+        expect(
+          grounds.any((d) => d.color == NeonTokens.groundColor),
+          isTrue,
+          reason: 'the track paints its own near-black ground in $brightness',
+        );
+      }
+    });
 
     testWidgets('it shows the spectrum, not just a slider', (tester) async {
       // The point of this task: Sliding Scale is literally a gradient

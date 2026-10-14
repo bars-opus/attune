@@ -13,8 +13,21 @@ class _RecordingCanvas implements Canvas {
   @override
   void drawPath(Path path, Paint paint) => drawnPaths.add(paint);
 
+  /// Every canvas call this recorder does NOT model.
+  ///
+  /// The cost contracts here are the branch's only evidence for the
+  /// §6.10 tier saving, and they work by counting draw calls -- so a
+  /// future implementation that reached for saveLayer, clipPath or a
+  /// transform would satisfy the count while costing more. Recording
+  /// the unmodelled calls turns a contract that can be bypassed into
+  /// one that cannot.
+  final unmodelled = <String>[];
+
   @override
-  noSuchMethod(Invocation invocation) => null;
+  noSuchMethod(Invocation invocation) {
+    unmodelled.add(invocation.memberName.toString());
+    return null;
+  }
 }
 
 void main() {
@@ -130,6 +143,24 @@ void main() {
       canvas.drawnPaths.last.color.a,
       1.0,
       reason: 'the core takes the clamped value, not 1.4',
+    );
+  });
+
+  test('the cost contract counts every call, not just drawPath', () {
+    // The tier saving is evidenced by counting draw calls, so a future
+    // halo built on saveLayer or clipPath would satisfy the count while
+    // costing more. This asserts the painter reaches for nothing the
+    // recorder does not model.
+    final canvas = _RecordingCanvas();
+    paintGlowPath(canvas, path, spec, NeonQuality.rich.haloPasses);
+
+    expect(canvas.drawnPaths, isNotEmpty, reason: 'a positive control');
+    expect(
+      canvas.unmodelled,
+      isEmpty,
+      reason:
+          'paintGlowPath used a canvas call the cost contract cannot see: '
+          '${canvas.unmodelled}',
     );
   });
 

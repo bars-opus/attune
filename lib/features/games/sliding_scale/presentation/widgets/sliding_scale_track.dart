@@ -44,13 +44,30 @@ class SlidingScaleTrack extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return CustomPaint(
-      size: const Size(double.infinity, 48),
-      painter: SlidingScaleTrackPainter(
-        fraction: fraction,
-        lowColor: lowColor,
-        highColor: highColor,
-        quality: neonQualityOf(context),
+    // The track carries its own near-black ground, for the same reason
+    // LightWell does on the Paint Ball field: these hues are DARK ONLY
+    // (GamePalette's own doc says "a palette that has to survive a white
+    // background ends up muted"), and the session games DO follow the
+    // app's brightness -- SessionGamePalette.of branches on it and the
+    // light canvas is #F8F6F2.
+    //
+    // Found by the final review: without this, a light-mode player sees
+    // the unlit span at alpha 0.25 on near-white, with halo passes
+    // dimmer still. The spectrum this widget exists to SHOW would be
+    // close to invisible in half the app's themes.
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: NeonTokens.groundColor,
+        borderRadius: BorderRadius.circular(14),
+      ),
+      child: CustomPaint(
+        size: const Size(double.infinity, 48),
+        painter: SlidingScaleTrackPainter(
+          fraction: fraction,
+          lowColor: lowColor,
+          highColor: highColor,
+          quality: neonQualityOf(context),
+        ),
       ),
     );
   }

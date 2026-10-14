@@ -210,6 +210,38 @@ void main() {
     );
   });
 
+  testWidgets('on a wider phone, where scale bugs live', (tester) async {
+    // The final review's point: pinning every frame to 375x812 fixed a
+    // funhouse mirror but closed the only eye that could see a
+    // scale-dependent defect -- and that is exactly the family of bug
+    // this work kept producing. One frame at 430pt re-opens it.
+    tester.view.physicalSize = const Size(430, 932);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+
+    await tester.pumpWidget(
+      host(
+        const PaintBallField(
+          splats: [
+            PaintSplat(position: 0, isMine: false, hit: true, round: 3),
+            PaintSplat(position: 2, isMine: true, hit: true, round: 3),
+          ],
+          myPosition: 2,
+          selectedShot: 0,
+          revealedPartnerPosition: 0,
+          isMyTurn: true,
+          partnerName: 'Ama',
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await expectLater(
+      find.byType(PaintBallField),
+      matchesGoldenFile('goldens/paint_ball_field_wide.png'),
+    );
+  });
+
   testWidgets('under reduce motion', (tester) async {
     await onPhone(tester);
     await tester.pumpWidget(
