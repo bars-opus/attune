@@ -1,5 +1,6 @@
 // lib/features/forums/presentation/screens/forum_insight_screen.dart
 
+import 'package:attune/core/utils/date_formatter.dart';
 import 'package:attune/app/theme/design_tokens.dart';
 import 'package:attune/app/theme/app_theme.dart';
 import 'package:attune/core/polls/data/models/poll_model.dart';
@@ -171,7 +172,7 @@ class ForumInsightScreen extends ConsumerWidget {
       children: [
         _buildInsightRow(
           'Started',
-          '${_formatDate(topic.createdAt)} · $daysOld d ago',
+          MyDateFormat.join([_formatDate(topic.createdAt), '$daysOld d ago']),
           Icons.calendar_today,
           colorScheme,
           textTheme,

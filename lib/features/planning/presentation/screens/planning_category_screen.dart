@@ -1,3 +1,4 @@
+import 'package:attune/core/utils/date_formatter.dart';
 import 'package:attune/core/notes/note_section.dart';
 import 'package:attune/core/widgets/bottom_sheet_header.dart';
 import 'package:attune/core/utils/bottom_sheet_utils.dart';
@@ -578,7 +579,7 @@ class _EntryTile extends ConsumerWidget {
               vertical: Spacing.xs,
             ),
             title: entry.title,
-            subtitle: parts.join('  '),
+            subtitle: MyDateFormat.join(parts),
             titleMaxLines: 1,
             subTitleMaxLines: 1,
             showDivider: !last,

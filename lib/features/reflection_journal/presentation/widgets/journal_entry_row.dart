@@ -107,7 +107,6 @@ class JournalEntryRow extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final subtitle = [noteRowDate(entry.createdAt, now), if (entry.snippet.isNotEmpty) entry.snippet].join('  ');
     return Dismissible(
       key: ValueKey('journal-${entry.id}'),
       background: _swipeBackground(context, delete: true),
@@ -132,8 +131,9 @@ class JournalEntryRow extends ConsumerWidget {
             avatarRadius: 0,
             iconSize: 0,
             padding: const EdgeInsets.symmetric(horizontal: Spacing.md, vertical: Spacing.xs),
-            title: entry.displayTitle(),
-            subtitle: subtitle,
+            // Title on top, one date underneath — as a note's row.
+            title: entry.displayTitle,
+            subtitle: noteRowDate(entry.createdAt, now),
             titleMaxLines: 1,
             subTitleMaxLines: 1,
             showDivider: !last,

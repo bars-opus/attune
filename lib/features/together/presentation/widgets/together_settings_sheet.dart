@@ -10,6 +10,7 @@ import '../../domain/together_overlay.dart';
 import '../../domain/together_prefs.dart';
 import '../together_providers.dart';
 import 'calendar_feed_sheet.dart';
+import 'together_settings_skeleton.dart';
 
 /// What Together may send me. Each switch saves straight away.
 Future<void> showTogetherSettingsSheet(
@@ -197,11 +198,10 @@ class _TogetherSettingsSheetState
       body: ListView(
         children: [
           const BottomSheetHeader(title: 'Together settings'),
+          AppDivider(),
           if (prefs == null)
-            const Padding(
-              padding: EdgeInsets.all(Spacing.lg),
-              child: Center(child: CircularProgressIndicator()),
-            )
+            // Morning summary and big days, while they load.
+            const TogetherSettingsSkeleton(rows: 2)
           else ...[
             InfoRowWidget(
               title: 'Morning summary',
@@ -249,11 +249,8 @@ class _TogetherSettingsSheetState
             ),
           ),
           overlay.when(
-            loading:
-                () => const Padding(
-                  padding: EdgeInsets.all(Spacing.md),
-                  child: Center(child: CircularProgressIndicator()),
-                ),
+            // The three Free time together choices, while they load.
+            loading: () => const TogetherSettingsSkeleton(rows: 3),
             error:
                 (_, __) => InfoRowWidget(
                   title: "Couldn't load this",
@@ -278,7 +275,16 @@ class _TogetherSettingsSheetState
                       RadioListTile<OverlayLevel>(
                         value: value,
                         groupValue: level,
-                        title: Text(title),
+                        // The same type as the sheet's other rows
+                        // (InfoRowWidget's title), not ListTile's larger one.
+                        title: Text(
+                          title,
+                          style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                            fontSize: 14.sp,
+                            fontWeight: FontWeight.w500,
+                            color: Theme.of(context).colorScheme.onSurface,
+                          ),
+                        ),
                         onChanged:
                             _overlayBusy ? null : (v) => _setOverlay(v!, level),
                       ),
@@ -362,10 +368,8 @@ class _TogetherSettingsSheetState
               onTap: () => ref.invalidate(togetherCalendarFeedProvider),
             )
           else if (feed == null)
-            const Padding(
-              padding: EdgeInsets.all(Spacing.md),
-              child: Center(child: CircularProgressIndicator()),
-            )
+            // The calendar link's row, while its status loads.
+            const TogetherSettingsSkeleton(rows: 1)
           else if (feed.active) ...[
             InfoRowWidget(
               title: 'Together is in your calendar app',

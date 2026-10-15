@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart' show DateUtils;
+import 'package:attune/core/utils/date_formatter.dart';
 import 'package:intl/intl.dart';
 
 /// Apple Notes-style groups: Today, Yesterday, Previous 7 Days, Previous 30
@@ -34,13 +35,13 @@ List<({String title, List<T> items})> noteDateSections<T>(
   return [for (final k in keys) (title: k, items: groups[k]!)];
 }
 
-/// The date on a row: the time today, "Yesterday", the weekday this week,
-/// else the short date.
+/// The date on a row, in the app's own format ([MyDateFormat]): the time
+/// today, "Yesterday", the weekday this week, else the full date.
 String noteRowDate(DateTime at, DateTime now) {
   final local = at.toLocal();
   final days = DateUtils.dateOnly(now).difference(DateUtils.dateOnly(local)).inDays;
-  if (days <= 0) return DateFormat.jm().format(local);
+  if (days <= 0) return MyDateFormat.toTime(local);
   if (days == 1) return 'Yesterday';
   if (days <= 7) return DateFormat.EEEE().format(local);
-  return DateFormat.yMd().format(local);
+  return MyDateFormat.toDate(local);
 }

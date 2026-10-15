@@ -1,8 +1,9 @@
+import 'package:attune/core/providers/couple_name_provider.dart';
 import 'package:attune/core/widgets/info_row_widget.dart';
 import 'package:attune/features/pulse/data/models/pulse_score.dart';
 import 'package:attune/features/pulse/presentation/screens/pulse_screen.dart';
 import 'package:attune/features/pulse/providers/pulse_providers.dart'
-    show currentPulseScoreProvider, pulseHistoryProvider;
+    show currentPulseScoreProvider, currentRelationshipIdProvider, pulseHistoryProvider;
 import 'package:attune/features/quiz/presentation/providers/quiz_providers.dart'
     show bothPartnersSharedProvider;
 import 'package:flutter/material.dart';
@@ -94,12 +95,15 @@ void main() {
     WidgetTester tester, {
     PulseScore? pulse,
     bool bothSharedQuiz = false,
+    String? coupleName,
   }) async {
     final container = ProviderContainer(
       overrides: [
         currentPulseScoreProvider.overrideWith((ref) async => pulse),
         pulseHistoryProvider.overrideWith((ref) async => const []),
         bothPartnersSharedProvider.overrideWith((ref) async => bothSharedQuiz),
+        currentRelationshipIdProvider.overrideWith((ref) async => 'r1'),
+        coupleNameProvider.overrideWith((ref, id) async => coupleName),
       ],
     );
     addTearDown(container.dispose);
@@ -132,6 +136,18 @@ void main() {
       tester.view.resetDevicePixelRatio();
     });
   }
+
+  testWidgets('relationship tips are for the couple, by their chosen name', (tester) async {
+    await pumpWithPulse(tester, pulse: pulseScore(overall: 72), coupleName: 'The Harolds');
+    await tester.pumpAndSettle();
+    expect(find.text('Ideas curated for The Harolds', skipOffstage: false), findsOneWidget);
+  });
+
+  testWidgets('relationship tips say couples until a name is chosen', (tester) async {
+    await pumpWithPulse(tester, pulse: pulseScore(overall: 72));
+    await tester.pumpAndSettle();
+    expect(find.text('Ideas curated for couples', skipOffstage: false), findsOneWidget);
+  });
 
   testWidgets('renders the Relationship Center panel heading', (
     tester,

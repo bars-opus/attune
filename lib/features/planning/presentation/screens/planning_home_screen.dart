@@ -1,3 +1,4 @@
+import 'package:attune/core/providers/couple_name_provider.dart';
 import 'package:attune/app/theme/design_tokens.dart';
 import 'package:attune/core/utils/exports/export_screens.dart';
 import 'package:attune/core/widgets/app_tabs.dart';
@@ -124,8 +125,12 @@ class _PlanningHomeScreenState extends ConsumerState<PlanningHomeScreen> {
       appBar: AppBar(
         centerTitle: false,
         backgroundColor: Colors.transparent,
+        // The couple's journal, by their chosen name ("Couples journal"
+        // until they choose one).
         title: Text(
-          'Couples Journal',
+          coupleJournalTitle(
+            ref.watch(coupleNameProvider(widget.relationshipId)).valueOrNull,
+          ),
           style: textTheme.titleLarge?.copyWith(
             fontWeight: FontWeight.w600,
             color: colorScheme.onSurface.withOpacity(0.8),

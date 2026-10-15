@@ -1,5 +1,6 @@
 // lib/features/healing/presentation/screens/healing_pattern_awareness_screen.dart
 
+import 'package:attune/core/utils/date_formatter.dart';
 import 'package:attune/core/utils/exports/export_screens.dart';
 import 'package:attune/features/healing/data/models/healing_journey.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -223,7 +224,7 @@ class _HealingPatternAwarenessScreenState
               value: _getAttachmentDisplay(attachment),
               source:
                   attachment != null
-                      ? 'Based on your attachment quiz${_formatCompletedAt('attachment') != null ? ' • ${_formatCompletedAt('attachment')}' : ''}'
+                      ? 'Based on your attachment quiz${_formatCompletedAt('attachment') != null ? '${MyDateFormat.separator}${_formatCompletedAt('attachment')}' : ''}'
                       : 'Complete your attachment quiz for insights',
               colorScheme: colorScheme,
               textTheme: textTheme,
@@ -237,7 +238,7 @@ class _HealingPatternAwarenessScreenState
               value: _getCommunicationDisplay(communication),
               source:
                   communication != null
-                      ? 'Based on your communication quiz${_formatCompletedAt('communication') != null ? ' • ${_formatCompletedAt('communication')}' : ''}'
+                      ? 'Based on your communication quiz${_formatCompletedAt('communication') != null ? '${MyDateFormat.separator}${_formatCompletedAt('communication')}' : ''}'
                       : 'Complete your communication quiz for insights',
               colorScheme: colorScheme,
               textTheme: textTheme,
@@ -251,7 +252,7 @@ class _HealingPatternAwarenessScreenState
               value: _getConflictDisplay(conflict),
               source:
                   conflict != null
-                      ? 'Based on your conflict quiz${_formatCompletedAt('conflict') != null ? ' • ${_formatCompletedAt('conflict')}' : ''}'
+                      ? 'Based on your conflict quiz${_formatCompletedAt('conflict') != null ? '${MyDateFormat.separator}${_formatCompletedAt('conflict')}' : ''}'
                       : 'Complete your conflict quiz for insights',
               colorScheme: colorScheme,
               textTheme: textTheme,

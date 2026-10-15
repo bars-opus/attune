@@ -20,14 +20,17 @@ void main() {
     expect(find.text('Yesterday'), findsWidgets);
     expect(find.byType(NoteSection), findsNWidgets(3));
     expect(find.byType(InfoRowWidget), findsNWidgets(3));
-    expect(find.textContaining('Long day, good talk'), findsOneWidget); // the first words, in the row
   });
 
-  testWidgets('an untitled entry is called by its day', (t) async {
+  testWidgets('a row is its title on top and one date below, as in notes', (t) async {
     final repo = FakeJournalRepository(now: DateTime.now());
-    repo.addEntry(text: 'No title here', createdAt: DateTime(2026, 3, 3, 10));
+    repo.addEntry(title: 'Evening', text: 'Long day, good talk', createdAt: DateTime(2026, 3, 3, 10));
+    repo.addEntry(text: 'No title here', createdAt: DateTime(2026, 3, 2, 10));
     await pumpJournal(t, repo: repo);
-    expect(find.text('Tuesday, 3 March'), findsOneWidget);
+    final rows = t.widgetList<InfoRowWidget>(find.byType(InfoRowWidget)).toList();
+    expect(rows.map((r) => r.title), ['Evening', 'No title here']); // untitled: its first words
+    expect(rows.map((r) => r.subtitle), ['Tuesday, March 3, 2026', 'Monday, March 2, 2026']);
+    expect(find.textContaining('Long day, good talk'), findsNothing); // one date, nothing after it
   });
 
   testWidgets('swipe right deletes with Undo; swipe left pins', (t) async {

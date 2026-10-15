@@ -20,6 +20,21 @@ FakePlanningGateway _gateway() => FakePlanningGateway({
     });
 
 void main() {
+  testWidgets('the app bar is the couple\'s chosen name', (tester) async {
+    await tester.pumpWidget(
+      planningTestApp(_gateway(), const PlanningHomeScreen(relationshipId: 'r1'), coupleName: 'The Harolds'),
+    );
+    await tester.pumpAndSettle();
+    expect(find.descendant(of: find.byType(AppBar), matching: find.text("The Harolds' journal")), findsOneWidget);
+    expect(find.text('Couples Journal'), findsNothing);
+  });
+
+  testWidgets('until they choose a name, the app bar says Couples journal', (tester) async {
+    await tester.pumpWidget(planningTestApp(_gateway(), const PlanningHomeScreen(relationshipId: 'r1')));
+    await tester.pumpAndSettle();
+    expect(find.descendant(of: find.byType(AppBar), matching: find.text('Couples journal')), findsOneWidget);
+  });
+
   testWidgets('shows visible categories in order with counts and a labelled new dot', (tester) async {
     final semantics = tester.ensureSemantics();
     await tester.pumpWidget(planningTestApp(_gateway(), const PlanningHomeScreen(relationshipId: 'r1')));

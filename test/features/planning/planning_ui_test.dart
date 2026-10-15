@@ -64,7 +64,7 @@ void main() {
     expect(planningSummaryLine(PlanningSummary(kind: PlanningSummaryKind.overdue, entryId: 'e',
         title: 'Eggs', contextDate: DateTime(2026, 11, 8))), 'Eggs was due Nov 8');
     expect(planningSummaryLine(PlanningSummary(kind: PlanningSummaryKind.upcoming, entryId: 'e',
-        title: 'Bali', contextDate: DateTime(2026, 11, 28))), 'Bali · Nov 28');
+        title: 'Bali', contextDate: DateTime(2026, 11, 28))), 'Bali - Nov 28');
     expect(planningSummaryLine(const PlanningSummary(kind: PlanningSummaryKind.recent, entryId: 'e',
         title: 'Saturday shop', contextDate: null)), 'Saturday shop');
   });

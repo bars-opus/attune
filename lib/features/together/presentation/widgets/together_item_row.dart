@@ -1,3 +1,5 @@
+import 'package:attune/core/providers/couple_name_provider.dart';
+import 'package:attune/core/utils/date_formatter.dart';
 import 'package:attune/app/theme/design_tokens.dart';
 import 'package:attune/core/widgets/info_row_widget.dart';
 import 'package:flutter/material.dart';
@@ -5,10 +7,11 @@ import 'package:intl/intl.dart';
 
 import '../../domain/together_item.dart';
 
-String togetherWhoLabel(TogetherWho who, String partnerName) => switch (who) {
+String togetherWhoLabel(TogetherWho who, String partnerName, {String? coupleName}) => switch (who) {
   TogetherWho.me => 'You',
   TogetherWho.partner => partnerName,
-  TogetherWho.us => 'Both of you',
+  // The couple by the name they chose ("Couples" until they do).
+  TogetherWho.us => coupleLabel(coupleName),
 };
 
 /// One thing on the Agenda: what, when and whose, in the app's row style.
@@ -18,6 +21,7 @@ class TogetherItemRow extends StatelessWidget {
     required this.item,
     required this.me,
     required this.partnerName,
+    this.coupleName,
     this.last = false,
     this.lead,
     this.onTap,
@@ -26,6 +30,9 @@ class TogetherItemRow extends StatelessWidget {
   final TogetherItem item;
   final String? me;
   final String partnerName;
+
+  /// The couple's chosen name, for things that are both of theirs.
+  final String? coupleName;
 
   /// The last row in its card: no divider under it.
   final bool last;
@@ -92,7 +99,7 @@ class TogetherItemRow extends StatelessWidget {
       if (lead != null) lead!,
       _when,
       if (item.kind == TogetherItemKind.event && who != null && !_masked)
-        togetherWhoLabel(who, partnerName),
+        togetherWhoLabel(who, partnerName, coupleName: coupleName),
     ];
     final done =
         item.kind == TogetherItemKind.planningItem &&
@@ -113,7 +120,7 @@ class TogetherItemRow extends StatelessWidget {
                 color: colorScheme.onSurface.withValues(alpha: 0.6),
               )
               : null,
-      subtitle: parts.join(' · '),
+      subtitle: MyDateFormat.join(parts),
       titleMaxLines: 1,
       subTitleMaxLines: 1,
       showDivider: !last,

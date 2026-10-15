@@ -1,5 +1,6 @@
 // lib/features/pulse/presentation/screens/pulse_screen.dart
 
+import 'package:attune/core/providers/couple_name_provider.dart';
 import 'package:attune/core/utils/date_formatter.dart';
 import 'package:attune/core/utils/exports/export_screens.dart';
 import 'package:attune/features/pulse/data/models/pulse_score.dart';
@@ -569,6 +570,12 @@ class _PulseScreenState extends ConsumerState<PulseScreen>
 class _RelationshipCenterPanel extends ConsumerWidget {
   const _RelationshipCenterPanel();
 
+  /// The couple's chosen name, once the relationship and its name are known.
+  String? _coupleName(WidgetRef ref) {
+    final id = ref.watch(currentRelationshipIdProvider).valueOrNull;
+    return id == null ? null : ref.watch(coupleNameProvider(id)).valueOrNull;
+  }
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final colorScheme = Theme.of(context).colorScheme;
@@ -609,7 +616,9 @@ class _RelationshipCenterPanel extends ConsumerWidget {
           ),
           InfoRowWidget(
             title: 'Relationship tips',
-            subtitle: 'Ideas curated for you two',
+            // The couple by their chosen name ("couples" until then).
+            subtitle:
+                'Ideas curated for ${coupleInSentence(_coupleName(ref))}',
             icon: Icons.lightbulb_outline,
             iconColor: colorScheme.warning,
             circularRadius: 10,

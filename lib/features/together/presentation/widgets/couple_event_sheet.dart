@@ -1,3 +1,4 @@
+import 'package:attune/core/providers/couple_name_provider.dart';
 import 'package:attune/core/utils/exports/export_screens.dart';
 import 'package:attune/features/quiz/presentation/providers/quiz_providers.dart'
     as quiz_providers;
@@ -522,6 +523,9 @@ class _CoupleEventSheetState extends ConsumerState<_CoupleEventSheet> {
     }
     final partnerName =
         ref.watch(quiz_providers.partnerNameProvider).valueOrNull ?? 'Partner';
+    final coupleName = coupleLabel(
+      ref.watch(coupleNameProvider(widget.relationshipId)).valueOrNull,
+    );
     final item = widget.item;
     final mine = item == null || item.createdBy == me;
     // A ritual's week is skipped rather than deleted or left (Phase 3
@@ -689,9 +693,10 @@ class _CoupleEventSheetState extends ConsumerState<_CoupleEventSheet> {
               child: SegmentedButton<_Who>(
                 showSelectedIcon: false,
                 segments: [
-                  const ButtonSegment(
+                  // The couple by their chosen name ("Couples" until then).
+                  ButtonSegment(
                     value: _Who.both,
-                    label: Text('Both of us'),
+                    label: Text(coupleName, maxLines: 1, overflow: TextOverflow.ellipsis),
                   ),
                   const ButtonSegment(value: _Who.me, label: Text('Me')),
                   ButtonSegment(value: _Who.partner, label: Text(partnerName)),

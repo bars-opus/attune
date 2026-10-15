@@ -1,3 +1,6 @@
+import 'package:attune/features/reminders/presentation/screens/family_members_screen.dart';
+import 'package:attune/core/providers/couple_name_provider.dart';
+import 'package:attune/core/utils/date_formatter.dart';
 import 'package:attune/core/utils/exports/export_screens.dart';
 import 'package:attune/features/planning/presentation/planning_ui.dart'
     show planningRoute;
@@ -220,7 +223,7 @@ class _TogetherScreenState extends ConsumerState<TogetherScreen> {
         Icons.check_box_outline_blank_rounded,
         n.dueDate == null
             ? 'Nobody has this yet'
-            : 'Nobody has this yet · due ${DateFormat.MMMEd().format(n.dueDate!)}',
+            : MyDateFormat.join(['Nobody has this yet', 'due ${DateFormat.MMMEd().format(n.dueDate!)}']),
       ),
       TogetherNeedKind.poll => (
         Icons.date_range_outlined,
@@ -342,7 +345,7 @@ class _TogetherScreenState extends ConsumerState<TogetherScreen> {
     ),
     icon: Icons.history_rounded,
     title: i.title,
-    subtitle: 'On this day · ${i.lead}',
+    subtitle: MyDateFormat.join(['On this day', i.lead]),
     titleMaxLines: 1,
     subTitleMaxLines: 1,
     showDivider: true,
@@ -377,7 +380,7 @@ class _TogetherScreenState extends ConsumerState<TogetherScreen> {
       title:
           today
               ? 'Both free $time'
-              : '${DateFormat.MMMEd().format(w.start)} · $time',
+              : MyDateFormat.join([DateFormat.MMMEd().format(w.start), time]),
       subtitle:
           w.partnerDiffers
               ? "That's ${w.partnerFrom}–${w.partnerTo} for $partnerName"
@@ -458,7 +461,7 @@ class _TogetherScreenState extends ConsumerState<TogetherScreen> {
       RitualStatus.active =>
         next == null
             ? r.when
-            : 'Next: ${DateFormat.MMMEd().format(next)} · ${DateFormat.jm().format(next)}',
+            : 'Next: ${MyDateFormat.join([DateFormat.MMMEd().format(next), DateFormat.jm().format(next)])}',
     };
     return InfoRowWidget(
       padding: const EdgeInsets.symmetric(
@@ -502,6 +505,7 @@ class _TogetherScreenState extends ConsumerState<TogetherScreen> {
         item: items[i],
         me: me,
         partnerName: partnerName,
+        coupleName: ref.watch(coupleNameProvider(relationshipId)).valueOrNull,
         last: i == items.length - 1,
         lead: lead?.call(items[i]),
         onTap: () => _open(items[i], relationshipId),
@@ -933,25 +937,34 @@ class _TogetherScreenState extends ConsumerState<TogetherScreen> {
               onSelectionChanged: (s) => setState(() => _view = s.first),
             ),
           ),
-          IconButton(
-            tooltip: 'Together settings',
-            icon: const Icon(Icons.tune_rounded),
-            onPressed:
-                relationshipId == null
-                    ? null
-                    : () => showTogetherSettingsSheet(context, relationshipId),
-          ),
         ],
       ),
+    );
+    // The hub's own heading, the same on its own screen and in Planning's
+    // Calendar tab: name and a line of welcome, settings and family.
+    final header = _TogetherHeader(
+      onSettings:
+          relationshipId == null
+              ? null
+              : () => showTogetherSettingsSheet(context, relationshipId),
     );
     // Loading, no couple to show, or the hub itself.
     final body =
         relationshipId == null
-            ? (relationshipAsync.isLoading
-                ? const PlanningEntriesSkeleton(label: 'Loading your plans')
-                : const Center(child: Text('No active relationship found')))
+            ? Column(
+              children: [
+                header,
+                Expanded(
+                  child:
+                      relationshipAsync.isLoading
+                          ? const PlanningEntriesSkeleton(label: 'Loading your plans')
+                          : const Center(child: Text('No active relationship found')),
+                ),
+              ],
+            )
             : Column(
               children: [
+                header,
                 toggle,
                 Expanded(
                   child:
@@ -968,16 +981,8 @@ class _TogetherScreenState extends ConsumerState<TogetherScreen> {
       appBar:
           widget.embedded
               ? null
-              : AppBar(
-                title: const Text('Together'),
-                actions: [
-                  AppIconButton(
-                    icon: Icons.people_outline,
-                    tooltip: 'Family',
-                    onPressed: () => context.pushNamed('familyMembers'),
-                  ),
-                ],
-              ),
+              // Just the way back: the name and actions sit in the header.
+              : AppBar(),
       floatingActionButton:
           relationshipId == null || _view == _View.month
               ? null
@@ -987,6 +992,69 @@ class _TogetherScreenState extends ConsumerState<TogetherScreen> {
                 onPressed: () => _add(relationshipId),
               ),
       body: body,
+    );
+  }
+}
+
+/// The line under "Together" in its header.
+const togetherTagline =
+    'Your plans, rituals and moments, side by side. A journey through time.';
+
+/// "Together" with its line of welcome on the left; family, then settings
+/// at the far end, on the right. Sits above the Agenda/Month tabs.
+class _TogetherHeader extends StatelessWidget {
+  const _TogetherHeader({required this.onSettings});
+
+  /// Null until the couple is known (settings belong to a relationship).
+  final VoidCallback? onSettings;
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final textTheme = Theme.of(context).textTheme;
+    return Padding(
+      padding: EdgeInsets.fromLTRB(Spacing.md.w, Spacing.sm, Spacing.sm.w, 0),
+      child: Row(
+        children: [
+          Expanded(
+            child: Semantics(
+              header: true,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    'Together',
+                    style: textTheme.titleLarge?.copyWith(
+                      fontWeight: FontWeight.w600,
+                      color: colorScheme.onSurface.withValues(alpha: 0.8),
+                    ),
+                  ),
+                  const Gap(2),
+                  Text(
+                    togetherTagline,
+                    style: textTheme.bodySmall?.copyWith(
+                      color: colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const Gap(Spacing.md), // room between the words and the icons
+          AppIconButton(
+            icon: Icons.people_outline,
+            tooltip: 'Family',
+            onPressed: () => showFamilySheet(context),
+          ),
+          const Gap(Spacing.xs),
+          AppIconButton(
+            icon: Icons.tune_rounded,
+            tooltip: 'Together settings',
+            onPressed: onSettings,
+          ),
+        ],
+      ),
     );
   }
 }

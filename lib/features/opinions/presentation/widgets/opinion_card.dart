@@ -1,5 +1,6 @@
 // lib/features/opinions/presentation/widgets/opinion_card.dart
 
+import 'package:attune/core/utils/date_formatter.dart';
 import 'package:attune/core/utils/exports/export_screens.dart';
 import 'package:attune/core/utils/relationship_status_display.dart';
 import 'package:attune/core/utils/relative_time.dart';
@@ -83,12 +84,12 @@ class OpinionCard extends ConsumerWidget {
     // followed author, is the sole reason), which is exactly the kind of
     // quiet provenance note this line already carries. Only ever non-null
     // on a Following-tab card, so this is a no-op everywhere else.
-    final timeAgo =
-        formatTimeAgo(opinion.createdAt) +
-        (opinion.editedAt != null ? ' · edited' : '') +
-        (opinion.matchedTagSlug != null
-            ? ' · #${opinion.matchedTagSlug} · followed'
-            : '');
+    final timeAgo = MyDateFormat.join([
+      formatTimeAgo(opinion.createdAt),
+      if (opinion.editedAt != null) 'edited',
+      if (opinion.matchedTagSlug != null) '#${opinion.matchedTagSlug}',
+      if (opinion.matchedTagSlug != null) 'followed',
+    ]);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,

@@ -18,10 +18,10 @@ void main() {
     expect(s.first.items.single.name, 'today');
   });
 
-  test('row dates: time today, Yesterday, weekday this week, else the date', () {
-    expect(noteRowDate(DateTime(2026, 11, 20, 9, 5), now), contains('9:05'));
+  test('row dates in the app\'s own format: time today, Yesterday, weekday this week, else the full date', () {
+    expect(noteRowDate(DateTime(2026, 11, 20, 9, 5), now), '09:05 AM');
     expect(noteRowDate(DateTime(2026, 11, 19, 9), now), 'Yesterday');
     expect(noteRowDate(DateTime(2026, 11, 16, 9), now), 'Monday');
-    expect(noteRowDate(DateTime(2026, 10, 2, 9), now), '10/2/2026');
+    expect(noteRowDate(DateTime(2026, 10, 2, 9), now), 'Friday, October 2, 2026');
   });
 }

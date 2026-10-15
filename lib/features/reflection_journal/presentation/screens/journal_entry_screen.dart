@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:typed_data';
 
+import 'package:attune/core/utils/date_formatter.dart';
 import 'package:attune/core/utils/exports/export_screens.dart';
 import 'package:attune/features/planning/domain/code_point_limit.dart';
 import 'package:attune/features/planning/domain/delta_sanitizer.dart';
@@ -11,7 +12,6 @@ import 'package:attune/features/planning/presentation/widgets/planning_doc_scope
 import 'package:attune/features/planning/presentation/widgets/planning_ribbon.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
-import 'package:intl/intl.dart';
 
 import '../../data/models/journal_note.dart';
 import '../../data/repositories/reflection_journal_repository.dart';
@@ -392,7 +392,7 @@ class _TitleFieldState extends ConsumerState<_TitleField> {
       inputFormatters: [CodePointLengthFormatter(120)],
       maxLines: null,
       decoration: InputDecoration(
-        hintText: DateFormat('EEEE, d MMMM').format(widget.detail.entry.createdAt.toLocal()),
+        hintText: MyDateFormat.toDate(widget.detail.entry.createdAt.toLocal()),
         filled: false,
         fillColor: Colors.transparent,
         border: InputBorder.none,

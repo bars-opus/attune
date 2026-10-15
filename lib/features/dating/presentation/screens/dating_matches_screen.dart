@@ -1,3 +1,4 @@
+import 'package:attune/core/utils/date_formatter.dart';
 import 'package:attune/core/ui/motion/glow_pulse.dart';
 import 'package:attune/core/ui/motion/settle_in.dart';
 import 'package:attune/core/utils/exports/export_screens.dart';
@@ -135,12 +136,12 @@ class DatingMatchesScreen extends ConsumerWidget {
                     children: [
                       Text(displayName, style: textTheme.titleMedium),
                       Text(
-                        [
+                        MyDateFormat.join([
                           if (cityRegionCode != null &&
                               cityRegionCode.isNotEmpty)
                             cityRegionCode,
                           'Matched ${_formatDate(DateTime.parse(match['matched_at'] as String))}',
-                        ].join(' • '),
+                        ]),
                         style: textTheme.bodySmall?.copyWith(
                           color: colorScheme.onSurface.withValues(alpha: 0.5),
                         ),

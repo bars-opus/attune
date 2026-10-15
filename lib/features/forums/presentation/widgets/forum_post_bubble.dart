@@ -1,5 +1,6 @@
 // lib/features/forums/presentation/widgets/forum_post_bubble.dart
 
+import 'package:attune/core/utils/date_formatter.dart';
 import 'dart:async';
 
 import 'package:attune/core/utils/exports/export_screens.dart';
@@ -151,9 +152,10 @@ class _ForumPostBubbleState extends ConsumerState<ForumPostBubble> {
     // (FORUM.md §7 "Editing"): rides on the timestamp, muted, no history.
     // Live now that `public_forum_posts` projects `edited_at`
     // (20260730140000_forum_post_edit_view_columns.sql).
-    final timeAgo =
-        formatTimeAgo(post.createdAt) +
-        (post.editedAt != null ? ' · edited' : '');
+    final timeAgo = MyDateFormat.join([
+      formatTimeAgo(post.createdAt),
+      if (post.editedAt != null) 'edited',
+    ]);
 
     return UniversalBubble(
       isMine: isMine,

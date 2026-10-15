@@ -1,6 +1,14 @@
 import 'package:intl/intl.dart';
 
 class MyDateFormat {
+  /// Between a date and anything shown with it on the same line, e.g.
+  /// "Tuesday, October 4, 2026 - 0 of 4 done".
+  static const String separator = ' - ';
+
+  /// Joins a date with its details using [separator]; empty parts drop out.
+  static String join(Iterable<String> parts) =>
+      parts.where((p) => p.trim().isNotEmpty).join(separator);
+
   static String toDate(DateTime dateTime) {
     final date = DateFormat.yMMMMEEEEd().format(dateTime);
     return '$date';

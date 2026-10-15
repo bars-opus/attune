@@ -1,3 +1,4 @@
+import 'package:attune/core/utils/date_formatter.dart';
 import 'dart:typed_data';
 
 import 'package:attune/features/auth/providers/auth_provider.dart';
@@ -545,7 +546,7 @@ class _MappingCard extends StatelessWidget {
             if (parsed != null) ...[
               const SizedBox(height: 12),
               Text(
-                '${parsed!.messages.length} text messages • ${parsed!.firstMessageAt.toLocal().toString().split(' ').first} to ${parsed!.lastMessageAt.toLocal().toString().split(' ').first}',
+                MyDateFormat.join(['${parsed!.messages.length} text messages', '${parsed!.firstMessageAt.toLocal().toString().split(' ').first} to ${parsed!.lastMessageAt.toLocal().toString().split(' ').first}']),
               ),
               const SizedBox(height: 12),
               ...parsed!.participantLabels.map(

@@ -1,3 +1,4 @@
+import 'package:attune/core/providers/couple_name_provider.dart';
 import 'package:attune/features/quiz/presentation/providers/quiz_providers.dart'
     as quiz;
 import 'package:attune/features/together/data/calendar_exporter.dart';
@@ -81,6 +82,7 @@ Future<FakeTogetherGateway> _open(
           (ref) async => 'Africa/Accra',
         ),
         quiz.partnerNameProvider.overrideWith((ref) async => 'Kofi'),
+        coupleNameProvider.overrideWith((ref, id) async => 'The Harolds'),
       ],
       child: ScreenUtilInit(
         designSize: const Size(375, 812),
@@ -134,6 +136,15 @@ TogetherItem _item({
 });
 
 void main() {
+  testWidgets('who it\'s for names the couple by their chosen name', (t) async {
+    await _open(t);
+    expect(
+      find.descendant(of: find.byWidgetPredicate((w) => w is SegmentedButton), matching: find.text('The Harolds')),
+      findsOneWidget,
+    );
+    expect(find.text('Both of us'), findsNothing);
+  });
+
   testWidgets(
     'a new event for both of us is created and confirmed behind the sheet',
     (t) async {
@@ -241,6 +252,10 @@ void main() {
       200,
       scrollable: find.byType(Scrollable).first,
     );
+    // The 200-point steps can stop with the button just past the sheet's
+    // edge: bring it fully into view before tapping.
+    await t.ensureVisible(find.text('Add to my calendar'));
+    await t.pumpAndSettle();
     await t.tap(find.text('Add to my calendar'));
     await t.pumpAndSettle();
     expect(exporter.added.single.title, 'Dinner');

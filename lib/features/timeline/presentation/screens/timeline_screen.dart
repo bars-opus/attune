@@ -1,5 +1,6 @@
 // lib/features/timeline/presentation/screens/timeline_screen.dart
 
+import 'package:attune/features/reminders/presentation/screens/family_members_screen.dart';
 import 'package:attune/core/utils/exports/export_screens.dart';
 import 'package:attune/features/planning/data/planning_models.dart';
 import 'package:attune/features/planning/presentation/planning_providers.dart'
@@ -169,7 +170,7 @@ class _TimelineScreenState extends ConsumerState<TimelineScreen>
                       AppIconButton(
                         icon: Icons.people_outline,
                         tooltip: 'Family',
-                        onPressed: () => context.pushNamed('familyMembers'),
+                        onPressed: () => showFamilySheet(context),
                       ),
                     ],
                   )

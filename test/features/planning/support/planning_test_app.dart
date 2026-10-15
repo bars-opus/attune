@@ -1,3 +1,4 @@
+import 'package:attune/core/providers/couple_name_provider.dart';
 import 'package:attune/features/location/domain/partner_distance.dart';
 import 'package:attune/features/location/presentation/providers/presence_providers.dart';
 import 'package:attune/app/app.dart' show appLocalizationsDelegates;
@@ -28,8 +29,11 @@ List<Override> planningOverrides(
   FakePlanningMediaGateway? media,
   PartnerDistance? partner,
   String? deviceTimezone,
+  String? coupleName,
 }) =>
     [
+      // The couple's chosen name (null: none chosen yet).
+      coupleNameProvider.overrideWith((ref, relationshipId) async => coupleName),
       planningRepositoryProvider.overrideWithValue(PlanningRepository(gateway)),
       // The dual clock reads presence; Planning reports the device zone.
       partnerDistanceProvider.overrideWith((ref, relationshipId) => Stream.value(partner)),
@@ -60,9 +64,10 @@ Widget planningTestApp(
   Widget home, {
   MemoryOutboxStore? store,
   ThemeMode themeMode = ThemeMode.light,
+  String? coupleName,
 }) =>
     ProviderScope(
-      overrides: planningOverrides(gateway, store: store),
+      overrides: planningOverrides(gateway, store: store, coupleName: coupleName),
       // The app's shared widgets (ErrorStateWidget, CardInkWell, AppButton...)
       // size with flutter_screenutil, exactly as in the app.
       child: withScreenUtil(MaterialApp(

@@ -1,3 +1,4 @@
+import 'package:attune/core/utils/date_formatter.dart';
 import 'package:attune/core/notes/note_date_sections.dart';
 import 'package:attune/core/widgets/app_text_form_field.dart';
 import 'package:attune/app/theme/app_colors.dart';
@@ -228,7 +229,7 @@ String planningSummaryLine(PlanningSummary? summary) => switch (summary) {
   ) =>
     contextDate == null
         ? title
-        : '$title · ${DateFormat.MMMd().format(contextDate)}',
+        : MyDateFormat.join([title, DateFormat.MMMd().format(contextDate)]),
   PlanningSummary(:final title) => title,
 };
 

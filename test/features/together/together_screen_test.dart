@@ -1,3 +1,4 @@
+import 'package:attune/core/widgets/card_inkwell.dart';
 import 'dart:async';
 
 import 'package:attune/features/planning/presentation/planning_providers.dart';
@@ -5,6 +6,8 @@ import 'package:attune/features/quiz/presentation/providers/quiz_providers.dart'
     as quiz;
 import 'package:attune/features/timeline/presentation/providers/timeline_providers.dart'
     as timeline;
+import 'package:attune/core/providers/couple_name_provider.dart';
+import 'package:attune/core/widgets/app_divider.dart';
 import 'package:attune/features/together/data/together_repository.dart';
 import 'package:attune/features/together/presentation/screens/together_screen.dart';
 import 'package:attune/features/together/presentation/together_providers.dart';
@@ -64,6 +67,8 @@ Future<FakeTogetherGateway> _pump(
   List<Map<String, dynamic>> strips = const [],
   FakeLiveStore? live,
   FakeMirrorCalendar? mirror,
+  bool embedded = false,
+  String? coupleName,
 }) async {
   // Never the real lock-screen channel or phone calendar in tests.
   TogetherLiveActivity.store = live ?? FakeLiveStore();
@@ -99,6 +104,8 @@ Future<FakeTogetherGateway> _pump(
         togetherPartnerIdProvider.overrideWith((ref) async => 'kofi'),
         togetherDeviceTimezoneProvider.overrideWith((ref) async => 'UTC'),
         quiz.partnerNameProvider.overrideWith((ref) async => 'Kofi'),
+        coupleNameProvider.overrideWith((ref, id) async => coupleName),
+        familyMembersListProvider.overrideWith((ref) async => const []),
         timeline.currentRelationshipIdProvider.overrideWith(
           (ref) async => relationshipId,
         ),
@@ -112,7 +119,7 @@ Future<FakeTogetherGateway> _pump(
       ],
       child: ScreenUtilInit(
         designSize: const Size(375, 812),
-        builder: (_, __) => const MaterialApp(home: TogetherScreen()),
+        builder: (_, __) => MaterialApp(home: TogetherScreen(embedded: embedded)),
       ),
     ),
   );
@@ -141,6 +148,49 @@ class _Reminders extends RemindersListNotifier {
 }
 
 void main() {
+  for (final embedded in [false, true])
+    testWidgets(
+      'the header above the tabs: Together, a welcome line, settings and family'
+      '${embedded ? ' (Planning\'s Calendar tab)' : ' (empty app bar)'}',
+      (t) async {
+        await _pump(t, embedded: embedded);
+        expect(find.text('Together'), findsOneWidget);
+        expect(togetherTagline, 'Your plans, rituals and moments, side by side. A journey through time.');
+        expect(find.text(togetherTagline), findsOneWidget);
+        final settings = find.byTooltip('Together settings');
+        final family = find.byTooltip('Family');
+        expect(settings, findsOneWidget);
+        expect(family, findsOneWidget);
+        // Side by side, settings at the far end, both above the Agenda/Month tabs.
+        expect(t.getCenter(settings).dy, closeTo(t.getCenter(family).dy, 1));
+        expect(t.getCenter(family).dx, lessThan(t.getCenter(settings).dx));
+        // Room between the words and the icons.
+        expect(
+          t.getTopLeft(family).dx - t.getTopRight(find.text(togetherTagline)).dx,
+          greaterThanOrEqualTo(16),
+        );
+        expect(t.getBottomLeft(settings).dy, lessThanOrEqualTo(t.getTopLeft(find.text('Agenda')).dy));
+        // Nothing left in the app bar.
+        expect(find.descendant(of: find.byType(AppBar), matching: find.text('Together')), findsNothing);
+        expect(find.descendant(of: find.byType(AppBar), matching: family), findsNothing);
+      },
+    );
+
+  testWidgets('an empty section\'s card still spans the full width', (t) async {
+    await _pump(t, upcoming: [_row('lisbon', '2026-11-20', title: 'Lisbon')]);
+    final empty = find.ancestor(of: find.text('Nothing planned today.'), matching: find.byType(CardInkWell));
+    final full = find.ancestor(of: find.text('Lisbon'), matching: find.byType(CardInkWell));
+    expect(t.getSize(empty).width, t.getSize(full).width);
+  });
+
+  testWidgets('Family opens as a sheet over Together, not a new screen', (t) async {
+    await _pump(t);
+    await t.tap(find.byTooltip('Family'));
+    await t.pumpAndSettle();
+    expect(find.text('Add family member'), findsOneWidget);
+    expect(find.byType(TogetherScreen), findsOneWidget); // still underneath
+  });
+
   testWidgets('sections: today, this week, coming up, our story', (t) async {
     await _pump(
       t,
@@ -358,9 +408,42 @@ void main() {
       expect(find.text('Date night'), findsOneWidget);
       await t.tap(find.text('Add a ritual'));
       await t.pumpAndSettle();
-      expect(find.text('A ritual for the two of you'), findsOneWidget);
+      expect(find.text('A ritual for couples'), findsOneWidget); // no name chosen yet
+      // A divider sits right under the sheet's title.
+      final title = t.getBottomLeft(find.text('A ritual for couples')).dy;
+      final dividers = t.widgetList(find.byType(AppDivider)).map((w) => t.getTopLeft(find.byWidget(w)).dy);
+      expect(dividers.any((y) => y >= title && y - title < 40), isTrue);
     },
   );
+
+  testWidgets('the ritual sheet is for the couple, by the name they chose', (t) async {
+    await _pump(
+        t,
+        coupleName: 'The Harolds',
+        upcoming: [_row('rent', '2026-11-02', title: 'Rent')],
+        rituals: [
+          {
+            'ritual_id': 'rit-1',
+            'template': 'date_night',
+            'title': 'Date night',
+            'cadence': 'weekly',
+            'weekday': 5,
+            'local_time': '19:00',
+            'duration_min': 120,
+            'tz': 'UTC',
+            'status': 'active',
+            'created_by': 'ama',
+            'proposed_to': null,
+            'next_event_id': 'e9',
+            'next_starts_at': '2026-11-06T19:00:00+00:00',
+          },
+        ],
+      );
+    await t.scrollUntilVisible(find.text('Add a ritual'), 200, scrollable: find.byType(Scrollable).first);
+    await t.tap(find.text('Add a ritual'));
+    await t.pumpAndSettle();
+    expect(find.text('A ritual for The Harolds'), findsOneWidget);
+  });
 
   testWidgets('my unanswered ritual suggestion opens to withdraw it', (
     t,
@@ -445,7 +528,7 @@ void main() {
       scrollable: find.byType(Scrollable).first,
     );
     expect(find.text('Our story'), findsOneWidget);
-    expect(find.text('On this day · 1 year ago'), findsOneWidget);
+    expect(find.text('On this day - 1 year ago'), findsOneWidget);
   });
 
   testWidgets('All memories opens the archive', (t) async {

@@ -1,3 +1,4 @@
+import 'package:attune/core/providers/couple_name_provider.dart';
 import 'package:attune/core/utils/exports/export_screens.dart';
 import 'package:attune/features/quiz/presentation/providers/quiz_providers.dart'
     as quiz_providers;
@@ -104,16 +105,21 @@ Future<bool> confirmRitualSkip(BuildContext context) async {
   return ok == true;
 }
 
-class _TemplatesSheet extends StatelessWidget {
+class _TemplatesSheet extends ConsumerWidget {
   const _TemplatesSheet({required this.relationshipId});
   final String relationshipId;
 
   @override
-  Widget build(BuildContext context) => Scaffold(
+  Widget build(BuildContext context, WidgetRef ref) => Scaffold(
     backgroundColor: Colors.transparent,
     body: ListView(
       children: [
-        const BottomSheetHeader(title: 'A ritual for the two of you'),
+        // For the couple, by the name they chose ("couples" until then).
+        BottomSheetHeader(
+          title:
+              'A ritual for ${coupleInSentence(ref.watch(coupleNameProvider(relationshipId)).valueOrNull)}',
+        ),
+        AppDivider(),
         for (var i = 0; i < ritualTemplates.length; i++) ...[
           InfoRowWidget(
             title: ritualTemplates[i].title,

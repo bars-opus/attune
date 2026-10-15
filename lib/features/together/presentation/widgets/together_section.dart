@@ -35,9 +35,17 @@ class TogetherSection extends StatelessWidget {
         ),
         Padding(
           padding: Spacing.allMd,
-          child: CardInkWell(
-            margin: EdgeInsets.zero,
-            child: Column(children: children),
+          // Full width even when it only holds a short line ("Nothing
+          // planned today."), so every section's card lines up.
+          child: SizedBox(
+            width: double.infinity,
+            child: CardInkWell(
+              margin: EdgeInsets.zero,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: children,
+              ),
+            ),
           ),
         ),
       ],

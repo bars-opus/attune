@@ -37,7 +37,7 @@ void main() {
     await tester.pumpWidget(planningTestApp(g, PlanningCategoryScreen(relationshipId: 'r1', category: _cat())));
     await tester.pumpAndSettle();
     expect(find.text('Trip 1'), findsOneWidget);
-    expect(find.textContaining('Mar 3, 2026  2 of 5 done'), findsOneWidget);
+    expect(find.textContaining('Mar 3, 2026 - 2 of 5 done'), findsOneWidget);
     expect(g.callsTo('mark_planning_category_seen'), hasLength(1));
     expect(find.text('Trip 9'), findsNothing, reason: 'closed entries load only when opened from the menu');
     await tester.tap(find.byTooltip('Category options'));

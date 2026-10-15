@@ -1,5 +1,3 @@
-import 'package:intl/intl.dart';
-
 import 'journal_analysis.dart';
 import 'journal_entry.dart';
 
@@ -98,10 +96,12 @@ class JournalEntrySummary {
   final DateTime createdAt;
   final DateTime updatedAt;
 
-  /// An untitled entry is called by the day it was written.
-  String displayTitle([DateFormat? format]) {
+  /// Its title; an untitled entry is called by its first words, as notes
+  /// are (the date has its own line underneath).
+  String get displayTitle {
     final t = title?.trim() ?? '';
-    return t.isNotEmpty ? t : (format ?? DateFormat('EEEE, d MMMM')).format(createdAt.toLocal());
+    if (t.isNotEmpty) return t;
+    return snippet.trim().isNotEmpty ? snippet.trim() : 'New entry';
   }
 
   JournalEntrySummary withPinned(bool p) => JournalEntrySummary(

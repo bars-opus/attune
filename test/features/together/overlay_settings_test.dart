@@ -1,3 +1,5 @@
+import 'package:flutter/rendering.dart';
+import 'package:attune/core/widgets/app_divider.dart';
 import 'package:attune/features/quiz/presentation/providers/quiz_providers.dart'
     as quiz;
 import 'package:attune/features/together/data/together_repository.dart';
@@ -66,6 +68,20 @@ Future<FakeTogetherGateway> _open(
 }
 
 void main() {
+  testWidgets('the sheet reads as one: a divider under its title, choices sized like the other rows', (t) async {
+    await _open(t, FakeBusySource());
+    // A divider right under "Together settings".
+    final title = t.getBottomLeft(find.text('Together settings')).dy;
+    final dividers = t.widgetList(find.byType(AppDivider)).map((w) => t.getTopLeft(find.byWidget(w)).dy);
+    expect(dividers.any((y) => y >= title && y - title < 40), isTrue);
+    // The Free time together choices use the same type as the other rows.
+    double? size(String text) => (t.renderObject(find.text(text)) as RenderParagraph).text.style?.fontSize;
+    final rowTitle = size('Morning summary');
+    for (final choice in ['Off', "Show when we're both free", 'Also show Kofi my busy times']) {
+      expect(size(choice), rowTitle, reason: choice);
+    }
+  });
+
   testWidgets('turning it on asks for the calendar, then saves and uploads', (
     t,
   ) async {

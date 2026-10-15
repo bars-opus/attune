@@ -1,5 +1,6 @@
 // lib/features/opinions/presentation/screens/comment_thread_screen.dart
 
+import 'package:attune/core/utils/date_formatter.dart';
 import 'dart:async';
 
 import 'package:attune/core/utils/exports/export_screens.dart';
@@ -768,9 +769,10 @@ class _CommentThreadScreenState extends ConsumerState<CommentThreadScreen> {
     );
     // Same treatment as OpinionCard: the marker rides on the timestamp, and
     // the timestamp itself stays createdAt — an edit never moves it.
-    final timeAgo =
-        formatTimeAgo(comment.createdAt) +
-        (comment.editedAt != null ? ' · edited' : '');
+    final timeAgo = MyDateFormat.join([
+      formatTimeAgo(comment.createdAt),
+      if (comment.editedAt != null) 'edited',
+    ]);
 
     final card = Slidable(
       key: ValueKey(comment.id),

@@ -39,11 +39,12 @@ void main() {
         item: _event(),
         me: 'ama',
         partnerName: 'Kofi',
+        coupleName: 'The Harolds',
         onTap: () => tapped = true,
       ),
     );
     expect(find.text('Dinner'), findsOneWidget);
-    expect(find.textContaining('Both of you'), findsOneWidget);
+    expect(find.textContaining('The Harolds'), findsOneWidget); // the couple, by their name
     expect(find.textContaining('7:00'), findsOneWidget);
     await t.tap(find.text('Dinner'));
     expect(tapped, isTrue);
@@ -77,7 +78,9 @@ void main() {
   test('who labels', () {
     expect(togetherWhoLabel(TogetherWho.me, 'Kofi'), 'You');
     expect(togetherWhoLabel(TogetherWho.partner, 'Kofi'), 'Kofi');
-    expect(togetherWhoLabel(TogetherWho.us, 'Kofi'), 'Both of you');
+    expect(togetherWhoLabel(TogetherWho.us, 'Kofi', coupleName: 'The Harolds'), 'The Harolds');
+    // No name chosen yet: the placeholder.
+    expect(togetherWhoLabel(TogetherWho.us, 'Kofi'), 'Couples');
   });
 
   testWidgets(
