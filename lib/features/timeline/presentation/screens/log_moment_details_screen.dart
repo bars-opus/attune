@@ -1,15 +1,41 @@
 // lib/features/timeline/presentation/screens/log_moment_details_screen.dart
+import 'package:attune/core/providers/run_write.dart';
+import 'package:attune/core/utils/date_formatter.dart';
 import 'package:attune/core/utils/exports/export_screens.dart';
 import 'package:attune/features/reminders/data/models/reminder_model.dart';
 import 'package:attune/features/reminders/presentation/providers/reminders_providers.dart';
 import 'package:attune/features/timeline/data/models/timeline_event_model.dart';
 import 'package:attune/features/timeline/presentation/providers/timeline_providers.dart';
+import 'package:attune/features/timeline/presentation/widgets/calendar_day_indicators.dart';
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:gap/gap.dart';
 
+/// Log a moment in one sheet: the kind of moment is picked at the top,
+/// then the details. With [day], it starts on that date. True once saved.
+///
+/// To edit, pass the moment's [eventType], [editEventId] and [initialData].
+Future<bool?> showMomentSheet(
+  BuildContext context, {
+  DateTime? day,
+  String? eventType,
+  String? editEventId,
+  Map<String, dynamic>? initialData,
+}) => BottomSheetUtils.showDocumentationBottomSheet<bool>(
+  context: context,
+  backgroundColor: Theme.of(context).colorScheme.neutral,
+  widget: LogMomentDetailsScreen(
+    eventType: eventType,
+    editEventId: editEventId,
+    initialData: initialData ?? (day == null ? null : {'occurred_at': day}),
+    inSheet: true,
+  ),
+);
+
 class LogMomentDetailsScreen extends ConsumerStatefulWidget {
-  final String eventType;
+  /// Null: the kind is chosen on this screen.
+  final String? eventType;
   final String? editEventId;
   final Map<String, dynamic>? initialData;
 
@@ -18,13 +44,19 @@ class LogMomentDetailsScreen extends ConsumerStatefulWidget {
     required this.eventType,
     this.editEventId,
     this.initialData,
+    this.inSheet = false,
   });
+
+  /// Shown as a sheet ([showMomentSheet]) rather than on its own route.
+  final bool inSheet;
 
   /// Only anniversary and milestone moments read as something worth
   /// re-celebrating on a fixed yearly date — conflict/highlight/first
   /// don't fit a recurring nudge the same way.
-  bool get isEligibleForReminderOffer =>
-      eventType == 'anniversary' || eventType == 'milestone';
+  bool get isEligibleForReminderOffer => _offersReminder(eventType);
+
+  static bool _offersReminder(String? type) =>
+      type == 'anniversary' || type == 'milestone';
 
   @override
   ConsumerState<LogMomentDetailsScreen> createState() =>
@@ -44,6 +76,17 @@ class _LogMomentDetailsScreenState
 
   /// A conflict kept off the partner's timeline (Together Phase 4 R7).
   bool _private = false;
+
+  /// The kind of moment: given, or picked here.
+  late String? _type = widget.eventType;
+
+  static const _types = [
+    'milestone',
+    'highlight',
+    'conflict',
+    'first',
+    'anniversary',
+  ];
 
   @override
   void initState() {
@@ -65,7 +108,9 @@ class _LogMomentDetailsScreenState
   }
 
   String _getEventTypeDisplay() {
-    switch (widget.eventType) {
+    switch (_type) {
+      case null:
+        return 'Log a moment';
       case 'milestone':
         return 'Milestone';
       case 'conflict':
@@ -77,12 +122,12 @@ class _LogMomentDetailsScreenState
       case 'anniversary':
         return 'Anniversary';
       default:
-        return widget.eventType;
+        return _type!;
     }
   }
 
   Color _getEventTypeColor() {
-    switch (widget.eventType) {
+    switch (_type) {
       case 'milestone':
         return Theme.of(context).colorScheme.primary;
       case 'conflict':
@@ -98,40 +143,48 @@ class _LogMomentDetailsScreenState
     }
   }
 
-  bool get _isValid =>
-      _titleController.text.trim().isNotEmpty && !_isSubmitting;
-
   /// Only conflicts carry a visibility choice; others stay as they are.
   String? get _visibility =>
-      widget.eventType == 'conflict' ? (_private ? 'private' : 'shared') : null;
+      _type == 'conflict' ? (_private ? 'private' : 'shared') : null;
 
   Future<void> _saveMoment() async {
-    if (!_isValid) return;
+    if (_isSubmitting) return;
+    if (_type == null) {
+      context.showErrorSnackbar('Choose what kind of moment it is.');
+      return;
+    }
+    if (_titleController.text.trim().isEmpty) {
+      context.showErrorSnackbar('Give it a title.');
+      return;
+    }
 
     setState(() => _isSubmitting = true);
 
     try {
       if (widget.editEventId != null) {
         // Update existing event
-        await ref.read(
+        await runWrite(
+          ref,
           updateTimelineEventProvider((
             eventId: widget.editEventId!,
-            eventType: widget.eventType,
+            eventType: _type,
             title: _titleController.text.trim(),
             note:
                 _noteController.text.trim().isEmpty
                     ? null
                     : _noteController.text.trim(),
+            clearNote: _noteController.text.trim().isEmpty,
             moodScore: _moodScore,
             occurredAt: _selectedDate,
             visibility: _visibility,
-          )).future,
+          )),
         );
       } else {
         // Create new event
-        final createdEvent = await ref.read(
+        final createdEvent = await runWrite(
+          ref,
           createTimelineEventProvider((
-            eventType: widget.eventType,
+            eventType: _type!,
             title: _titleController.text.trim(),
             occurredAt: _selectedDate,
             note:
@@ -140,10 +193,10 @@ class _LogMomentDetailsScreenState
                     : _noteController.text.trim(),
             moodScore: _moodScore,
             visibility: _visibility ?? 'shared',
-          )).future,
+          )),
         );
 
-        if (widget.isEligibleForReminderOffer && mounted) {
+        if (LogMomentDetailsScreen._offersReminder(_type) && mounted) {
           await _offerYearlyReminder(createdEvent);
         }
       }
@@ -151,11 +204,11 @@ class _LogMomentDetailsScreenState
       if (mounted) {
         Navigator.pop(context, true); // Return true to signal refresh needed
       }
-    } catch (e) {
+    } catch (_) {
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('Failed to save: $e')));
+        context.showErrorSnackbar(
+          "Couldn't save that moment. Please try again.",
+        );
       }
     } finally {
       if (mounted) setState(() => _isSubmitting = false);
@@ -187,7 +240,8 @@ class _LogMomentDetailsScreenState
 
     ReminderModel reminder;
     try {
-      reminder = await ref.read(
+      reminder = await runWrite(
+        ref,
         createReminderProvider((
           reminderType: 'anniversary',
           title: createdEvent.title,
@@ -195,7 +249,8 @@ class _LogMomentDetailsScreenState
           remindAt: createdEvent.occurredAt,
           recurrence: 'yearly',
           familyMemberId: null,
-        )).future,
+          remindDaysBefore: const [0, 3],
+        )),
       );
     } catch (_) {
       if (!mounted) return;
@@ -216,193 +271,166 @@ class _LogMomentDetailsScreenState
     }
   }
 
+  /// The app's date wheel, as the other sheets use: from 1950 (couples
+  /// log moments from long before the app) to today, or the moment's own
+  /// date if it sits ahead (a memory that follows its reminder can).
+  Future<void> _pickDate() {
+    final now = DateTime.now();
+    return showCupertinoDateTimeSheet(
+      context: context,
+      mode: CupertinoDatePickerMode.date,
+      initialDateTime: _selectedDate,
+      minimumDate: DateTime(1950),
+      maximumDate: _selectedDate.isAfter(now) ? _selectedDate : now,
+      sheetHeight: 350.h,
+      onChanged: (d) => setState(() => _selectedDate = DateUtils.dateOnly(d)),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
     final textTheme = Theme.of(context).textTheme;
     final eventColor = _getEventTypeColor();
+    final label = textTheme.labelLarge;
 
+    // Laid out like the app's other sheets (a note's add sheets, the
+    // reminder sheet): the header with Save, fields, rows with dividers.
     return Scaffold(
-      appBar: AppBar(
-        title: Text(
-          widget.editEventId != null
-              ? 'Edit ${_getEventTypeDisplay()}'
-              : _getEventTypeDisplay(),
-          style: textTheme.titleMedium,
-        ),
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back),
-          onPressed: () => Navigator.pop(context),
-        ),
-      ),
-      body: SingleChildScrollView(
-        padding: EdgeInsets.all(Spacing.lg.w),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Title field
-            Text(
-              'Title *',
-              style: textTheme.bodyMedium?.copyWith(
-                fontWeight: FontWeight.w600,
+      // On its own route (Pulse's way in) there's only the way back above.
+      appBar: widget.inSheet ? null : AppBar(),
+      body: ListView(
+        children: [
+          BottomSheetHeader(
+            title:
+                widget.editEventId != null
+                    ? 'Edit ${_getEventTypeDisplay()}'
+                    : _getEventTypeDisplay(),
+            actionLabel: 'Save',
+            // Always wired: with no handler the header's button closes the
+            // sheet, which would throw away what was typed.
+            onPressed: _isSubmitting ? () {} : _saveMoment,
+          ),
+          AppDivider(),
+          // The kind, when it's chosen here: a plain radio list, styled
+          // like the app's other radio rows (Together settings).
+          if (widget.eventType == null) ...[
+            Padding(
+              padding: EdgeInsets.fromLTRB(
+                Spacing.md.w,
+                Spacing.md,
+                Spacing.md.w,
+                0,
               ),
+              child: Text('What kind of moment?', style: label),
             ),
-            Gap(Spacing.sm.h),
-            AppTextFormField(
-              controller: _titleController,
-              hintText: _getTitleHint(),
-              maxLength: 80,
-              // buildCounter:
-              //     (
-              //       context, {
-              //       required currentLength,
-              //       required isFocused,
-              //       maxLength,
-              //     }) => null,
-              // Without this, _isValid (read from _titleController.text at
-              // build time) never gets a chance to re-evaluate: nothing else
-              // triggers a parent rebuild as the user types, so the Save
-              // button stays permanently disabled from the initial (empty)
-              // build unless some unrelated setState (e.g. the mood slider)
-              // happens to fire first.
-              onChanged: (_) => setState(() {}),
-
-              label: '',
-            ),
-            Gap(Spacing.lg.h),
-
-            // Date picker
-            Text(
-              'Date',
-              style: textTheme.bodyMedium?.copyWith(
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-            Gap(Spacing.sm.h),
-            Container(
-              decoration: BoxDecoration(
-                border: Border.all(color: colorScheme.outline.withOpacity(0.3)),
-                borderRadius: BorderRadius.circular(BorderRadiusTokens.md.r),
-              ),
-              child: ListTile(
+            for (final type in _types)
+              RadioListTile<String>(
+                value: type,
+                groupValue: _type,
                 title: Text(
-                  _formatDate(_selectedDate),
-                  style: textTheme.bodyLarge,
-                ),
-                trailing: const Icon(Icons.calendar_today, size: 20),
-                onTap: () async {
-                  final picked = await showDatePicker(
-                    context: context,
-                    initialDate: _selectedDate,
-                    firstDate: DateTime(2020),
-                    lastDate: DateTime.now(),
-                  );
-                  if (picked != null) {
-                    setState(() => _selectedDate = picked);
-                  }
-                },
-              ),
-            ),
-            Gap(Spacing.lg.h),
-
-            // Mood slider
-            Text(
-              'How did this feel? (optional)',
-              style: textTheme.bodyMedium?.copyWith(
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-            Gap(Spacing.sm.h),
-            Row(
-              children: [
-                Text('1', style: textTheme.bodySmall),
-                Expanded(
-                  child: Slider(
-                    value: (_moodScore ?? 5).toDouble(),
-                    min: 1,
-                    max: 10,
-                    divisions: 9,
-                    activeColor: eventColor,
-                    onChanged:
-                        (value) => setState(() => _moodScore = value.round()),
+                  calendarEventTypeLabel(type),
+                  style: textTheme.titleSmall?.copyWith(
+                    fontSize: 14.sp,
+                    fontWeight: FontWeight.w500,
+                    color: colorScheme.onSurface,
                   ),
                 ),
-                Text('10', style: textTheme.bodySmall),
-              ],
-            ),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text('Difficult', style: textTheme.bodySmall),
-                Text('Amazing', style: textTheme.bodySmall),
-              ],
-            ),
-            if (_moodScore != null)
-              Padding(
-                padding: EdgeInsets.only(top: Spacing.xs.h),
-                child: Text(
-                  'Selected: $_moodScore/10',
-                  style: textTheme.bodySmall?.copyWith(color: eventColor),
-                ),
+                onChanged: (v) => setState(() => _type = v),
               ),
-            Gap(Spacing.lg.h),
-
-            // Note field (optional)
-            Text(
-              'Add a note (optional)',
-              style: textTheme.bodyMedium?.copyWith(
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-            Gap(Spacing.sm.h),
-            AppTextFormField(
-              controller: _noteController,
-              hintText: 'What happened? How did it feel?',
-              maxLines: 4,
-              maxLength: 300,
-              // buildCounter:
-              //     (
-              //       context, {
-              //       required currentLength,
-              //       required isFocused,
-              //       maxLength,
-              //     }) => null,
-              label: '',
-            ),
-            Gap(Spacing.xl.h),
-
-            if (widget.eventType == 'conflict') ...[
-              InfoRowWidget(
-                title: 'Just for me',
-                subtitle:
-                    "Kept off your partner's timeline. It still helps you look back.",
-                icon: Icons.lock_outline_rounded,
-                showAvatar: false,
-                showDivider: false,
-                isToggleItem: true,
-                toggleValue: _private,
-                onToggleChanged: (v) => setState(() => _private = v),
-              ),
-              Gap(Spacing.lg.h),
-            ],
-
-            // Save button
-            AppButton(
-              label:
-                  widget.editEventId != null ? 'Save changes' : 'Save moment',
-              onPressed: _isValid ? _saveMoment : null,
-              size: ButtonSize.large,
-              width: double.infinity,
-              isLoading: _isSubmitting,
-            ),
+            AppDivider(),
           ],
-        ),
+          AppTextFormField(
+            controller: _titleController,
+            label: 'Title',
+            hintText: _getTitleHint(),
+            maxLength: 80,
+            // The title hint and Save read the field: keep them current.
+            onChanged: (_) => setState(() {}),
+          ),
+          AppTextFormField(
+            controller: _noteController,
+            label: 'Note (optional)',
+            hintText: 'What happened? How did it feel?',
+            maxLines: 3,
+            maxLength: 300,
+          ),
+          Gap(Spacing.md),
+          AppDivider(),
+          InfoRowWidget(
+            key: const Key('momentDateRow'),
+            subtitle: 'Date',
+            title: MyDateFormat.toDate(_selectedDate),
+            icon: Icons.calendar_month,
+            showDivider: true,
+            showAvatar: false,
+            showTrailingArrow: false,
+            disableTrailing: true,
+            onTap: _pickDate,
+          ),
+          if (_type == 'conflict')
+            InfoRowWidget(
+              title: 'Just for me',
+              subtitle:
+                  "Kept off your partner's timeline. It still helps you look back.",
+              icon: Icons.lock_outline_rounded,
+              showAvatar: false,
+              showDivider: true,
+              isToggleItem: true,
+              toggleValue: _private,
+              onToggleChanged: (v) => setState(() => _private = v),
+            ),
+          // How it felt (optional).
+          Padding(
+            padding: Spacing.allMd,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('How did this feel? (optional)', style: label),
+                Row(
+                  children: [
+                    Text('1', style: textTheme.bodySmall),
+                    Expanded(
+                      child: Slider(
+                        value: (_moodScore ?? 5).toDouble(),
+                        min: 1,
+                        max: 10,
+                        divisions: 9,
+                        activeColor: eventColor,
+                        onChanged:
+                            (value) =>
+                                setState(() => _moodScore = value.round()),
+                      ),
+                    ),
+                    Text('10', style: textTheme.bodySmall),
+                  ],
+                ),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text('Difficult', style: textTheme.bodySmall),
+                    Text('Amazing', style: textTheme.bodySmall),
+                  ],
+                ),
+                if (_moodScore != null)
+                  Padding(
+                    padding: EdgeInsets.only(top: Spacing.xs.h),
+                    child: Text(
+                      'Selected: $_moodScore/10',
+                      style: textTheme.bodySmall?.copyWith(color: eventColor),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+          Gap(Spacing.xl.h),
+        ],
       ),
     );
   }
 
   String _getTitleHint() {
-    switch (widget.eventType) {
+    switch (_type) {
       case 'milestone':
         return 'e.g., Got engaged, Moved in together';
       case 'conflict':
@@ -416,27 +444,5 @@ class _LogMomentDetailsScreenState
       default:
         return 'Enter a title';
     }
-  }
-
-  String _formatDate(DateTime date) {
-    return '${date.day} ${_getMonth(date.month)} ${date.year}';
-  }
-
-  String _getMonth(int month) {
-    const months = [
-      'Jan',
-      'Feb',
-      'Mar',
-      'Apr',
-      'May',
-      'Jun',
-      'Jul',
-      'Aug',
-      'Sep',
-      'Oct',
-      'Nov',
-      'Dec',
-    ];
-    return months[month - 1];
   }
 }

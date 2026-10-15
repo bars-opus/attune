@@ -15,28 +15,18 @@ void main() {
   final conversationsScreen = File(
     'lib/features/chat/presentation/screens/conversations_screen.dart',
   ).readAsStringSync();
+  final cards = File(
+    'lib/features/chat/presentation/widgets/conversations_home_cards.dart',
+  ).readAsStringSync();
   final appRouter = File('lib/app/routing/app_router.dart').readAsStringSync();
 
-  test('the conversations screen renders the planning summary row', () {
-    // `_PlanningSummaryRow()` also appears once in the class's own
-    // constructor declaration (`const _PlanningSummaryRow();`), which
-    // is present whether or not the widget is ever placed in the
-    // render tree. Requiring at least 2 occurrences means at least one
-    // of them has to be a usage site (in the Column's children, or
-    // anywhere else the widget is actually instantiated) rather than
-    // just the declaration — this is what makes the assertion fail if
-    // only the widget-tree usage line is removed, per the plan's
-    // no-vacuous-test constraint.
-    final occurrences = RegExp(
-      r'_PlanningSummaryRow\(\)',
-    ).allMatches(conversationsScreen).length;
-    expect(
-      occurrences,
-      greaterThanOrEqualTo(2),
-      reason:
-          'without a usage site (not just the class declaration), the '
-          'entry point into Planning is unreachable from chat',
-    );
+  test('the conversations screen renders the journals and together cards', () {
+    // A usage, not the class itself: these live in conversations_home_cards.dart,
+    // so any occurrence in the screen is a place it's built.
+    expect(RegExp(r'JournalsCard\(').hasMatch(conversationsScreen), isTrue,
+        reason: 'the way into both journals is on the conversations screen');
+    expect(RegExp(r'TogetherCard\(').hasMatch(conversationsScreen), isTrue,
+        reason: 'the together card is on the conversations screen');
   });
 
   test('the planning route is registered and builds PlanningHomeScreen', () {
@@ -48,7 +38,7 @@ void main() {
     expect(
       RegExp(
         r"pushNamed\('planning', extra: relationshipId\)",
-      ).hasMatch(conversationsScreen),
+      ).hasMatch(cards),
       isTrue,
       reason:
           'the row must be scoped to the current relationship; passing '

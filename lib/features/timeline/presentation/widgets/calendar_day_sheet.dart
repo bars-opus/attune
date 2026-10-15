@@ -13,7 +13,9 @@
 /// removing it from the calendar (stories spec §1, §3.2).
 library;
 
+import 'package:attune/core/utils/date_formatter.dart';
 import 'package:attune/features/auth/providers/auth_provider.dart';
+import 'package:attune/features/timeline/presentation/widgets/add_moment_or_reminder_sheet.dart';
 import 'package:attune/features/planning/data/planning_models.dart';
 import 'package:attune/features/planning/presentation/planning_ui.dart';
 import 'package:attune/features/planning/presentation/screens/planning_entry_screen.dart';
@@ -30,7 +32,10 @@ import 'package:attune/features/timeline/data/models/timeline_event_model.dart';
 import 'package:attune/features/timeline/presentation/widgets/calendar_day_indicators.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:intl/intl.dart';
+import 'package:attune/features/timeline/presentation/widgets/upcoming_reminders_section.dart';
+import 'package:attune/features/together/presentation/widgets/together_item_row.dart';
+import 'package:attune/features/quiz/presentation/providers/quiz_providers.dart'
+    as quiz_providers;
 
 /// Opens the day sheet for [date].
 Future<void> showCalendarDaySheet({
@@ -46,12 +51,25 @@ Future<void> showCalendarDaySheet({
     isScrollControlled: true,
     showDragHandle: true,
     builder:
-        (_) => CalendarDaySheet(
+        (sheetContext) => CalendarDaySheet(
           relationshipId: relationshipId,
           date: date,
           events: events,
           reminders: reminders,
           planningEntries: planningEntries,
+          // The day closes first, so what's added shows on the calendar
+          // rather than under a sheet that won't update.
+          onAdd:
+              relationshipId == null
+                  ? null
+                  : () {
+                    Navigator.of(sheetContext).pop();
+                    openAddFlow(
+                      context,
+                      relationshipId: relationshipId,
+                      day: date,
+                    );
+                  },
         ),
   );
 }
@@ -64,6 +82,7 @@ class CalendarDaySheet extends ConsumerWidget {
     required this.events,
     required this.reminders,
     required this.planningEntries,
+    this.onAdd,
   });
 
   final String? relationshipId;
@@ -71,6 +90,9 @@ class CalendarDaySheet extends ConsumerWidget {
   final List<TimelineEventModel> events;
   final List<dynamic> reminders;
   final List<dynamic> planningEntries;
+
+  /// "Add to this day"; hidden when null.
+  final VoidCallback? onAdd;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -89,49 +111,69 @@ class CalendarDaySheet extends ConsumerWidget {
         ),
         child: SingleChildScrollView(
           padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(
-                DateFormat('EEEE, MMMM d, yyyy').format(date),
-                style: textTheme.titleMedium?.copyWith(
-                  fontWeight: FontWeight.w600,
+          // Always the full width: while a day's stories are still loading
+          // there's only short text here, and the sheet would otherwise
+          // shrink around it until the stories arrive.
+          child: SizedBox(
+            width: double.infinity,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        MyDateFormat.toDate(date),
+                        style: textTheme.titleMedium?.copyWith(
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                    if (onAdd != null)
+                      IconButton(
+                        icon: const Icon(Icons.add_rounded),
+                        tooltip: 'Add to this day',
+                        onPressed: onAdd,
+                      ),
+                  ],
                 ),
-              ),
-              const SizedBox(height: 16),
-              if (relationshipId != null)
-                _StoriesSection(relationshipId: relationshipId!, date: date),
-              if (events.isNotEmpty) ...[
-                Text('Moments', style: textTheme.labelLarge),
-                const SizedBox(height: 8),
-                for (final event in events)
-                  _EventTile(event: event, colorScheme: colorScheme),
                 const SizedBox(height: 16),
-              ],
-              if (reminders.isNotEmpty || planningEntries.isNotEmpty) ...[
-                Text('Scheduled', style: textTheme.labelLarge),
-                const SizedBox(height: 8),
-                for (final entry in [...reminders, ...planningEntries])
-                  _ScheduledTile(
-                    entry: entry,
-                    relationshipId: relationshipId,
-                    me: me,
-                  ),
-              ],
-              if (events.isEmpty &&
-                  reminders.isEmpty &&
-                  planningEntries.isEmpty)
-                Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 24),
-                  child: Text(
-                    'No moments or plans on this day.',
-                    style: textTheme.bodyMedium?.copyWith(
-                      color: colorScheme.onSurfaceVariant,
+                if (relationshipId != null)
+                  _StoriesSection(relationshipId: relationshipId!, date: date),
+                if (events.isNotEmpty) ...[
+                  Text('Moments', style: textTheme.labelLarge),
+                  const SizedBox(height: 8),
+                  for (final event in events)
+                    _EventTile(event: event, colorScheme: colorScheme),
+                  const SizedBox(height: 16),
+                ],
+                if (reminders.isNotEmpty || planningEntries.isNotEmpty) ...[
+                  Text('Scheduled', style: textTheme.labelLarge),
+                  const SizedBox(height: 8),
+                  for (final (i, entry)
+                      in [...reminders, ...planningEntries].indexed)
+                    _ScheduledTile(
+                      entry: entry,
+                      relationshipId: relationshipId,
+                      me: me,
+                      last: i == reminders.length + planningEntries.length - 1,
+                    ),
+                ],
+                if (events.isEmpty &&
+                    reminders.isEmpty &&
+                    planningEntries.isEmpty)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 24),
+                    child: Text(
+                      'No moments or plans on this day.',
+                      style: textTheme.bodyMedium?.copyWith(
+                        color: colorScheme.onSurfaceVariant,
+                      ),
                     ),
                   ),
-                ),
-            ],
+              ],
+            ),
           ),
         ),
       ),
@@ -341,15 +383,19 @@ class _EventTile extends StatelessWidget {
   }
 }
 
-class _ScheduledTile extends StatelessWidget {
+class _ScheduledTile extends ConsumerWidget {
   const _ScheduledTile({
     required this.entry,
     required this.relationshipId,
     this.me,
+    this.last = false,
   });
 
   final Object entry;
   final String? relationshipId;
+
+  /// The last row: no divider under it.
+  final bool last;
 
   /// The viewer, so a partner's busy block stays closed.
   final String? me;
@@ -401,7 +447,27 @@ class _ScheduledTile extends StatelessWidget {
   };
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    // The same rows as above the calendar and in the Agenda: a reminder as
+    // its Upcoming row (countdown included), a Together event as its row.
+    switch (entry) {
+      case ReminderModel reminder:
+        return ReminderUpcomingRow(
+          reminder: reminder,
+          onTap: _onTap(context),
+          last: last,
+        );
+      case TogetherItem item:
+        return TogetherItemRow(
+          item: item,
+          me: me,
+          partnerName:
+              ref.watch(quiz_providers.partnerNameProvider).valueOrNull ??
+              'Partner',
+          last: last,
+          onTap: _onTap(context),
+        );
+    }
     final colorScheme = Theme.of(context).colorScheme;
     final textTheme = Theme.of(context).textTheme;
 
@@ -414,9 +480,10 @@ class _ScheduledTile extends StatelessWidget {
             Container(
               width: 12,
               height: 12,
+              // Upcoming: the calendar's solid primary dot.
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
-                border: Border.all(color: colorScheme.secondary, width: 1.5),
+                color: colorScheme.primary,
               ),
             ),
             const SizedBox(width: 12),

@@ -26,6 +26,10 @@ class ReminderModel {
   final bool sent;
   final String? familyMemberId;
   final String? linkedTimelineEventId;
+
+  /// When the couple hears: days before the date (0 = on the day), from
+  /// 0, 1, 3 and 7.
+  final List<int> remindDaysBefore;
   final DateTime createdAt;
   final DateTime updatedAt;
 
@@ -41,6 +45,7 @@ class ReminderModel {
     required this.sent,
     this.familyMemberId,
     this.linkedTimelineEventId,
+    this.remindDaysBefore = const [0, 3],
     required this.createdAt,
     required this.updatedAt,
   });
@@ -58,6 +63,11 @@ class ReminderModel {
       sent: json['sent'] as bool,
       familyMemberId: json['family_member_id'] as String?,
       linkedTimelineEventId: json['linked_timeline_event_id'] as String?,
+      // Rows (and cached copies) from before the choice existed: as then.
+      remindDaysBefore: [
+        for (final d in (json['remind_days_before'] as List? ?? const [0, 3]))
+          (d as num).toInt(),
+      ],
       createdAt: DateTime.parse(json['created_at'] as String),
       updatedAt: DateTime.parse(json['updated_at'] as String),
     );
@@ -76,6 +86,7 @@ class ReminderModel {
       'sent': sent,
       'family_member_id': familyMemberId,
       'linked_timeline_event_id': linkedTimelineEventId,
+      'remind_days_before': remindDaysBefore,
       'created_at': createdAt.toIso8601String(),
       'updated_at': updatedAt.toIso8601String(),
     };

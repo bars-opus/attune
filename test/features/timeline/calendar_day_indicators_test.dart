@@ -14,6 +14,7 @@
 // stories". A test that only checked "an avatar appears" would pass
 // just as well against the old single-row shape and prove nothing.
 import 'package:attune/features/auth/providers/auth_provider.dart';
+import 'package:attune/features/reminders/presentation/reminder_icons.dart';
 import 'package:attune/features/stories/data/story_read_repository.dart';
 import 'package:attune/features/stories/presentation/providers/story_providers.dart';
 import 'package:attune/features/stories/presentation/widgets/story_ring.dart';
@@ -161,6 +162,103 @@ Widget _wrap(Widget child, _FakeGateway gateway) {
 }
 
 void main() {
+  group('upcoming is filled, stories are outlined', () {
+    BoxDecoration markFor(WidgetTester tester, String label) {
+      final mark = find.descendant(
+        of: find.byWidgetPredicate((w) => w is Semantics && w.properties.label == label),
+        matching: find.byType(Container),
+      );
+      return tester.widget<Container>(mark.first).decoration! as BoxDecoration;
+    }
+
+    testWidgets('a day with something upcoming shows a solid primary dot', (tester) async {
+      await tester.pumpWidget(
+        _wrap(
+          CalendarDayIndicators(relationshipId: _relationshipId, date: _day, eventTypes: const [], hasUpcoming: true),
+          _FakeGateway(dayCounts: const []),
+        ),
+      );
+      await tester.pumpAndSettle();
+      final primary = Theme.of(tester.element(find.byType(CalendarDayIndicators))).colorScheme.primary;
+      final d = markFor(tester, 'Upcoming');
+      expect(d.color, primary); // filled, at full strength
+      expect(d.border, isNull); // not an outline
+    });
+
+    testWidgets('the key matches: Upcoming filled, Story outlined', (tester) async {
+      await tester.pumpWidget(
+        const MaterialApp(home: Scaffold(body: CalendarLegend(eventTypes: [], hasStories: true, hasUpcoming: true))),
+      );
+      final primary = Theme.of(tester.element(find.byType(CalendarLegend))).colorScheme.primary;
+      BoxDecoration swatch(String label) => tester.widget<Container>(
+        find.descendant(of: find.ancestor(of: find.text(label), matching: find.byType(Row)).first, matching: find.byType(Container)).first,
+      ).decoration! as BoxDecoration;
+      expect(swatch('Upcoming').color, primary);
+      expect(swatch('Upcoming').border, isNull);
+      expect(swatch('Story').border, isNotNull);
+    });
+  });
+
+  group('reminders show their occasion, as in the Upcoming row', () {
+    testWidgets('a birthday draws the pink cake, not the plain dot', (tester) async {
+      await tester.pumpWidget(
+        _wrap(
+          CalendarDayIndicators(
+            relationshipId: null,
+            date: _day,
+            eventTypes: const [],
+            reminderTypes: const ['birthday'],
+            hasUpcoming: false,
+          ),
+          _FakeGateway(),
+        ),
+      );
+      await tester.pumpAndSettle();
+      final icon = tester.widget<Icon>(find.byIcon(reminderOccasionIcon('birthday')));
+      expect(icon.color, reminderOccasionColor('birthday', tester.element(find.byType(CalendarDayIndicators))));
+      expect(find.bySemanticsLabel('Birthday'), findsOneWidget);
+      expect(find.bySemanticsLabel('Upcoming'), findsNothing);
+    });
+
+    testWidgets('a plan on the same day keeps its dot beside the occasion', (tester) async {
+      await tester.pumpWidget(
+        _wrap(
+          CalendarDayIndicators(
+            relationshipId: null,
+            date: _day,
+            eventTypes: const [],
+            reminderTypes: const ['anniversary', 'birthday'],
+            hasUpcoming: true,
+          ),
+          _FakeGateway(),
+        ),
+      );
+      await tester.pumpAndSettle();
+      // One occasion per day (the day sheet lists the rest), plus the dot.
+      expect(find.byIcon(reminderOccasionIcon('anniversary')), findsOneWidget);
+      expect(find.byIcon(reminderOccasionIcon('birthday')), findsNothing);
+      expect(find.bySemanticsLabel('Upcoming'), findsOneWidget);
+    });
+
+    testWidgets('the key names each occasion shown, with its icon', (tester) async {
+      await tester.pumpWidget(
+        const MaterialApp(
+          home: Scaffold(
+            body: CalendarLegend(
+              eventTypes: [],
+              reminderTypes: ['birthday'],
+              hasStories: false,
+              hasUpcoming: false,
+            ),
+          ),
+        ),
+      );
+      expect(find.text('Birthday'), findsOneWidget);
+      expect(find.byIcon(reminderOccasionIcon('birthday')), findsOneWidget);
+      expect(find.text('Upcoming'), findsNothing);
+    });
+  });
+
   group('CalendarDayIndicators — per-author story avatars', () {
     testWidgets(
       'a day BOTH partners posted on draws TWO story avatars, not one',

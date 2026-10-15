@@ -7,7 +7,6 @@ import 'package:attune/features/together/presentation/screens/together_screen.da
 import 'package:attune/home/widgets/tabs_with_content.dart';
 import 'package:flutter/material.dart';
 import 'package:attune/app/documentations/user_manual/data/reflection_journal_docs.dart';
-import 'package:attune/core/utils/exports/export_screens.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:uuid/uuid.dart';
 import '../../data/planning_models.dart';
@@ -15,7 +14,9 @@ import '../planning_providers.dart';
 import '../planning_ui.dart';
 import '../widgets/category_editor_sheet.dart';
 import '../widgets/planning_skeletons.dart';
+import '../widgets/planning_recent.dart';
 import 'planning_category_screen.dart';
+import 'planning_recent_screen.dart';
 
 class PlanningHomeScreen extends ConsumerStatefulWidget {
   const PlanningHomeScreen({super.key, required this.relationshipId});
@@ -162,15 +163,18 @@ class _PlanningHomeScreenState extends ConsumerState<PlanningHomeScreen> {
             content: _categories(context),
           ),
           const AppTabItem(
-          label: 'Calendar',
-          icon: Icons.calendar_month_rounded,
-          // The couple's Together hub (Together plan 1b R1).
-          content: TogetherScreen(embedded: true),
-        ),
+            label: 'Calendar',
+            icon: Icons.calendar_month_rounded,
+            // The couple's Together hub (Together plan 1b R1).
+            content: TogetherScreen(embedded: true),
+          ),
         ],
         initialIndex: 0,
         scrollable: false,
         showContent: true,
+        // Switching back to a tab shows it as it was (no reload); its data
+        // keeps refreshing from change signals while it's hidden.
+        keepTabsAlive: true,
       ),
     );
   }
@@ -192,12 +196,26 @@ class _PlanningHomeScreenState extends ConsumerState<PlanningHomeScreen> {
             if (c.hidden) c,
         ];
         return RefreshIndicator(
-          onRefresh:
-              () => ref.refresh(
-                planningHomeProvider(widget.relationshipId).future,
-              ),
+          onRefresh: () {
+            ref.invalidate(planningRecentProvider(widget.relationshipId));
+            return ref.refresh(
+              planningHomeProvider(widget.relationshipId).future,
+            );
+          },
           child: ReorderableListView.builder(
             buildDefaultDragHandles: false,
+            // What they were just working on, across every category, first.
+            header: PlanningRecentSection(
+              relationshipId: widget.relationshipId,
+              onSeeAll:
+                  () => Navigator.of(context).push(
+                    planningRoute(
+                      PlanningRecentScreen(
+                        relationshipId: widget.relationshipId,
+                      ),
+                    ),
+                  ),
+            ),
             padding: const EdgeInsets.symmetric(
               vertical: Spacing.sm,
               horizontal: Spacing.md,

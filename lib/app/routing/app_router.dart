@@ -715,7 +715,9 @@ GoRouter createAppRouter(RoutingNotifier routingNotifier) {
       GoRoute(
         path: RouteNames.logMomentType,
         name: 'logMomentType',
-        builder: (context, state) => const LogMomentTypeScreen(),
+        builder:
+            (context, state) =>
+                LogMomentTypeScreen(initialDate: state.extra as DateTime?),
       ),
       GoRoute(
         path: RouteNames.quizEntry,

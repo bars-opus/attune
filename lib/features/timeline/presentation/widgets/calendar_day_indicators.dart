@@ -15,6 +15,7 @@
 /// §3.2). This widget does no date arithmetic of its own.
 library;
 
+import 'package:attune/features/reminders/presentation/reminder_icons.dart';
 import 'package:attune/features/stories/data/story_read_repository.dart';
 import 'package:attune/features/stories/presentation/providers/story_providers.dart';
 import 'package:cached_network_image/cached_network_image.dart';
@@ -101,6 +102,7 @@ class CalendarDayIndicators extends ConsumerWidget {
     required this.relationshipId,
     required this.date,
     required this.eventTypes,
+    this.reminderTypes = const [],
     required this.hasUpcoming,
   });
 
@@ -110,9 +112,14 @@ class CalendarDayIndicators extends ConsumerWidget {
   /// Distinct event types logged on this date, in display order.
   final List<String> eventTypes;
 
-  /// Whether this date carries a reminder or a Planning task/event — the
-  /// "not yet happened" signal, drawn as a hollow ring rather than a
-  /// filled avatar so it reads differently from a logged moment.
+  /// The occasions of this date's reminders (birthday, anniversary…). The
+  /// first is drawn as its occasion icon in its own colour, the same mark
+  /// that ends its row in the Upcoming list; the day sheet lists the rest.
+  final List<String?> reminderTypes;
+
+  /// Whether this date carries a Planning task/event or Together plan — the
+  /// "not yet happened" signal with no occasion, drawn as a small solid
+  /// primary dot (no glyph, smaller than a moment's avatar).
   final bool hasUpcoming;
 
   @override
@@ -137,7 +144,7 @@ class CalendarDayIndicators extends ConsumerWidget {
     final hiddenCount =
         (storyAuthors.length + eventTypes.length) - indicators.length;
 
-    if (indicators.isEmpty && !hasUpcoming) {
+    if (indicators.isEmpty && reminderTypes.isEmpty && !hasUpcoming) {
       return const SizedBox.shrink();
     }
 
@@ -156,6 +163,11 @@ class CalendarDayIndicators extends ConsumerWidget {
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 0.5),
               child: _OverflowTile(count: hiddenCount),
+            ),
+          if (reminderTypes.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 0.5),
+              child: _OccasionMark(type: reminderTypes.first),
             ),
           if (hasUpcoming)
             const Padding(
@@ -276,8 +288,31 @@ class _EventAvatar extends StatelessWidget {
   }
 }
 
-/// "Something upcoming here" — a hollow ring, distinct from the filled
-/// avatars for things that already happened.
+/// Size of a reminder's occasion icon in a date cell: legible, and no
+/// taller than a moment's avatar.
+const double kCalendarOccasionIconSize = 12;
+
+/// A reminder's occasion — the cake, the champagne glasses… — bare, in its
+/// occasion colour, so it matches its row above the calendar and reads
+/// apart from a moment's filled circle.
+class _OccasionMark extends StatelessWidget {
+  const _OccasionMark({required this.type});
+
+  final String? type;
+
+  @override
+  Widget build(BuildContext context) => Semantics(
+    label: reminderOccasionLabel(type),
+    child: Icon(
+      reminderOccasionIcon(type),
+      size: kCalendarOccasionIconSize,
+      color: reminderOccasionColor(type, context),
+    ),
+  );
+}
+
+/// "A plan ahead here" — a solid dot in the primary colour, for what has
+/// no occasion of its own (stories keep their outline).
 class _UpcomingRing extends StatelessWidget {
   const _UpcomingRing();
 
@@ -291,7 +326,7 @@ class _UpcomingRing extends StatelessWidget {
         height: kCalendarEventAvatarDiameter * 0.55,
         decoration: BoxDecoration(
           shape: BoxShape.circle,
-          border: Border.all(color: colorScheme.secondary, width: 1.2),
+          color: colorScheme.primary,
         ),
       ),
     );
@@ -333,11 +368,15 @@ class CalendarLegend extends StatelessWidget {
   const CalendarLegend({
     super.key,
     required this.eventTypes,
+    this.reminderTypes = const [],
     required this.hasStories,
     required this.hasUpcoming,
   });
 
   final List<String> eventTypes;
+
+  /// The reminder occasions shown this month, each keyed with its icon.
+  final List<String?> reminderTypes;
   final bool hasStories;
   final bool hasUpcoming;
 
@@ -378,6 +417,15 @@ class CalendarLegend extends StatelessWidget {
             ),
           ),
         ),
+      for (final type in reminderTypes)
+        _LegendEntry(
+          label: reminderOccasionLabel(type),
+          swatch: Icon(
+            reminderOccasionIcon(type),
+            size: 10,
+            color: reminderOccasionColor(type, context),
+          ),
+        ),
       if (hasUpcoming)
         _LegendEntry(
           label: 'Upcoming',
@@ -386,7 +434,7 @@ class CalendarLegend extends StatelessWidget {
             height: 8,
             decoration: BoxDecoration(
               shape: BoxShape.circle,
-              border: Border.all(color: colorScheme.secondary, width: 1.2),
+              color: colorScheme.primary,
             ),
           ),
         ),

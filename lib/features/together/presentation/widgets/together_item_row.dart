@@ -1,3 +1,4 @@
+import 'package:attune/features/reminders/presentation/reminder_icons.dart';
 import 'package:attune/core/providers/couple_name_provider.dart';
 import 'package:attune/core/utils/date_formatter.dart';
 import 'package:attune/app/theme/design_tokens.dart';
@@ -7,7 +8,11 @@ import 'package:intl/intl.dart';
 
 import '../../domain/together_item.dart';
 
-String togetherWhoLabel(TogetherWho who, String partnerName, {String? coupleName}) => switch (who) {
+String togetherWhoLabel(
+  TogetherWho who,
+  String partnerName, {
+  String? coupleName,
+}) => switch (who) {
   TogetherWho.me => 'You',
   TogetherWho.partner => partnerName,
   // The couple by the name they chose ("Couples" until they do).
@@ -54,11 +59,8 @@ class TogetherItemRow extends StatelessWidget {
           _ => Icons.event_rounded,
         };
       case TogetherItemKind.reminder:
-        return switch (item.sourceRef['reminder_type']) {
-          'birthday' => Icons.cake_outlined,
-          'anniversary' => Icons.favorite_border_rounded,
-          _ => Icons.notifications_none_rounded,
-        };
+        // Its occasion, in the circle and again at the end of the row.
+        return reminderCircleIcon(item.sourceRef['reminder_type'] as String?);
       case TogetherItemKind.planningDate:
         return Icons.checklist_rounded;
       case TogetherItemKind.planningItem:
@@ -124,7 +126,14 @@ class TogetherItemRow extends StatelessWidget {
       titleMaxLines: 1,
       subTitleMaxLines: 1,
       showDivider: !last,
-      disableTrailing: true,
+      // A reminder ends with its occasion (cake, celebration, …).
+      trailing:
+          item.kind == TogetherItemKind.reminder
+              ? ReminderOccasionIcon(
+                type: item.sourceRef['reminder_type'] as String?,
+              )
+              : null,
+      disableTrailing: item.kind != TogetherItemKind.reminder,
       onTap: _masked ? null : onTap,
     );
   }

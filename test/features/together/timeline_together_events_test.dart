@@ -1,3 +1,4 @@
+import 'package:attune/core/widgets/info_row_widget.dart';
 import 'dart:io';
 
 import 'package:attune/features/together/domain/together_item.dart';
@@ -91,12 +92,11 @@ void main() {
         ),
       ),
     );
-    final tile = t.widget<InkWell>(
-      find
-          .ancestor(of: find.text('Busy'), matching: find.byType(InkWell))
-          .first,
+    // Shown as the Agenda's row, with nothing to open.
+    final row = t.widget<InfoRowWidget>(
+      find.ancestor(of: find.text('Busy'), matching: find.byType(InfoRowWidget)).first,
     );
-    expect(tile.onTap, isNull);
+    expect(row.onTap, isNull);
   });
 }
 

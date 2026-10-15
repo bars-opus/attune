@@ -129,6 +129,36 @@ void main() {
     expect(g.calls.last.$2, {'p_event_id': 'e1', 'p_accept': false});
     expect((await repo.listNeeds('r1')).single.kind, TogetherNeedKind.handoff);
   });
+  test(
+    'skipping and detaching one occurrence send the date as a plain day',
+    () async {
+      final g = FakeTogetherGateway({
+        'skip_couple_event_occurrence': (_) => null,
+        'detach_couple_event_occurrence': (_) => 'ev-2',
+      });
+      final repo = TogetherRepository(g);
+      await repo.skipOccurrence('e1', DateTime(2026, 10, 23, 19));
+      expect(g.calls.last.$1, 'skip_couple_event_occurrence');
+      expect(g.calls.last.$2, {'p_event_id': 'e1', 'p_on': '2026-10-23'});
+      final oneOff = CoupleEventDraft(
+        title: 'Date night',
+        allDay: false,
+        start: DateTime(2026, 10, 30, 20),
+        timezone: 'Europe/London',
+        participantIds: const ['ama', 'kofi'],
+      );
+      expect(
+        await repo.detachOccurrence('e1', DateTime(2026, 10, 30), oneOff),
+        'ev-2',
+      );
+      expect(g.calls.last.$1, 'detach_couple_event_occurrence');
+      expect(g.calls.last.$2, {
+        'p_event_id': 'e1',
+        'p_on': '2026-10-30',
+        'p_event': oneOff.toPayload(),
+      });
+    },
+  );
   test('ritual calls', () async {
     final g = FakeTogetherGateway({
       'list_together_rituals': (_) => const [],

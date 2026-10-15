@@ -1,4 +1,5 @@
 // lib/features/reminders/presentation/screens/family_member_edit_sheet.dart
+import 'package:attune/core/providers/run_write.dart';
 import 'package:attune/core/utils/exports/export_screens.dart';
 import 'package:attune/features/reminders/presentation/providers/reminders_providers.dart';
 import 'package:flutter/cupertino.dart';
@@ -79,14 +80,19 @@ class _FamilyMemberEditSheetState extends ConsumerState<FamilyMemberEditSheet> {
     if (_nameController.text.trim().isEmpty) return;
     setState(() => _isSaving = true);
     try {
-      await ref.read(
+      await runWrite(
+        ref,
         upsertFamilyMemberProvider((
           id: widget.id,
           name: _nameController.text.trim(),
           birthday: _birthday,
-        )).future,
+        )),
       );
       if (mounted) Navigator.of(context).pop();
+    } catch (_) {
+      if (mounted) {
+        context.showErrorSnackbar("Couldn't save that. Please try again.");
+      }
     } finally {
       if (mounted) setState(() => _isSaving = false);
     }

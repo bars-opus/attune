@@ -42,6 +42,10 @@ class TabsWithContent extends StatefulWidget {
 
   final bool enableSwipe;
 
+  /// Keeps every tab's page alive while the others are shown, so switching
+  /// back doesn't rebuild and reload it. Off by default (opt-in per screen).
+  final bool keepTabsAlive;
+
   const TabsWithContent({
     super.key,
     required this.tabs,
@@ -66,6 +70,7 @@ class TabsWithContent extends StatefulWidget {
     this.tabHeight,
     this.headertext,
     this.header,
+    this.keepTabsAlive = false,
   });
 
   @override
@@ -142,6 +147,11 @@ class _TabsWithContentState extends State<TabsWithContent>
     super.dispose();
   }
 
+  Widget _page(AppTabItem tab) {
+    final content = tab.content ?? const SizedBox();
+    return widget.keepTabsAlive ? _KeepAlivePage(child: content) : content;
+  }
+
   Widget _buildSwipeableContent() {
     if (!widget.showContent) return const SizedBox.shrink();
 
@@ -149,8 +159,7 @@ class _TabsWithContentState extends State<TabsWithContent>
       child: TabBarView(
         controller: _tabController,
         physics: _tabViewPhysics,
-        children:
-            widget.tabs.map((tab) => tab.content ?? const SizedBox()).toList(),
+        children: [for (final tab in widget.tabs) _page(tab)],
       ),
     );
   }
@@ -261,13 +270,31 @@ class _TabsWithContentState extends State<TabsWithContent>
             child: TabBarView(
               controller: _tabController,
               physics: _tabViewPhysics,
-              children:
-                  widget.tabs
-                      .map((tab) => tab.content ?? const SizedBox())
-                      .toList(),
+              children: [for (final tab in widget.tabs) _page(tab)],
             ),
           ),
       ],
     );
+  }
+}
+
+/// A tab page TabBarView keeps alive when it's off screen.
+class _KeepAlivePage extends StatefulWidget {
+  const _KeepAlivePage({required this.child});
+  final Widget child;
+
+  @override
+  State<_KeepAlivePage> createState() => _KeepAlivePageState();
+}
+
+class _KeepAlivePageState extends State<_KeepAlivePage>
+    with AutomaticKeepAliveClientMixin {
+  @override
+  bool get wantKeepAlive => true;
+
+  @override
+  Widget build(BuildContext context) {
+    super.build(context);
+    return widget.child;
   }
 }

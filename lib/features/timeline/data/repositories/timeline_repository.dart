@@ -50,6 +50,7 @@ class TimelineRepository {
     String? eventType,
     String? title,
     String? note,
+    bool clearNote = false,
     int? moodScore,
     DateTime? occurredAt,
     String? visibility,
@@ -58,7 +59,8 @@ class TimelineRepository {
     if (visibility != null) updates['visibility'] = visibility;
     if (eventType != null) updates['event_type'] = eventType;
     if (title != null) updates['title'] = title;
-    if (note != null) updates['note'] = note;
+    // A null note means "unchanged" unless the user emptied it.
+    if (note != null || clearNote) updates['note'] = note;
     if (moodScore != null) updates['mood_score'] = moodScore;
     if (occurredAt != null)
       updates['occurred_at'] = occurredAt.toIso8601String().split('T')[0];

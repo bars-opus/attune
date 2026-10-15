@@ -76,7 +76,7 @@ void main() {
     await t.enterText(find.byType(TextFormField).first, 'Money talk');
     await t.tap(find.byType(AppToggleSwitch));
     await t.pumpAndSettle();
-    await t.tap(find.text('Save moment'));
+    await t.tap(find.text('Save'));
     await t.pump();
     await t.pump(const Duration(milliseconds: 300));
     expect(sent, ['private']);
@@ -98,7 +98,7 @@ void main() {
         'visibility': 'private',
       },
     );
-    await t.tap(find.text('Save changes'));
+    await t.tap(find.text('Save'));
     await t.pump();
     await t.pump(const Duration(milliseconds: 300));
     expect(sent, ['private']);

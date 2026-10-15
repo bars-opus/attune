@@ -87,4 +87,18 @@ void main() {
   test('reminderDateString pads month and day', () {
     expect(reminderDateString(DateTime(2027, 3, 4, 23, 59)), '2027-03-04');
   });
+
+  test('when to hear: read from the row, and the old default for older rows', () {
+    Map<String, dynamic> row([List<int>? days]) => {
+      'id': 'rem-9', 'relationship_id': 'rel-1', 'created_by': 'user-1',
+      'reminder_type': 'birthday', 'title': 'Mum', 'note': null,
+      'remind_at': '2026-03-10T00:00:00Z', 'recurrence': 'yearly', 'sent': false,
+      'family_member_id': null, 'linked_timeline_event_id': null,
+      'created_at': '2026-08-02T10:00:00Z', 'updated_at': '2026-08-02T10:00:00Z',
+      if (days != null) 'remind_days_before': days,
+    };
+    expect(ReminderModel.fromJson(row([1, 7])).remindDaysBefore, [1, 7]);
+    expect(ReminderModel.fromJson(row()).remindDaysBefore, [0, 3]);
+    expect(ReminderModel.fromJson(ReminderModel.fromJson(row([7])).toJson()).remindDaysBefore, [7]);
+  });
 }

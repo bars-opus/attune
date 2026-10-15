@@ -144,7 +144,7 @@ void main() {
 
       await tester.enterText(find.byType(TextFormField).first, 'First trip together');
       await tester.pumpAndSettle();
-      await tester.tap(find.text('Save moment'));
+      await tester.tap(find.text('Save'));
       // Not pumpAndSettle here: AppButton's isLoading spinner
       // (CircularProgressIndicator) animates indefinitely for as long as
       // _isSubmitting is true, which spans the entire time the yearly-
@@ -234,7 +234,7 @@ void main() {
           'Updated title',
         );
         await tester.pumpAndSettle();
-        await tester.tap(find.text('Save changes'));
+        await tester.tap(find.text('Save'));
         await tester.pumpAndSettle();
 
         expect(
@@ -379,7 +379,7 @@ void main() {
         );
         await tester.pumpAndSettle();
 
-        await tester.tap(find.text('Save moment'));
+        await tester.tap(find.text('Save'));
         // See pumpScreen's comment above: pumpAndSettle can't converge
         // while the Save button's spinner is active during the dialog's
         // await, so pump explicitly instead.

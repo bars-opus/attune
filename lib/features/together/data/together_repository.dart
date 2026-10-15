@@ -80,13 +80,43 @@ class TogetherRepository {
           })
           as String;
 
-  Future<void> updateEvent(String eventId, CoupleEventDraft draft) => _call(
-    'update_couple_event',
-    {'p_event_id': eventId, 'p_event': draft.toPayload()},
-  );
+  /// [excludedShift] says how "All repeats" moved the series, so its
+  /// skipped dates move the same way (see together_move_dates).
+  Future<void> updateEvent(
+    String eventId,
+    CoupleEventDraft draft, {
+    Map<String, int>? excludedShift,
+  }) => _call('update_couple_event', {
+    'p_event_id': eventId,
+    'p_event': {
+      ...draft.toPayload(),
+      if (excludedShift != null) 'excluded_shift': excludedShift,
+    },
+  });
 
   Future<void> deleteEvent(String eventId) =>
       _call('delete_couple_event', {'p_event_id': eventId});
+
+  /// Leaves out one date of a repeating event; [on] is the occurrence's
+  /// calendar date (the item's `date`, in the event's own zone).
+  Future<void> skipOccurrence(String eventId, DateTime on) => _call(
+    'skip_couple_event_occurrence',
+    {'p_event_id': eventId, 'p_on': _ymd(on)},
+  );
+
+  /// "This one only": skips [on] on the series and saves [draft] as a
+  /// one-off in its place. Returns the one-off's id.
+  Future<String> detachOccurrence(
+    String eventId,
+    DateTime on,
+    CoupleEventDraft draft,
+  ) async =>
+      await _call('detach_couple_event_occurrence', {
+            'p_event_id': eventId,
+            'p_on': _ymd(on),
+            'p_event': draft.toPayload(),
+          })
+          as String;
 
   Future<void> leaveEvent(String eventId) =>
       _call('leave_couple_event', {'p_event_id': eventId});

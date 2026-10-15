@@ -3,7 +3,10 @@
 import 'package:attune/core/utils/exports/export_screens.dart';
 
 class LogMomentTypeScreen extends StatelessWidget {
-  const LogMomentTypeScreen({super.key});
+  const LogMomentTypeScreen({super.key, this.initialDate});
+
+  /// The calendar day it's being logged on, if any.
+  final DateTime? initialDate;
 
   @override
   Widget build(BuildContext context) {
@@ -98,12 +101,7 @@ class LogMomentTypeScreen extends StatelessWidget {
     return CardInkWell(
       elevation: 0,
       color: color.withOpacity(.3),
-      onTap: () {
-        context.pushNamed(
-          'logMomentDetails',
-          extra: (eventType: type, editEventId: null, initialData: null),
-        );
-      },
+      onTap: () => _openDetails(context, type),
       child: InfoRowWidget(
         title: label,
         subtitle: '',
@@ -116,13 +114,23 @@ class LogMomentTypeScreen extends StatelessWidget {
         showDivider: false,
         showTrailingArrow: true,
 
-        onTap: () {
-          context.pushNamed(
-            'logMomentDetails',
-            extra: (eventType: type, editEventId: null, initialData: null),
-          );
-        },
+        onTap: () => _openDetails(context, type),
       ),
     );
+  }
+
+  /// Opens the details for [type]; once the moment is saved, this screen
+  /// closes too, handing `true` back to whoever opened it, so the user
+  /// lands where they started rather than back on this picker.
+  Future<void> _openDetails(BuildContext context, String type) async {
+    final saved = await context.pushNamed<bool>(
+      'logMomentDetails',
+      extra: (
+        eventType: type,
+        editEventId: null,
+        initialData: initialDate == null ? null : {'occurred_at': initialDate},
+      ),
+    );
+    if (saved == true && context.mounted) context.pop(true);
   }
 }

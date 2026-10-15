@@ -41,6 +41,7 @@ class PlanningRepository {
     'settle_planning_split', 'add_planning_photo', 'remove_planning_photo',
     'vote_planning_poll', 'lock_planning_poll', 'set_planning_timezone', 'list_planning_gallery',
     'create_planning_category_from_gallery', 'planning_timezone_offset_minutes',
+    'list_planning_recent',
   };
 
   Future<Map<String, dynamic>> _call(String fn, Map<String, dynamic> params) async {
@@ -148,6 +149,21 @@ class PlanningRepository {
       PlanningEntriesPage.fromJson(await _call('list_planning_entries', {
         'p_category_id': categoryId, 'p_group': group,
         'p_cursor_at': cursorAt?.toUtc().toIso8601String(), 'p_cursor_id': cursorId,
+        'p_limit': limit,
+      }));
+
+  /// The couple's plans across every category, most recently worked on
+  /// first (Recent).
+  Future<PlanningRecentPage> listRecent(
+    String relationshipId, {
+    DateTime? cursorAt,
+    String? cursorId,
+    int limit = 30,
+  }) async =>
+      PlanningRecentPage.fromJson(await _call('list_planning_recent', {
+        'p_relationship_id': relationshipId,
+        'p_cursor_at': cursorAt?.toUtc().toIso8601String(),
+        'p_cursor_id': cursorId,
         'p_limit': limit,
       }));
 

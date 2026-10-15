@@ -1,5 +1,6 @@
 // lib/features/reminders/presentation/screens/family_members_screen.dart
 import 'package:attune/core/utils/date_formatter.dart';
+import 'package:attune/core/providers/run_write.dart';
 import 'package:attune/core/utils/exports/export_screens.dart';
 import 'package:attune/features/reminders/presentation/providers/reminders_providers.dart';
 import 'package:attune/features/reminders/presentation/screens/family_member_edit_sheet.dart';
@@ -87,7 +88,8 @@ class FamilyMembersPanel extends ConsumerWidget {
                 title: 'Something went wrong',
                 subtitle: 'We couldn\'t load your family list right now.',
                 primaryActionLabel: 'Try again',
-                onPrimaryAction: () => ref.invalidate(familyMembersListProvider),
+                onPrimaryAction:
+                    () => ref.invalidate(familyMembersListProvider),
               ),
           data: (members) {
             if (members.isEmpty) {
@@ -117,17 +119,26 @@ class FamilyMembersPanel extends ConsumerWidget {
                             existingName: members[i].name,
                             existingBirthday: members[i].birthday,
                           ),
-                      disableTrailing: true,
                       showAvatar: false,
                       showDivider: i < members.length - 1,
                       showTrailingArrow: false,
                       trailing: AppIconButton(
                         icon: Icons.delete_outline,
                         tooltip: 'Delete',
-                        onPressed:
-                            () => ref.read(
-                              deleteFamilyMemberProvider(members[i].id).future,
-                            ),
+                        onPressed: () async {
+                          try {
+                            await runWrite(
+                              ref,
+                              deleteFamilyMemberProvider(members[i].id),
+                            );
+                          } catch (_) {
+                            if (context.mounted) {
+                              context.showErrorSnackbar(
+                                "Couldn't remove them. Please try again.",
+                              );
+                            }
+                          }
+                        },
                       ),
                     ),
                 ],

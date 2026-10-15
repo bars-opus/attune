@@ -17,11 +17,12 @@ import 'package:attune/features/timeline/presentation/widgets/add_moment_or_remi
 import 'package:attune/features/timeline/presentation/widgets/calendar_strip.dart';
 import 'package:attune/features/timeline/presentation/widgets/moments_list.dart';
 import 'package:attune/features/timeline/presentation/widgets/planning_day_section.dart';
+import 'package:attune/features/timeline/presentation/screens/calendar_all_months_screen.dart';
 import 'package:attune/features/timeline/presentation/widgets/calendar_day_sheet.dart';
+import 'package:attune/features/timeline/presentation/widgets/calendar_month_data.dart';
 import 'package:attune/features/timeline/presentation/widgets/upcoming_reminders_section.dart';
 import 'package:attune/features/together/domain/together_item.dart';
 import 'package:attune/features/together/presentation/together_providers.dart';
-import 'package:attune/features/together/presentation/widgets/couple_event_sheet.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 class TimelineScreen extends ConsumerStatefulWidget {
@@ -87,6 +88,14 @@ class _TimelineScreenState extends ConsumerState<TimelineScreen>
     );
   }
 
+  /// Every month, vertically, with the same marks (the calendar card's
+  /// All months button).
+  void _openAllMonths(String relationshipId) => Navigator.of(context).push(
+    MaterialPageRoute<void>(
+      builder: (_) => CalendarAllMonthsScreen(relationshipId: relationshipId),
+    ),
+  );
+
   Map<DateTime, List<ReminderModel>> _remindersByDate(
     List<ReminderModel> reminders,
   ) => remindersByDateInMonth(reminders, _focusedMonth);
@@ -99,18 +108,7 @@ class _TimelineScreenState extends ConsumerState<TimelineScreen>
   Map<DateTime, List<Object>> _scheduledByDate(
     List<PlanningCalendarEntry> entries,
     List<TogetherItem> together,
-  ) {
-    final Map<DateTime, List<Object>> grouped = {};
-    for (final entry in entries) {
-      final date = DateTime(entry.date.year, entry.date.month, entry.date.day);
-      grouped.putIfAbsent(date, () => []).add(entry);
-    }
-    for (final item in together) {
-      if (item.kind != TogetherItemKind.event) continue;
-      grouped.putIfAbsent(item.day, () => []).add(item);
-    }
-    return grouped;
-  }
+  ) => scheduledByDay(entries, together);
 
   @override
   Widget build(BuildContext context) {
@@ -177,33 +175,8 @@ class _TimelineScreenState extends ConsumerState<TimelineScreen>
                   : null,
           floatingActionButton: AppFab(
             icon: Icons.add,
-            onPressed: () async {
-              final choice = await AddMomentOrReminderSheet.show(context);
-              if (!mounted || choice == null) return;
-
-              switch (choice) {
-                case AddChoice.event:
-                  if (!context.mounted) return;
-                  await showCoupleEventSheet(
-                    context,
-                    relationshipId: relationshipId,
-                  );
-                case AddChoice.moment:
-                  if (!context.mounted) return;
-                  final refreshNeeded = await context.pushNamed(
-                    'logMomentType',
-                  );
-                  if (refreshNeeded == true && mounted) {
-                    ref.invalidate(timelineEventsProvider(_focusedMonth));
-                  }
-                case AddChoice.reminder:
-                  if (!context.mounted) return;
-                  await showReminderSheet(context);
-                  if (mounted) {
-                    ref.invalidate(reminders_providers.remindersListProvider);
-                  }
-              }
-            },
+            onPressed:
+                () => openAddFlow(context, relationshipId: relationshipId),
           ),
 
           body: RefreshIndicator(
@@ -262,20 +235,14 @@ class _TimelineScreenState extends ConsumerState<TimelineScreen>
                 SliverToBoxAdapter(
                   child: eventsAsync.when(
                     data: (events) {
-                      // Group events by date for calendar dots
-                      final Map<DateTime, List<TimelineEventModel>>
-                      eventsByDate = {};
-                      for (final event in events) {
-                        final date = DateTime(
-                          event.occurredAt.year,
-                          event.occurredAt.month,
-                          event.occurredAt.day,
-                        );
-                        if (!eventsByDate.containsKey(date)) {
-                          eventsByDate[date] = [];
-                        }
-                        eventsByDate[date]!.add(event);
-                      }
+                      // Moments by day for the calendar, less any a
+                      // reminder on the same day already stands for.
+                      final eventsByDate = momentsByDay(
+                        events,
+                        remindersByDate: _remindersByDate(
+                          remindersAsync.valueOrNull ?? const [],
+                        ),
+                      );
 
                       return CardInkWell(
                         padding: const EdgeInsets.only(top: Spacing.lg),
@@ -291,6 +258,7 @@ class _TimelineScreenState extends ConsumerState<TimelineScreen>
                             togetherEvents,
                           ),
                           selectedDate: _selectedDate,
+                          onShowAll: () => _openAllMonths(relationshipId),
                           onDaySelected: (date) {
                             _selectDate(date);
                             _openDaySheet(
@@ -336,6 +304,7 @@ class _TimelineScreenState extends ConsumerState<TimelineScreen>
                               togetherEvents,
                             ),
                             selectedDate: _selectedDate,
+                            onShowAll: () => _openAllMonths(relationshipId),
                             onDaySelected: (date) {
                               _selectDate(date);
                             },

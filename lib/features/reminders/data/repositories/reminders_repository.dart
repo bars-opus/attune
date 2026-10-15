@@ -27,6 +27,7 @@ class RemindersRepository {
     required DateTime remindAt,
     required String recurrence,
     String? familyMemberId,
+    List<int> remindDaysBefore = const [0, 3],
   }) async {
     final response =
         await _supabase
@@ -40,6 +41,7 @@ class RemindersRepository {
               'remind_at': reminderDateString(remindAt),
               'recurrence': recurrence,
               'family_member_id': familyMemberId,
+              'remind_days_before': remindDaysBefore,
             })
             .select()
             .single();
@@ -55,6 +57,7 @@ class RemindersRepository {
     DateTime? remindAt,
     String? recurrence,
     String? familyMemberId,
+    List<int>? remindDaysBefore,
   }) async {
     final updates = <String, dynamic>{};
     if (reminderType != null) updates['reminder_type'] = reminderType;
@@ -63,6 +66,9 @@ class RemindersRepository {
     if (remindAt != null) updates['remind_at'] = reminderDateString(remindAt);
     if (recurrence != null) updates['recurrence'] = recurrence;
     if (familyMemberId != null) updates['family_member_id'] = familyMemberId;
+    if (remindDaysBefore != null) {
+      updates['remind_days_before'] = remindDaysBefore;
+    }
 
     final response =
         await _supabase

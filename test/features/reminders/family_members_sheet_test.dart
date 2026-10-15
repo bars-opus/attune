@@ -58,6 +58,8 @@ void main() {
     final firstRowTop = t.getTopLeft(find.ancestor(of: find.text('Kwame'), matching: find.byType(InfoRowWidget))).dy;
     expect(firstRowTop - addBottom, greaterThanOrEqualTo(16));
     expect(t.getTopLeft(find.text('Kwame')).dy, lessThan(t.getTopLeft(find.text('Abena')).dy));
+    // Each member can be removed.
+    expect(find.byTooltip('Delete'), findsNWidgets(2));
   });
 
   testWidgets('with nobody yet, Add is still at the top, over the empty note', (t) async {

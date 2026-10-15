@@ -98,4 +98,23 @@ void main() {
     expect(past.end, DateTime(2026, 11, 1));
     expect(past.end.difference(past.start).inDays, lessThanOrEqualTo(93));
   });
+
+  test('the next few things: soonest first, no moments, nothing already past', () {
+    final items = [
+      _i('m', now, kind: TogetherItemKind.moment),
+      _i('gone', now, startsAt: DateTime(2026, 11, 2, 8)),
+      _i('later', DateTime(2026, 11, 9)),
+      _i('dinner', now, startsAt: DateTime(2026, 11, 2, 19)),
+      _i('rent', now),
+      _i('trip', DateTime(2026, 11, 20)),
+    ];
+    expect(upcomingTogetherItems(items, now, count: 3).map((i) => i.id), ['rent', 'dinner', 'later']);
+    expect(nextTogetherItem(items, now)?.id, 'rent');
+  });
+
+  test('a countdown reads like the reminder rows', () {
+    expect(togetherCountdown(DateTime(2026, 11, 2), now), 'Today');
+    expect(togetherCountdown(DateTime(2026, 11, 3), now), 'Tomorrow');
+    expect(togetherCountdown(DateTime(2026, 11, 12), now), 'In 10 days');
+  });
 }

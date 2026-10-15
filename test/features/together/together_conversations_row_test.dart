@@ -5,12 +5,12 @@ import 'package:attune/features/together/domain/together_item.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
-  test('the Conversations card opens Together, not the old timeline', () {
+  test('the Conversations screen has the Together card, not the old timeline row', () {
     final src =
         File(
           'lib/features/chat/presentation/screens/conversations_screen.dart',
         ).readAsStringSync();
-    expect(src, contains("pushNamed('together')"));
+    expect(src, contains('TogetherCard('));
     expect(src, isNot(contains('class _NextCalendarEventRow')));
   });
 

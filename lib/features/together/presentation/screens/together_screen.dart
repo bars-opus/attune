@@ -1,3 +1,4 @@
+import 'package:flutter/rendering.dart' show ScrollDirection;
 import 'package:attune/features/reminders/presentation/screens/family_members_screen.dart';
 import 'package:attune/core/providers/couple_name_provider.dart';
 import 'package:attune/core/utils/date_formatter.dart';
@@ -8,8 +9,6 @@ import 'package:attune/features/planning/presentation/screens/planning_entry_scr
 import 'package:attune/features/planning/presentation/widgets/planning_skeletons.dart';
 import 'package:attune/features/quiz/presentation/providers/quiz_providers.dart'
     as quiz_providers;
-import 'package:attune/features/reminders/presentation/providers/reminders_providers.dart'
-    as reminders_providers;
 import 'package:attune/features/reminders/presentation/screens/add_edit_reminder_screen.dart';
 import 'package:attune/features/timeline/presentation/providers/timeline_providers.dart'
     as timeline_providers;
@@ -34,6 +33,7 @@ import '../../domain/together_live.dart';
 import '../../domain/together_widget.dart';
 import '../../domain/together_ritual.dart';
 import '../../domain/together_story.dart';
+import '../open_together_item.dart';
 import '../together_providers.dart';
 import '../widgets/together_need_sheets.dart';
 import '../widgets/couple_event_sheet.dart';
@@ -79,6 +79,33 @@ class TogetherScreen extends ConsumerStatefulWidget {
 
 class _TogetherScreenState extends ConsumerState<TogetherScreen> {
   _View _view = _View.agenda;
+
+  /// Month is built the first time it's chosen, then kept.
+  bool _monthOpened = false;
+
+  /// The header and tabs tuck away while scrolling down and come back on
+  /// any scroll up, so a long Agenda or Month gets the room.
+  bool _headerTucked = false;
+
+  /// Tuck on a user's scroll down, show on a scroll up or once settled at
+  /// the top.
+  /// Only lists long enough to fill the space the header gives back tuck
+  /// it, so a short list never jumps.
+  bool _onScroll(ScrollNotification n) {
+    if (n.metrics.axis != Axis.vertical) return false;
+    var tucked = _headerTucked;
+    // A drag down announces itself while the list is still at the top.
+    if (n is UserScrollNotification) {
+      final room = n.metrics.maxScrollExtent - n.metrics.minScrollExtent;
+      if (n.direction == ScrollDirection.reverse && room > 160) tucked = true;
+      if (n.direction == ScrollDirection.forward) tucked = false;
+    } else if (n is ScrollEndNotification &&
+        n.metrics.pixels <= n.metrics.minScrollExtent) {
+      tucked = false;
+    }
+    if (tucked != _headerTucked) setState(() => _headerTucked = tucked);
+    return false;
+  }
 
   /// The device zone is reported once per visit (best effort).
   bool _zoneReported = false;
@@ -135,59 +162,15 @@ class _TogetherScreenState extends ConsumerState<TogetherScreen> {
     }
   }
 
-  Future<void> _add(String relationshipId) async {
-    final choice = await AddMomentOrReminderSheet.show(context);
-    if (!mounted || choice == null) return;
-    switch (choice) {
-      case AddChoice.event:
-        await showCoupleEventSheet(context, relationshipId: relationshipId);
-      case AddChoice.moment:
-        await context.pushNamed('logMomentType');
-      case AddChoice.reminder:
-        await showReminderSheet(context);
-    }
-  }
+  Future<void> _add(String relationshipId) =>
+      openAddFlow(context, relationshipId: relationshipId);
 
-  void _open(TogetherItem item, String relationshipId) {
-    switch (item.kind) {
-      case TogetherItemKind.event:
-        showCoupleEventSheet(
-          context,
-          relationshipId: relationshipId,
-          item: item,
-        );
-      case TogetherItemKind.planningDate:
-      case TogetherItemKind.planningItem:
-        final entryId = item.sourceRef['entry_id'] as String?;
-        if (entryId == null) return;
-        Navigator.of(context).push(
-          planningRoute(
-            PlanningEntryScreen(
-              relationshipId: relationshipId,
-              entryId: entryId,
-            ),
-          ),
-        );
-      case TogetherItemKind.reminder:
-        _openReminder(item.id);
-      case TogetherItemKind.moment:
-        setState(() => _view = _View.month);
-    }
-  }
-
-  /// The reminder list may not be loaded yet on the first tap: wait for it.
-  Future<void> _openReminder(String id) async {
-    final reminders = await ref.read(
-      reminders_providers.remindersListProvider.future,
-    );
-    if (!mounted) return;
-    for (final r in reminders) {
-      if (r.id == id) {
-        await showReminderSheet(context, reminder: r);
-        return;
-      }
-    }
-  }
+  void _open(TogetherItem item, String relationshipId) => openTogetherItem(
+    context,
+    item,
+    relationshipId,
+    onMoment: () => setState(() => _view = _View.month),
+  );
 
   /// Refetch both ranges, not just the agenda built from them.
   Future<void> _reload(String relationshipId) {
@@ -223,7 +206,10 @@ class _TogetherScreenState extends ConsumerState<TogetherScreen> {
         Icons.check_box_outline_blank_rounded,
         n.dueDate == null
             ? 'Nobody has this yet'
-            : MyDateFormat.join(['Nobody has this yet', 'due ${DateFormat.MMMEd().format(n.dueDate!)}']),
+            : MyDateFormat.join([
+              'Nobody has this yet',
+              'due ${DateFormat.MMMEd().format(n.dueDate!)}',
+            ]),
       ),
       TogetherNeedKind.poll => (
         Icons.date_range_outlined,
@@ -934,7 +920,12 @@ class _TogetherScreenState extends ConsumerState<TogetherScreen> {
                 ),
               ],
               selected: {_view},
-              onSelectionChanged: (s) => setState(() => _view = s.first),
+              onSelectionChanged:
+                  (s) => setState(() {
+                    _view = s.first;
+                    _headerTucked = false;
+                    if (_view == _View.month) _monthOpened = true;
+                  }),
             ),
           ),
         ],
@@ -957,23 +948,44 @@ class _TogetherScreenState extends ConsumerState<TogetherScreen> {
                 Expanded(
                   child:
                       relationshipAsync.isLoading
-                          ? const PlanningEntriesSkeleton(label: 'Loading your plans')
-                          : const Center(child: Text('No active relationship found')),
+                          ? const PlanningEntriesSkeleton(
+                            label: 'Loading your plans',
+                          )
+                          : const Center(
+                            child: Text('No active relationship found'),
+                          ),
                 ),
               ],
             )
             : Column(
               children: [
-                header,
-                toggle,
+                _Tuckable(
+                  // A screen reader keeps the header where it is.
+                  tucked:
+                      _headerTucked &&
+                      !MediaQuery.of(context).accessibleNavigation,
+                  child: Column(children: [header, toggle]),
+                ),
+                // Both views stay alive once opened, so switching back shows
+                // them as they were; Month is built the first time it's
+                // chosen. Their data keeps refreshing from change signals.
                 Expanded(
-                  child:
-                      _view == _View.agenda
-                          ? _agenda(relationshipId)
-                          : const TimelineScreen(
+                  child: NotificationListener<ScrollNotification>(
+                    onNotification: _onScroll,
+                    child: IndexedStack(
+                      index: _view == _View.agenda ? 0 : 1,
+                      children: [
+                        _agenda(relationshipId),
+                        if (_monthOpened)
+                          const TimelineScreen(
                             showAppBar: true,
                             showOwnAppBar: false,
-                          ),
+                          )
+                        else
+                          const SizedBox.shrink(),
+                      ],
+                    ),
+                  ),
                 ),
               ],
             );
@@ -992,6 +1004,41 @@ class _TogetherScreenState extends ConsumerState<TogetherScreen> {
                 onPressed: () => _add(relationshipId),
               ),
       body: body,
+    );
+  }
+}
+
+/// Slides [child] up out of sight (and out of reach) when [tucked], and
+/// back down when not; instant when the device asks for less motion.
+class _Tuckable extends StatelessWidget {
+  const _Tuckable({required this.tucked, required this.child});
+  final bool tucked;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final duration =
+        MediaQuery.of(context).disableAnimations
+            ? Duration.zero
+            : const Duration(milliseconds: 220);
+    return ClipRect(
+      child: AnimatedAlign(
+        alignment: Alignment.bottomCenter,
+        heightFactor: tucked ? 0 : 1,
+        duration: duration,
+        curve: Curves.easeOutCubic,
+        child: IgnorePointer(
+          ignoring: tucked,
+          child: ExcludeSemantics(
+            excluding: tucked,
+            child: AnimatedOpacity(
+              opacity: tucked ? 0 : 1,
+              duration: duration,
+              child: child,
+            ),
+          ),
+        ),
+      ),
     );
   }
 }

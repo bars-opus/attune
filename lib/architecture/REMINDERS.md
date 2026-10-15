@@ -103,6 +103,15 @@ existing `process-scheduled-notifications` cron/OneSignal pipeline
 unmodified — the same pattern the dating-mode match notification and every
 other one-shot notification in this codebase already uses.
 
+> **Updated 2026-10-15** (`20261015100000_reminder_delivery_fixes.sql`): the
+> job now runs every 15 minutes and tells each partner from 09:00 in their own
+> time zone (`planning_member_settings`, UTC if unknown), once per person per
+> day. The day-of and 3-days-before pushes have separate keys
+> (`reminder:<id>:<date>:<user>:0` and `:3`; they used to share one, so the
+> second was dropped). Delivery no longer reads `sent` (a trigger clears it
+> when the date or recurrence changes), and ended relationships get nothing.
+> The description below is the original design.
+
 A new daily cron (`schedule_generate_reminder_notifications.sql`, same
 shape as the existing `schedule_process_scheduled_notifications.sql`,
 07:00 UTC) calls a new RPC, `generate_reminder_notifications()`:

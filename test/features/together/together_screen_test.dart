@@ -17,6 +17,7 @@ import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:attune/core/widgets/info_row_widget.dart';
 import 'package:attune/features/reminders/data/models/reminder_model.dart';
 import 'package:attune/features/reminders/presentation/providers/reminders_providers.dart';
+import 'package:attune/features/reminders/presentation/screens/add_edit_reminder_screen.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:attune/features/together/data/together_calendar_mirror.dart';
@@ -73,6 +74,11 @@ Future<FakeTogetherGateway> _pump(
   // Never the real lock-screen channel or phone calendar in tests.
   TogetherLiveActivity.store = live ?? FakeLiveStore();
   TogetherMirror.calendar = mirror ?? FakeMirrorCalendar();
+  // And never the real home-screen widget plugin (test order must not
+  // matter); a test that installed its own fake keeps it.
+  if (TogetherWidgetSync.store is! FakeWidgetStore) {
+    TogetherWidgetSync.store = FakeWidgetStore();
+  }
   var failing = failFirst;
   final g = FakeTogetherGateway({
     'list_together_items': (p) {
@@ -109,6 +115,9 @@ Future<FakeTogetherGateway> _pump(
         timeline.currentRelationshipIdProvider.overrideWith(
           (ref) async => relationshipId,
         ),
+        // The Month view (TimelineScreen) reads these.
+        timeline.currentUserIdProvider.overrideWithValue(null),
+        timeline.timelineEventsProvider.overrideWith((ref, month) async => []),
         timeline.togetherChangeSignalProvider.overrideWith(
           (ref, id) => const Stream.empty(),
         ),
@@ -176,11 +185,63 @@ void main() {
       },
     );
 
+  // A long agenda to scroll.
+  final longAgenda = [
+    for (var d = 2; d <= 28; d++)
+      _row('e$d', '2026-11-${d.toString().padLeft(2, '0')}', title: 'Plan $d'),
+  ];
+  Finder agendaList() => find
+      .descendant(of: find.byType(RefreshIndicator), matching: find.byType(Scrollable))
+      .first;
+
+  testWidgets('scrolling down tucks the header and tabs away; scrolling up brings them back', (t) async {
+    await _pump(t, upcoming: longAgenda);
+    final top = t.getTopLeft(agendaList()).dy;
+    expect(find.text('Agenda').hitTestable(), findsOneWidget);
+
+    await t.drag(agendaList(), const Offset(0, -300));
+    await t.pumpAndSettle();
+    // The list takes the room; the header and tabs can't be tapped.
+    expect(t.getTopLeft(agendaList()).dy, lessThan(top - 60));
+    expect(find.text('Agenda').hitTestable(), findsNothing);
+    expect(find.byTooltip('Together settings').hitTestable(), findsNothing);
+
+    // A small pull back up is enough.
+    await t.drag(agendaList(), const Offset(0, 40));
+    await t.pumpAndSettle();
+    expect(t.getTopLeft(agendaList()).dy, closeTo(top, 1));
+    expect(find.text('Agenda').hitTestable(), findsOneWidget);
+  });
+
+  testWidgets('with a screen reader on, the header stays put', (t) async {
+    t.platformDispatcher.accessibilityFeaturesTestValue =
+        const FakeAccessibilityFeatures(accessibleNavigation: true);
+    addTearDown(t.platformDispatcher.clearAccessibilityFeaturesTestValue);
+    await _pump(t, upcoming: longAgenda);
+    await t.drag(agendaList(), const Offset(0, -300));
+    await t.pumpAndSettle();
+    expect(find.text('Agenda').hitTestable(), findsOneWidget);
+  });
+
   testWidgets('an empty section\'s card still spans the full width', (t) async {
     await _pump(t, upcoming: [_row('lisbon', '2026-11-20', title: 'Lisbon')]);
     final empty = find.ancestor(of: find.text('Nothing planned today.'), matching: find.byType(CardInkWell));
     final full = find.ancestor(of: find.text('Lisbon'), matching: find.byType(CardInkWell));
     expect(t.getSize(empty).width, t.getSize(full).width);
+  });
+
+  testWidgets('after the reminder sheet closes, the Agenda refetches straight away', (t) async {
+    final g = await _pump(t, upcoming: [_row('rent', '2026-11-02', title: 'Rent')]);
+    int fetches() => g.calls.where((c) => c.$1 == 'list_together_items').length;
+    await t.tap(find.byType(FloatingActionButton));
+    await t.pumpAndSettle();
+    await t.tap(find.text('Add a reminder'));
+    await t.pumpAndSettle();
+    final before = fetches();
+    // Closed without saving (the sheet has no close button; it's dismissed).
+    Navigator.of(t.element(find.byType(AddEditReminderScreen))).pop();
+    await t.pumpAndSettle();
+    expect(fetches(), greaterThan(before));
   });
 
   testWidgets('Family opens as a sheet over Together, not a new screen', (t) async {
@@ -189,6 +250,22 @@ void main() {
     await t.pumpAndSettle();
     expect(find.text('Add family member'), findsOneWidget);
     expect(find.byType(TogetherScreen), findsOneWidget); // still underneath
+  });
+
+  testWidgets('switching Agenda and Month keeps the Agenda loaded (no refetch)', (t) async {
+    final g = await _pump(t, upcoming: [_row('rent', '2026-11-02', title: 'Rent')]);
+    // The Agenda's own reads (upcoming and past); Month fetches its month.
+    int fetches() => g.calls
+        .where((c) => c.$1 == 'list_together_items')
+        .where((c) => c.$2['p_start'] == '2026-11-02' || c.$2['p_start'] == '2026-08-01')
+        .length;
+    final before = fetches();
+    await t.tap(find.text('Month'));
+    await t.pumpAndSettle();
+    await t.tap(find.text('Agenda'));
+    await t.pumpAndSettle();
+    expect(find.text('Rent'), findsOneWidget);
+    expect(fetches(), before);
   });
 
   testWidgets('sections: today, this week, coming up, our story', (t) async {

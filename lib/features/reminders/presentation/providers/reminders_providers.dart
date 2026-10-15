@@ -115,6 +115,7 @@ final createReminderProvider = FutureProvider.family<
     DateTime remindAt,
     String recurrence,
     String? familyMemberId,
+    List<int> remindDaysBefore,
   })
 >((ref, params) async {
   final supabase = ref.read(supabaseClientProvider);
@@ -134,6 +135,7 @@ final createReminderProvider = FutureProvider.family<
         remindAt: params.remindAt,
         recurrence: params.recurrence,
         familyMemberId: params.familyMemberId,
+        remindDaysBefore: params.remindDaysBefore,
       );
   ref.invalidate(remindersListProvider);
   return reminder;
@@ -148,6 +150,7 @@ final updateReminderProvider = FutureProvider.family<
     String? note,
     DateTime remindAt,
     String recurrence,
+    List<int> remindDaysBefore,
   })
 >((ref, params) async {
   final reminder = await ref
@@ -160,6 +163,7 @@ final updateReminderProvider = FutureProvider.family<
         clearNote: params.note == null,
         remindAt: params.remindAt,
         recurrence: params.recurrence,
+        remindDaysBefore: params.remindDaysBefore,
       );
   ref.invalidate(remindersListProvider);
   return reminder;

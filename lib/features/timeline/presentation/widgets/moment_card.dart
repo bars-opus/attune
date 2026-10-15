@@ -1,8 +1,10 @@
 // lib/features/timeline/presentation/widgets/moment_card.dart
 
+import 'package:attune/core/providers/run_write.dart';
 import 'package:attune/core/utils/exports/export_screens.dart';
 import 'package:attune/features/timeline/data/models/timeline_event_model.dart';
 import 'package:attune/features/timeline/presentation/providers/timeline_providers.dart';
+import 'package:attune/features/timeline/presentation/screens/log_moment_details_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:gap/gap.dart';
@@ -33,27 +35,23 @@ class _MomentCardState extends ConsumerState<MomentCard> {
 
   bool get _isOwnEvent => widget.event.loggedBy == widget.currentUserId;
 
-  void _editMoment() {
-    context
-        .pushNamed(
-          'logMomentDetails',
-          extra: (
-            eventType: widget.event.eventType,
-            editEventId: widget.event.id,
-            initialData: {
-              'title': widget.event.title,
-              'note': widget.event.note,
-              'occurred_at': widget.event.occurredAt,
-              'mood_score': widget.event.moodScore,
-              'visibility': widget.event.visibility,
-            },
-          ),
-        )
-        .then((refreshNeeded) {
-          if (refreshNeeded == true && mounted) {
-            ref.invalidate(timelineEventsProvider(widget.currentMonth));
-          }
-        });
+  /// Edits in the same sheet a moment is logged in.
+  Future<void> _editMoment() async {
+    final saved = await showMomentSheet(
+      context,
+      eventType: widget.event.eventType,
+      editEventId: widget.event.id,
+      initialData: {
+        'title': widget.event.title,
+        'note': widget.event.note,
+        'occurred_at': widget.event.occurredAt,
+        'mood_score': widget.event.moodScore,
+        'visibility': widget.event.visibility,
+      },
+    );
+    if (saved == true && mounted) {
+      ref.invalidate(timelineEventsProvider(widget.currentMonth));
+    }
   }
 
   void _showDeleteConfirmation() {
@@ -74,8 +72,9 @@ class _MomentCardState extends ConsumerState<MomentCard> {
                 setState(() => _isDeleting = true);
 
                 try {
-                  await ref.read(
-                    deleteTimelineEventProvider(widget.event.id).future,
+                  await runWrite(
+                    ref,
+                    deleteTimelineEventProvider(widget.event.id),
                   );
                   if (mounted) {
                     ScaffoldMessenger.of(context).showSnackBar(
@@ -83,10 +82,14 @@ class _MomentCardState extends ConsumerState<MomentCard> {
                     );
                     ref.invalidate(timelineEventsProvider(widget.currentMonth));
                   }
-                } catch (e) {
+                } catch (_) {
                   if (mounted) {
                     ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(content: Text('Failed to delete: $e')),
+                      const SnackBar(
+                        content: Text(
+                          "Couldn't delete that moment. Please try again.",
+                        ),
+                      ),
                     );
                   }
                 } finally {

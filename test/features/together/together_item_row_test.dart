@@ -1,3 +1,4 @@
+import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:attune/features/together/domain/together_item.dart';
 import 'package:attune/features/together/presentation/widgets/together_item_row.dart';
 import 'package:flutter/material.dart';
@@ -73,6 +74,36 @@ void main() {
       ),
     );
     expect(find.textContaining('In 12 days'), findsOneWidget);
+  });
+
+  testWidgets('a reminder: its occasion in the circle and at the end', (t) async {
+    await _pump(
+      t,
+      TogetherItemRow(
+        item: TogetherItem(
+          kind: TogetherItemKind.reminder,
+          id: 'r1',
+          date: DateTime(2026, 11, 14),
+          allDay: true,
+          title: "Ama's birthday",
+          participantIds: const ['ama', 'kofi'],
+          sourceRef: const {'reminder_type': 'birthday', 'recurrence': 'yearly'},
+        ),
+        me: 'ama',
+        partnerName: 'Kofi',
+        lead: 'In 12 days',
+      ),
+    );
+    // The circle and the end both say birthday.
+    expect(find.byIcon(Icons.cake_outlined), findsOneWidget);
+    expect(find.byIcon(FontAwesomeIcons.birthdayCake), findsOneWidget);
+    expect(find.text('In 12 days - Reminder'), findsOneWidget);
+  });
+
+  testWidgets('an event keeps its plain row (no trailing icon)', (t) async {
+    await _pump(t, TogetherItemRow(item: _event(), me: 'ama', partnerName: 'Kofi'));
+    expect(find.byIcon(FontAwesomeIcons.birthdayCake), findsNothing);
+    expect(find.byIcon(Icons.notifications_none_rounded), findsNothing);
   });
 
   test('who labels', () {

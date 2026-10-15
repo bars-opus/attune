@@ -702,3 +702,57 @@ class PlanningSummary {
       );
 }
 
+/// A plan as Recent lists it: its summary and the category it's in.
+class PlanningRecentEntry {
+  const PlanningRecentEntry({
+    required this.entry,
+    required this.categoryId,
+    required this.categoryName,
+    required this.categoryIcon,
+    required this.categoryColor,
+  });
+
+  final PlanningEntrySummary entry;
+  final String categoryId;
+  final String categoryName;
+  final String categoryIcon;
+  final String categoryColor;
+
+  factory PlanningRecentEntry.fromJson(Map<String, dynamic> j) {
+    final c = Map<String, dynamic>.from(j['category'] as Map);
+    return PlanningRecentEntry(
+      entry: PlanningEntrySummary.fromJson(j),
+      categoryId: c['id'] as String,
+      categoryName: c['name'] as String,
+      categoryIcon: c['icon'] as String,
+      categoryColor: c['color'] as String,
+    );
+  }
+}
+
+/// One page of Recent, newest activity first.
+class PlanningRecentPage {
+  const PlanningRecentPage({
+    required this.entries,
+    required this.nextCursorAt,
+    required this.nextCursorId,
+  });
+
+  final List<PlanningRecentEntry> entries;
+  final DateTime? nextCursorAt;
+  final String? nextCursorId;
+
+  bool get hasMore => nextCursorId != null;
+
+  factory PlanningRecentPage.fromJson(Map<String, dynamic> j) {
+    final cursor = j['next_cursor'];
+    return PlanningRecentPage(
+      entries: [
+        for (final e in (j['entries'] as List? ?? const []))
+          PlanningRecentEntry.fromJson(Map<String, dynamic>.from(e as Map)),
+      ],
+      nextCursorAt: cursor is Map ? DateTime.parse(cursor['at'] as String) : null,
+      nextCursorId: cursor is Map ? cursor['id'] as String : null,
+    );
+  }
+}

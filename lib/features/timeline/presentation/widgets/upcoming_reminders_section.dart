@@ -1,6 +1,7 @@
+import 'package:attune/core/utils/date_formatter.dart';
+import 'package:attune/features/reminders/presentation/reminder_icons.dart';
 import 'package:attune/core/utils/exports/export_screens.dart';
 import 'package:attune/features/reminders/data/models/reminder_model.dart';
-import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 
 /// The last valid day of [month] in [year] — Dart's DateTime constructor
 /// silently rolls an out-of-range day into the next month instead of
@@ -170,28 +171,50 @@ class UpcomingRemindersSection extends StatelessWidget {
     BuildContext context,
     ReminderModel reminder, {
     required bool last,
-  }) {
+  }) => ReminderUpcomingRow(
+    reminder: reminder,
+    last: last,
+    onTap: onReminderTap == null ? null : () => onReminderTap!(reminder),
+  );
+}
+
+/// One upcoming reminder, as the Agenda shows it: the occasion in a
+/// coloured circle, the countdown then "Reminder", and the occasion again
+/// at the end in its own colour. Used above the calendar and in the day
+/// sheet, so a tapped day shows the same row.
+class ReminderUpcomingRow extends StatelessWidget {
+  const ReminderUpcomingRow({
+    super.key,
+    required this.reminder,
+    this.onTap,
+    this.last = false,
+  });
+  final ReminderModel reminder;
+  final VoidCallback? onTap;
+  final bool last;
+
+  @override
+  Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
     return InfoRowWidget(
       padding: const EdgeInsets.symmetric(
         horizontal: Spacing.md,
         vertical: Spacing.xs,
       ),
-      iconColor: colorScheme.onBackground.withOpacity(.3),
-      subtitle: _countdownLabel(nextOccurrence(reminder)),
+      icon: reminderCircleIcon(reminder.reminderType),
+      iconColor: colorScheme.primary,
+      backgroundColor: colorScheme.primary.withValues(alpha: 0.12),
       title: reminder.title,
-      icon:
-          reminder.isRecurring ? FontAwesomeIcons.repeat : Icons.event_outlined,
-      iconSize: 20.h,
-      onTap: onReminderTap == null ? null : () => onReminderTap!(reminder),
-      showAvatar: false,
+      subtitle: MyDateFormat.join([
+        _countdownLabel(nextOccurrence(reminder)),
+        'Reminder',
+      ]),
+      titleMaxLines: 1,
+      subTitleMaxLines: 1,
+      onTap: onTap,
       showDivider: !last,
       showTrailingArrow: false,
-      trailing: Icon(
-        color: colorScheme.primary,
-        FontAwesomeIcons.birthdayCake,
-        size: 25.h,
-      ),
+      trailing: ReminderOccasionIcon(type: reminder.reminderType),
     );
   }
 }

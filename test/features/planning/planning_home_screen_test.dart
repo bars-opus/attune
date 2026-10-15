@@ -141,6 +141,20 @@ void main() {
     expect(find.text('40/40'), findsOneWidget);
   });
 
+  testWidgets('switching Planning and Calendar keeps each tab as it was (no reload)', (tester) async {
+    await tester.pumpWidget(planningTestApp(_gateway(), const PlanningHomeScreen(relationshipId: 'r1')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Calendar'));
+    await tester.pumpAndSettle();
+    final together = tester.state(find.byType(TogetherScreen));
+    await tester.tap(find.text('Planning').first);
+    await tester.pumpAndSettle();
+    expect(find.text('Goals'), findsOneWidget);
+    await tester.tap(find.text('Calendar'));
+    await tester.pumpAndSettle();
+    expect(tester.state(find.byType(TogetherScreen)), same(together));
+  });
+
   testWidgets('Planning keeps its Calendar tab, which is the Together hub', (tester) async {
     await tester.pumpWidget(planningTestApp(_gateway(), const PlanningHomeScreen(relationshipId: 'r1')));
     await tester.pumpAndSettle();

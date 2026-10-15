@@ -1,5 +1,7 @@
+import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:attune/core/widgets/card_inkwell.dart';
 import 'package:attune/core/widgets/info_row_widget.dart';
+import 'package:attune/features/planning/presentation/planning_ui.dart';
 import 'package:attune/features/reminders/data/models/reminder_model.dart';
 import 'package:attune/features/timeline/presentation/widgets/upcoming_reminders_section.dart';
 import 'package:flutter/material.dart';
@@ -12,12 +14,13 @@ ReminderModel _reminder({
   required DateTime remindAt,
   String recurrence = 'none',
   String? linkedTimelineEventId,
+  String type = 'anniversary',
 }) {
   return ReminderModel(
     id: id,
     relationshipId: 'rel-1',
     createdBy: 'user-1',
-    reminderType: 'anniversary',
+    reminderType: type,
     title: title,
     remindAt: remindAt,
     recurrence: recurrence,
@@ -207,7 +210,69 @@ void main() {
       );
 
       expect(find.text("Emma's birthday"), findsOneWidget);
-      expect(find.text('Today'), findsOneWidget);
+      expect(find.text('Today - Reminder'), findsOneWidget);
+    });
+
+    testWidgets('in dark mode the occasion icons take Planning\'s dark category colours', (tester) async {
+      final today = DateTime.now();
+      await tester.pumpWidget(
+        ScreenUtilInit(
+          designSize: const Size(375, 812),
+          builder: (_, __) => MaterialApp(
+            theme: ThemeData(brightness: Brightness.dark),
+            home: Scaffold(
+              body: UpcomingRemindersSection(
+                reminders: [
+                  _reminder(id: 'r1', title: "Ama's birthday", type: 'birthday',
+                      remindAt: DateTime(today.year, today.month, today.day + 2)),
+                ],
+                onReminderTap: null,
+              ),
+            ),
+          ),
+        ),
+      );
+      final context = tester.element(find.text("Ama's birthday"));
+      expect(Theme.of(context).brightness, Brightness.dark);
+      expect(
+        tester.widget<Icon>(find.byIcon(FontAwesomeIcons.birthdayCake)).color,
+        planningCategoryFill(context, 'pink'),
+      );
+    });
+
+    testWidgets('rows read like the Agenda\'s, every icon fitting the occasion', (tester) async {
+      final today = DateTime.now();
+      final day = DateTime(today.year, today.month, today.day);
+      final reminders = [
+        _reminder(id: 'r1', title: "Ama's birthday", type: 'birthday', recurrence: 'yearly',
+            remindAt: day.add(const Duration(days: 5))),
+        _reminder(id: 'r2', title: 'Dentist', type: 'custom', remindAt: day.add(const Duration(days: 1))),
+        _reminder(id: 'r3', title: 'Our anniversary', type: 'anniversary', recurrence: 'yearly',
+            remindAt: day.add(const Duration(days: 9))),
+      ];
+      await pump(tester, UpcomingRemindersSection(reminders: reminders, onReminderTap: null));
+      Finder inRow(String title, Finder f) =>
+          find.descendant(of: find.ancestor(of: find.text(title), matching: find.byType(InfoRowWidget)), matching: f);
+      // Every icon in a row fits its occasion: the circle and the end.
+      expect(inRow("Ama's birthday", find.byIcon(Icons.cake_outlined)), findsOneWidget);
+      expect(inRow("Ama's birthday", find.byIcon(FontAwesomeIcons.birthdayCake)), findsOneWidget);
+      expect(inRow('Our anniversary', find.byIcon(Icons.celebration_outlined)), findsOneWidget);
+      expect(inRow('Our anniversary', find.byIcon(FontAwesomeIcons.champagneGlasses)), findsOneWidget);
+      expect(inRow('Dentist', find.byIcon(Icons.notifications_none_rounded)), findsOneWidget);
+      expect(inRow('Dentist', find.byIcon(FontAwesomeIcons.bell)), findsOneWidget);
+      // No repeat / one-off icons any more.
+      expect(find.byIcon(Icons.event_repeat_rounded), findsNothing);
+      expect(find.byIcon(Icons.schedule_rounded), findsNothing);
+      // Each occasion has its own colour, as bright as Planning's category
+      // icons (birthday pink, anniversary gold).
+      final context = tester.element(find.text('Dentist'));
+      Color? colourOf(IconData icon) => tester.widget<Icon>(find.byIcon(icon)).color;
+      expect(colourOf(FontAwesomeIcons.birthdayCake), planningCategoryFill(context, 'pink'));
+      expect(colourOf(FontAwesomeIcons.champagneGlasses), planningCategoryFill(context, 'amber'));
+      expect(colourOf(FontAwesomeIcons.birthdayCake), isNot(colourOf(FontAwesomeIcons.champagneGlasses)));
+      // Countdown, then what it is — as in the Agenda.
+      expect(find.text('In 5 days - Reminder'), findsOneWidget);
+      expect(find.text('Tomorrow - Reminder'), findsOneWidget);
     });
 
     testWidgets(

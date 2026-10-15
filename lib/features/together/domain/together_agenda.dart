@@ -107,7 +107,13 @@ TogetherAgenda togetherAgenda({
 
 /// The soonest plan that hasn't started yet (all-day items count for their
 /// whole day). Moments are memories, not plans.
-TogetherItem? nextTogetherItem(List<TogetherItem> items, DateTime now) {
+/// The next [count] things still ahead (no moments, nothing whose start
+/// has passed), soonest first.
+List<TogetherItem> upcomingTogetherItems(
+  List<TogetherItem> items,
+  DateTime now, {
+  int count = 3,
+}) {
   final today = _dayOf(now);
   final upcoming =
       items.where((i) {
@@ -117,5 +123,22 @@ TogetherItem? nextTogetherItem(List<TogetherItem> items, DateTime now) {
           return i.allDay || s == null || !s.isBefore(now);
         }).toList()
         ..sort(compareTogetherItems);
-  return upcoming.isEmpty ? null : upcoming.first;
+  return upcoming.take(count).toList();
+}
+
+TogetherItem? nextTogetherItem(List<TogetherItem> items, DateTime now) =>
+    upcomingTogetherItems(items, now, count: 1).firstOrNull;
+
+/// "Today", "Tomorrow" or "In 12 days", as the reminder rows count down.
+String togetherCountdown(DateTime day, DateTime now) {
+  // Calendar days, counted in UTC so a clock change can't make one short.
+  final days =
+      DateTime.utc(
+        day.year,
+        day.month,
+        day.day,
+      ).difference(DateTime.utc(now.year, now.month, now.day)).inDays;
+  if (days == 0) return 'Today';
+  if (days == 1) return 'Tomorrow';
+  return 'In $days days';
 }

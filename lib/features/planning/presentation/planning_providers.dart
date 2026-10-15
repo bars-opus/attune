@@ -197,6 +197,76 @@ final planningSummaryProvider = FutureProvider.autoDispose.family<PlanningSummar
   return ref.watch(planningRepositoryProvider).getSummary(relationshipId, today: DateTime(now.year, now.month, now.day));
 });
 
+// ---- recent ----------------------------------------------------------------
+
+/// How many recent plans the home screen shows; one more means See all.
+const planningRecentShown = 5;
+
+/// The home screen's Recent: one more than it shows, to know if there's
+/// more to see. Refetches on the change signal.
+final planningRecentProvider =
+    FutureProvider.autoDispose.family<PlanningRecentPage, String>((ref, relationshipId) {
+  _refetchOnSignal(ref, relationshipId);
+  return ref
+      .watch(planningRepositoryProvider)
+      .listRecent(relationshipId, limit: planningRecentShown + 1);
+});
+
+class PlanningRecentState {
+  const PlanningRecentState({
+    required this.entries,
+    required this.cursorAt,
+    required this.cursorId,
+    this.loadingMore = false,
+  });
+
+  final List<PlanningRecentEntry> entries;
+  final DateTime? cursorAt;
+  final String? cursorId;
+  final bool loadingMore;
+
+  bool get hasMore => cursorId != null;
+}
+
+/// Keyset pager over every recent plan (the See all screen).
+class PlanningRecentController
+    extends AutoDisposeFamilyAsyncNotifier<PlanningRecentState, String> {
+  PlanningRepository get _repo => ref.read(planningRepositoryProvider);
+
+  @override
+  Future<PlanningRecentState> build(String arg) async {
+    _refetchOnSignal(ref, arg);
+    final page = await _repo.listRecent(arg);
+    return PlanningRecentState(
+        entries: page.entries, cursorAt: page.nextCursorAt, cursorId: page.nextCursorId);
+  }
+
+  Future<void> loadMore() async {
+    final s = state.valueOrNull;
+    if (s == null || s.loadingMore || !s.hasMore) return;
+    state = AsyncData(PlanningRecentState(
+        entries: s.entries, cursorAt: s.cursorAt, cursorId: s.cursorId, loadingMore: true));
+    try {
+      final page = await _repo.listRecent(arg, cursorAt: s.cursorAt, cursorId: s.cursorId);
+      final cur = state.valueOrNull ?? s;
+      final shown = {for (final e in cur.entries) e.entry.id};
+      state = AsyncData(PlanningRecentState(
+        entries: [...cur.entries, for (final e in page.entries) if (!shown.contains(e.entry.id)) e],
+        cursorAt: page.nextCursorAt,
+        cursorId: page.nextCursorId,
+      ));
+    } on PlanningError {
+      // Keep what's shown; scrolling again retries.
+      final cur = state.valueOrNull ?? s;
+      state = AsyncData(PlanningRecentState(
+          entries: cur.entries, cursorAt: cur.cursorAt, cursorId: cur.cursorId));
+    }
+  }
+}
+
+final planningRecentListProvider = AsyncNotifierProvider.autoDispose
+    .family<PlanningRecentController, PlanningRecentState, String>(PlanningRecentController.new);
+
 // ---- entries list --------------------------------------------------------
 
 typedef PlanningEntriesArgs = ({String relationshipId, String categoryId, String group});

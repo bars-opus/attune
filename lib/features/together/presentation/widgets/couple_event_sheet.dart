@@ -1,10 +1,10 @@
+import 'package:attune/core/utils/date_formatter.dart';
 import 'package:attune/core/providers/couple_name_provider.dart';
 import 'package:attune/core/utils/exports/export_screens.dart';
 import 'package:attune/features/quiz/presentation/providers/quiz_providers.dart'
     as quiz_providers;
 import 'package:flutter/cupertino.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:intl/intl.dart';
 
 import '../../data/together_repository.dart';
 import '../../domain/calendar_export.dart';
@@ -27,6 +27,7 @@ Future<void> showCoupleEventSheet(
   String? proposeTitle,
   String? proposeNote,
   String? initialText,
+  DateTime? day,
 }) async {
   final message = await BottomSheetUtils.showDocumentationBottomSheet<String>(
     context: context,
@@ -38,12 +39,16 @@ Future<void> showCoupleEventSheet(
       proposeTitle: proposeTitle,
       proposeNote: proposeNote,
       initialText: initialText,
+      day: day,
     ),
   );
   if (message != null && context.mounted) context.showSuccessSnackbar(message);
 }
 
 enum _Who { both, me, partner }
+
+/// Which repeats an edit or delete of one occurrence is for.
+enum _Scope { one, all }
 
 const _remindChoices = <int?, String>{
   null: 'No reminder',
@@ -77,6 +82,7 @@ class _CoupleEventSheet extends ConsumerStatefulWidget {
     this.proposeTitle,
     this.proposeNote,
     this.initialText,
+    this.day,
   });
   final String relationshipId;
   final TogetherItem? item;
@@ -91,6 +97,9 @@ class _CoupleEventSheet extends ConsumerStatefulWidget {
   /// Text shared from another app (Phase 8b): waits in "Describe it", or
   /// becomes the title and note when AI help isn't available.
   final String? initialText;
+
+  /// The calendar day it's being added to, if any.
+  final DateTime? day;
 
   @override
   ConsumerState<_CoupleEventSheet> createState() => _CoupleEventSheetState();
@@ -110,6 +119,18 @@ class _CoupleEventSheetState extends ConsumerState<_CoupleEventSheet> {
   late bool _allDay;
   late DateTime _start;
   DateTime? _end;
+
+  /// The end All day set aside, given back if it's switched off again.
+  DateTime? _endBeforeAllDay;
+
+  /// Editing one occurrence of a repeating event: the form shows this one
+  /// (not the series start), and Save/Delete ask "this one or all?".
+  bool _occurrence = false;
+
+  /// The series' start as saved, and this occurrence's as opened, so
+  /// "All repeats" can move the series the way this one was moved.
+  DateTime? _seriesStart;
+  DateTime? _openedStart;
   TogetherRepeat _repeat = TogetherRepeat.none;
   Set<int> _weekdays = {};
   _Who _who = _Who.both;
@@ -146,9 +167,28 @@ class _CoupleEventSheetState extends ConsumerState<_CoupleEventSheet> {
     super.initState();
     final item = widget.item;
     if (item == null) {
-      final now = DateTime.now();
+      final now = ref.read(togetherClockProvider)();
       _allDay = false;
       _start = DateTime(now.year, now.month, now.day, now.hour + 1);
+      final day = widget.day;
+      if (day != null && !DateUtils.isSameDay(day, now)) {
+        // Planned on another day: that evening, when most plans are.
+        _start = DateTime(day.year, day.month, day.day, 19);
+      } else if (!DateUtils.isSameDay(_start, now)) {
+        // Past 11pm the next hour is tomorrow's midnight. Added to today,
+        // it stays today, at the next quarter hour; from +, tomorrow
+        // evening.
+        _start =
+            day != null
+                ? DateTime(
+                  now.year,
+                  now.month,
+                  now.day,
+                  now.hour,
+                  ((now.minute ~/ 15 + 1) * 15).clamp(0, 45),
+                )
+                : DateTime(now.year, now.month, now.day + 1, 19);
+      }
       _end = _start.add(const Duration(hours: 1));
       final w = widget.proposeWindow;
       if (w != null) {
@@ -173,6 +213,23 @@ class _CoupleEventSheetState extends ConsumerState<_CoupleEventSheet> {
     _allDay = d.allDay;
     _start = d.start;
     _end = d.end;
+    // A ritual's week is its own row (no rule), so it never comes here.
+    _occurrence =
+        d.repeat != TogetherRepeat.none &&
+        item.sourceRef['kind'] != 'ritual_occurrence';
+    if (_occurrence) {
+      _seriesStart = d.start;
+      // A repeat lasts one day, so this one's end is on its own day too.
+      _start = item.allDay ? item.date : (item.startsAt ?? d.start);
+      _end =
+          item.allDay
+              ? (d.end == null ? null : item.date)
+              : (item.endsAt ??
+                  (d.end == null
+                      ? null
+                      : _start.add(d.end!.difference(d.start))));
+      _openedStart = _start;
+    }
     _repeat = d.repeat;
     _weekdays = {...d.weekdays};
     _interval = d.interval;
@@ -275,8 +332,19 @@ class _CoupleEventSheetState extends ConsumerState<_CoupleEventSheet> {
     );
   }
 
+  /// Busy from the first tap, before any lookup, so a quick second tap
+  /// can't send the event twice.
   Future<void> _save() async {
     if (_busy) return;
+    setState(() => _busy = true);
+    try {
+      await _saveNow();
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _saveNow() async {
     final me = ref.read(togetherMeProvider);
     final String? partner;
     final String tz;
@@ -284,6 +352,9 @@ class _CoupleEventSheetState extends ConsumerState<_CoupleEventSheet> {
       partner = await ref.read(togetherPartnerIdProvider.future);
       tz = await ref.read(togetherDeviceTimezoneProvider.future);
     } catch (_) {
+      // Look them up afresh next time instead of replaying this failure.
+      ref.invalidate(togetherPartnerIdProvider);
+      ref.invalidate(togetherDeviceTimezoneProvider);
       if (mounted) {
         context.showErrorSnackbar('Could not save that. Please try again.');
       }
@@ -297,23 +368,33 @@ class _CoupleEventSheetState extends ConsumerState<_CoupleEventSheet> {
         mine &&
         _kind == 'big_day' &&
         !(_visibility == TogetherVisibility.shared && _who == _Who.me);
-    final draft = CoupleEventDraft(
+    CoupleEventDraft draftFor({
+      required DateTime start,
+      DateTime? end,
+      bool oneOff = false,
+      Set<int>? weekdays,
+    }) => CoupleEventDraft(
       title: _title.text,
       allDay: _allDay,
-      start: _allDay ? DateTime(_start.year, _start.month, _start.day) : _start,
+      start: _allDay ? DateTime(start.year, start.month, start.day) : start,
       end:
-          _end == null
+          end == null
               ? null
-              : (_allDay ? DateTime(_end!.year, _end!.month, _end!.day) : _end),
+              : (_allDay ? DateTime(end.year, end.month, end.day) : end),
       timezone: widget.item?.tz ?? tz,
       note: _note.text.trim().isEmpty ? null : _note.text.trim(),
       locationName:
           _location.text.trim().isEmpty ? null : _location.text.trim(),
       kind: demote ? 'event' : _kind,
-      repeat: _repeat,
+      // A suggestion is one-off: the server refuses a repeat on it, even
+      // one picked while the suggestion was switched off. So is one
+      // occurrence set apart from its series.
+      repeat: _proposing || oneOff ? TogetherRepeat.none : _repeat,
       interval: _interval,
-      weekdays: _repeat == TogetherRepeat.weekly ? _weekdays : const {},
-      repeatUntil: _repeat == TogetherRepeat.none ? null : _repeatUntil,
+      weekdays:
+          _repeat == TogetherRepeat.weekly ? (weekdays ?? _weekdays) : const {},
+      repeatUntil:
+          _repeat == TogetherRepeat.none || oneOff ? null : _repeatUntil,
       participantIds: _participants(me, partner),
       ownerId: switch (_holder) {
         'me' => me,
@@ -324,13 +405,58 @@ class _CoupleEventSheetState extends ConsumerState<_CoupleEventSheet> {
       visibility: _visibility,
       remindOffsetsMin: [if (_remind != null) _remind!],
     );
+    final draft = draftFor(start: _start, end: _end);
     if (!mounted) return;
-    final problem = draft.validate();
+    // One occurrence is checked as itself (a one-off); the series, if
+    // that's the choice, is checked below once it's known.
+    final occurrence = _editing && _occurrence && !_proposing;
+    final problem =
+        (occurrence ? draftFor(start: _start, end: _end, oneOff: true) : draft)
+            .validate();
     if (problem != null) {
       context.showErrorSnackbar(problem);
       return;
     }
-    setState(() => _busy = true);
+    // One occurrence of a repeating event: this one, or the whole series?
+    _Scope? scope;
+    if (occurrence) {
+      scope = await _askScope(
+        'Change this one or all repeats?',
+        'This one is ${MyDateFormat.toDate(widget.item!.date)}.',
+      );
+      if (scope == null || !mounted) return;
+    }
+    // "All repeats": the series moves the way this one was moved — its
+    // start, its length, and (weekly) its days, so a Friday moved to a
+    // Saturday makes them Saturdays; monthly and yearly take the day
+    // picked, so moving one to the 29th makes them all the 29th — and is
+    // checked as the series. Skipped dates are told to move the same way.
+    CoupleEventDraft? allDraft;
+    Map<String, int>? excludedShift;
+    if (scope == _Scope.all) {
+      final moved = _seriesMove(_seriesStart!, from: _openedStart!, to: _start);
+      final days =
+          DateTime.utc(_start.year, _start.month, _start.day)
+              .difference(
+                DateTime.utc(
+                  _openedStart!.year,
+                  _openedStart!.month,
+                  _openedStart!.day,
+                ),
+              )
+              .inDays;
+      excludedShift = days == 0 ? null : moved.excludedShift;
+      allDraft = draftFor(
+        start: moved.start,
+        end: _end == null ? null : _shift(moved.start, from: _start, to: _end!),
+        weekdays: {for (final d in _weekdays) (d - 1 + days) % 7 + 1},
+      );
+      final seriesProblem = allDraft.validate();
+      if (seriesProblem != null) {
+        context.showErrorSnackbar(seriesProblem);
+        return;
+      }
+    }
     final repo = ref.read(togetherRepositoryProvider);
     try {
       final partnerName =
@@ -346,7 +472,16 @@ class _CoupleEventSheetState extends ConsumerState<_CoupleEventSheet> {
         return;
       }
       final String id;
-      if (_editing) {
+      if (scope == _Scope.one) {
+        id = await repo.detachOccurrence(
+          widget.item!.id,
+          widget.item!.date,
+          draftFor(start: _start, end: _end, oneOff: true),
+        );
+      } else if (scope == _Scope.all) {
+        id = widget.item!.id;
+        await repo.updateEvent(id, allDraft!, excludedShift: excludedShift);
+      } else if (_editing) {
         id = widget.item!.id;
         await repo.updateEvent(id, draft);
       } else {
@@ -385,13 +520,134 @@ class _CoupleEventSheetState extends ConsumerState<_CoupleEventSheet> {
     }
   }
 
+  /// "This one or all repeats?" for an edit or delete; null when they
+  /// changed their mind.
+  Future<_Scope?> _askScope(String title, String body) => showDialog<_Scope>(
+    context: context,
+    builder:
+        (c) => AlertDialog(
+          title: Text(title),
+          content: Text(body),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(c).pop(),
+              child: const Text('Cancel'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.of(c).pop(_Scope.all),
+              child: const Text('All repeats'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.of(c).pop(_Scope.one),
+              child: const Text('This one only'),
+            ),
+          ],
+        ),
+  );
+
+  /// [base] moved the way [from] became [to]: the same number of days and
+  /// the same minutes on the clock, not an absolute duration, so moving
+  /// an occurrence across a clock change still keeps 19:00 at 19:00.
+  /// The series start after "All repeats" moved one occurrence [from] →
+  /// [to], and how its skipped dates move. Daily and weekly move by the
+  /// same days and minutes; monthly and yearly land on the day picked
+  /// (the first month or year that has it), so a series on the 31st
+  /// moved to the 29th becomes the 29th, not "the 31st less two days".
+  ({DateTime start, Map<String, int> excludedShift}) _seriesMove(
+    DateTime series, {
+    required DateTime from,
+    required DateTime to,
+  }) {
+    int lastDay(int y, int m) => DateTime(y, m + 1, 0).day;
+    switch (_repeat) {
+      case TogetherRepeat.monthly:
+        final months =
+            (to.year * 12 + to.month) - (from.year * 12 + from.month);
+        var y = series.year, m = series.month + months;
+        // A day this month doesn't have: the next month that has it.
+        for (var i = 0; i < 12 && to.day > lastDay(y, m); i++) {
+          m++;
+        }
+        return (
+          start: DateTime(y, m, to.day, to.hour, to.minute),
+          excludedShift: {'months': months, 'day': to.day},
+        );
+      case TogetherRepeat.yearly:
+        final years = to.year - from.year;
+        var y = series.year + years;
+        // Feb 29: the next leap year.
+        for (var i = 0; i < 8 && to.day > lastDay(y, to.month); i++) {
+          y++;
+        }
+        return (
+          start: DateTime(y, to.month, to.day, to.hour, to.minute),
+          excludedShift: {'years': years, 'month': to.month, 'day': to.day},
+        );
+      default:
+        final days =
+            DateTime.utc(
+              to.year,
+              to.month,
+              to.day,
+            ).difference(DateTime.utc(from.year, from.month, from.day)).inDays;
+        return (
+          start: _shift(series, from: from, to: to),
+          excludedShift: {'days': days},
+        );
+    }
+  }
+
+  static DateTime _shift(
+    DateTime base, {
+    required DateTime from,
+    required DateTime to,
+  }) {
+    final days =
+        DateTime.utc(
+          to.year,
+          to.month,
+          to.day,
+        ).difference(DateTime.utc(from.year, from.month, from.day)).inDays;
+    final minutes = (to.hour * 60 + to.minute) - (from.hour * 60 + from.minute);
+    return DateTime(
+      base.year,
+      base.month,
+      base.day + days,
+      base.hour,
+      base.minute + minutes,
+    );
+  }
+
   Future<void> _delete() async {
+    // About the event as saved, not edits still in the form.
+    final saved = CoupleEventDraft.fromItem(widget.item!);
+    final both = saved.visibility == TogetherVisibility.shared;
+    if (_occurrence) {
+      final scope = await _askScope(
+        'Delete this one or all repeats?',
+        'This one is ${MyDateFormat.toDate(widget.item!.date)}.'
+            '${both ? ' It will be removed for both of you.' : ''}',
+      );
+      if (scope == null || !mounted) return;
+      final repo = ref.read(togetherRepositoryProvider);
+      await (scope == _Scope.one
+          ? _run(
+            () => repo.skipOccurrence(widget.item!.id, widget.item!.date),
+            'Deleted this one.',
+          )
+          : _run(() => repo.deleteEvent(widget.item!.id), 'Deleted.'));
+      return;
+    }
     final ok = await showDialog<bool>(
       context: context,
       builder:
           (c) => AlertDialog(
             title: const Text('Delete this event?'),
-            content: const Text('It will be removed for both of you.'),
+            content: Text(
+              both
+                  ? 'It will be removed for both of you.'
+                  : 'It will be deleted.',
+            ),
             actions: [
               TextButton(
                 onPressed: () => Navigator.of(c).pop(false),
@@ -447,8 +703,8 @@ class _CoupleEventSheetState extends ConsumerState<_CoupleEventSheet> {
 
   String _format(DateTime d) =>
       _allDay
-          ? DateFormat.yMMMEd().format(d)
-          : DateFormat.yMMMEd().add_jm().format(d);
+          ? MyDateFormat.toDate(d)
+          : MyDateFormat.join([MyDateFormat.toDate(d), MyDateFormat.toTime(d)]);
 
   Future<void> _fillIn() async {
     final text = _describe.text.trim();
@@ -606,43 +862,53 @@ class _CoupleEventSheetState extends ConsumerState<_CoupleEventSheet> {
               subtitle: '',
               icon: Icons.wb_sunny_outlined,
               showAvatar: false,
-              showDivider: false,
+              showDivider: true,
               isToggleItem: true,
               toggleValue: _allDay,
-              onToggleChanged: (v) => setState(() => _allDay = v),
+              onToggleChanged:
+                  (v) => setState(() {
+                    _allDay = v;
+                    // An evening hour that runs past midnight isn't a
+                    // two-day plan: all day, it's just its start day.
+                    final e = _end;
+                    if (v && e != null && e.difference(_start).inHours < 24) {
+                      _endBeforeAllDay = e;
+                      _end = null;
+                    } else if (!v && _end == null && _endBeforeAllDay != null) {
+                      _end = _endBeforeAllDay;
+                      _endBeforeAllDay = null;
+                    }
+                  }),
             ),
-            AppDivider(),
             if (!_proposing) ...[
               InfoRowWidget(
                 title: _format(_start),
                 subtitle: 'Starts',
                 icon: Icons.schedule_rounded,
                 showAvatar: false,
-                showDivider: false,
+                showDivider: true,
                 disableTrailing: true,
                 onTap: () => _pick(end: false),
               ),
-              AppDivider(),
               InfoRowWidget(
                 title: _end == null ? 'Add an end' : _format(_end!),
                 subtitle: 'Ends',
                 icon: Icons.schedule_outlined,
                 showAvatar: false,
-                showDivider: false,
+                showDivider: true,
                 disableTrailing: true,
                 onTap: () => _pick(end: true),
               ),
             ],
-            AppDivider(),
             InfoRowWidget(
               title: _repeatLabels[_repeat]!,
               subtitle: 'Repeats',
               icon: Icons.repeat_rounded,
               showAvatar: false,
-              showDivider: false,
+              showDivider: true,
               disableTrailing: true,
               onTap:
-                  _propose
+                  _proposing
                       ? null
                       : () async {
                         final r = await _choose('Repeats', _repeatLabels);
@@ -667,15 +933,20 @@ class _CoupleEventSheetState extends ConsumerState<_CoupleEventSheet> {
                       FilterChip(
                         label: Text(_weekdayShort[d - 1]),
                         selected: _weekdays.contains(d),
+                        // The last day stays: a weekly repeat needs one.
                         onSelected:
                             (on) => setState(() {
-                              on ? _weekdays.add(d) : _weekdays.remove(d);
+                              if (on) {
+                                _weekdays.add(d);
+                              } else if (_weekdays.length > 1) {
+                                _weekdays.remove(d);
+                              }
                             }),
                       ),
                   ],
                 ),
               ),
-            AppDivider(),
+            if (_repeat == TogetherRepeat.weekly) AppDivider(),
             Padding(
               padding: EdgeInsets.fromLTRB(
                 Spacing.md.w,
@@ -696,7 +967,11 @@ class _CoupleEventSheetState extends ConsumerState<_CoupleEventSheet> {
                   // The couple by their chosen name ("Couples" until then).
                   ButtonSegment(
                     value: _Who.both,
-                    label: Text(coupleName, maxLines: 1, overflow: TextOverflow.ellipsis),
+                    label: Text(
+                      coupleName,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
                   ),
                   const ButtonSegment(value: _Who.me, label: Text('Me')),
                   ButtonSegment(value: _Who.partner, label: Text(partnerName)),
@@ -713,7 +988,7 @@ class _CoupleEventSheetState extends ConsumerState<_CoupleEventSheet> {
                 subtitle: '$partnerName will be reminded to wish you luck',
                 icon: Icons.star_outline_rounded,
                 showAvatar: false,
-                showDivider: false,
+                showDivider: true,
                 isToggleItem: true,
                 toggleValue: _kind == 'big_day',
                 onToggleChanged:
@@ -727,7 +1002,7 @@ class _CoupleEventSheetState extends ConsumerState<_CoupleEventSheet> {
                 subtitle: 'Offer up to three times',
                 icon: Icons.how_to_vote_outlined,
                 showAvatar: false,
-                showDivider: false,
+                showDivider: true,
                 isToggleItem: true,
                 toggleValue: _propose,
                 onToggleChanged:
@@ -748,7 +1023,7 @@ class _CoupleEventSheetState extends ConsumerState<_CoupleEventSheet> {
                     subtitle: 'Option ${i + 1}',
                     icon: Icons.schedule_rounded,
                     showAvatar: false,
-                    showDivider: false,
+                    showDivider: true,
                     disableTrailing: true,
                     onTap: () => _pickTime(i),
                   ),
@@ -758,7 +1033,7 @@ class _CoupleEventSheetState extends ConsumerState<_CoupleEventSheet> {
                     subtitle: '',
                     icon: Icons.add_rounded,
                     showAvatar: false,
-                    showDivider: false,
+                    showDivider: true,
                     disableTrailing: true,
                     onTap:
                         () => setState(() {
@@ -833,7 +1108,7 @@ class _CoupleEventSheetState extends ConsumerState<_CoupleEventSheet> {
               subtitle: 'Remind',
               icon: Icons.notifications_none_rounded,
               showAvatar: false,
-              showDivider: false,
+              showDivider: true,
               disableTrailing: true,
               onTap: () async {
                 final picked = await _choose('Remind', {
@@ -845,7 +1120,6 @@ class _CoupleEventSheetState extends ConsumerState<_CoupleEventSheet> {
                 }
               },
             ),
-            AppDivider(),
             AppTextFormField(
               controller: _location,
               label: 'Where (optional)',
@@ -857,20 +1131,25 @@ class _CoupleEventSheetState extends ConsumerState<_CoupleEventSheet> {
               maxLines: 3,
               maxLength: 500,
             ),
-            if (canLeave) ...[
+            // One line above the actions; each then carries its own.
+            if (canLeave ||
+                export != null ||
+                memorable ||
+                ritualWeek ||
+                canDelete)
               AppDivider(),
+            if (canLeave) ...[
               InfoRowWidget(
                 title: 'Leave event',
                 subtitle: '',
                 icon: Icons.logout_rounded,
                 showAvatar: false,
-                showDivider: false,
+                showDivider: true,
                 disableTrailing: true,
                 onTap: _busy ? null : _leave,
               ),
             ],
             if (export != null) ...[
-              AppDivider(),
               InfoRowWidget(
                 title: 'Add to my calendar',
                 subtitle:
@@ -879,7 +1158,7 @@ class _CoupleEventSheetState extends ConsumerState<_CoupleEventSheet> {
                         : 'Opens your calendar app, ready to save',
                 icon: Icons.event_available_rounded,
                 showAvatar: false,
-                showDivider: false,
+                showDivider: true,
                 disableTrailing: true,
                 onTap: () async {
                   try {
@@ -895,13 +1174,12 @@ class _CoupleEventSheetState extends ConsumerState<_CoupleEventSheet> {
               ),
             ],
             if (memorable) ...[
-              AppDivider(),
               InfoRowWidget(
                 title: 'Add a memory',
                 subtitle: 'A line about how it went',
                 icon: Icons.edit_note_rounded,
                 showAvatar: false,
-                showDivider: false,
+                showDivider: true,
                 disableTrailing: true,
                 onTap:
                     _busy
@@ -919,26 +1197,24 @@ class _CoupleEventSheetState extends ConsumerState<_CoupleEventSheet> {
               ),
             ],
             if (ritualWeek) ...[
-              AppDivider(),
               InfoRowWidget(
                 title: 'Skip this week',
                 subtitle: 'No problem — it’ll be back the week after',
                 icon: Icons.redo_rounded,
                 showAvatar: false,
-                showDivider: false,
+                showDivider: true,
                 disableTrailing: true,
                 onTap: _busy ? null : _skipWeek,
               ),
             ],
             if (canDelete) ...[
-              AppDivider(),
               InfoRowWidget(
                 title: 'Delete event',
                 subtitle: '',
                 icon: Icons.delete_outline_rounded,
                 iconColor: colorScheme.error,
                 showAvatar: false,
-                showDivider: false,
+                showDivider: true,
                 disableTrailing: true,
                 onTap: _busy ? null : _delete,
               ),
