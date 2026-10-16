@@ -30,6 +30,7 @@ List<Override> planningOverrides(
   PartnerDistance? partner,
   String? deviceTimezone,
   String? coupleName,
+  bool mapEnabled = false,
 }) =>
     [
       // The couple's chosen name (null: none chosen yet).
@@ -37,6 +38,7 @@ List<Override> planningOverrides(
       planningRepositoryProvider.overrideWithValue(PlanningRepository(gateway)),
       // The dual clock reads presence; Planning reports the device zone.
       partnerDistanceProvider.overrideWith((ref, relationshipId) => Stream.value(partner)),
+      coupleMapEnabledProvider.overrideWith((ref) async => mapEnabled),
       planningDeviceTimezoneProvider.overrideWith((ref) async => deviceTimezone),
       planningMediaGatewayProvider.overrideWithValue(media ?? FakePlanningMediaGateway()),
       planningChangeSignalProvider.overrideWith((ref, relationshipId) => const Stream<void>.empty()),
@@ -65,9 +67,10 @@ Widget planningTestApp(
   MemoryOutboxStore? store,
   ThemeMode themeMode = ThemeMode.light,
   String? coupleName,
+  bool mapEnabled = false,
 }) =>
     ProviderScope(
-      overrides: planningOverrides(gateway, store: store, coupleName: coupleName),
+      overrides: planningOverrides(gateway, store: store, coupleName: coupleName, mapEnabled: mapEnabled),
       // The app's shared widgets (ErrorStateWidget, CardInkWell, AppButton...)
       // size with flutter_screenutil, exactly as in the app.
       child: withScreenUtil(MaterialApp(

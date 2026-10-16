@@ -46,14 +46,29 @@ void main() {
   });
 
   test(
-    'Planning\'s Calendar tab is the Together screen and the Map placeholder is gone',
+    'Planning\'s Calendar tab is the Together screen; Map is the real couple map, behind its flag',
     () {
       final src =
           File(
             'lib/features/planning/presentation/screens/planning_home_screen.dart',
           ).readAsStringSync();
       expect(src, contains('TogetherScreen(embedded: true)'));
-      expect(src, isNot(contains("label: 'Map'")));
+      // The old Map placeholder stays gone: the only Map tab is the couple
+      // map (owner ruling 2026-10-15), shown only with couple_map_enabled.
+      final map = src.indexOf("label: 'Map'");
+      if (map != -1) {
+        final tab = src.substring(
+          src.lastIndexOf('if (mapEnabled)', map),
+          map + 200,
+        );
+        // Through the builder seam (widget spec §6.5), whose default is
+        // the real couple map.
+        expect(tab, contains('planningMapTabBuilderProvider'));
+        expect(
+          src,
+          contains('(relationshipId) => CoupleMapTab(relationshipId: relationshipId)'),
+        );
+      }
     },
   );
 
@@ -94,7 +109,9 @@ void main() {
     );
     // Shown as the Agenda's row, with nothing to open.
     final row = t.widget<InfoRowWidget>(
-      find.ancestor(of: find.text('Busy'), matching: find.byType(InfoRowWidget)).first,
+      find
+          .ancestor(of: find.text('Busy'), matching: find.byType(InfoRowWidget))
+          .first,
     );
     expect(row.onTap, isNull);
   });

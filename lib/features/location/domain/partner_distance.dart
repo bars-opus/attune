@@ -25,10 +25,6 @@ enum DistanceTone {
   /// Far apart with nothing booked. The hardest case, and the one the
   /// long-distance couple lives in.
   distant,
-
-  /// Someone is travelling. The delta is the interesting number and it
-  /// appears exactly when something meaningful is happening.
-  closing,
 }
 
 @immutable
@@ -36,46 +32,30 @@ class PartnerDistance {
   const PartnerDistance({
     required this.km,
     this.partnerCity,
-    this.partnerTimezone,
-    this.partnerLocalTime,
+    this.partnerUtcOffsetMinutes,
     this.daysUntilTogether,
-    this.kmClosedSinceYesterday,
-    this.updatedAt,
+    this.together = false,
   });
 
+  /// Rounded by the server (5 km under 50, 10 km above, never below 2).
   final double km;
   final String? partnerCity;
-  final String? partnerTimezone;
-  final DateTime? partnerLocalTime;
 
-  /// Days until a calendar event both partners attend. Turns a standing
-  /// distance into a countdown, which is the same data with the opposite
-  /// emotional valence.
+  /// Minutes ahead of UTC where they are; the clock is computed from it at
+  /// display time so it never goes stale.
+  final int? partnerUtcOffsetMinutes;
   final int? daysUntilTogether;
 
-  /// Positive when they are closer than yesterday.
-  final double? kmClosedSinceYesterday;
+  /// Same or adjacent cell (server-computed).
+  final bool together;
 
-  final DateTime? updatedAt;
-
-  /// Below this, a distance is noise -- GPS drift alone moves this far.
-  static const togetherKm = 1.0;
+  /// Two cells' centres can be ~1–2 km apart for a couple in one place.
+  static const togetherKm = 2.0;
   static const nearbyKm = 50.0;
   static const sameCountryKm = 800.0;
 
-  /// A change worth remarking on. Below this it is commuting, not
-  /// travelling, and calling it out would make ordinary movement visible
-  /// -- which is precisely what the coarse distance exists to avoid.
-  static const notableChangeKm = 100.0;
-
   DistanceTone get tone {
-    if (km < togetherKm) return DistanceTone.together;
-
-    final closed = kmClosedSinceYesterday;
-    if (closed != null && closed.abs() >= notableChangeKm) {
-      return DistanceTone.closing;
-    }
-
+    if (together || km < togetherKm) return DistanceTone.together;
     if (km < nearbyKm) return DistanceTone.nearby;
     if (km < sameCountryKm) return DistanceTone.sameCountry;
     if (daysUntilTogether != null) return DistanceTone.countdown;

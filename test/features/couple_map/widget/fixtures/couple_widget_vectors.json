@@ -1,0 +1,280 @@
+{
+  "nowMs": 1792152000000,
+  "today": "2026-10-16",
+  "neutralHeadline": "Nothing to show yet",
+  "vectors": [
+    {
+      "name": "null payload",
+      "payload": null,
+      "expect": {
+        "headline": "Nothing to show yet",
+        "headlineIsClock": false,
+        "caption": null,
+        "clockLine": false,
+        "clockOffsetMinutes": null,
+        "neutral": true,
+        "showMap": false
+      }
+    },
+    {
+      "name": "malformed",
+      "payload": "{",
+      "expect": {
+        "headline": "Nothing to show yet",
+        "headlineIsClock": false,
+        "caption": null,
+        "clockLine": false,
+        "clockOffsetMinutes": null,
+        "neutral": true,
+        "showMap": false
+      }
+    },
+    {
+      "name": "unknown version",
+      "payload": "{\"v\":2,\"headline\":\"x\"}",
+      "expect": {
+        "headline": "Nothing to show yet",
+        "headlineIsClock": false,
+        "caption": null,
+        "clockLine": false,
+        "clockOffsetMinutes": null,
+        "neutral": true,
+        "showMap": false
+      }
+    },
+    {
+      "name": "empty",
+      "payload": "{\"v\":1}",
+      "expect": {
+        "headline": "Nothing to show yet",
+        "headlineIsClock": false,
+        "caption": null,
+        "clockLine": false,
+        "clockOffsetMinutes": null,
+        "neutral": true,
+        "showMap": false
+      }
+    },
+    {
+      "name": "together",
+      "payload": "{\"v\":1,\"headline\":\"Practically together\",\"validUntilMs\":1792155600000}",
+      "expect": {
+        "headline": "Practically together",
+        "headlineIsClock": false,
+        "caption": null,
+        "clockLine": false,
+        "clockOffsetMinutes": null,
+        "neutral": false,
+        "showMap": true
+      }
+    },
+    {
+      "name": "nearby",
+      "payload": "{\"v\":1,\"headline\":\"15 min away\",\"validUntilMs\":1792155600000}",
+      "expect": {
+        "headline": "15 min away",
+        "headlineIsClock": false,
+        "caption": null,
+        "clockLine": false,
+        "clockOffsetMinutes": null,
+        "neutral": false,
+        "showMap": true
+      }
+    },
+    {
+      "name": "same country with clock line",
+      "payload": "{\"v\":1,\"headline\":\"8 hours by road\",\"caption\":\"400 km apart\",\"clockOffsetMinutes\":60,\"clockLine\":true,\"validUntilMs\":1792155600000}",
+      "expect": {
+        "headline": "8 hours by road",
+        "headlineIsClock": false,
+        "caption": "400 km apart",
+        "clockLine": true,
+        "clockOffsetMinutes": 60,
+        "neutral": false,
+        "showMap": true
+      }
+    },
+    {
+      "name": "same country, same zone",
+      "payload": "{\"v\":1,\"headline\":\"8 hours by road\",\"caption\":\"400 km apart\",\"validUntilMs\":1792155600000}",
+      "expect": {
+        "headline": "8 hours by road",
+        "headlineIsClock": false,
+        "caption": "400 km apart",
+        "clockLine": false,
+        "clockOffsetMinutes": null,
+        "neutral": false,
+        "showMap": true
+      }
+    },
+    {
+      "name": "distant clock headline",
+      "payload": "{\"v\":1,\"headlineIsClock\":true,\"caption\":\"5.1k km apart\",\"clockOffsetMinutes\":330,\"validUntilMs\":1792155600000}",
+      "expect": {
+        "headline": null,
+        "headlineIsClock": true,
+        "caption": "5.1k km apart",
+        "clockLine": false,
+        "clockOffsetMinutes": 330,
+        "neutral": false,
+        "showMap": true
+      }
+    },
+    {
+      "name": "distant clock headline, negative half hour",
+      "payload": "{\"v\":1,\"headlineIsClock\":true,\"caption\":\"9.2k km apart\",\"clockOffsetMinutes\":-210,\"validUntilMs\":1792155600000}",
+      "expect": {
+        "headline": null,
+        "headlineIsClock": true,
+        "caption": "9.2k km apart",
+        "clockLine": false,
+        "clockOffsetMinutes": -210,
+        "neutral": false,
+        "showMap": true
+      }
+    },
+    {
+      "name": "distant without offset",
+      "payload": "{\"v\":1,\"headline\":\"5.1k km apart\",\"validUntilMs\":1792155600000}",
+      "expect": {
+        "headline": "5.1k km apart",
+        "headlineIsClock": false,
+        "caption": null,
+        "clockLine": false,
+        "clockOffsetMinutes": null,
+        "neutral": false,
+        "showMap": true
+      }
+    },
+    {
+      "name": "countdown 12 days with clock line",
+      "payload": "{\"v\":1,\"caption\":\"5.1k km apart\",\"clockOffsetMinutes\":60,\"clockLine\":true,\"validUntilMs\":1792155600000,\"reunionDate\":\"2026-10-28\"}",
+      "expect": {
+        "headline": "12 days until you're together",
+        "headlineIsClock": false,
+        "caption": "5.1k km apart",
+        "clockLine": true,
+        "clockOffsetMinutes": 60,
+        "neutral": false,
+        "showMap": true
+      }
+    },
+    {
+      "name": "countdown tomorrow",
+      "payload": "{\"v\":1,\"caption\":\"5.1k km apart\",\"validUntilMs\":1792155600000,\"reunionDate\":\"2026-10-17\"}",
+      "expect": {
+        "headline": "Together tomorrow",
+        "headlineIsClock": false,
+        "caption": "5.1k km apart",
+        "clockLine": false,
+        "clockOffsetMinutes": null,
+        "neutral": false,
+        "showMap": true
+      }
+    },
+    {
+      "name": "countdown today",
+      "payload": "{\"v\":1,\"caption\":\"5.1k km apart\",\"validUntilMs\":1792155600000,\"reunionDate\":\"2026-10-16\"}",
+      "expect": {
+        "headline": "Together today",
+        "headlineIsClock": false,
+        "caption": "5.1k km apart",
+        "clockLine": false,
+        "clockOffsetMinutes": null,
+        "neutral": false,
+        "showMap": true
+      }
+    },
+    {
+      "name": "expired distance, reunion in 12 days",
+      "payload": "{\"v\":1,\"caption\":\"5.1k km apart\",\"validUntilMs\":1792151940000,\"reunionDate\":\"2026-10-28\"}",
+      "expect": {
+        "headline": "12 days",
+        "headlineIsClock": false,
+        "caption": "until you're together",
+        "clockLine": false,
+        "clockOffsetMinutes": null,
+        "neutral": false,
+        "showMap": false
+      }
+    },
+    {
+      "name": "expired distance, reunion tomorrow",
+      "payload": "{\"v\":1,\"caption\":\"5.1k km apart\",\"validUntilMs\":1792151940000,\"reunionDate\":\"2026-10-17\"}",
+      "expect": {
+        "headline": "Together tomorrow",
+        "headlineIsClock": false,
+        "caption": null,
+        "clockLine": false,
+        "clockOffsetMinutes": null,
+        "neutral": false,
+        "showMap": false
+      }
+    },
+    {
+      "name": "expired distance alone",
+      "payload": "{\"v\":1,\"headline\":\"8 hours by road\",\"validUntilMs\":1792151940000}",
+      "expect": {
+        "headline": "Nothing to show yet",
+        "headlineIsClock": false,
+        "caption": null,
+        "clockLine": false,
+        "clockOffsetMinutes": null,
+        "neutral": true,
+        "showMap": false
+      }
+    },
+    {
+      "name": "valid until exactly now",
+      "payload": "{\"v\":1,\"headline\":\"x\",\"validUntilMs\":1792152000000}",
+      "expect": {
+        "headline": "Nothing to show yet",
+        "headlineIsClock": false,
+        "caption": null,
+        "clockLine": false,
+        "clockOffsetMinutes": null,
+        "neutral": true,
+        "showMap": false
+      }
+    },
+    {
+      "name": "past reunion",
+      "payload": "{\"v\":1,\"reunionDate\":\"2026-10-15\"}",
+      "expect": {
+        "headline": "Nothing to show yet",
+        "headlineIsClock": false,
+        "caption": null,
+        "clockLine": false,
+        "clockOffsetMinutes": null,
+        "neutral": true,
+        "showMap": false
+      }
+    },
+    {
+      "name": "malformed reunion date",
+      "payload": "{\"v\":1,\"reunionDate\":\"soon\"}",
+      "expect": {
+        "headline": "Nothing to show yet",
+        "headlineIsClock": false,
+        "caption": null,
+        "clockLine": false,
+        "clockOffsetMinutes": null,
+        "neutral": true,
+        "showMap": false
+      }
+    },
+    {
+      "name": "clock headline without offset",
+      "payload": "{\"v\":1,\"headlineIsClock\":true,\"validUntilMs\":1792155600000}",
+      "expect": {
+        "headline": "Nothing to show yet",
+        "headlineIsClock": false,
+        "caption": null,
+        "clockLine": false,
+        "clockOffsetMinutes": null,
+        "neutral": true,
+        "showMap": false
+      }
+    }
+  ]
+}

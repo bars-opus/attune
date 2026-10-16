@@ -1,3 +1,5 @@
+import 'package:attune/features/location/domain/partner_distance.dart';
+
 /// Whether a calendar event reads as "we will be together".
 ///
 /// The countdown is the strongest thing this feature can say to a
@@ -73,4 +75,29 @@ int daysUntil(DateTime event, {DateTime? now}) {
   final startOfToday = DateTime(today.year, today.month, today.day);
   final startOfEvent = DateTime(event.year, event.month, event.day);
   return startOfEvent.difference(startOfToday).inDays;
+}
+
+/// Adds a countdown when the calendar holds a reunion, only for couples
+/// far enough apart for a countdown to mean something.
+PartnerDistance withReunion(
+  PartnerDistance d,
+  Iterable<(String, DateTime)> events, {
+  DateTime? now,
+}) {
+  if (d.km < PartnerDistance.sameCountryKm) return d;
+  int? soonest;
+  for (final (title, at) in events) {
+    if (!isReunionEvent(title)) continue;
+    final days = daysUntil(at, now: now);
+    if (days < 0) continue;
+    if (soonest == null || days < soonest) soonest = days;
+  }
+  if (soonest == null) return d;
+  return PartnerDistance(
+    km: d.km,
+    partnerCity: d.partnerCity,
+    partnerUtcOffsetMinutes: d.partnerUtcOffsetMinutes,
+    daysUntilTogether: soonest,
+    together: d.together,
+  );
 }

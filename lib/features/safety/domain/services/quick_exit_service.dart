@@ -2,6 +2,7 @@
 
 import 'dart:async';
 import 'dart:io';
+import 'package:attune/features/couple_map/data/couple_map_device_data.dart';
 import 'package:attune/features/together/data/together_device_surfaces.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
@@ -23,6 +24,8 @@ class QuickExitService {
     // too. Fire-and-forget, after the cover is up, so nothing delays or
     // reveals activation.
     unawaited(clearTogetherDeviceSurfaces());
+    // The map's tile cache holds the partner's area; pins hold faces.
+    unawaited(clearCoupleMapDeviceData());
 
     Future.delayed(const Duration(milliseconds: 300), () {
       _exitApp();

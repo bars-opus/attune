@@ -8,7 +8,8 @@ class DistanceCopy {
   final String? detail;
 }
 
-String _km(double km) {
+/// "412 km", "5.1k km", "12k km".
+String formatKm(double km) {
   if (km >= 1000) {
     final thousands = (km / 1000).toStringAsFixed(km >= 10000 ? 0 : 1);
     return '${thousands}k km';
@@ -22,7 +23,8 @@ String _duration(Duration d) {
   return hours == 1 ? '1 hour' : '$hours hours';
 }
 
-String _clock(DateTime local) {
+/// "3:15pm" from a wall-clock DateTime's own fields.
+String formatClock(DateTime local) {
   final hour = local.hour % 12 == 0 ? 12 : local.hour % 12;
   final minute = local.minute.toString().padLeft(2, '0');
   return '$hour:$minute${local.hour < 12 ? 'am' : 'pm'}';
@@ -34,7 +36,11 @@ String _clock(DateTime local) {
 /// formatting choice. The long-distance branches deliberately lead with
 /// something OTHER than the number, because the number is the part that
 /// does not change.
-DistanceCopy distanceCopy(PartnerDistance d, {String? partnerName}) {
+DistanceCopy distanceCopy(
+  PartnerDistance d, {
+  String? partnerName,
+  DateTime? now,
+}) {
   final name = partnerName ?? 'They';
 
   switch (d.tone) {
@@ -69,34 +75,26 @@ DistanceCopy distanceCopy(PartnerDistance d, {String? partnerName}) {
           1 => 'Together tomorrow',
           _ => '$days days until you\'re together',
         },
-        detail: '${_km(d.km)} apart for now',
-      );
-
-    case DistanceTone.closing:
-      // Someone is travelling. This is the one moment the distance is
-      // genuinely news, so it leads.
-      final closed = d.kmClosedSinceYesterday!;
-      return DistanceCopy(
-        headline:
-            closed > 0
-                ? '${_km(closed)} closer than yesterday'
-                : '${_km(closed.abs())} further than yesterday',
-        detail: '${_km(d.km)} apart',
+        detail: '${formatKm(d.km)} apart for now',
       );
 
     case DistanceTone.distant:
       // The hardest case: far apart, nothing booked. Leading with the
       // distance would just restate the ache, so it leads with the one
       // thing that changes and is useful -- whether they are awake.
-      final local = d.partnerLocalTime;
+      final offset = d.partnerUtcOffsetMinutes;
+      final local =
+          offset == null
+              ? null
+              : (now ?? DateTime.now()).toUtc().add(Duration(minutes: offset));
       if (local != null) {
         return DistanceCopy(
-          headline: '${_clock(local)} where they are',
-          detail: '${_km(d.km)} apart',
+          headline: '${formatClock(local)} where they are',
+          detail: '${formatKm(d.km)} apart',
         );
       }
       return DistanceCopy(
-        headline: '${_km(d.km)} apart',
+        headline: '${formatKm(d.km)} apart',
         detail: d.partnerCity,
       );
   }

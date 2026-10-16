@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="couple_widget_name">Apart</string>
+    <string name="couple_widget_description">Time and distance between you two. Turn it on in Attune first.</string>
+    <string name="couple_widget_neutral">Nothing to show yet</string>
+</resources>

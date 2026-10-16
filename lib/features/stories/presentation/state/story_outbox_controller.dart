@@ -326,6 +326,7 @@ class StoryOutboxController extends StateNotifier<List<StoryOutboxRecord>> {
           mediaHeight: current.height,
           durationMs: current.durationMs,
           utcOffsetMinutes: current.utcOffsetMinutes,
+          place: current.place?.toJson(),
         );
 
         // Success — whether this call created the story or landed on an

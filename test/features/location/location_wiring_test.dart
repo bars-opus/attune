@@ -62,39 +62,6 @@ void main() {
     }
   });
 
-  test('stopping presence deletes the row rather than hiding it', () {
-    // Presence that is merely flagged off is still presence. The
-    // guarantee is that turning it off leaves nothing behind.
-    final source =
-        File(
-          'lib/features/location/data/presence_repository.dart',
-        ).readAsStringSync();
-
-    final stop = source.substring(source.indexOf('Future<void> stopSharing'));
-    expect(
-      stop.contains(".delete()"),
-      isTrue,
-      reason: 'stopSharing must delete the stored position',
-    );
-  });
-
-  test('the repository can read a distance but never a position', () {
-    // The asymmetry the whole feature rests on. If a method ever returns
-    // the partner's coordinates, the ambient row has become a location
-    // channel.
-    final source =
-        File(
-          'lib/features/location/data/presence_repository.dart',
-        ).readAsStringSync();
-
-    expect(source.contains('partner_distance'), isTrue);
-    expect(
-      source.contains("from('partner_presence').select"),
-      isFalse,
-      reason: 'a client must never select a partner presence row directly',
-    );
-  });
-
   test('the location toggle reflects real state, not a hardcoded true', () {
     // It shipped hardcoded on, persisting nowhere -- the worst shape for
     // a privacy control, telling every user their location was shared
@@ -115,15 +82,6 @@ void main() {
       isFalse,
       reason: 'the toggle must actually do something',
     );
-  });
-
-  test('turning sharing off reaches stopSharing', () {
-    final source =
-        File(
-          'lib/features/chat/presentation/widgets/chat_settings_static_rows.dart',
-        ).readAsStringSync();
-
-    expect(source.contains('repository.stopSharing()'), isTrue);
   });
 
   test('a place photo goes through the EXIF-stripping image pipeline', () {
@@ -155,74 +113,73 @@ void main() {
     );
   });
 
-  test('the location fix is time-bounded', () {
-    // Geolocator.getCurrentPosition has no time limit of its own, and on
-    // a device with a poor fix it can hang indefinitely -- blocking the
-    // distance read that runs behind it, so the row never appears at all.
-    // Presence is ambient: a bounded failure that skips one cycle is
-    // strictly better than a request that never returns.
+  test('stopping deletes through stop_presence', () {
     final source =
         File(
           'lib/features/location/data/presence_repository.dart',
         ).readAsStringSync();
+    expect(source.contains("'stop_presence'"), isTrue);
+  });
 
-    final record = source.substring(
-      source.indexOf('Future<bool> recordOwnPresence'),
-      source.indexOf('Future<PartnerDistance?> fetchDistance'),
-    );
-
+  test('the client reads presence only through couple_map_presence', () {
+    final source =
+        File(
+          'lib/features/location/data/presence_repository.dart',
+        ).readAsStringSync();
+    expect(source.contains("'couple_map_presence'"), isTrue);
     expect(
-      record.contains('.timeout('),
-      isTrue,
-      reason: 'an unbounded location fix can hang the whole row',
+      source.contains("from('partner_presence')"),
+      isFalse,
+      reason:
+          'no direct table access: the RPCs enforce snapping, pause and '
+          'symmetry',
     );
   });
 
-  test('opening the chat list does not start sharing on its own', () {
-    // The distance provider recorded a position unconditionally on mount,
-    // so a user who turned sharing OFF had it silently switched back on
-    // the next time they opened the app. A privacy toggle the app
-    // overrides is worse than no toggle.
-    //
-    // Sharing now starts only from the settings toggle, and the provider
-    // merely refreshes a position that already exists.
+  test('turning sharing off reaches stopSharing(relationshipId)', () {
     final source =
         File(
-          'lib/features/location/presentation/providers/presence_providers.dart',
+          'lib/features/chat/presentation/widgets/chat_settings_static_rows.dart',
         ).readAsStringSync();
+    expect(source.contains('repository.stopSharing(relationshipId)'), isTrue);
+  });
 
-    final refresh = source.substring(
-      source.indexOf('Future<void> refresh()'),
-      source.indexOf('unawaited(refresh());'),
-    );
+  test('the sampler is time-bounded and coarse (never GPS-precise)', () {
+    final source =
+        File(
+          'lib/features/location/data/presence_sampler.dart',
+        ).readAsStringSync();
+    // medium, not low: Android's low is city-level (~10 km), which would
+    // almost never pass the 2 km cutoff. medium is ~100 m and never GPS.
+    expect(source.contains('LocationAccuracy.medium'), isTrue);
+    expect(source.contains('timeLimit:'), isTrue);
+    expect(source.contains('.timeout('), isTrue);
+  });
 
-    expect(
-      refresh.contains('if (await repository.isSharing())'),
-      isTrue,
-      reason:
-          'the provider must not record a position for someone who has '
-          'not opted in',
+  test('the sampler never asks for permission on its own', () {
+    final source =
+        File(
+          'lib/features/location/data/presence_sampler.dart',
+        ).readAsStringSync();
+    final sample = source.substring(
+      source.indexOf('Future<PresenceSample?> sample()'),
+      source.indexOf('Future<bool> requestPermission()'),
     );
+    expect(sample.contains('requestPermission'), isFalse);
   });
 
   test('a partner who has not shared produces silence, not a prompt', () {
-    // The asymmetry that matters. "Waiting for your partner" would put
-    // the question "why haven't you turned it on?" on their screen --
-    // exactly the pressure this design exists to avoid. Someone who wants
-    // to ask can ask; the app will not ask on their behalf.
+    // "Waiting for your partner" would put the question "why haven't you
+    // turned it on?" on their screen -- exactly the pressure this design
+    // exists to avoid.
     final source =
         File(
           'lib/features/location/presentation/widgets/partner_distance_row.dart',
         ).readAsStringSync();
-
     expect(
       source.contains('if (sharing) return const SizedBox.shrink();'),
       isTrue,
-      reason:
-          'when the viewer IS sharing and there is still no distance, the '
-          'partner has not opted in -- and that must stay invisible',
     );
-
     for (final nudge in [
       'Waiting for',
       'has not shared',
@@ -230,43 +187,61 @@ void main() {
       'Ask ',
       'Invite ',
     ]) {
-      expect(
-        source.contains(nudge),
-        isFalse,
-        reason: 'the row must never nudge about a partner\'s choice: $nudge',
-      );
+      expect(source.contains(nudge), isFalse, reason: nudge);
     }
   });
 
   test('a viewer who has not shared is offered the switch', () {
-    // Their OWN state, which they can act on -- so silence here would
-    // just make the feature look broken to someone who never enabled it.
     final source =
         File(
           'lib/features/location/presentation/widgets/partner_distance_row.dart',
         ).readAsStringSync();
-
     expect(source.contains('Share how far apart you are'), isTrue);
-    expect(
-      source.contains('recordOwnPresence()'),
-      isTrue,
-      reason: 'the offer must actually turn sharing on',
-    );
+    expect(source.contains('startSharing(relationshipId)'), isTrue);
   });
 
   test('an unknown sharing state stays silent', () {
-    // Defaults to `true` (i.e. assume sharing, show nothing) while the
-    // check is in flight. Defaulting the other way would flash an
-    // opt-in prompt at every user on every cold start.
+    // Assume sharing (show nothing) while the read is in flight, so no
+    // opt-in prompt flashes on every cold start.
     final source =
         File(
           'lib/features/location/presentation/widgets/partner_distance_row.dart',
         ).readAsStringSync();
-
     expect(
-      source.contains('.valueOrNull ?? true'),
+      source.replaceAll(RegExp(r'\s'), '').contains('.valueOrNull?.isOn??true'),
       isTrue,
-      reason: 'an unresolved state must not flash a prompt',
     );
+  });
+
+  test('checking location access never prompts', () {
+    final source =
+        File(
+          'lib/features/location/data/presence_sampler.dart',
+        ).readAsStringSync();
+    final access = source.substring(
+      source.indexOf('Future<LocationAccess> access()'),
+      source.indexOf('Future<void> openSettings()'),
+    );
+    expect(access.contains('requestPermission'), isFalse);
+  });
+
+  test('the sampler does not claim on-device geocoding', () {
+    final source =
+        File(
+          'lib/features/location/data/presence_sampler.dart',
+        ).readAsStringSync();
+    expect(
+      source.contains('On-device geocoding'),
+      isFalse,
+      reason: 'Geocoder/CLGeocoder send the fix to Google/Apple (Phase 0 M12)',
+    );
+  });
+
+  test('the presence time zone is re-read, so travel updates it', () {
+    final source =
+        File(
+          'lib/features/location/presentation/providers/presence_providers.dart',
+        ).readAsStringSync();
+    expect(source.contains('TimezoneUtils.clearCache()'), isTrue);
   });
 }

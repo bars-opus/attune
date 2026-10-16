@@ -1,8 +1,11 @@
+import 'dart:io';
+
 import 'package:attune/core/widgets/feedback/error_state.dart';
 import 'package:attune/core/widgets/info_row_widget.dart';
 import 'package:attune/features/planning/presentation/screens/planning_home_screen.dart';
 import 'package:attune/features/together/presentation/screens/together_screen.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
@@ -164,5 +167,55 @@ void main() {
     expect(find.byType(TogetherScreen), findsOneWidget);
     expect(find.text('Map'), findsNothing, reason: 'the duplicate Map tab is gone');
   });
-}
 
+  testWidgets('with couple_map_enabled on, Planning has a third tab: Map', (tester) async {
+    await tester.pumpWidget(planningTestApp(_gateway(), const PlanningHomeScreen(relationshipId: 'r1'), mapEnabled: true));
+    await tester.pumpAndSettle();
+    expect(find.text('Planning'), findsOneWidget);
+    expect(find.text('Calendar'), findsOneWidget);
+    expect(find.text('Map'), findsOneWidget);
+  });
+
+  testWidgets('with the flag off (the default), there is no Map tab', (tester) async {
+    await tester.pumpWidget(planningTestApp(_gateway(), const PlanningHomeScreen(relationshipId: 'r1')));
+    await tester.pumpAndSettle();
+    expect(find.text('Map'), findsNothing);
+  });
+
+  testWidgets('opened from the distance widget, Planning lands on Map once the flag loads', (tester) async {
+    await tester.pumpWidget(planningTestApp(
+      _gateway(),
+      ProviderScope(
+        overrides: [
+          planningMapTabBuilderProvider.overrideWithValue((rel) => Text('map for $rel')),
+        ],
+        child: const PlanningHomeScreen(relationshipId: 'r1', initialTab: PlanningHomeTab.map),
+      ),
+      mapEnabled: true,
+    ));
+    await tester.pumpAndSettle();
+    expect(find.text('map for r1'), findsOneWidget);
+  });
+
+  testWidgets('asked for Map with the flag off, Planning stays on its first tab', (tester) async {
+    await tester.pumpWidget(planningTestApp(
+      _gateway(),
+      const PlanningHomeScreen(relationshipId: 'r1', initialTab: PlanningHomeTab.map),
+    ));
+    await tester.pumpAndSettle();
+    expect(find.text('Goals'), findsOneWidget);
+  });
+
+  test('the ?tab= query maps to a tab; anything else is Planning', () {
+    expect(planningTabFromQuery('map'), PlanningHomeTab.map);
+    expect(planningTabFromQuery('calendar'), PlanningHomeTab.calendar);
+    expect(planningTabFromQuery('planning'), PlanningHomeTab.planning);
+    expect(planningTabFromQuery('bogus'), PlanningHomeTab.planning);
+    expect(planningTabFromQuery(null), PlanningHomeTab.planning);
+  });
+
+  test('the /planning route passes ?tab= through', () {
+    final source = File('lib/app/routing/app_router.dart').readAsStringSync();
+    expect(source.contains("planningTabFromQuery(state.uri.queryParameters['tab'])"), isTrue);
+  });
+}

@@ -31,7 +31,10 @@ void main() {
 
   test('the planning route is registered and builds PlanningHomeScreen', () {
     expect(appRouter.contains("name: 'planning'"), isTrue);
-    expect(appRouter.contains('PlanningHomeScreen(relationshipId: relationshipId)'), isTrue);
+    expect(
+      RegExp(r'PlanningHomeScreen\(\s*relationshipId: relationshipId,').hasMatch(appRouter),
+      isTrue,
+    );
   });
 
   test('the row passes the relationship id through, not a null/empty extra', () {

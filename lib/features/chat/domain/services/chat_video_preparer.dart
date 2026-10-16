@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:attune/features/chat/domain/services/chat_image_preparer.dart';
+import 'package:attune/features/chat/domain/services/mp4_location_stripper.dart';
 import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
@@ -311,6 +312,9 @@ class ChatVideoPreparer {
     }
 
     final outFile = compressed!.file!;
+    // Where it was recorded stays on the phone (couple map spec §7): the
+    // transcode keeps the source's location atoms; neutralise them in place.
+    await Mp4LocationStripper.strip(outFile);
     final outSize = await outFile.length();
     if (outSize <= 0 || outSize > effectiveMaxBytes) {
       throw const ChatVideoRejected('media_compress_failed');

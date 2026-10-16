@@ -881,6 +881,7 @@ class _HangingStoryGateway implements StoryGateway {
     required int mediaHeight,
     int? durationMs,
     required int utcOffsetMinutes,
+    Map<String, dynamic>? place,
   }) => Completer<StoryFinalizeResult>().future;
 }
 

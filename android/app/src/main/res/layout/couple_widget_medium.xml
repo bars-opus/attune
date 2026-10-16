@@ -1,0 +1,110 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/couple_root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="horizontal"
+    android:gravity="center_vertical"
+    android:padding="12dp"
+    android:background="@drawable/couple_widget_bg">
+
+    <!-- The region map (spec §3.3): decorative, never read aloud. -->
+    <ImageView
+        android:id="@+id/couple_map"
+        android:layout_width="0dp"
+        android:layout_height="match_parent"
+        android:layout_weight="5"
+        android:layout_marginEnd="12dp"
+        android:scaleType="centerCrop"
+        android:importantForAccessibility="no"
+        android:visibility="gone" />
+
+    <LinearLayout
+        android:layout_width="0dp"
+        android:layout_height="match_parent"
+        android:layout_weight="6"
+        android:gravity="center_vertical"
+        android:orientation="vertical">
+
+        <LinearLayout
+            android:id="@+id/couple_neutral"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical">
+            <ImageView
+                android:layout_width="18dp"
+                android:layout_height="18dp"
+                android:src="@drawable/couple_widget_heart"
+                android:importantForAccessibility="no" />
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="6dp"
+                android:text="@string/couple_widget_neutral"
+                android:textSize="14sp"
+                android:textColor="@color/couple_widget_text_secondary" />
+        </LinearLayout>
+
+        <!-- Shrinks to fit (autoSize, API 26+; 20sp before that) and keeps its
+             lines: at large font scales the detail lines below clip first
+             (spec §3.2). -->
+        <TextView
+            android:id="@+id/couple_headline"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:maxLines="2"
+            android:textSize="20sp"
+            android:ellipsize="end"
+            android:autoSizeTextType="uniform"
+            android:autoSizeMinTextSize="12sp"
+            android:autoSizeMaxTextSize="20sp"
+            android:textStyle="bold"
+            android:textColor="@color/couple_widget_text_primary"
+            android:visibility="gone" />
+
+        <TextClock
+            android:id="@+id/couple_headline_clock"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:maxLines="1"
+            android:format12Hour="h:mm a 'there'"
+            android:format24Hour="HH:mm 'there'"
+            android:textSize="18sp"
+            android:textStyle="bold"
+            android:textColor="@color/couple_widget_text_primary"
+            android:visibility="gone" />
+
+        <!-- The detail lines: a box that takes what is left and clips from the
+             bottom, so the clock line goes first, then the caption. -->
+        <LinearLayout
+            android:id="@+id/couple_details"
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1"
+            android:gravity="top"
+            android:orientation="vertical">
+            <TextView
+                android:id="@+id/couple_caption"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="2dp"
+                android:maxLines="1"
+                android:ellipsize="end"
+                android:textSize="13sp"
+                android:textColor="@color/couple_widget_text_secondary"
+                android:visibility="gone" />
+
+            <TextClock
+                android:id="@+id/couple_clock_line"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:maxLines="1"
+                android:format12Hour="h:mm a 'there'"
+                android:format24Hour="HH:mm 'there'"
+                android:textSize="13sp"
+                android:textColor="@color/couple_widget_text_secondary"
+                android:visibility="gone" />
+        </LinearLayout>
+    </LinearLayout>
+</LinearLayout>

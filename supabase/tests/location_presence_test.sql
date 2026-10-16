@@ -1,4 +1,7 @@
--- Location presence.
+-- Place updates (the deliberate half of location).
+--
+-- Ambient presence moved to couple_map_presence_contracts.sql with the
+-- Couple Map (2026-10-16); what stays here is the chat place update.
 --
 -- Attune ships a discreet exit as a permanent constraint and runs
 -- coercive-control detection on chat. This feature is designed so it
@@ -18,103 +21,6 @@ INSERT INTO public.users(id, phone, display_name) VALUES
   ('00000000-0000-0000-0000-00000000e003', '+15559990103', 'E3')
   ON CONFLICT (id) DO NOTHING;
 
-DO $$
-DECLARE
-  a uuid := '00000000-0000-0000-0000-00000000e001';
-  b uuid := '00000000-0000-0000-0000-00000000e002';
-  c uuid := '00000000-0000-0000-0000-00000000e003';
-  v_rel uuid;
-  v_km double precision;
-  v_rows int;
-BEGIN
-  INSERT INTO public.relationships(user_a, user_b, status)
-  VALUES (a, b, 'active') RETURNING id INTO v_rel;
-
-  INSERT INTO public.partner_presence(user_id, latitude, longitude, city, timezone)
-  VALUES (a, 5.560, -0.205, 'Accra', 'Africa/Accra'),
-         (b, 51.507, -0.128, 'London', 'Europe/London');
-
-  PERFORM set_config('request.jwt.claims',
-    json_build_object('sub', a, 'role', 'authenticated')::text, true);
-
-  SELECT distance_km INTO v_km FROM public.partner_distance(v_rel);
-  IF v_km IS NULL OR v_km < 5000 OR v_km > 5200 THEN
-    RAISE EXCEPTION 'Accra to London should be ~5100km, got %', v_km;
-  END IF;
-
-  -- SYMMETRY. Without this a partner could watch the distance while
-  -- withholding their own position -- exactly the asymmetry the feature
-  -- exists to avoid.
-  UPDATE public.partner_presence SET latitude = NULL, longitude = NULL
-  WHERE user_id = a;
-
-  SELECT count(*) INTO v_rows FROM public.partner_distance(v_rel);
-  IF v_rows <> 0 THEN
-    RAISE EXCEPTION 'distance was returned to someone not sharing their own';
-  END IF;
-
-  UPDATE public.partner_presence SET latitude = 5.560, longitude = -0.205
-  WHERE user_id = a;
-
-  -- STALENESS. A day-old position is a guess, and a confident wrong
-  -- number is worse than none.
-  UPDATE public.partner_presence SET updated_at = now() - interval '30 hours'
-  WHERE user_id = b;
-
-  SELECT count(*) INTO v_rows FROM public.partner_distance(v_rel);
-  IF v_rows <> 0 THEN
-    RAISE EXCEPTION 'a stale position was presented as current';
-  END IF;
-
-  UPDATE public.partner_presence SET updated_at = now() WHERE user_id = b;
-
-  -- MEMBERSHIP. Otherwise any authenticated user could pass a
-  -- relationship id and learn how far apart that couple is.
-  PERFORM set_config('request.jwt.claims',
-    json_build_object('sub', c, 'role', 'authenticated')::text, true);
-
-  SELECT count(*) INTO v_rows FROM public.partner_distance(v_rel);
-  IF v_rows <> 0 THEN
-    RAISE EXCEPTION 'a non-member read a couple''s distance';
-  END IF;
-END $$;
-
--- THE CENTRAL GUARANTEE: the function hands back a distance, never a
--- position. If coordinates ever appear in its signature, the ambient row
--- has become a location channel and the whole design is void.
-DO $$
-DECLARE
-  v_cols text;
-BEGIN
-  SELECT string_agg(p.proargnames[i], ', ') INTO v_cols
-  FROM pg_proc p,
-       generate_subscripts(p.proargnames, 1) i
-  WHERE p.proname = 'partner_distance'
-    AND p.pronamespace = 'public'::regnamespace
-    AND p.proargnames[i] IN ('latitude', 'longitude',
-                             'partner_latitude', 'partner_longitude');
-
-  IF v_cols IS NOT NULL THEN
-    RAISE EXCEPTION 'partner_distance returns coordinates: %', v_cols;
-  END IF;
-END $$;
-
--- A partner cannot read the presence row directly either: RLS is
--- self-only, so the function is the single path between the two rows.
-DO $$
-DECLARE
-  v_using text;
-BEGIN
-  SELECT pg_get_expr(polqual, polrelid) INTO v_using
-  FROM pg_policy
-  WHERE polrelid = 'public.partner_presence'::regclass
-    AND polname = 'partner_presence_self';
-
-  IF v_using IS NULL OR v_using NOT LIKE '%auth.uid()%' THEN
-    RAISE EXCEPTION 'presence rows must be readable only by their owner';
-  END IF;
-END $$;
-
 -- Place updates: the deliberate half of the feature.
 DO $$
 DECLARE
@@ -126,8 +32,8 @@ DECLARE
   v_count int;
   v_refused boolean := false;
 BEGIN
-  SELECT id INTO v_rel FROM public.relationships
-  WHERE user_a = a AND user_b = b LIMIT 1;
+  INSERT INTO public.relationships(user_a, user_b, status)
+  VALUES (a, b, 'active') RETURNING id INTO v_rel;
 
   PERFORM set_config('request.jwt.claims',
     json_build_object('sub', a, 'role', 'authenticated')::text, true);
@@ -175,45 +81,26 @@ BEGIN
   END IF;
 END $$;
 
--- Input bounds (checklist 2.1). Latitude 999 was accepted, and haversine
--- would then return a confident nonsense distance -- "8,000 km apart" to
--- a couple in the same house. A range check turns a silent wrong answer
--- into a rejected write.
+-- Input bounds (checklist 2.1): a chosen place is still a real place.
 DO $$
 DECLARE
   a uuid := '00000000-0000-0000-0000-00000000e001';
-  v_rejected boolean;
+  v_rel uuid;
+  v_rejected boolean := false;
 BEGIN
-  FOR v_rejected IN
-    SELECT * FROM (VALUES (true)) AS t(x)
-  LOOP
-    NULL;
-  END LOOP;
-
-  v_rejected := false;
+  SELECT id INTO v_rel FROM public.relationships WHERE user_a = a LIMIT 1;
   BEGIN
-    UPDATE public.partner_presence SET latitude = 999 WHERE user_id = a;
+    INSERT INTO public.place_updates(relationship_id, user_id, label, latitude, longitude)
+    VALUES (v_rel, a, 'Nowhere', 999, 0);
   EXCEPTION WHEN check_violation THEN
     v_rejected := true;
   END;
   IF NOT v_rejected THEN
-    RAISE EXCEPTION 'latitude 999 was accepted';
+    RAISE EXCEPTION 'a place at latitude 999 was accepted';
   END IF;
-
-  v_rejected := false;
-  BEGIN
-    UPDATE public.partner_presence SET longitude = -400 WHERE user_id = a;
-  EXCEPTION WHEN check_violation THEN
-    v_rejected := true;
-  END;
-  IF NOT v_rejected THEN
-    RAISE EXCEPTION 'longitude -400 was accepted';
-  END IF;
-
-  -- Real extremes must still be storable, or the check has rejected the
-  -- poles and the date line along with the nonsense.
-  UPDATE public.partner_presence SET latitude = -90, longitude = 180
-  WHERE user_id = a;
+  -- Real extremes must still be storable.
+  INSERT INTO public.place_updates(relationship_id, user_id, label, latitude, longitude)
+  VALUES (v_rel, a, 'Edge of the map', -90, 180);
 END $$;
 
 ROLLBACK;

@@ -31,10 +31,17 @@ class ChatSettingsStaticRows extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final relationshipId = this.conversation?.relationshipId;
     // Defaults to false while loading: a privacy toggle must never show
     // "on" for a state it has not confirmed.
     final isSharingLocation =
-        ref.watch(isSharingPresenceProvider).valueOrNull ?? false;
+        relationshipId == null
+            ? false
+            : ref
+                    .watch(presenceStateProvider(relationshipId))
+                    .valueOrNull
+                    ?.isOn ??
+                false;
     final historicalImportEnabled = ref.watch(
       chatHistoricalImportEnabledProvider,
     );
@@ -59,7 +66,7 @@ class ChatSettingsStaticRows extends ConsumerWidget {
                 // announces itself is not an exit.
                 InfoRowWidget(
                   title: 'Share my location',
-                  subtitle: 'Shows how far apart you are. Never where you are.',
+                  subtitle: 'Shares your neighbourhood, never your address.',
                   icon: Icons.location_on_outlined,
                   isToggleItem: true,
                   showAvatar: false,
@@ -67,15 +74,38 @@ class ChatSettingsStaticRows extends ConsumerWidget {
                   showDivider: true,
                   toggleValue: isSharingLocation,
                   iconColor: Colors.grey,
-                  onToggleChanged: (value) async {
-                    final repository = ref.read(presenceRepositoryProvider);
-                    if (value) {
-                      await repository.recordOwnPresence();
-                    } else {
-                      await repository.stopSharing();
-                    }
-                    ref.invalidate(isSharingPresenceProvider);
-                  },
+                  // InfoRowWidget requires a callback on toggle rows; with
+                  // no couple yet there is nothing to share with.
+                  onToggleChanged:
+                      relationshipId == null
+                          ? (_) {}
+                          : (value) async {
+                            final repository = ref.read(
+                              presenceRepositoryProvider,
+                            );
+                            try {
+                              if (value) {
+                                await repository.startSharing(relationshipId);
+                              } else {
+                                await repository.stopSharing(relationshipId);
+                              }
+                            } catch (_) {
+                              // Offline, or the couple has ended: say so —
+                              // a silent failure here could leave someone
+                              // believing they stopped sharing.
+                              if (context.mounted) {
+                                context.showErrorSnackbar(
+                                  "Couldn't update location sharing. Try again.",
+                                );
+                              }
+                            } finally {
+                              // Re-read either way, so the switch shows the
+                              // real state.
+                              ref.invalidate(
+                                coupleMapPresenceProvider(relationshipId),
+                              );
+                            }
+                          },
                 ),
 
                 InfoRowWidget(

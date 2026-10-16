@@ -109,13 +109,14 @@ void main() {
   testWidgets('dual clock shows the partner\'s city and time when they share, a hint when not', (tester) async {
     final g = FakePlanningGateway({
       'get_planning_entry': (_) => fakeEntryDetailJson(blocks: [fakeBlockJson(id: 'dc', type: 'dual_clock', payload: {'title': 'Our time'})]),
-      'planning_timezone_offset_minutes': (_) => 480,
     });
     await tester.pumpWidget(_app(g, _screen,
-        partner: const PartnerDistance(km: 12000, partnerCity: 'Makassar', partnerTimezone: 'Asia/Makassar')));
+        partner: const PartnerDistance(km: 12000, partnerCity: 'Makassar', partnerUtcOffsetMinutes: 480)));
     await tester.pumpAndSettle();
     expect(find.text('Makassar'), findsOneWidget);
     expect(find.text('You'), findsOneWidget);
+    // The offset now comes with presence: no separate time-zone lookup.
+    expect(g.callsTo('planning_timezone_offset_minutes'), isEmpty);
   });
 
   testWidgets('dual clock without shared presence explains itself', (tester) async {

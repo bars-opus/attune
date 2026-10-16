@@ -55,6 +55,7 @@ import 'dart:async';
 import 'package:attune/features/auth/providers/auth_provider.dart';
 import 'package:attune/features/chat/presentation/state/chat_state.dart'
     show chatRepositoryProvider;
+import 'package:attune/features/couple_map/presentation/providers/story_places_providers.dart';
 import 'package:attune/features/stories/data/story_read_repository.dart';
 import 'package:attune/features/stories/presentation/providers/story_providers.dart';
 import 'package:attune/features/stories/presentation/widgets/story_progress_bars.dart';
@@ -181,7 +182,8 @@ class StoryReelScreen extends ConsumerStatefulWidget {
     this.isOwnReel = false,
     this.videoPlayerFactory,
     this.imageHoldDuration = kStoryImageHoldDuration,
-  }) : occurredOn = null;
+  }) : occurredOn = null,
+       placeItems = null;
 
   /// Day mode (Task 5, spec §5.3): one calendar day's items via
   /// [storyDayItemsProvider] (`list_story_day_items`, INCLUDES expired
@@ -201,7 +203,22 @@ class StoryReelScreen extends ConsumerStatefulWidget {
     this.videoPlayerFactory,
     this.imageHoldDuration = kStoryImageHoldDuration,
   }) : authorId = '',
-       isOwnReel = false;
+       isOwnReel = false,
+       placeItems = null;
+
+  /// Places mode (couple map, spec §3.3): the stories behind a map pin or
+  /// cluster, oldest first, as a fixed list — no pager. Per-item author
+  /// checks, like day mode. Adds "Remove from map" for the author.
+  const StoryReelScreen.forPlaces({
+    super.key,
+    required this.relationshipId,
+    required List<StoryItem> items,
+    this.videoPlayerFactory,
+    this.imageHoldDuration = kStoryImageHoldDuration,
+  }) : placeItems = items,
+       authorId = '',
+       isOwnReel = false,
+       occurredOn = null;
 
   final String relationshipId;
   final String authorId;
@@ -218,6 +235,9 @@ class StoryReelScreen extends ConsumerStatefulWidget {
   /// byte: the same provider is watched, keyed the same way.
   final DateTime? occurredOn;
 
+  /// Non-null selects places mode (see [StoryReelScreen.forPlaces]).
+  final List<StoryItem>? placeItems;
+
   /// Test seam: mints a [StoryItemPlayer] for a video item's signed URL.
   /// Defaults to [VideoControllerStoryItemPlayer]. See this file's header.
   final StoryItemPlayer Function(Uri uri)? videoPlayerFactory;
@@ -233,6 +253,10 @@ class StoryReelScreen extends ConsumerStatefulWidget {
 
 class _StoryReelScreenState extends ConsumerState<StoryReelScreen> {
   int _index = 0;
+
+  /// Places mode's own copy of the list, so removals take effect at once.
+  late final List<StoryItem> _placeItems = [...?widget.placeItems];
+  bool get _placesMode => widget.placeItems != null;
   Timer? _tickTimer;
   StoryItemPlayer? _player;
   StreamSubscription<void>? _endedSub;
@@ -638,7 +662,7 @@ class _StoryReelScreenState extends ConsumerState<StoryReelScreen> {
     // deliberately does not duplicate that date check, matching this
     // file's existing posture of trusting the RPC contract rather than
     // re-deriving expiry client-side.
-    final isOwn = widget.occurredOn != null
+    final isOwn = widget.occurredOn != null || _placesMode
         ? item.authorId == ref.read(currentUserProvider)?.id
         : widget.isOwnReel;
     if (isOwn) return;
@@ -754,6 +778,7 @@ class _StoryReelScreenState extends ConsumerState<StoryReelScreen> {
   /// notifier type directly rather than widening that base's visibility
   /// just for these three calls.
   bool _pagerHasMore() {
+    if (_placesMode) return false;
     final occurredOn = widget.occurredOn;
     if (occurredOn != null) {
       return ref
@@ -780,6 +805,7 @@ class _StoryReelScreenState extends ConsumerState<StoryReelScreen> {
   }
 
   Future<void> _pagerLoadMore() {
+    if (_placesMode) return Future.value();
     final occurredOn = widget.occurredOn;
     if (occurredOn != null) {
       return ref
@@ -806,6 +832,7 @@ class _StoryReelScreenState extends ConsumerState<StoryReelScreen> {
   }
 
   List<StoryItem>? _pagerCurrentItems() {
+    if (_placesMode) return _placeItems;
     final occurredOn = widget.occurredOn;
     if (occurredOn != null) {
       return ref
@@ -898,6 +925,15 @@ class _StoryReelScreenState extends ConsumerState<StoryReelScreen> {
     }
     if (!mounted) return;
 
+    // Places mode: `items` IS the list being changed, so reading its length
+    // after removal would step off wrongly. Drop the item, refresh the map's
+    // pins, and show what's left.
+    if (_placesMode) {
+      ProviderScope.containerOf(context).invalidate(storyPlacesProvider);
+      _stepOffPlaceItem(item.id);
+      return;
+    }
+
     // Step off the deleted item before the page refreshes out from
     // under the current index: if it was the last item, close; else
     // stay at the same index (the next item slides into its place once
@@ -923,6 +959,57 @@ class _StoryReelScreenState extends ConsumerState<StoryReelScreen> {
             .refresh(),
       );
     }
+  }
+
+  /// "Remove from map" (couple map, author only): the story stays, its
+  /// place is removed for good.
+  Future<void> _confirmAndRemovePlace(StoryItem item) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Remove from our map?'),
+        content: const Text('The story stays. Its place is removed for good.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: const Text('Remove'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    final container = ProviderScope.containerOf(context);
+    try {
+      await container.read(storyPlacesRepositoryProvider).clear(item.id);
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text("Couldn't remove the place. Try again.")),
+        );
+      }
+      return;
+    }
+    // The server's signal bump refreshes every map; this one updates now.
+    container.invalidate(storyPlacesProvider);
+    if (!mounted) return;
+    _stepOffPlaceItem(item.id);
+  }
+
+  /// Places mode: drop [id] from the fixed list and show what's left (the
+  /// next item slides into the same index), or close when nothing is.
+  void _stepOffPlaceItem(String id) {
+    final at = _placeItems.indexWhere((i) => i.id == id);
+    if (at == -1) return;
+    setState(() => _placeItems.removeAt(at));
+    if (_placeItems.isEmpty) {
+      _close();
+      return;
+    }
+    _startItem(_placeItems, at.clamp(0, _placeItems.length - 1));
   }
 
   @override
@@ -1006,7 +1093,11 @@ class _StoryReelScreenState extends ConsumerState<StoryReelScreen> {
     // Day mode (spec §5.3) watches the day-scoped, expired-inclusive
     // provider; author mode watches the exact same
     // storyReelPagesProvider(key) Task 4 already wired — unchanged.
-    final pagesAsync = occurredOn != null
+    // Places mode reads its own fixed list first, so author mode's provider
+    // is never instantiated for it.
+    final AsyncValue<List<StoryItem>> pagesAsync = _placesMode
+        ? AsyncValue.data(_placeItems)
+        : occurredOn != null
         ? ref.watch(
             storyDayItemsProvider(
               StoryDayKey(
@@ -1049,16 +1140,15 @@ class _StoryReelScreenState extends ConsumerState<StoryReelScreen> {
           // static per-screen flag (a day can mix both partners' items).
           final currentItem = items[clampedIndex];
           final myId = ref.read(currentUserProvider)?.id;
-          final canDeleteCurrent =
-              occurredOn != null && myId != null && currentItem.authorId == myId;
+          final perItemAuthor = occurredOn != null || _placesMode;
+          final isAuthor = myId != null && currentItem.authorId == myId;
+          final canDeleteCurrent = perItemAuthor && isAuthor;
           // Replying is only offered on the PARTNER's item — replying to
           // your own story would quote yourself in your own chat, which
           // is not a sensible action and nothing in the spec asks for
           // it. Same per-item (not per-screen) derivation canDeleteCurrent
           // uses, since day mode can mix both partners' items.
-          final isCurrentMine = occurredOn != null
-              ? myId != null && currentItem.authorId == myId
-              : widget.isOwnReel;
+          final isCurrentMine = perItemAuthor ? isAuthor : widget.isOwnReel;
           return _ReelBody(
             items: items,
             index: clampedIndex,
@@ -1073,6 +1163,9 @@ class _StoryReelScreenState extends ConsumerState<StoryReelScreen> {
             onDismiss: _close,
             onDelete: canDeleteCurrent
                 ? () => unawaited(_confirmAndDelete(currentItem, items))
+                : null,
+            onRemovePlace: _placesMode && isAuthor
+                ? () => unawaited(_confirmAndRemovePlace(currentItem))
                 : null,
             canReply: !isCurrentMine,
             replyController: _replyController,
@@ -1100,6 +1193,7 @@ class _ReelBody extends StatelessWidget {
     required this.onHoldEnd,
     required this.onDismiss,
     this.onDelete,
+    this.onRemovePlace,
     this.canReply = false,
     this.replyController,
     this.replyFocusNode,
@@ -1129,6 +1223,9 @@ class _ReelBody extends StatelessWidget {
   /// showing it disabled — the brief requires the UI not offer an
   /// action `delete_story_item` would refuse server-side.
   final VoidCallback? onDelete;
+
+  /// Couple map places mode, author only: removes the story's place.
+  final VoidCallback? onRemovePlace;
 
   /// Task 6 (spec §5.4): true only for the PARTNER's current item —
   /// replying to your own story is not offered. Gates whether the reply
@@ -1196,19 +1293,17 @@ class _ReelBody extends StatelessWidget {
             top: 0,
             right: 0,
             child: SafeArea(
-              child: Semantics(
-                label: 'Close story',
-                button: true,
-                child: IconButton(
-                  iconSize: 28,
-                  padding: const EdgeInsets.all(10),
-                  constraints: const BoxConstraints(
-                    minWidth: 48,
-                    minHeight: 48,
-                  ),
-                  icon: const Icon(Icons.close_rounded, color: Colors.white),
-                  onPressed: onDismiss,
+              child: IconButton(
+                iconSize: 28,
+                padding: const EdgeInsets.all(10),
+                constraints: const BoxConstraints(
+                  minWidth: 48,
+                  minHeight: 48,
                 ),
+                icon: const Icon(Icons.close_rounded, color: Colors.white),
+                // Its own semantics node: the tooltip is its label.
+                tooltip: 'Close story',
+                onPressed: onDismiss,
               ),
             ),
           ),
@@ -1217,23 +1312,44 @@ class _ReelBody extends StatelessWidget {
               top: 0,
               left: 0,
               child: SafeArea(
-                child: Semantics(
-                  label: 'Delete this story',
-                  button: true,
-                  child: IconButton(
-                    key: const ValueKey('story-reel-delete'),
-                    iconSize: 24,
-                    padding: const EdgeInsets.all(12),
-                    constraints: const BoxConstraints(
-                      minWidth: 48,
-                      minHeight: 48,
-                    ),
-                    icon: const Icon(
-                      Icons.delete_outline,
-                      color: Colors.white,
-                    ),
-                    onPressed: onDelete,
+                child: IconButton(
+                  key: const ValueKey('story-reel-delete'),
+                  iconSize: 24,
+                  padding: const EdgeInsets.all(12),
+                  constraints: const BoxConstraints(
+                    minWidth: 48,
+                    minHeight: 48,
                   ),
+                  icon: const Icon(
+                    Icons.delete_outline,
+                    color: Colors.white,
+                  ),
+                  // The IconButton is its own semantics node: without a
+                  // tooltip a screen reader announced an unlabelled button.
+                  tooltip: 'Delete this story',
+                  onPressed: onDelete,
+                ),
+              ),
+            ),
+          if (onRemovePlace != null)
+            Positioned(
+              top: 0,
+              left: onDelete != null ? 48 : 0,
+              child: SafeArea(
+                child: IconButton(
+                  key: const ValueKey('story-reel-remove-place'),
+                  iconSize: 24,
+                  padding: const EdgeInsets.all(12),
+                  constraints: const BoxConstraints(
+                    minWidth: 48,
+                    minHeight: 48,
+                  ),
+                  icon: const Icon(
+                    Icons.wrong_location_outlined,
+                    color: Colors.white,
+                  ),
+                  tooltip: 'Remove from map',
+                  onPressed: onRemovePlace,
                 ),
               ),
             ),

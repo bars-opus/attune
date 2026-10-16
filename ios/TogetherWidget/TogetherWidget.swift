@@ -119,6 +119,7 @@ struct TogetherWidget: Widget {
 struct TogetherWidgets: WidgetBundle {
   var body: some Widget {
     TogetherWidget()
+    CoupleWidget()
     if #available(iOS 16.2, *) {
       TogetherLiveActivity()
     }

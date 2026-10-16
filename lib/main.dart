@@ -12,15 +12,30 @@ import 'package:attune/core/providers/shared_prefs_provider.dart';
 import 'package:attune/core/services/shared_preferences_service.dart'
     hide preferencesServiceProvider;
 import 'package:attune/features/chat/data/cache/chat_cache_service.dart';
+import 'package:attune/features/couple_map/widget/presentation/widget_deep_link.dart';
+import 'package:attune/features/location/presentation/providers/presence_providers.dart'
+    show coupleMapEnabledProvider;
+import 'package:attune/features/planning/presentation/planning_providers.dart'
+    as planning
+    show currentRelationshipIdProvider;
+import 'package:attune/features/planning/presentation/screens/planning_home_screen.dart'
+    show PlanningHomeTab;
 import 'package:attune/features/onboarding/data/onboarding_store.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // The couple map (spec 2026-10-16 §6.3). Token from the environment,
+  // restricted to the app's bundle IDs in the Mapbox console.
+  if (Environment.mapboxAccessToken.isNotEmpty) {
+    MapboxOptions.setAccessToken(Environment.mapboxAccessToken);
+  }
 
   await _initializeSupabase();
   _initializeDeepLinks();
@@ -105,6 +120,13 @@ void _handleDeepLink(Uri uri) {
     return;
   }
 
+  final planningTab = planningTabFromLink(uri);
+  if (planningTab != null) {
+    debugPrint('[deep-link] planning link detected.');
+    unawaited(_openPlanningWhenReady(planningTab));
+    return;
+  }
+
   final inviteCode = _extractInviteCode(uri);
   if (inviteCode != null) {
     debugPrint('[deep-link] invite detected.');
@@ -158,6 +180,28 @@ Future<void> _navigateToOnboardingWhenReady() async {
   if (!context.mounted) return;
   container.read(routingNotifierProvider).completeFirstLaunch();
   GoRouter.of(context).go(RouteNames.onboarding);
+}
+
+/// The distance widget's tap (widget spec §6.5): Planning → Map, once the
+/// router has settled, for a signed-in, paired person only.
+Future<void> _openPlanningWhenReady(PlanningHomeTab tab) async {
+  try {
+    final context = await waitForRouterSettled();
+    if (context == null || !context.mounted) return;
+    final container = ProviderScope.containerOf(context, listen: false);
+    await openPlanningFromLink(
+      GoRouter.of(context),
+      tab,
+      signedIn: () => Supabase.instance.client.auth.currentUser != null,
+      // Fresh, not cached: after a sign-out the cached id is the last account's.
+      relationshipId:
+          () => container.refresh(planning.currentRelationshipIdProvider.future),
+      mapEnabled: () => container.read(coupleMapEnabledProvider.future),
+    );
+  } catch (error) {
+    // Quiet, like the auth callback: a link must never crash the app.
+    debugPrint('[deep-link] planning link failed: ${error.runtimeType}');
+  }
 }
 
 Future<void> _handleAuthCallback(Uri uri) async {

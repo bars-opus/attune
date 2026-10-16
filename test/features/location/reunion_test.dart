@@ -1,4 +1,5 @@
 import 'package:attune/features/location/domain/reunion.dart';
+import 'package:attune/features/location/domain/partner_distance.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
@@ -81,6 +82,47 @@ void main() {
       expect(
         daysUntil(DateTime(2026, 9, 1), now: DateTime(2026, 9, 2)),
         lessThan(0),
+      );
+    });
+  });
+
+  group('withReunion', () {
+    final now = DateTime(2026, 10, 16, 9);
+    test('far apart with a reunion: counts down to the soonest', () {
+      final d = withReunion(const PartnerDistance(km: 5100), [
+        ('Flight to Accra', DateTime(2026, 10, 28, 8)),
+        ('Visit for Christmas', DateTime(2026, 12, 20)),
+      ], now: now);
+      expect(d.daysUntilTogether, 12);
+    });
+    test('nearby: no countdown', () {
+      expect(
+        withReunion(const PartnerDistance(km: 300), [
+          ('Flight', DateTime(2026, 10, 20)),
+        ], now: now).daysUntilTogether,
+        isNull,
+      );
+    });
+    test('a work trip or a past event is ignored', () {
+      final d = withReunion(const PartnerDistance(km: 5100), [
+        ('Work trip to Lagos', DateTime(2026, 10, 20)),
+        ('Flight home', DateTime(2026, 10, 1)),
+      ], now: now);
+      expect(d.daysUntilTogether, isNull);
+    });
+    test('keeps every other field', () {
+      final d = withReunion(
+        const PartnerDistance(
+          km: 5100,
+          partnerCity: 'London',
+          partnerUtcOffsetMinutes: 60,
+        ),
+        [('Visit', DateTime(2026, 10, 18))],
+        now: now,
+      );
+      expect(
+        (d.partnerCity, d.partnerUtcOffsetMinutes, d.daysUntilTogether),
+        ('London', 60, 2),
       );
     });
   });

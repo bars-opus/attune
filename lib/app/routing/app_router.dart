@@ -633,7 +633,11 @@ GoRouter createAppRouter(RoutingNotifier routingNotifier) {
           if (relationshipId == null) {
             return const PlanningUnavailableScreen();
           }
-          return PlanningHomeScreen(relationshipId: relationshipId);
+          return PlanningHomeScreen(
+        relationshipId: relationshipId,
+        // The distance widget's link asks for Map (widget spec §6.5).
+        initialTab: planningTabFromQuery(state.uri.queryParameters['tab']),
+      );
         },
       ),
       GoRoute(

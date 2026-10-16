@@ -255,6 +255,7 @@ flutter:
     # Not covered by assets/images/ above: Flutter's directory entries are
     # shallow, so a nested folder needs its own line.
     - assets/images/game_icons/
+    - assets/geo/
     - assets/config/
     - assets/sounds/
     # Constellation scene graphs. Prototype only -- see

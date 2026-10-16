@@ -21,6 +21,11 @@ import UIKit
     _ application: UIApplication,
     didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?
   ) -> Bool {
+    // The couple map sends Mapbox no usage events (spec 2026-10-16 §6.3).
+    // MapboxMaps watches this default and passes it to
+    // TelemetryUtils.setEventsCollectionState — the same switch its own
+    // attribution menu's opt-out flips.
+    UserDefaults.standard.set(false, forKey: "MGLMapboxMetricsEnabled")
     GeneratedPluginRegistrant.register(with: self)
 
     guard let controller = window?.rootViewController as? FlutterViewController else {

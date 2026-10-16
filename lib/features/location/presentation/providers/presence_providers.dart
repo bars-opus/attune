@@ -1,71 +1,159 @@
 import 'dart:async';
 
-import 'package:attune/core/services/location_service.dart';
+import 'package:attune/core/utils/timezone_utils.dart';
+import 'package:attune/features/chat/domain/services/chat_feature_flags.dart';
 import 'package:attune/features/games/presentation/providers/games_hub_providers.dart'
     show supabaseClientProvider;
+import 'package:attune/features/location/data/presence_gateway.dart';
 import 'package:attune/features/location/data/presence_repository.dart';
+import 'package:attune/features/location/data/presence_sampler.dart';
+import 'package:attune/features/location/domain/couple_map_presence.dart';
+import 'package:attune/features/location/domain/location_access.dart';
 import 'package:attune/features/location/domain/partner_distance.dart';
+import 'package:attune/features/location/domain/presence_config.dart';
+import 'package:attune/features/location/domain/reunion.dart';
+import 'package:attune/features/reminders/presentation/providers/reminders_providers.dart'
+    show remindersListProvider;
+import 'package:flutter/widgets.dart' show AppLifecycleListener;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-final presenceRepositoryProvider = Provider<PresenceRepository>((ref) {
-  return PresenceRepository(
-    ref.watch(supabaseClientProvider),
-    LocationService(),
-  );
-});
+final presenceGatewayProvider = Provider<PresenceGateway>(
+  (ref) => SupabasePresenceGateway(ref.watch(supabaseClientProvider)),
+);
+final presenceSamplerProvider = Provider<PresenceSampler>(
+  (ref) => GeolocatorPresenceSampler(),
+);
+final presenceTimezoneProvider = Provider<Future<String> Function()>(
+  (ref) => () {
+    // Re-read each time (records are debounced to one a minute): someone
+    // who travels would otherwise keep their old zone until a restart.
+    TimezoneUtils.clearCache();
+    return TimezoneUtils.getDeviceTimezone();
+  },
+);
 
-/// Whether this user shares their location at all.
-final isSharingPresenceProvider = FutureProvider<bool>((ref) async {
-  return ref.watch(presenceRepositoryProvider).isSharing();
-});
+final presenceRepositoryProvider = Provider<PresenceRepository>(
+  (ref) => PresenceRepository(
+    ref.watch(presenceGatewayProvider),
+    ref.watch(presenceSamplerProvider),
+    ref.watch(presenceTimezoneProvider),
+  ),
+);
 
-/// The couple's distance, refreshed periodically.
-///
-/// Periodic, not live. Distance is a slow-moving fact and the row shows it
-/// in buckets anyway, so a live subscription would spend battery to
-/// deliver a number that does not change -- and a number that updated in
-/// real time would be readable as movement, which is the one thing this
-/// feature must not be.
-///
-/// Fifteen minutes is the floor for sampling; the row itself only changes
-/// when a bucket boundary is crossed.
-final partnerDistanceProvider = StreamProvider.autoDispose
-    .family<PartnerDistance?, String>((ref, relationshipId) {
-      final repository = ref.watch(presenceRepositoryProvider);
-      final controller = StreamController<PartnerDistance?>();
-      Timer? timer;
-      var closed = false;
+/// Every couple-map presence read, as it lands. The home-screen widget
+/// listens here; it must never watch coupleMapPresenceProvider itself, or
+/// that autoDispose provider would stay alive and keep sampling (widget
+/// spec §4.1).
+final presenceReadsProvider =
+    Provider<StreamController<(String, CoupleMapPresence)>>((ref) {
+      final c = StreamController<(String, CoupleMapPresence)>.broadcast();
+      ref.onDispose(c.close);
+      return c;
+    });
 
-      Future<void> refresh() async {
-        if (closed) return;
+/// The couple map's presence, refreshed on open, on app resume and every
+/// 15 minutes. Samples ONLY while I'm sharing and not paused: someone who
+/// never opted in is never sampled or prompted.
+final coupleMapPresenceProvider = StreamProvider.autoDispose.family<
+  CoupleMapPresence,
+  String
+>((ref, relationshipId) {
+  final repo = ref.watch(presenceRepositoryProvider);
+  final controller = StreamController<CoupleMapPresence>();
+  var closed = false;
+  var running = false;
 
-        // Only refreshes a position that ALREADY exists. Opening the chat
-        // list used to record one unconditionally, which meant a user who
-        // turned sharing off had it silently switched back on the next
-        // time they opened the app -- a privacy toggle that the app
-        // overrode. Sharing now starts only from the settings toggle,
-        // which is the one place the user asked for it.
-        //
-        // Still refreshed here rather than only on that tap: the server
-        // refuses a distance when either position is stale, so a user who
-        // opted in last week would otherwise see the row quietly vanish.
-        if (await repository.isSharing()) {
-          await repository.recordOwnPresence();
-        }
-        if (closed) return;
-        final distance = await repository.fetchDistance(relationshipId);
-        if (closed || controller.isClosed) return;
-        controller.add(distance);
+  Future<void> refresh() async {
+    if (closed || running) return;
+    running = true;
+    try {
+      var p = await repo.fetchMapPresence(relationshipId);
+      if (!closed &&
+          p.state.status == PresenceStatus.sharing &&
+          await repo.record(relationshipId)) {
+        p = await repo.fetchMapPresence(relationshipId);
       }
+      if (!closed && !controller.isClosed) {
+        controller.add(p);
+        try {
+          ref.read(presenceReadsProvider).add((relationshipId, p));
+        } catch (_) {}
+      }
+    } catch (e, st) {
+      // Surfaces as AsyncError, keeping the last known state as its value.
+      if (!closed && !controller.isClosed) controller.addError(e, st);
+    } finally {
+      running = false;
+    }
+  }
 
-      unawaited(refresh());
-      timer = Timer.periodic(const Duration(minutes: 15), (_) => refresh());
+  unawaited(refresh());
+  final timer = Timer.periodic(PresenceConfig.refreshEvery, (_) => refresh());
+  final lifecycle = AppLifecycleListener(onResume: () => unawaited(refresh()));
+  ref.onDispose(() {
+    closed = true;
+    timer.cancel();
+    lifecycle.dispose();
+    unawaited(controller.close());
+  });
+  return controller.stream;
+});
 
-      ref.onDispose(() {
-        closed = true;
-        timer?.cancel();
-        unawaited(controller.close());
-      });
+/// My sharing state for one couple (off / sharing / paused until).
+///
+/// Not `whenData`: it drops the last value while refreshing and on error,
+/// which would flash the privacy toggle Off on every refresh.
+final presenceStateProvider = Provider.autoDispose
+    .family<AsyncValue<PresenceState>, String>((ref, relationshipId) {
+      final presence = ref.watch(coupleMapPresenceProvider(relationshipId));
+      final state = presence.valueOrNull?.state;
+      final AsyncValue<PresenceState> raw =
+          presence.hasError
+              ? AsyncError(
+                presence.error!,
+                presence.stackTrace ?? StackTrace.current,
+              )
+              : presence.isLoading
+              ? const AsyncLoading()
+              : AsyncData(state!);
+      return state == null ? raw : raw.copyWithPrevious(AsyncData(state));
+    });
 
-      return controller.stream;
+/// The distance card's data (null when there's no honest answer).
+final partnerDistanceProvider = StreamProvider.autoDispose
+    .family<PartnerDistance?, String>((ref, relationshipId) async* {
+      final p = await ref.watch(
+        coupleMapPresenceProvider(relationshipId).future,
+      );
+      yield p.partnerDistance;
+    });
+
+/// The couple map ships dark until this flag is on (spec §9, rollback).
+final coupleMapEnabledProvider = FutureProvider<bool>(
+  (ref) => ChatFeatureFlags.isEnabled(
+    ref.watch(supabaseClientProvider),
+    'couple_map_enabled',
+  ),
+);
+
+/// Whether this device can take a fix, re-checked when the app resumes
+/// (e.g. back from Settings). Never prompts.
+final locationAccessProvider = FutureProvider.autoDispose<LocationAccess>((
+  ref,
+) {
+  final lifecycle = AppLifecycleListener(onResume: ref.invalidateSelf);
+  ref.onDispose(lifecycle.dispose);
+  return ref.watch(presenceSamplerProvider).access();
+});
+
+/// The distance with a reunion countdown from the shared calendar.
+/// Keeps the last value through refreshes (valueOrNull), so the card
+/// doesn't flicker.
+final partnerDistanceWithReunionProvider = Provider.autoDispose
+    .family<PartnerDistance?, String>((ref, relationshipId) {
+      final d = ref.watch(partnerDistanceProvider(relationshipId)).valueOrNull;
+      if (d == null) return null;
+      final reminders =
+          ref.watch(remindersListProvider).valueOrNull ?? const [];
+      return withReunion(d, [for (final r in reminders) (r.title, r.remindAt)]);
     });

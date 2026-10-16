@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="couple_widget_bg">#FFFFFFFF</color>
+    <color name="couple_widget_text_primary">#FF1D1D1F</color>
+    <!-- 6.05:1 on the background (WCAG AA for small text). -->
+    <color name="couple_widget_text_secondary">#FF5F6368</color>
+</resources>

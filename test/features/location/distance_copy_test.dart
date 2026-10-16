@@ -4,6 +4,26 @@ import 'package:flutter_test/flutter_test.dart';
 
 void main() {
   group('what the row says', () {
+    test(
+      'within the country it speaks in hours by road, naming their city',
+      () {
+        final copy = distanceCopy(
+          const PartnerDistance(km: 300, partnerCity: 'Kumasi'),
+          partnerName: 'Kofi',
+        );
+        expect(copy.headline, '6 hours by road');
+        expect(copy.detail, 'Kofi in Kumasi');
+      },
+    );
+
+    test('far apart with no known time zone: the distance, then the city', () {
+      final copy = distanceCopy(
+        const PartnerDistance(km: 900, partnerCity: 'Lagos'),
+      );
+      expect(copy.headline, '900 km apart');
+      expect(copy.detail, 'Lagos');
+    });
+
     test('under a kilometre it stops counting', () {
       // GPS drift alone spans this. A number here would be both absurd and
       // a movement sensor -- it would twitch while someone sat still.
@@ -35,54 +55,33 @@ void main() {
     });
 
     test('far apart with nothing booked leads with their clock', () {
-      // The hardest case. Leading with 5,100 km restates the ache every
-      // day; their local time changes and answers "can I call?".
       final copy = distanceCopy(
-        PartnerDistance(
-          km: 5100,
-          partnerLocalTime: DateTime(2026, 9, 2, 23, 15),
-        ),
+        const PartnerDistance(km: 5100, partnerUtcOffsetMinutes: 60),
+        now: DateTime.utc(2026, 9, 2, 22, 15),
       );
-
       expect(copy.headline, '11:15pm where they are');
       expect(copy.detail, '5.1k km apart');
     });
 
-    test('travel is news, so it leads', () {
-      final copy = distanceCopy(
-        const PartnerDistance(km: 3900, kmClosedSinceYesterday: 1200),
-      );
-
-      expect(copy.headline, '1.2k km closer than yesterday');
+    test('a reunion booked turns a far distance into a countdown', () {
+      const far = PartnerDistance(km: 3900, daysUntilTogether: 2);
+      expect(far.tone, DistanceTone.countdown);
     });
 
-    test('travelling away is reported as honestly as travelling toward', () {
-      final copy = distanceCopy(
-        const PartnerDistance(km: 5100, kmClosedSinceYesterday: -1200),
-      );
+    test(
+      'there is no "travelling" tone: it would need yesterday\'s distance',
+      () {
+        // History is never kept (spec 2026-10-16 §4.3), so movement can't be news.
+        expect(
+          DistanceTone.values.map((t) => t.name),
+          isNot(contains('closing')),
+        );
+      },
+    );
 
-      expect(copy.headline, contains('further'));
-    });
-
-    test('a countdown outranks a plain distance but not live travel', () {
-      // Both a trip and movement: the movement is happening NOW, so it
-      // wins. A countdown that ignored someone already en route would be
-      // the less useful of two true things.
-      const travelling = PartnerDistance(
-        km: 3900,
-        daysUntilTogether: 2,
-        kmClosedSinceYesterday: 1200,
-      );
-
-      expect(travelling.tone, DistanceTone.closing);
-    });
-
-    test('ordinary movement is not called out as travel', () {
-      // A commute must never surface as news. Otherwise the row becomes
-      // exactly the movement sensor the coarse distance exists to prevent.
-      const commuted = PartnerDistance(km: 5100, kmClosedSinceYesterday: 30);
-
-      expect(commuted.tone, isNot(DistanceTone.closing));
+    test('adjacent cells read as together, whatever the rounded number', () {
+      const close = PartnerDistance(km: 5, together: true);
+      expect(close.tone, DistanceTone.together);
     });
   });
 

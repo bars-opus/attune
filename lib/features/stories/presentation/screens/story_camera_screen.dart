@@ -46,9 +46,12 @@ import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
 
+import 'package:attune/app/theme/design_tokens.dart';
 import 'package:attune/features/chat/domain/services/chat_video_preparer.dart';
 import 'package:attune/features/chat/presentation/screens/capture_camera_screen.dart';
 import 'package:attune/features/chat/utils/chat_log.dart';
+import 'package:attune/features/couple_map/presentation/camera/story_pin_controller.dart';
+import 'package:attune/features/couple_map/presentation/camera/story_pin_toggle.dart';
 import 'package:attune/features/stories/data/story_outbox_record.dart';
 import 'package:attune/features/stories/domain/captured_media.dart';
 import 'package:attune/features/stories/domain/services/capture_image_preparer.dart';
@@ -151,6 +154,13 @@ class _StoryCameraScreenState extends ConsumerState<StoryCameraScreen> {
   /// exists to prevent, so this is worth being certain about too.
   bool _handled = false;
 
+  /// The couple map's "Pin to our map" switch, when the map is enabled.
+  StoryPinController? _pin;
+
+  /// Hides the pin switch once the take is on its way, so it never looks
+  /// changeable after the shutter.
+  bool _enqueuing = false;
+
   /// Called by the embedded [CaptureCameraScreen] once a take is
   /// captured. Unlike the streak adapter, there is no review sheet here
   /// (spec §6.1: the outbox queue itself, with its visible Retry/Discard,
@@ -175,6 +185,11 @@ class _StoryCameraScreenState extends ConsumerState<StoryCameraScreen> {
   Future<void> _prepareAndEnqueue(CapturedMedia raw) async {
     if (_handled) return;
     _handled = true;
+    // Captured before the pill hides (it stays mounted offstage now, but
+    // this keeps the read independent of the overlay's lifecycle); the place
+    // is read only after the prepare below.
+    final pin = _pin;
+    if (mounted) setState(() => _enqueuing = true);
 
     try {
       // confirmSend transcodes/prepares to the MAIN media policy — video
@@ -191,6 +206,9 @@ class _StoryCameraScreenState extends ConsumerState<StoryCameraScreen> {
       final utcOffsetMinutes =
           (widget.utcOffsetMinutesReader ?? _defaultUtcOffsetMinutesReader)();
       final thumbnailPath = await _buildThumbnail(prepared);
+      // Waits for a place lookup still in flight, so a story posted while
+      // "Finding this place…" is still pinned.
+      final place = await pin?.placeForPost();
 
       final record = StoryOutboxRecord(
         clientStoryId: newClientStoryId(),
@@ -204,6 +222,7 @@ class _StoryCameraScreenState extends ConsumerState<StoryCameraScreen> {
         durationMs: prepared.durationMs,
         utcOffsetMinutes: utcOffsetMinutes,
         createdAt: DateTime.now(),
+        place: place,
       );
 
       // Enqueue and leave: the upload (and its retries) belong entirely
@@ -261,6 +280,7 @@ class _StoryCameraScreenState extends ConsumerState<StoryCameraScreen> {
       ).showSnackBar(SnackBar(content: Text(message)));
     }
     _handled = false;
+    if (mounted) setState(() => _enqueuing = false);
     await _captureKey.currentState?.reset();
   }
 
@@ -357,13 +377,41 @@ class _StoryCameraScreenState extends ConsumerState<StoryCameraScreen> {
     // while confirmSend runs (isSending, driven from inside that screen).
     // There is no preview/review layer to stack on top of it here — the
     // outbox queue is the review (spec §6.1).
-    return CaptureCameraScreen(
-      key: _captureKey,
-      allow: CaptureKinds.photoAndVideo,
-      videoPreparerFactory: widget.videoPreparerFactory,
-      imagePreparerFactory: widget.imagePreparerFactory,
-      onCaptured: _onCaptured,
-      onCancelled: _onCaptureCancelled,
+    return Stack(
+      children: [
+        Positioned.fill(
+          child: CaptureCameraScreen(
+            key: _captureKey,
+            allow: CaptureKinds.photoAndVideo,
+            videoPreparerFactory: widget.videoPreparerFactory,
+            imagePreparerFactory: widget.imagePreparerFactory,
+            onCaptured: _onCaptured,
+            onCancelled: _onCaptureCancelled,
+          ),
+        ),
+        // Couple map: "Pin to our map", between the close and flip buttons
+        // (both at the top corners). Renders nothing with the map off.
+        // Kept mounted while a take is on its way (hidden and inert), so a
+        // failed post brings back the same switch — no second lookup or
+        // permission prompt.
+        Positioned(
+          top: Spacing.xxl,
+          left: 64,
+          right: 64,
+          child: Offstage(
+            offstage: _enqueuing,
+            child: IgnorePointer(
+              ignoring: _enqueuing,
+              child: Center(
+                child: StoryPinToggle(
+                  relationshipId: widget.relationshipId,
+                  onController: (c) => _pin = c,
+                ),
+              ),
+            ),
+          ),
+        ),
+      ],
     );
   }
 }

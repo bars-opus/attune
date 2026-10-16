@@ -48,6 +48,9 @@ abstract class StoryGateway {
     required int mediaHeight,
     int? durationMs,
     required int utcOffsetMinutes,
+
+    /// The pinned place (couple map), or null.
+    Map<String, dynamic>? place,
   });
 }
 
@@ -253,6 +256,7 @@ class StoryRepository implements StoryGateway {
     required int mediaHeight,
     int? durationMs,
     required int utcOffsetMinutes,
+    Map<String, dynamic>? place,
   }) => _guard(() async {
     final data = _unwrap(
       await _supabase.rpc(
@@ -266,6 +270,9 @@ class StoryRepository implements StoryGateway {
           'p_media_height': mediaHeight,
           'p_duration_ms': durationMs,
           'p_utc_offset_minutes': utcOffsetMinutes,
+          // Only when pinned: a client shipped before the migration
+          // deploys must still finalize.
+          if (place != null) 'p_place': place,
         },
       ),
     );

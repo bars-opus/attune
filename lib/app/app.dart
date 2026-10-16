@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:attune/app/theme/app_theme.dart';
 import 'package:attune/core/notifications/services/onesignal_service.dart';
 import 'package:attune/core/providers/locale_provider.dart';
@@ -6,6 +8,7 @@ import 'package:attune/core/providers/theme_provider.dart';
 import 'package:attune/core/services/app_privacy_cover.dart';
 import 'package:attune/core/ui/feedback/sound_service.dart';
 import 'package:attune/core/utils/screen_util_config.dart';
+import 'package:attune/features/couple_map/widget/presentation/couple_widget_publisher.dart';
 import 'package:attune/features/together/presentation/widgets/share_intake_listener.dart';
 import 'package:attune/i10n/generated/app_localizations.dart';
 import 'package:flutter/material.dart';
@@ -39,6 +42,11 @@ class _AppState extends ConsumerState<App> {
     Future.microtask(() {
       if (!mounted) return;
       ref.read(oneSignalServiceProvider).initialize();
+    });
+    // The home-screen distance widget: costs nothing unless opted in.
+    Future.microtask(() {
+      if (!mounted) return;
+      unawaited(ref.read(coupleWidgetPublisherProvider).startIfEnabled());
     });
     // Fire-and-forget preload so first send/receive has no cold-start latency.
     WidgetsBinding.instance.addPostFrameCallback((_) {

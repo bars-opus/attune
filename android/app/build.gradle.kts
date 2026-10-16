@@ -47,3 +47,10 @@ android {
 flutter {
     source = "../.."
 }
+
+// JVM unit tests for the home-screen widget's pure logic (widget spec §8).
+// org.json is the real library: Android's stub throws in plain JVM tests.
+dependencies {
+    testImplementation("junit:junit:4.13.2")
+    testImplementation("org.json:json:20240303")
+}

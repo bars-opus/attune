@@ -77,8 +77,11 @@ class TabsWithContent extends StatefulWidget {
   State<TabsWithContent> createState() => _TabsWithContentState();
 }
 
+// TickerProviderStateMixin, not the Single variant: didUpdateWidget makes a
+// new TabController when the tab count changes (e.g. a flagged tab appears
+// after the first frame), and each controller needs its own ticker.
 class _TabsWithContentState extends State<TabsWithContent>
-    with SingleTickerProviderStateMixin {
+    with TickerProviderStateMixin {
   late TabController _tabController;
   late int _currentIndex;
 
@@ -137,6 +140,11 @@ class _TabsWithContentState extends State<TabsWithContent>
         initialIndex: _currentIndex.clamp(0, widget.tabs.length - 1),
       );
       _tabController.addListener(_onTabControllerChanged);
+      // Hand over the new controller too: the old one was just disposed, and
+      // Planning uses it to open on a tab that appears late (widget §6.5).
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) widget.onControllerCreated?.call(_tabController);
+      });
     }
   }
 

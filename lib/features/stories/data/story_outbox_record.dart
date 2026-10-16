@@ -12,6 +12,7 @@
 /// lastErrorCode, createdAt`.
 library;
 
+import 'package:attune/features/couple_map/domain/story_place.dart';
 import 'package:attune/features/stories/domain/captured_media.dart';
 
 /// spec §6.1, verbatim and exhaustive: `queued`, `uploading_media`,
@@ -44,6 +45,7 @@ class StoryOutboxRecord {
     this.nextAttemptAt,
     this.lastErrorCode,
     required this.createdAt,
+    this.place,
   });
 
   /// Idempotency key for `create_story_item` (spec §4.2, §6.1). Minted
@@ -68,6 +70,10 @@ class StoryOutboxRecord {
   final DateTime? nextAttemptAt;
   final String? lastErrorCode;
   final DateTime createdAt;
+
+  /// Chosen at post time (couple map, spec §3.3); null when not pinned.
+  /// Absent from records queued before this field existed.
+  final StoryPlaceDraft? place;
 
   StoryOutboxRecord copyWith({
     StoryOutboxState? state,
@@ -95,6 +101,7 @@ class StoryOutboxRecord {
       lastErrorCode:
           clearLastErrorCode ? null : (lastErrorCode ?? this.lastErrorCode),
       createdAt: createdAt,
+      place: place,
     );
   }
 
@@ -114,6 +121,7 @@ class StoryOutboxRecord {
     'nextAttemptAt': nextAttemptAt?.toIso8601String(),
     'lastErrorCode': lastErrorCode,
     'createdAt': createdAt.toIso8601String(),
+    if (place != null) 'place': place!.toJson(),
   };
 
   factory StoryOutboxRecord.fromJson(Map<String, dynamic> json) {
@@ -136,6 +144,7 @@ class StoryOutboxRecord {
               : DateTime.parse(json['nextAttemptAt'] as String),
       lastErrorCode: json['lastErrorCode'] as String?,
       createdAt: DateTime.parse(json['createdAt'] as String),
+      place: StoryPlaceDraft.fromJson(json['place']),
     );
   }
 }

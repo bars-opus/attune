@@ -35,6 +35,10 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:attune/features/couple_map/data/couple_map_local_store.dart';
+import 'package:attune/features/couple_map/domain/story_place.dart';
+import 'package:attune/features/couple_map/presentation/providers/story_places_providers.dart';
+import 'package:attune/features/location/presentation/providers/presence_providers.dart';
 import 'package:attune/features/auth/providers/auth_provider.dart';
 import 'package:attune/features/chat/domain/services/chat_video_preparer.dart';
 import 'package:attune/features/chat/presentation/widgets/streak_record_button.dart';
@@ -53,6 +57,9 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:image/image.dart' as img;
 import 'package:supabase_flutter/supabase_flutter.dart';
+
+import '../couple_map/support/fakes.dart' show MemoryCoupleMapLocalStore, FakeStoryPlaceResolver;
+import '../location/presence_repository_test.dart' show FakePresenceGateway, FakeSampler;
 
 const _userId = 'story-camera-user';
 
@@ -205,6 +212,7 @@ class _FakeStoryGateway implements StoryGateway {
     required int mediaHeight,
     int? durationMs,
     required int utcOffsetMinutes,
+    Map<String, dynamic>? place,
   }) async {
     finalizeCalls.add({'clientStoryId': clientStoryId});
     return StoryFinalizeResult(
@@ -251,13 +259,21 @@ class _FakeChatVideoPreparer extends ChatVideoPreparer {
 /// plumbed through), not the real compression numbers, which is
 /// CaptureImagePreparer's own unit-level concern.
 class _FakeCaptureImagePreparer extends CaptureImagePreparer {
-  _FakeCaptureImagePreparer({this.suffix = 'prepared'});
+  _FakeCaptureImagePreparer({this.suffix = 'prepared', this.gate, this.reject = false});
 
   final String suffix;
   final List<String> preparedPaths = [];
 
+  /// Holds the prepare open so a test can render frames mid-capture.
+  final Completer<void>? gate;
+
+  /// Refuses the take, as a real prepare can (too large, unreadable).
+  final bool reject;
+
   @override
   Future<PreparedCaptureImage> prepare(String localPath) async {
+    await gate?.future;
+    if (reject) throw const CaptureImageRejected('media_compress_failed');
     // Synchronous file I/O deliberately: this suite runs inside
     // testWidgets' FakeAsync zone, where an async dart:io Future (backed
     // by a real OS thread-pool callback) never completes without
@@ -330,7 +346,7 @@ void main() {
   /// Real ProviderContainer with the store/gateway providers overridden to
   /// test doubles, same pattern as story_outbox_controller_test.dart.
   ({ProviderContainer container, StoryOutboxStore store, _FakeStoryGateway gateway})
-  buildContainer({bool cipherUnavailable = false}) {
+  buildContainer({bool cipherUnavailable = false, List<Override> extra = const []}) {
     final store = StoryOutboxStore.forTesting(
       stub.createStoryOutboxBackend(),
       cipherUnavailable: cipherUnavailable,
@@ -341,6 +357,7 @@ void main() {
         currentUserProvider.overrideWithValue(_signedInUser),
         storyOutboxStoreProvider.overrideWithValue(store),
         storyGatewayProvider.overrideWithValue(gateway),
+        ...extra,
       ],
     );
     addTearDown(container.dispose);
@@ -409,6 +426,183 @@ void main() {
     await tester.pump(const Duration(milliseconds: 50));
     await tester.pump(const Duration(milliseconds: 50));
   }
+
+  testWidgets('couple map: a pinned capture carries its place into the outbox', (
+    tester,
+  ) async {
+    final photoPath = await writeJpegFile(tester, 'photo.jpg');
+    final videoPath = await writeFile(tester, 'clip.mp4');
+    CameraPlatform.instance = _FakeCameraPlatform(
+      videoPath: videoPath,
+      photoPath: photoPath,
+    );
+    final local = MemoryCoupleMapLocalStore();
+    await writePinLastChoice(local, true);
+    final h = buildContainer(extra: [
+      coupleMapEnabledProvider.overrideWith((ref) async => true),
+      presenceGatewayProvider.overrideWithValue(
+        FakePresenceGateway({'couple_map_presence': (_) => const []}),
+      ),
+      presenceSamplerProvider.overrideWithValue(FakeSampler()),
+      presenceTimezoneProvider.overrideWithValue(() async => 'Africa/Accra'),
+      coupleMapLocalStoreProvider.overrideWithValue(local),
+      storyPlaceResolverProvider.overrideWithValue(FakeStoryPlaceResolver(
+        const StoryPlaceDraft(lat: 5.556, lng: -0.197, label: 'Near Osu, Accra'),
+      )),
+    ]);
+    h.gateway.blockUploads = true;
+
+    await pumpToReady(
+      tester,
+      h.container,
+      StoryCameraScreen(
+        relationshipId: 'rel-1',
+        videoPreparerFactory: () => _FakeChatVideoPreparer(),
+        imagePreparerFactory: () => _FakeCaptureImagePreparer(),
+        thumbnailPreparerFactory: () => _FakeCaptureImagePreparer(suffix: 'thumb'),
+      ),
+    );
+    await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 20)));
+    await tester.pump();
+    expect(find.text('Near Osu, Accra'), findsOneWidget);
+    await tapShutter(tester);
+
+    final queued = await h.store.readAll(_userId);
+    expect(queued.single.place?.label, 'Near Osu, Accra');
+  });
+
+  testWidgets('couple map: the place survives frames rendered mid-capture (the pill hides at the shutter)', (
+    tester,
+  ) async {
+    final photoPath = await writeJpegFile(tester, 'photo.jpg');
+    final videoPath = await writeFile(tester, 'clip.mp4');
+    CameraPlatform.instance = _FakeCameraPlatform(
+      videoPath: videoPath,
+      photoPath: photoPath,
+    );
+    final local = MemoryCoupleMapLocalStore();
+    await writePinLastChoice(local, true);
+    final h = buildContainer(extra: [
+      coupleMapEnabledProvider.overrideWith((ref) async => true),
+      presenceGatewayProvider.overrideWithValue(
+        FakePresenceGateway({'couple_map_presence': (_) => const []}),
+      ),
+      presenceSamplerProvider.overrideWithValue(FakeSampler()),
+      presenceTimezoneProvider.overrideWithValue(() async => 'Africa/Accra'),
+      coupleMapLocalStoreProvider.overrideWithValue(local),
+      storyPlaceResolverProvider.overrideWithValue(FakeStoryPlaceResolver(
+        const StoryPlaceDraft(lat: 5.556, lng: -0.197, label: 'Near Osu, Accra'),
+      )),
+    ]);
+    h.gateway.blockUploads = true;
+    final gate = Completer<void>();
+
+    await pumpToReady(
+      tester,
+      h.container,
+      StoryCameraScreen(
+        relationshipId: 'rel-1',
+        videoPreparerFactory: () => _FakeChatVideoPreparer(),
+        imagePreparerFactory: () => _FakeCaptureImagePreparer(gate: gate),
+        thumbnailPreparerFactory: () => _FakeCaptureImagePreparer(suffix: 'thumb'),
+      ),
+    );
+    await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 20)));
+    await tester.pump();
+    expect(find.text('Near Osu, Accra'), findsOneWidget);
+    await tapShutter(tester);
+    // The prepare is still running: render frames, as a device would. The
+    // pill hides here (offstage); its controller survives.
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 50));
+    expect(find.text('Pin to our map'), findsNothing);
+    gate.complete();
+    await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 50)));
+    await tester.pump(const Duration(milliseconds: 50));
+
+    final queued = await h.store.readAll(_userId);
+    expect(queued.single.place?.label, 'Near Osu, Accra');
+  });
+
+  testWidgets('couple map: a failed post keeps the same switch, with no second lookup (Review Focus 3)', (
+    tester,
+  ) async {
+    final photoPath = await writeJpegFile(tester, 'photo.jpg');
+    final videoPath = await writeFile(tester, 'clip.mp4');
+    CameraPlatform.instance = _FakeCameraPlatform(
+      videoPath: videoPath,
+      photoPath: photoPath,
+    );
+    final local = MemoryCoupleMapLocalStore();
+    await writePinLastChoice(local, true);
+    final resolver = FakeStoryPlaceResolver(
+      const StoryPlaceDraft(lat: 5.556, lng: -0.197, label: 'Near Osu, Accra'),
+    );
+    final gate = Completer<void>();
+    final h = buildContainer(extra: [
+      coupleMapEnabledProvider.overrideWith((ref) async => true),
+      presenceGatewayProvider.overrideWithValue(
+        FakePresenceGateway({'couple_map_presence': (_) => const []}),
+      ),
+      presenceSamplerProvider.overrideWithValue(FakeSampler()),
+      presenceTimezoneProvider.overrideWithValue(() async => 'Africa/Accra'),
+      coupleMapLocalStoreProvider.overrideWithValue(local),
+      storyPlaceResolverProvider.overrideWithValue(resolver),
+    ]);
+
+    await pumpToReady(
+      tester,
+      h.container,
+      StoryCameraScreen(
+        relationshipId: 'rel-1',
+        videoPreparerFactory: () => _FakeChatVideoPreparer(),
+        imagePreparerFactory: () => _FakeCaptureImagePreparer(reject: true, gate: gate),
+        thumbnailPreparerFactory: () => _FakeCaptureImagePreparer(suffix: 'thumb'),
+      ),
+    );
+    await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 20)));
+    await tester.pump();
+    await tapShutter(tester);
+    // Frames render while the prepare runs, as on a device; then it fails.
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 50));
+    gate.complete();
+    await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 50)));
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(find.text('Near Osu, Accra'), findsOneWidget, reason: 'the pill is back, same state');
+    expect(resolver.calls, 1, reason: 'no second lookup or prompt');
+  });
+
+  testWidgets('couple map off: no pin switch, no place (unchanged behaviour)', (
+    tester,
+  ) async {
+    final photoPath = await writeJpegFile(tester, 'photo.jpg');
+    final videoPath = await writeFile(tester, 'clip.mp4');
+    CameraPlatform.instance = _FakeCameraPlatform(
+      videoPath: videoPath,
+      photoPath: photoPath,
+    );
+    final h = buildContainer(extra: [
+      coupleMapEnabledProvider.overrideWith((ref) async => false),
+    ]);
+    h.gateway.blockUploads = true;
+
+    await pumpToReady(
+      tester,
+      h.container,
+      StoryCameraScreen(
+        relationshipId: 'rel-1',
+        videoPreparerFactory: () => _FakeChatVideoPreparer(),
+        imagePreparerFactory: () => _FakeCaptureImagePreparer(),
+        thumbnailPreparerFactory: () => _FakeCaptureImagePreparer(suffix: 'thumb'),
+      ),
+    );
+    expect(find.text('Pin to our map'), findsNothing);
+    await tapShutter(tester);
+
+    final queued = await h.store.readAll(_userId);
+    expect(queued.single.place, isNull);
+  });
 
   testWidgets('capturing enqueues, it does not upload inline', (
     tester,

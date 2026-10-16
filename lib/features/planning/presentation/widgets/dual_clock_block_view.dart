@@ -55,8 +55,7 @@ class _DualClockBlockViewState extends ConsumerState<DualClockBlockView> {
     final theme = Theme.of(context);
     final now = DateTime.now();
     final partner = ref.watch(partnerDistanceProvider(widget.args.relationshipId)).valueOrNull;
-    final tz = partner?.partnerTimezone;
-    final offset = tz == null ? null : ref.watch(planningTimezoneOffsetProvider(tz)).valueOrNull;
+    final offset = partner?.partnerUtcOffsetMinutes;
     // Wall-clock time in the partner's zone, built from UTC + their offset.
     final theirs = offset == null ? null : now.toUtc().add(Duration(minutes: offset));
     final local = DateTime(now.year, now.month, now.day, now.hour, now.minute);

@@ -58,6 +58,26 @@ class MainActivity : FlutterActivity() {
             intent = Intent(Intent.ACTION_MAIN)
         }
         super.onCreate(savedInstanceState)
+        disableMapboxTelemetry()
+    }
+
+    // The couple map sends Mapbox no usage events (spec 2026-10-16 §6.3).
+    // com.mapbox.common is an `implementation` dependency of the Mapbox
+    // plugin, so the app can't compile against it; its public
+    // TelemetryUtils.setEventsCollectionState(false, null) is called by
+    // name instead, which keeps the version tied to the plugin's.
+    private fun disableMapboxTelemetry() {
+        try {
+            val utils = Class.forName("com.mapbox.common.TelemetryUtils")
+            val callback = Class.forName("com.mapbox.common.TelemetryUtilsResponseCallback")
+            utils.getMethod(
+                "setEventsCollectionState",
+                Boolean::class.javaPrimitiveType,
+                callback,
+            ).invoke(null, false, null)
+        } catch (_: Throwable) {
+            // No Mapbox in this build, or the API moved: nothing to send.
+        }
     }
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {

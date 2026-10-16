@@ -218,6 +218,14 @@ void main() {
       }
     });
 
+    test('p_place is sent only when a place is attached (old servers keep working)', () {
+      final source =
+          File(
+            'lib/features/stories/data/story_repository.dart',
+          ).readAsStringSync();
+      expect(source.contains("if (place != null) 'p_place': place"), isTrue);
+    });
+
     test('StoryFinalizeResult surfaces existing for idempotent retries', () {
       const result = StoryFinalizeResult(storyId: 'story-1', existing: true);
       expect(result.storyId, 'story-1');

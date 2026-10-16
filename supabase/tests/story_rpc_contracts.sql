@@ -352,11 +352,11 @@ END $$;
 RESET ROLE;
 DO $$ BEGIN
   IF has_function_privilege('anon',
-    'public.create_story_item(uuid,uuid,uuid,uuid,int,int,int,int)', 'EXECUTE') THEN
+    'public.create_story_item(uuid,uuid,uuid,uuid,int,int,int,int,jsonb)', 'EXECUTE') THEN
     RAISE EXCEPTION 'EXPLOIT: anon can execute create_story_item';
   END IF;
   IF NOT has_function_privilege('authenticated',
-    'public.create_story_item(uuid,uuid,uuid,uuid,int,int,int,int)', 'EXECUTE') THEN
+    'public.create_story_item(uuid,uuid,uuid,uuid,int,int,int,int,jsonb)', 'EXECUTE') THEN
     RAISE EXCEPTION 'authenticated cannot execute create_story_item';
   END IF;
   -- bump_story_signal is an internal helper (named exactly this for

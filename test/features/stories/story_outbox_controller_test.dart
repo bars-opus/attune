@@ -129,6 +129,7 @@ class _FakeStoryGateway implements StoryGateway {
     required int mediaHeight,
     int? durationMs,
     required int utcOffsetMinutes,
+    Map<String, dynamic>? place,
   }) async {
     finalizeCalls.add({
       'relationshipId': relationshipId,
@@ -139,6 +140,7 @@ class _FakeStoryGateway implements StoryGateway {
       'mediaHeight': mediaHeight,
       'durationMs': durationMs,
       'utcOffsetMinutes': utcOffsetMinutes,
+      'place': place,
     });
     finalizedClientStoryIds.add(clientStoryId);
 
@@ -303,6 +305,25 @@ void main() {
       await h.controller.flush();
 
       expect(h.gateway.finalizeCalls.single['utcOffsetMinutes'], -300);
+    });
+
+    test('a pinned capture sends its place with finalize (couple map)', () async {
+      final h = harness();
+      final record = StoryOutboxRecord.fromJson({
+        ...buildRecord(
+          clientStoryId: 'story-place',
+          mediaFile: writeTempFile('media.jpg'),
+          thumbFile: writeTempFile('thumb.jpg'),
+        ).toJson(),
+        'place': {'lat': 5.556123, 'lng': -0.196789, 'label': 'Near Osu, Accra'},
+      });
+      await h.controller.enqueue(record);
+      await h.controller.flush();
+      expect(h.gateway.finalizeCalls.single['place'], {
+        'lat': 5.556123,
+        'lng': -0.196789,
+        'label': 'Near Osu, Accra',
+      });
     });
   });
 

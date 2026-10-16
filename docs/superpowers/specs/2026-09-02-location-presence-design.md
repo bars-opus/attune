@@ -15,6 +15,13 @@ Two features sharing one data source:
 
 ## 2. What this is NOT, and why
 
+> **Replaced (2026-10-16).** The "no partner map, no pin" ruling below was
+> revisited with the owner and replaced by the couple map design
+> (`docs/superpowers/specs/2026-10-16-couple-map-design.md`): the partner
+> appears only as an approximate ~1 km area, with mutual opt-in, a silent
+> symmetric pause, no timestamps, 8-hour staleness and purge on unlink.
+> The reasoning below is kept: it is why those safeguards exist.
+
 No map of the partner. No pin. No "where is she right now". No request-location
 button. No live tracking.
 

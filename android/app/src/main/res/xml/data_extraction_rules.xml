@@ -4,16 +4,22 @@
   both cloud backup and device-to-device transfer. Payloads are already
   AES-GCM encrypted (see ChatCacheCipher); this is defense-in-depth for the
   local-device-residue concern in CHAT_SYSTEM_SPEC Sections 4.4 and 14.
+  Also excludes the home-screen widgets' data (Together and the distance
+  widget; widget spec §4.4).
 -->
 <data-extraction-rules>
     <cloud-backup>
         <exclude domain="file" path="attune_chat_cache.sqlite" />
         <exclude domain="file" path="attune_chat_cache.sqlite-wal" />
         <exclude domain="file" path="attune_chat_cache.sqlite-shm" />
+        <exclude domain="sharedpref" path="HomeWidgetPreferences.xml" />
+        <exclude domain="file" path="home_widget/" />
     </cloud-backup>
     <device-transfer>
         <exclude domain="file" path="attune_chat_cache.sqlite" />
         <exclude domain="file" path="attune_chat_cache.sqlite-wal" />
         <exclude domain="file" path="attune_chat_cache.sqlite-shm" />
+        <exclude domain="sharedpref" path="HomeWidgetPreferences.xml" />
+        <exclude domain="file" path="home_widget/" />
     </device-transfer>
 </data-extraction-rules>

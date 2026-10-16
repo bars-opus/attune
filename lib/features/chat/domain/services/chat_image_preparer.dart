@@ -132,6 +132,9 @@ class ChatImagePreparer {
 
     // Last resort: hard-resize with the pure-Dart encoder, then re-check.
     final resized = _resizeLongestEdge(decoded, maxDimension);
+    // The native path drops EXIF (keepExif:false); the pure-Dart encoder
+    // would copy it — including GPS — so it's cleared here too.
+    resized.exif = img.ExifData();
     final jpeg = img.encodeJpg(resized, quality: 60);
     if (jpeg.lengthInBytes <= maxBytes) {
       final outFile = File(targetPath);

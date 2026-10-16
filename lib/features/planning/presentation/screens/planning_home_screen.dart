@@ -3,6 +3,8 @@ import 'package:attune/app/theme/design_tokens.dart';
 import 'package:attune/core/utils/exports/export_screens.dart';
 import 'package:attune/core/widgets/app_tabs.dart';
 import 'package:attune/core/widgets/info_row_widget.dart';
+import 'package:attune/features/couple_map/presentation/screens/couple_map_tab.dart';
+import 'package:attune/features/location/presentation/providers/presence_providers.dart';
 import 'package:attune/features/together/presentation/screens/together_screen.dart';
 import 'package:attune/home/widgets/tabs_with_content.dart';
 import 'package:flutter/material.dart';
@@ -18,9 +20,29 @@ import '../widgets/planning_recent.dart';
 import 'planning_category_screen.dart';
 import 'planning_recent_screen.dart';
 
+/// Planning's tabs, in order (the Map tab exists only with the flag on).
+enum PlanningHomeTab { planning, calendar, map }
+
+/// `?tab=` from a link: anything unknown opens Planning's first tab.
+PlanningHomeTab planningTabFromQuery(String? value) =>
+    PlanningHomeTab.values.asNameMap()[value] ?? PlanningHomeTab.planning;
+
+/// Builds the Map tab's content (a seam: tests swap the Mapbox view out).
+final planningMapTabBuilderProvider =
+    Provider<Widget Function(String relationshipId)>(
+      (ref) => (relationshipId) => CoupleMapTab(relationshipId: relationshipId),
+    );
+
 class PlanningHomeScreen extends ConsumerStatefulWidget {
-  const PlanningHomeScreen({super.key, required this.relationshipId});
+  const PlanningHomeScreen({
+    super.key,
+    required this.relationshipId,
+    this.initialTab = PlanningHomeTab.planning,
+  });
   final String relationshipId;
+
+  /// Where to open: the distance widget opens Map (widget spec §6.5).
+  final PlanningHomeTab initialTab;
 
   @override
   ConsumerState<PlanningHomeScreen> createState() => _PlanningHomeScreenState();
@@ -28,6 +50,22 @@ class PlanningHomeScreen extends ConsumerStatefulWidget {
 
 class _PlanningHomeScreenState extends ConsumerState<PlanningHomeScreen> {
   bool _showHidden = false;
+  bool _openedInitialTab = false;
+
+  /// The Map tab appears once the flag loads, so the jump waits for a
+  /// controller that has it (TabsWithContent hands over each new one).
+  void _openInitialTab(TabController controller) {
+    if (_openedInitialTab) return;
+    final index = widget.initialTab.index;
+    if (index == 0) {
+      _openedInitialTab = true;
+      return;
+    }
+    if (index < controller.length) {
+      controller.index = index;
+      _openedInitialTab = true;
+    }
+  }
 
   @override
   void initState() {
@@ -116,11 +154,12 @@ class _PlanningHomeScreenState extends ConsumerState<PlanningHomeScreen> {
 
   @override
   Widget build(BuildContext context) {
-    // Two tabs: the categories, and the couple's Together hub (embedded, so
-    // it has no app bar of its own under this screen's).
+    // Planning, the couple's Together calendar (embedded, so it has no app
+    // bar of its own), and — behind couple_map_enabled — the couple map.
     final colorScheme = Theme.of(context).colorScheme;
     final textTheme = Theme.of(context).textTheme;
     final docs = ReflectionJournalDocs();
+    final mapEnabled = ref.watch(coupleMapEnabledProvider).valueOrNull ?? false;
 
     return Scaffold(
       appBar: AppBar(
@@ -168,8 +207,17 @@ class _PlanningHomeScreenState extends ConsumerState<PlanningHomeScreen> {
             // The couple's Together hub (Together plan 1b R1).
             content: TogetherScreen(embedded: true),
           ),
+          if (mapEnabled)
+            AppTabItem(
+              label: 'Map',
+              icon: Icons.map_outlined,
+              content: ref.watch(planningMapTabBuilderProvider)(
+                widget.relationshipId,
+              ),
+            ),
         ],
         initialIndex: 0,
+        onControllerCreated: _openInitialTab,
         scrollable: false,
         showContent: true,
         // Switching back to a tab shows it as it was (no reload); its data
