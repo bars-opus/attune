@@ -2,10 +2,10 @@ import 'dart:io';
 
 import 'package:attune/core/widgets/feedback/error_state.dart';
 import 'package:attune/core/widgets/info_row_widget.dart';
+import 'package:attune/features/couple_map/presentation/screens/couple_map_screen.dart';
 import 'package:attune/features/planning/presentation/screens/planning_home_screen.dart';
 import 'package:attune/features/together/presentation/screens/together_screen.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
@@ -182,19 +182,45 @@ void main() {
     expect(find.text('Map'), findsNothing);
   });
 
-  testWidgets('opened from the distance widget, Planning lands on Map once the flag loads', (tester) async {
+  // At the app's root scope: the map is pushed on the app's navigator, so a
+  // scope nested in `home` wouldn't reach it.
+  final mapStub = [
+    coupleMapBodyBuilderProvider.overrideWithValue(
+      (rel, onBack) => TextButton(onPressed: onBack, child: Text('map for $rel')),
+    ),
+  ];
+
+  testWidgets('tapping Map opens the full-screen map; Back returns to the same tab', (tester) async {
     await tester.pumpWidget(planningTestApp(
       _gateway(),
-      ProviderScope(
-        overrides: [
-          planningMapTabBuilderProvider.overrideWithValue((rel) => Text('map for $rel')),
-        ],
-        child: const PlanningHomeScreen(relationshipId: 'r1', initialTab: PlanningHomeTab.map),
-      ),
+      const PlanningHomeScreen(relationshipId: 'r1'),
       mapEnabled: true,
+      overrides: mapStub,
+    ));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Map'));
+    await tester.pumpAndSettle();
+    expect(find.text('map for r1'), findsOneWidget);
+    expect(find.text('Planning'), findsNothing, reason: 'no tabs or app bar over the map');
+    await tester.tap(find.text('map for r1'));
+    await tester.pumpAndSettle();
+    expect(find.text('map for r1'), findsNothing);
+    expect(find.text('Goals'), findsOneWidget, reason: 'back on the Planning tab, not a blank Map tab');
+  });
+
+  testWidgets('opened from the distance widget, the full-screen map opens once the flag loads', (tester) async {
+    await tester.pumpWidget(planningTestApp(
+      _gateway(),
+      const PlanningHomeScreen(relationshipId: 'r1', initialTab: PlanningHomeTab.map),
+      mapEnabled: true,
+      overrides: mapStub,
     ));
     await tester.pumpAndSettle();
     expect(find.text('map for r1'), findsOneWidget);
+    await tester.tap(find.text('map for r1'));
+    await tester.pumpAndSettle();
+    expect(find.text('Goals'), findsOneWidget);
+    expect(find.text('map for r1'), findsNothing, reason: 'opened once, not again on return');
   });
 
   testWidgets('asked for Map with the flag off, Planning stays on its first tab', (tester) async {

@@ -27,11 +27,15 @@ import 'package:attune/features/stories/presentation/providers/story_providers.d
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-/// Planning's third tab (spec §3). Watching coupleMapPresenceProvider is
-/// what samples on tab open (only while sharing) and on app resume.
+/// The couple map (spec §3), shown full screen by CoupleMapScreen.
+/// Watching coupleMapPresenceProvider is what samples on open (only while
+/// sharing) and on app resume.
 class CoupleMapTab extends ConsumerStatefulWidget {
-  const CoupleMapTab({super.key, required this.relationshipId});
+  const CoupleMapTab({super.key, required this.relationshipId, this.onBack});
   final String relationshipId;
+
+  /// Full screen: a Back button left of the sharing chip (null: none).
+  final VoidCallback? onBack;
 
   @override
   ConsumerState<CoupleMapTab> createState() => _CoupleMapTabState();
@@ -321,6 +325,8 @@ class _CoupleMapTabState extends ConsumerState<CoupleMapTab> {
     final mapAvailable =
         !_failed && ref.watch(coupleMapTokenProvider).isNotEmpty;
     final bottomInset = MediaQuery.paddingOf(context).bottom + Spacing.md;
+    // Full screen, the map draws under the status bar: controls start below it.
+    final topInset = MediaQuery.paddingOf(context).top;
 
     // The one-time hint: first visit with nothing pinned yet (§3.4).
     if (_hintSeen == false &&
@@ -385,13 +391,34 @@ class _CoupleMapTabState extends ConsumerState<CoupleMapTab> {
       onTap: () => showSharingSheet(context, relationshipId: rel),
     );
 
+    final onBack = widget.onBack;
+    final back =
+        onBack == null
+            ? null
+            : GlassIconButton(
+              icon: Icons.adaptive.arrow_back,
+              tooltip: 'Back',
+              onPressed: onBack,
+            );
+    final topLeft = Row(
+      children: [
+        if (back != null) ...[back, const SizedBox(width: Spacing.sm)],
+        Flexible(child: chip),
+      ],
+    );
+
     if (!mapAvailable) {
       return ColoredBox(
         color: theme.colorScheme.surface,
         child: ListView(
-          padding: const EdgeInsets.all(Spacing.md),
+          padding: EdgeInsets.fromLTRB(
+            Spacing.md,
+            topInset + Spacing.md,
+            Spacing.md,
+            Spacing.md,
+          ),
           children: [
-            Align(alignment: Alignment.centerLeft, child: chip),
+            topLeft,
             const SizedBox(height: Spacing.md),
             // Nothing read yet (or the read failed): say so here too, with
             // the retry that also brings the map back.
@@ -424,9 +451,9 @@ class _CoupleMapTabState extends ConsumerState<CoupleMapTab> {
             style: _style,
             dark: dark,
             onReady: _onReady,
-            ornamentTop: CoupleMapConfig.rightColumnBottom(
-              stories: showStories,
-            ),
+            ornamentTop:
+                CoupleMapConfig.rightColumnBottom(stories: showStories) +
+                topInset,
             onStoriesTapped: _openStories,
             ornamentBottom:
                 bottomInset + CoupleMapConfig.cardMaxHeight + Spacing.sm,
@@ -440,15 +467,15 @@ class _CoupleMapTabState extends ConsumerState<CoupleMapTab> {
           ),
         ),
         Positioned(
-          top: Spacing.md,
+          top: topInset + Spacing.md,
           left: Spacing.md,
           right: Spacing.md + CoupleMapConfig.glassTarget + Spacing.sm,
-          child: Align(alignment: Alignment.centerLeft, child: chip),
+          child: topLeft,
         ),
         // One right-hand column, so nothing overlaps on short screens; the
         // compass sits below it (CoupleMapConfig.rightColumnBottom).
         Positioned(
-          top: Spacing.md,
+          top: topInset + Spacing.md,
           right: Spacing.md,
           child: Column(
             children: [

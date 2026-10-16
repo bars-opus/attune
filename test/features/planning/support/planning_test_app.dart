@@ -68,9 +68,13 @@ Widget planningTestApp(
   ThemeMode themeMode = ThemeMode.light,
   String? coupleName,
   bool mapEnabled = false,
+  List<Override> overrides = const [],
 }) =>
     ProviderScope(
-      overrides: planningOverrides(gateway, store: store, coupleName: coupleName, mapEnabled: mapEnabled),
+      overrides: [
+        ...planningOverrides(gateway, store: store, coupleName: coupleName, mapEnabled: mapEnabled),
+        ...overrides,
+      ],
       // The app's shared widgets (ErrorStateWidget, CardInkWell, AppButton...)
       // size with flutter_screenutil, exactly as in the app.
       child: withScreenUtil(MaterialApp(

@@ -1,9 +1,11 @@
+import 'dart:async';
+
 import 'package:attune/core/providers/couple_name_provider.dart';
 import 'package:attune/app/theme/design_tokens.dart';
 import 'package:attune/core/utils/exports/export_screens.dart';
 import 'package:attune/core/widgets/app_tabs.dart';
 import 'package:attune/core/widgets/info_row_widget.dart';
-import 'package:attune/features/couple_map/presentation/screens/couple_map_tab.dart';
+import 'package:attune/features/couple_map/presentation/screens/couple_map_screen.dart';
 import 'package:attune/features/location/presentation/providers/presence_providers.dart';
 import 'package:attune/features/together/presentation/screens/together_screen.dart';
 import 'package:attune/home/widgets/tabs_with_content.dart';
@@ -27,12 +29,6 @@ enum PlanningHomeTab { planning, calendar, map }
 PlanningHomeTab planningTabFromQuery(String? value) =>
     PlanningHomeTab.values.asNameMap()[value] ?? PlanningHomeTab.planning;
 
-/// Builds the Map tab's content (a seam: tests swap the Mapbox view out).
-final planningMapTabBuilderProvider =
-    Provider<Widget Function(String relationshipId)>(
-      (ref) => (relationshipId) => CoupleMapTab(relationshipId: relationshipId),
-    );
-
 class PlanningHomeScreen extends ConsumerStatefulWidget {
   const PlanningHomeScreen({
     super.key,
@@ -52,8 +48,9 @@ class _PlanningHomeScreenState extends ConsumerState<PlanningHomeScreen> {
   bool _showHidden = false;
   bool _openedInitialTab = false;
 
-  /// The Map tab appears once the flag loads, so the jump waits for a
-  /// controller that has it (TabsWithContent hands over each new one).
+  /// The Map tab appears once the flag loads, so this waits for a
+  /// controller that has it (TabsWithContent hands over each new one). Map
+  /// opens full screen over the journal, once.
   void _openInitialTab(TabController controller) {
     if (_openedInitialTab) return;
     final index = widget.initialTab.index;
@@ -62,9 +59,21 @@ class _PlanningHomeScreenState extends ConsumerState<PlanningHomeScreen> {
       return;
     }
     if (index < controller.length) {
-      controller.index = index;
       _openedInitialTab = true;
+      if (widget.initialTab == PlanningHomeTab.map) {
+        unawaited(openCoupleMap(context, widget.relationshipId));
+      } else {
+        controller.index = index;
+      }
     }
+  }
+
+  /// The Map tab is a door, not a page (owner, 2026-10-16): it opens the
+  /// map full screen and the tabs stay where they were.
+  bool _onTabChangeRequest(int from, int to) {
+    if (to != PlanningHomeTab.map.index) return true;
+    unawaited(openCoupleMap(context, widget.relationshipId));
+    return false;
   }
 
   @override
@@ -211,13 +220,15 @@ class _PlanningHomeScreenState extends ConsumerState<PlanningHomeScreen> {
             AppTabItem(
               label: 'Map',
               icon: Icons.map_outlined,
-              content: ref.watch(planningMapTabBuilderProvider)(
-                widget.relationshipId,
-              ),
+              // Never shown: tapping Map opens CoupleMapScreen instead.
+              content: const SizedBox.shrink(),
             ),
         ],
         initialIndex: 0,
         onControllerCreated: _openInitialTab,
+        // Only with a Map tab: this also turns swiping between tabs off, so
+        // a swipe can never land on Map's empty page.
+        onTabChangeRequest: mapEnabled ? _onTabChangeRequest : null,
         scrollable: false,
         showContent: true,
         // Switching back to a tab shows it as it was (no reload); its data

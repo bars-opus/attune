@@ -61,13 +61,16 @@ void main() {
           src.lastIndexOf('if (mapEnabled)', map),
           map + 200,
         );
-        // Through the builder seam (widget spec §6.5), whose default is
-        // the real couple map.
-        expect(tab, contains('planningMapTabBuilderProvider'));
-        expect(
-          src,
-          contains('(relationshipId) => CoupleMapTab(relationshipId: relationshipId)'),
-        );
+        // The map is no longer embedded in the tabs…
+        expect(tab, isNot(contains('CoupleMapTab(')));
+        // …tapping Map opens the real couple map full screen (owner,
+        // 2026-10-16), never a placeholder.
+        expect(src, contains('openCoupleMap(context, widget.relationshipId)'));
+        final screen =
+            File(
+              'lib/features/couple_map/presentation/screens/couple_map_screen.dart',
+            ).readAsStringSync();
+        expect(screen, contains('CoupleMapTab(relationshipId: relationshipId, onBack: onBack)'));
       }
     },
   );

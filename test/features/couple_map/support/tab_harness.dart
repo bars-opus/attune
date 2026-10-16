@@ -58,6 +58,11 @@ class TabHarness {
   String token = 'pk.test';
   ThemeMode themeMode = ThemeMode.light;
   bool reduceMotion = false;
+
+  /// Full screen (widget spec §6.5 follow-up): the Back button's action, and
+  /// the system insets (notch, home bar) the controls must clear.
+  VoidCallback? onBack;
+  EdgeInsets padding = EdgeInsets.zero;
   List<Map<String, Object?>> places = const [];
   late final placesGateway = FakeStoryPlacesGateway({
     'list_story_places': (_) => places,
@@ -119,8 +124,11 @@ class TabHarness {
               data: MediaQueryData(
                 disableAnimations: reduceMotion,
                 size: const Size(390, 844),
+                padding: padding,
               ),
-              child: const Scaffold(body: CoupleMapTab(relationshipId: 'r1')),
+              child: Scaffold(
+                body: CoupleMapTab(relationshipId: 'r1', onBack: onBack),
+              ),
             ),
           ),
     ),
