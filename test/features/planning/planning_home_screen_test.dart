@@ -208,6 +208,67 @@ void main() {
     expect(find.text('Goals'), findsOneWidget, reason: 'back on the Planning tab, not a blank Map tab');
   });
 
+  int tabIndex(WidgetTester tester) => tester.widget<TabBar>(find.byType(TabBar)).controller!.index;
+
+  Future<void> pumpWithMap(WidgetTester tester) async {
+    await tester.pumpWidget(planningTestApp(
+      _gateway(),
+      const PlanningHomeScreen(relationshipId: 'r1'),
+      mapEnabled: true,
+      overrides: mapStub,
+    ));
+    await tester.pumpAndSettle();
+  }
+
+  testWidgets('with the Map tab, swiping Planning to Calendar still works', (tester) async {
+    await pumpWithMap(tester);
+    await tester.fling(find.byType(TabBarView), const Offset(-300, 0), 1000);
+    await tester.pumpAndSettle();
+    expect(tabIndex(tester), 1);
+    expect(find.text('map for r1'), findsNothing);
+  });
+
+  testWidgets('swiping past Calendar opens the map; Back shows Calendar', (tester) async {
+    await pumpWithMap(tester);
+    await tester.tap(find.text('Calendar'));
+    await tester.pumpAndSettle();
+    await tester.fling(find.byType(TabBarView), const Offset(-300, 0), 1000);
+    await tester.pumpAndSettle();
+    expect(find.text('map for r1'), findsOneWidget);
+    await tester.tap(find.text('map for r1'));
+    await tester.pumpAndSettle();
+    expect(find.text('map for r1'), findsNothing);
+    expect(tabIndex(tester), 1, reason: 'back where the swipe started, not on the Map page');
+  });
+
+  testWidgets('the swipe reveals a peek, never a blank page', (tester) async {
+    await pumpWithMap(tester);
+    await tester.tap(find.text('Calendar'));
+    await tester.pumpAndSettle();
+    final gesture = await tester.startGesture(tester.getCenter(find.byType(TabBarView)));
+    for (var i = 0; i < 8; i++) {
+      await gesture.moveBy(const Offset(-20, 0));
+      await tester.pump();
+    }
+    expect(find.text('Opening the map…'), findsOneWidget);
+    for (var i = 0; i < 8; i++) {
+      await gesture.moveBy(const Offset(20, 0));
+      await tester.pump();
+    }
+    await gesture.up();
+    await tester.pumpAndSettle();
+  });
+
+  testWidgets('a half swipe that bounces back opens nothing', (tester) async {
+    await pumpWithMap(tester);
+    await tester.tap(find.text('Calendar'));
+    await tester.pumpAndSettle();
+    await tester.drag(find.byType(TabBarView), const Offset(-60, 0));
+    await tester.pumpAndSettle();
+    expect(find.text('map for r1'), findsNothing);
+    expect(tabIndex(tester), 1);
+  });
+
   testWidgets('opened from the distance widget, the full-screen map opens once the flag loads', (tester) async {
     await tester.pumpWidget(planningTestApp(
       _gateway(),

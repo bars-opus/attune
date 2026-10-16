@@ -48,6 +48,35 @@ class _PlanningHomeScreenState extends ConsumerState<PlanningHomeScreen> {
   bool _showHidden = false;
   bool _openedInitialTab = false;
 
+  /// Each controller TabsWithContent hands over (a new one when the Map tab
+  /// appears with the flag): watch it for Map, then honour [initialTab].
+  void _onController(TabController controller) {
+    controller.addListener(() => _onTabSettled(controller));
+    _openInitialTab(controller);
+  }
+
+  /// Where to come back to when the map closes.
+  int _lastPageIndex = 0;
+  bool _openingMap = false;
+
+  /// The Map tab is a door, not a page (owner, 2026-10-16): when the tabs
+  /// settle on it, by swipe or tap, the map opens full screen and the tabs
+  /// snap back underneath to where they were. A half swipe that bounces
+  /// back never settles there, so it opens nothing.
+  void _onTabSettled(TabController controller) {
+    if (controller.indexIsChanging) return;
+    final mapIndex = PlanningHomeTab.map.index;
+    if (controller.index != mapIndex) {
+      _lastPageIndex = controller.index;
+      return;
+    }
+    if (controller.length <= mapIndex || _openingMap) return;
+    _openingMap = true;
+    final open = openCoupleMap(context, widget.relationshipId);
+    controller.index = _lastPageIndex;
+    unawaited(open.whenComplete(() => _openingMap = false));
+  }
+
   /// The Map tab appears once the flag loads, so this waits for a
   /// controller that has it (TabsWithContent hands over each new one). Map
   /// opens full screen over the journal, once.
@@ -68,13 +97,6 @@ class _PlanningHomeScreenState extends ConsumerState<PlanningHomeScreen> {
     }
   }
 
-  /// The Map tab is a door, not a page (owner, 2026-10-16): it opens the
-  /// map full screen and the tabs stay where they were.
-  bool _onTabChangeRequest(int from, int to) {
-    if (to != PlanningHomeTab.map.index) return true;
-    unawaited(openCoupleMap(context, widget.relationshipId));
-    return false;
-  }
 
   @override
   void initState() {
@@ -220,15 +242,12 @@ class _PlanningHomeScreenState extends ConsumerState<PlanningHomeScreen> {
             AppTabItem(
               label: 'Map',
               icon: Icons.map_outlined,
-              // Never shown: tapping Map opens CoupleMapScreen instead.
-              content: const SizedBox.shrink(),
+              // Seen only mid-swipe: the map opens as the swipe settles.
+              content: const _MapPeek(),
             ),
         ],
         initialIndex: 0,
-        onControllerCreated: _openInitialTab,
-        // Only with a Map tab: this also turns swiping between tabs off, so
-        // a swipe can never land on Map's empty page.
-        onTabChangeRequest: mapEnabled ? _onTabChangeRequest : null,
+        onControllerCreated: _onController,
         scrollable: false,
         showContent: true,
         // Switching back to a tab shows it as it was (no reload); its data
@@ -542,6 +561,33 @@ class _NewCategoryChooser extends ConsumerWidget {
                         onTap: () => Navigator.pop(context, g.key),
                       ),
                   ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// What a swipe towards Map reveals before the map opens: never a blank page.
+class _MapPeek extends StatelessWidget {
+  const _MapPeek();
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final muted = theme.colorScheme.onSurfaceVariant;
+    return ColoredBox(
+      color: theme.scaffoldBackgroundColor,
+      child: Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.map_outlined, size: 40, color: muted),
+            const SizedBox(height: Spacing.sm),
+            Text(
+              'Opening the map…',
+              style: theme.textTheme.bodyMedium?.copyWith(color: muted),
             ),
           ],
         ),

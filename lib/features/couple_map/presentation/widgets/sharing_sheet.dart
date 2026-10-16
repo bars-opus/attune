@@ -21,6 +21,8 @@ Future<void> showSharingSheet(
   context: context,
   isScrollControlled: true,
   showDragHandle: true,
+  // Neutral, like the app's pages: never M3's primary-tinted sheet surface.
+  backgroundColor: Theme.of(context).scaffoldBackgroundColor,
   builder: (_) => SharingSheet(relationshipId: relationshipId),
 );
 

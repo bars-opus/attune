@@ -133,6 +133,8 @@ Future<void> showCoupleMapListSheet(
   context: context,
   isScrollControlled: true,
   showDragHandle: true,
+  // Neutral, like the app's pages: never M3's primary-tinted sheet surface.
+  backgroundColor: Theme.of(context).scaffoldBackgroundColor,
   builder: (_) => _CoupleMapListSheet(relationshipId: relationshipId),
 );
 
