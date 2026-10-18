@@ -397,6 +397,15 @@ const _chatGameCategories = <_ChatGameCategory>[
         subtitle: 'Turn-based color battle',
         icon: Icons.sports_esports_outlined,
         tags: {'Quick', 'Fun'},
+        // Pulled back after play-testing: the neon rebuild made the
+        // field legible and the hidden-information mechanic is sound,
+        // but it does not yet read as something a couple would reach
+        // for. The engineering stands -- field, replay, impact, sound
+        // and the shared lib/core/ui/neon toolkit are all merged and
+        // tested -- so this is a presentation judgement, not a revert.
+        //
+        // It stays listed because the catalogue doubles as a roadmap.
+        comingSoon: true,
       ),
       _ChatGameOption(
         destination: ChatGameDestination.snakesAndLadders,

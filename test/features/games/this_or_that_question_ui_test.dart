@@ -19,6 +19,7 @@ import 'package:attune/features/games/this_or_that/presentation/screens/this_or_
 import 'package:attune/features/games/this_or_that/presentation/screens/tone_selector_screen.dart';
 import 'package:attune/features/games/this_or_that/presentation/screens/waiting_screen.dart';
 import 'package:attune/features/games/this_or_that/presentation/widgets/this_or_that_game_ui.dart';
+import 'package:attune/features/games/this_or_that/presentation/widgets/this_or_that_tab_card.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:attune/features/games/presentation/providers/game_session_live_provider.dart';
@@ -168,20 +169,15 @@ void main() {
     await tester.pumpWidget(_wrap(child: _question(), repository: repository));
     await tester.pump();
 
+    // The two side-by-side cards became one tabbed card: the question
+    // lives INSIDE it, and the options are the left and right tabs. The
+    // behaviour under test is unchanged -- the round reads as a
+    // two-sided game and shows its progress -- so only the hooks move.
     expect(find.text('ROUND 3 OF 10'), findsOneWidget);
     expect(find.text('Friday night: stay in or go out?'), findsOneWidget);
-    expect(
-      find.byWidgetPredicate(
-        (widget) => widget is ThisOrThatChoiceCard && widget.text == 'Stay in',
-      ),
-      findsOneWidget,
-    );
-    expect(
-      find.byWidgetPredicate(
-        (widget) => widget is ThisOrThatChoiceCard && widget.text == 'Go out',
-      ),
-      findsOneWidget,
-    );
+    expect(find.byType(ThisOrThatTabCard), findsOneWidget);
+    expect(find.text('THIS'), findsOneWidget);
+    expect(find.text('THAT'), findsOneWidget);
     expect(find.text('Choose your side'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
@@ -203,8 +199,12 @@ void main() {
     );
     await tester.pump();
 
-    await tester.tap(find.text('Go out'));
+    // Option B is the THAT tab now. Its text appears only AFTER the
+    // choice, which is the point of the design, so the tap targets the
+    // tab rather than the answer.
+    await tester.tap(find.text('THAT'));
     await tester.pump();
+    expect(find.text('Go out'), findsOneWidget);
     expect(find.text('Lock in That'), findsOneWidget);
     expect(sounds.played, [AppSound.gameTap]);
     expect(haptics.selectionCount, 1);
@@ -241,7 +241,8 @@ void main() {
       _wrap(child: _question(), repository: repository, answerOutbox: outbox),
     );
     await tester.pump();
-    await tester.tap(find.text('Stay in'));
+    // Option A is the THIS tab now; its text appears only after the pick.
+    await tester.tap(find.text('THIS'));
     await tester.pump();
     await tester.tap(find.text('Lock in This'));
     await tester.pump();

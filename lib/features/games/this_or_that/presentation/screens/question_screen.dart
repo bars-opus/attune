@@ -6,6 +6,7 @@ import 'package:attune/core/ui/feedback/sound_service.dart';
 import 'package:attune/core/ui/motion/reduce_motion.dart';
 import 'package:attune/features/games/this_or_that/presentation/providers/this_or_that_providers.dart';
 import 'package:attune/features/games/this_or_that/presentation/widgets/this_or_that_game_ui.dart';
+import 'package:attune/features/games/this_or_that/presentation/widgets/this_or_that_tab_card.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -312,12 +313,11 @@ class _QuestionScreenState extends ConsumerState<QuestionScreen>
                 ),
               ),
               child: Text(
-                widget.questionText,
-                style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                  color: palette.ink,
-                  fontWeight: FontWeight.w800,
-                  height: 1.12,
-                  letterSpacing: 0,
+                'Round ${widget.roundNumber} of ${widget.totalRounds}',
+                style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                  color: palette.mutedInk,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 1.4,
                 ),
                 textAlign: TextAlign.center,
               ),
@@ -354,31 +354,30 @@ class _QuestionScreenState extends ConsumerState<QuestionScreen>
                   ),
                 );
               },
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(minHeight: 210),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    Expanded(
-                      child: ThisOrThatChoiceCard(
-                        side: 'a',
-                        text: widget.optionA,
-                        emoji: widget.emojiA,
-                        selected: _selectedChoice == 'a',
-                        onTap: () => _selectChoice('a'),
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: ThisOrThatChoiceCard(
-                        side: 'b',
-                        text: widget.optionB,
-                        emoji: widget.emojiB,
-                        selected: _selectedChoice == 'b',
-                        onTap: () => _selectChoice('b'),
-                      ),
-                    ),
-                  ],
+              // One card that BECOMES the answer, rather than two cards
+              // to compare. Pulling a tab forward floods the card with
+              // that option's colour, and the colour arriving is the
+              // confirmation -- there is no separate submit.
+              child: SingleChildScrollView(
+                child: ThisOrThatTabCard(
+                  questionText: widget.questionText,
+                  optionA: widget.optionA,
+                  optionB: widget.optionB,
+                  emojiA: widget.emojiA,
+                  emojiB: widget.emojiB,
+                  active: switch (_selectedChoice) {
+                    'a' => ThisOrThatTab.thisOption,
+                    'b' => ThisOrThatTab.thatOption,
+                    _ => ThisOrThatTab.question,
+                  },
+                  // Null while submitting, so a committed answer cannot
+                  // be changed mid-flight.
+                  onSelect:
+                      _isSubmitting
+                          ? null
+                          : (tab) => _selectChoice(
+                            tab == ThisOrThatTab.thisOption ? 'a' : 'b',
+                          ),
                 ),
               ),
             ),

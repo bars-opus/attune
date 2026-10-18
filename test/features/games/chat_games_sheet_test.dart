@@ -122,23 +122,29 @@ void main() {
 
     await tester.pumpWidget(_sheet(onSelect: (d) => selected = d));
 
+    // Word Hunt rather than Paint Ball: Paint Ball was pulled back to
+    // coming-soon after play-testing, so it now belongs to the test
+    // ABOVE this one. This test is that test's positive control -- it
+    // has to name a game that really is built, or "nothing is tappable"
+    // could pass for the wrong reason.
+    //
     // Searched by subtitle: typing the title puts it in the search field
     // too, and find.text would then match the input as well as the row.
-    await tester.enterText(find.byType(TextField).first, 'color battle');
+    await tester.enterText(find.byType(TextField).first, 'who spots it first');
     await tester.pumpAndSettle();
 
     // Tap the CARD, not the label. The grid tile now paints its own
     // gradient with the text inside it, so the Text widget sits under the
     // InkWell rather than being the tap target itself.
     final tile = find.ancestor(
-      of: find.text('Paint Ball'),
+      of: find.text('Word Hunt'),
       matching: find.byType(GameGridTile),
     );
     expect(tile, findsOneWidget);
     await tester.tap(tile, warnIfMissed: false);
     await tester.pump();
 
-    expect(selected, ChatGameDestination.paintBall);
+    expect(selected, ChatGameDestination.wordHunt);
   });
 
   testWidgets('an active game is listed and resumes on tap', (tester) async {
