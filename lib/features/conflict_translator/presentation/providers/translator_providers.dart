@@ -7,7 +7,6 @@ import 'package:attune/features/conflict_translator/data/models/translator_respo
 import 'package:attune/features/conflict_translator/data/repositories/translator_repository.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'translator_pattern_providers.dart' as translator_patterns;
 
 final supabaseClientProvider = Provider<SupabaseClient>((ref) {
   return Supabase.instance.client;
@@ -56,11 +55,16 @@ class TranslatorState {
   final String? error;
   final bool isSheetOpen;
 
+  /// The daily limit's own words (TranslatorLimitReached), shown without a
+  /// retry.
+  final String? limitMessage;
+
   const TranslatorState({
     this.isLoading = false,
     this.response,
     this.error,
     this.isSheetOpen = false,
+    this.limitMessage,
   });
 
   TranslatorState copyWith({
@@ -91,22 +95,28 @@ class TranslatorNotifier extends StateNotifier<TranslatorState> {
   Future<void> translate({
     required String message,
     required String relationshipId,
-    TranslatorContext? context,
+    TranslatorRegister register = TranslatorRegister.nvc,
   }) async {
-    state = state.copyWith(isLoading: true, error: null);
+    // A fresh ask clears the last answer, error and limit notice.
+    state = TranslatorState(isLoading: true, isSheetOpen: state.isSheetOpen);
 
     try {
       final repository = _ref.read(translatorRepositoryProvider);
       final response = await repository.translate(
         message: message,
         relationshipId: relationshipId,
-        context: context,
+        register: register,
       );
 
       state = state.copyWith(
         isLoading: false,
         response: response,
         isSheetOpen: true,
+      );
+    } on TranslatorLimitReached catch (e) {
+      state = TranslatorState(
+        isSheetOpen: state.isSheetOpen,
+        limitMessage: e.message,
       );
     } catch (e) {
       state = state.copyWith(
@@ -149,17 +159,7 @@ class TranslatorNotifier extends StateNotifier<TranslatorState> {
       choseRewrite: choseRewrite,
     );
 
-    final service = _ref.read(translator_patterns.translatorPatternServiceProvider);
-    final surfacedRecently = await service.hasInsightBeenSurfacedRecently(
-      relationshipId: relationshipId,
-      userId: userId,
-    );
-
-    if (!surfacedRecently && await service.shouldSurfaceInsight(relationshipId: relationshipId)) {
-      await service.surfaceInsight(
-        userId: userId,
-        relationshipId: relationshipId,
-      );
-    }
+    // Spec 8 (plan review §3.5): no counted insight is written from
+    // these logs; they stay content-free.
   }
 }

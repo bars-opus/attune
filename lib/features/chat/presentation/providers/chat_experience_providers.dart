@@ -1,6 +1,5 @@
 import 'package:attune/features/auth/providers/auth_provider.dart';
 import 'package:attune/features/chat/domain/services/chat_feature_flags.dart';
-import 'package:attune/features/chat/presentation/state/chat_state.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -47,25 +46,9 @@ final chatHeaderSnapshotProvider =
     ) async {
       final user = ref.watch(currentUserProvider);
       if (user == null) return const ChatHeaderSnapshot();
-      final snapshot = await ref
+      return ref
           .read(chatContextRepositoryProvider)
           .loadHeaderSnapshot(userId: user.id, relationshipId: relationshipId);
-
-      final streaksEnabled = await ChatFeatureFlags.isEnabled(
-        ref.watch(supabaseClientProvider),
-        ChatFeatureFlags.streaks,
-      );
-      if (!streaksEnabled) return snapshot;
-
-      final streak = await ref
-          .read(chatRepositoryProvider)
-          .fetchStreak(relationshipId);
-      return ChatHeaderSnapshot(
-        pulse: snapshot.pulse,
-        latestUnreadInsight: snapshot.latestUnreadInsight,
-        nextReminder: snapshot.nextReminder,
-        streak: streak,
-      );
     });
 
 final chatInsightsProvider =
@@ -181,13 +164,11 @@ class ChatHeaderSnapshot {
   final PulseSummary? pulse;
   final ChatInsightItem? latestUnreadInsight;
   final ChatReminderSummary? nextReminder;
-  final int streak;
 
   const ChatHeaderSnapshot({
     this.pulse,
     this.latestUnreadInsight,
     this.nextReminder,
-    this.streak = 0,
   });
 }
 

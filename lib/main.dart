@@ -22,6 +22,9 @@ import 'package:attune/features/planning/presentation/screens/planning_home_scre
     show PlanningHomeTab;
 import 'package:attune/features/onboarding/data/onboarding_store.dart';
 import 'package:flutter/material.dart';
+import 'package:attune/features/safety/data/safety_pin_store.dart';
+import 'package:attune/features/safety/domain/services/quick_exit_service.dart';
+import 'package:attune/features/safety/presentation/safety_lock_controller.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart';
@@ -48,6 +51,7 @@ Future<void> main() async {
     isFirstLaunch: PreferencesService(prefs).isFirstLaunch,
   );
   final appRouter = createAppRouter(routingNotifier);
+  final safetyLockSeed = await _safetyLockSeed();
 
   runApp(
     ProviderScope(
@@ -55,6 +59,7 @@ Future<void> main() async {
         sharedPreferencesProvider.overrideWithValue(prefs),
         routingNotifierProvider.overrideWith((ref) => routingNotifier),
         appRouterProvider.overrideWithValue(appRouter),
+        safetyLockSeedProvider.overrideWithValue(safetyLockSeed),
         chatCacheServiceProvider.overrideWithValue(chatCache),
         notificationConfigProvider.overrideWithValue(
           buildNanoEmbryoNotificationConfig(),
@@ -63,6 +68,25 @@ Future<void> main() async {
       child: const App(),
     ),
   );
+}
+
+/// The lock decision before the first frame (Spec 2, review I5): the common
+/// unlocked path mounts the Router at once; a locked phone never shows a
+/// frame of the app. Null (decide asynchronously) if the keystore can't be
+/// read.
+/// A hung keystore (seen on some Samsung phones) must not hold the splash:
+/// after 3 s the gate decides asynchronously, still fail-closed (review M-1).
+Future<SafetyLockState?> _safetyLockSeed() async {
+  try {
+    return await computeLockSeed(
+      quickExitFlag: QuickExitService.requiresSafetyUnlock,
+      clearQuickExitFlag: QuickExitService.clearSafetyUnlockRequired,
+      pins: SafetyPinStore.instance,
+      signedIn: Supabase.instance.client.auth.currentUser != null,
+    ).timeout(const Duration(seconds: 3));
+  } catch (_) {
+    return null;
+  }
 }
 
 Future<void> _initializeSupabase() async {

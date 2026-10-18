@@ -4,6 +4,13 @@ import 'package:attune/features/verdict/data/models/verdict.dart';
 import 'package:attune/features/verdict/presentation/providers/verdict_providers.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+/// Spec 8 (F15 (1), P10): ATTUNE_RISK_SOLUTIONS §2.3 item 2, verbatim, on
+/// every shared conflict-adjacent insight.
+const kCoFramingLine =
+    'This is a pattern, not a verdict on either of you. Citing it as '
+    'evidence in an argument usually backfires — if you want to talk about '
+    "it, ask, don't quote.";
+
 class VerdictScreen extends ConsumerStatefulWidget {
   const VerdictScreen({super.key});
 
@@ -166,6 +173,13 @@ class _VerdictScreenState extends ConsumerState<VerdictScreen>
             ),
             Gap(Spacing.xl.h),
             _buildSectionTitle(context, 'Watch areas'),
+            Gap(Spacing.xs.h),
+            Text(
+              kCoFramingLine,
+              style: textTheme.bodySmall?.copyWith(
+                color: colorScheme.onSurfaceVariant,
+              ),
+            ),
             Gap(Spacing.md.h),
             ...verdict.watchAreas.map(
               (item) => _buildItemCard(

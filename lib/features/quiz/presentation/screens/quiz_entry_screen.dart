@@ -14,7 +14,7 @@ class QuizEntryScreen extends ConsumerWidget {
       case 'attachment':
         return 'Attachment style';
       case 'love_language':
-        return 'Love languages';
+        return 'What feels loving';
       case 'communication':
         return 'Communication style';
       case 'conflict':
@@ -29,7 +29,7 @@ class QuizEntryScreen extends ConsumerWidget {
       case 'attachment':
         return '25 questions · about 5 minutes';
       case 'love_language':
-        return '15 questions · about 3 minutes';
+        return 'Five ratings · under a minute';
       case 'communication':
         return '20 questions · about 4 minutes';
       case 'conflict':
@@ -44,7 +44,7 @@ class QuizEntryScreen extends ConsumerWidget {
       case 'attachment':
         return 'This quiz helps you understand how you tend to show up in relationships — and why.';
       case 'love_language':
-        return 'Discover how you most naturally give and receive affection.';
+        return 'What feels loving to you right now. Based on a popular framework, not a science. Change it any time.';
       case 'communication':
         return 'Understand your natural communication patterns under different conditions.';
       case 'conflict':

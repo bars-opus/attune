@@ -103,8 +103,11 @@ void main() {
         source.indexOf('static Future<void> execute'),
         source.indexOf('static Future<void> _markSafetyUnlockRequired'),
       );
+      // Spec 2 moved the cover into _run's showCover(); anchor on it so the
+      // order check can fail (it was vacuous against the old name).
+      expect(execute.indexOf('showCover();'), greaterThan(-1));
       expect(
-        execute.indexOf('_showNeutralCover(context)'),
+        execute.indexOf('showCover();'),
         lessThan(execute.indexOf('clearCoupleMapDeviceData()')),
       );
       expect(execute.contains('unawaited(clearCoupleMapDeviceData())'), isTrue);

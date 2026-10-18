@@ -3,6 +3,11 @@ import 'package:attune/core/widgets/buttons/app_text_button.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 
+const double _minTap = 44;
+
+/// Half of what the 44 dp target adds over the label's own height.
+const double _tapSlack = 10;
+
 class BottomSheetHeader extends StatelessWidget {
   final String title;
 
@@ -23,8 +28,14 @@ class BottomSheetHeader extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
+    // Spec 5 (R5-13, plan review I5): the action is a 44 x 44 dp target
+    // (AppTextButton stays shrink-wrapped everywhere else); the vertical
+    // padding gives back the difference so the header is no taller.
     return Padding(
-      padding: EdgeInsets.all(Spacing.md.w),
+      padding: EdgeInsets.symmetric(
+        horizontal: Spacing.md.w,
+        vertical: (Spacing.md.w - _tapSlack).clamp(0, double.infinity),
+      ),
       child: Row(
         children: [
           Expanded(
@@ -35,8 +46,11 @@ class BottomSheetHeader extends StatelessWidget {
               ),
             ),
           ),
-
-          AppTextButton(text: actionLabel, onPressed: onPressed),
+          AppTextButton(
+            text: actionLabel,
+            onPressed: onPressed,
+            minimumSize: const Size(_minTap, _minTap),
+          ),
         ],
       ),
     );

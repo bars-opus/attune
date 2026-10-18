@@ -3,6 +3,8 @@
 -- silent pass means the contract holds.
 
 -- 1. game_questions accepts the three new types.
+-- Sync audit M-14: one transaction, rolled back, so no fixture is left behind.
+BEGIN;
 DO $$
 BEGIN
   INSERT INTO public.game_questions
@@ -195,3 +197,4 @@ BEGIN
 
   PERFORM set_config('request.jwt.claims', '', true);
 END $$;
+ROLLBACK;

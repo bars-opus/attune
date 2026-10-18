@@ -18,7 +18,7 @@ export function validateIdeasRequest(body: Record<string, unknown>):
   return { ok: true, startLocal: s, endLocal: e };
 }
 
-export function buildIdeasPrompt(p: { startLocal: string; endLocal: string }) {
+export function buildIdeasPrompt(p: { startLocal: string; endLocal: string; quiet?: boolean }) {
   const hours = (ms(p.endLocal) - ms(p.startLocal)) / 3_600_000;
   const length = Number.isInteger(hours) ? `${hours} hours` : `${hours.toFixed(1)} hours`;
   const system = [
@@ -27,6 +27,8 @@ export function buildIdeasPrompt(p: { startLocal: string; endLocal: string }) {
     "title: at most 50 characters. blurb: one sentence, at most 140 characters.",
     "Fit the time of day and the length. Mix the kinds: something at home, something out, something that costs little.",
     "No named businesses or places. Nothing about the state of the relationship or either person's behaviour; no advice or therapy language.",
+    // Spec 7 (B9): for someone who asked for quiet; the reason is never sent.
+    ...(p.quiet ? ["Keep ideas gentle, low-effort and unceremonious."] : []),
   ].join("\n");
   const user = `WINDOW: ${weekdayOf(p.startLocal)} ${p.startLocal.slice(0, 10)}, ${p.startLocal.slice(11)}–${p.endLocal.slice(11)} (${length})`;
   return { system, user };

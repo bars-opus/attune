@@ -218,14 +218,19 @@ END $$;
 -- 5b. Planning dates and to-dos are in the union; a to-do without text
 --     comes back with an empty title, never NULL.
 DO $$
-DECLARE v_entry uuid; v_block uuid; v_days int; v_item_title text;
+DECLARE v_cat uuid; v_entry uuid; v_block uuid; v_days int; v_item_title text;
 BEGIN
-  INSERT INTO public.planning_entries (relationship_id, title)
-  VALUES ('7f000000-0000-0000-0000-000000000001', 'Lisbon trip') RETURNING id INTO v_entry;
-  INSERT INTO public.planning_blocks (entry_id, relationship_id, block_type, date_start, date_end)
-  VALUES (v_entry, '7f000000-0000-0000-0000-000000000001', 'date', '2026-11-12', '2026-11-14') RETURNING id INTO v_block;
-  INSERT INTO public.planning_block_items (block_id, relationship_id, text, due_date)
-  VALUES (v_block, '7f000000-0000-0000-0000-000000000001', NULL, '2026-11-11');
+  -- Planning rows carry client-made ids, a category and sort keys
+  -- (20261012200000; sync audit K-6).
+  INSERT INTO public.planning_categories (id, relationship_id, name, icon, color, sort_key)
+  VALUES (gen_random_uuid(), '7f000000-0000-0000-0000-000000000001', 'Trips', 'flight', '#336699', 'a')
+  RETURNING id INTO v_cat;
+  INSERT INTO public.planning_entries (id, relationship_id, category_id, title)
+  VALUES (gen_random_uuid(), '7f000000-0000-0000-0000-000000000001', v_cat, 'Lisbon trip') RETURNING id INTO v_entry;
+  INSERT INTO public.planning_blocks (id, entry_id, relationship_id, block_type, sort_key, date_start, date_end)
+  VALUES (gen_random_uuid(), v_entry, '7f000000-0000-0000-0000-000000000001', 'date', 'a', '2026-11-12', '2026-11-14') RETURNING id INTO v_block;
+  INSERT INTO public.planning_block_items (id, block_id, relationship_id, sort_key, text, due_date)
+  VALUES (gen_random_uuid(), v_block, '7f000000-0000-0000-0000-000000000001', 'a', NULL, '2026-11-11');
 
   PERFORM set_config('request.jwt.claims',
     json_build_object('sub','7b000000-0000-0000-0000-0000000000b2','role','authenticated')::text, true);

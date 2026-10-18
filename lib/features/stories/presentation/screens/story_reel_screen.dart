@@ -671,6 +671,9 @@ class _StoryReelScreenState extends ConsumerState<StoryReelScreen> {
     final generation = _generation;
     try {
       await ref.read(storyReadGatewayProvider).markViewed(storyItemId: item.id);
+      // Spec 1a: the server bumps story_change_signals only while the couple
+      // shows seen-state, so my own ring refreshes from here instead.
+      if (mounted) ref.invalidate(storyRingSummaryProvider(widget.relationshipId));
     } catch (_) {
       // Best-effort, same posture as the streak viewer's own
       // _spendView catch: a failed mark must not trap the viewer or

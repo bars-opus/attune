@@ -9,10 +9,16 @@
 // insert_ai_assist_draft, a service-role-only RPC (Task 6 migration) that
 // no user can call directly.
 
+import { DRAFT_SAFETY_CONTENT_FLAG, featureFlagEnabled } from "../_shared/feature_flag.ts";
+import { classifyAssistantInput } from "../_shared/assistant_input.ts";
 import { serve } from "https://deno.land/std@0.177.0/http/server.ts";
 import { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2.39.0";
 
-import { claimProviderStart, jsonResponse, serviceRoleClient } from "../_shared/attune_auth.ts";
+import {
+  claimProviderStart,
+  jsonResponse as baseJsonResponse,
+  serviceRoleClient,
+} from "../_shared/attune_auth.ts";
 import { userScopedClient } from "../_shared/user_scoped_client.ts";
 import {
   loadAiAssistantTarget,
@@ -32,6 +38,14 @@ import {
   searchMapboxCategory,
   validateNearbyCategoryOutput,
 } from "../_shared/mapbox_search.ts";
+
+// Final review m-4: every Assist answer is private to the requester and
+// never cached, as Understand's are.
+function jsonResponse(body: Record<string, unknown>, status = 200): Response {
+  const response = baseJsonResponse(body, status);
+  response.headers.set("Cache-Control", "no-store");
+  return response;
+}
 
 // ---------------------------------------------------------------------------
 // Error envelope -- spec §11. Every response, success or failure, uses one
@@ -384,6 +398,21 @@ export async function processAssistRequest(
   }
   const target = targetResult.target;
 
+  // Spec 8 (research 06 F15 (2); plan review C3): the deterministic
+  // pre-check, before consent, quota and any provider call (ideas and
+  // nearby alike). Only the outcome travels; nothing is stored.
+  const precheck = classifyAssistantInput({
+    targetContent: target.content,
+    targetByRequester: target.senderId === user.id,
+    instruction: request.userInstruction,
+    draftLexicon: await featureFlagEnabled(client, DRAFT_SAFETY_CONTENT_FLAG),
+  }).outcome;
+  if (precheck === "unsafe_to_infer") {
+    // Exactly what a refused model output returns.
+    return errorResponse(assistantError("RESULT_UNAVAILABLE"));
+  }
+  if (precheck !== "proceed") return jsonResponse({ status: precheck });
+
   // Consent -- also before quota/provider call. §10.1: "It sends no
   // chat notice, push notification, message text, or provider request"
   // until both partners have granted.
@@ -490,6 +519,7 @@ async function handleIdeas(
 
   const parsed = await deps.callGemini({
     promptId: "ai_assist_ideas_v1",
+    attribution: { fn: "ai-assist", relationshipId: target.relationshipId, userId },
     systemPrompt: system,
     userPrompt,
     maxOutputTokens: 600,
@@ -584,6 +614,7 @@ async function handleNearby(
   // the bounded chat context -- never coordinates (spec §5.2).
   const parsed = await deps.callGemini({
     promptId: "ai_assist_nearby_category_v1",
+    attribution: { fn: "ai-assist", relationshipId: target.relationshipId, userId },
     systemPrompt: system,
     userPrompt,
     maxOutputTokens: 100,

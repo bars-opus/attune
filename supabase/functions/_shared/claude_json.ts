@@ -2,15 +2,10 @@ const DEFAULT_MODEL = "claude-sonnet-4-20250514";
 const CLAUDE_URL = "https://api.anthropic.com/v1/messages";
 const ANTHROPIC_VERSION = "2023-06-01";
 
-/// Exported so the §6.7 eval suite can assert against the exact patterns
-/// production uses, rather than a copy that can drift out of sync with
-/// them. Mirrors gemini_json.ts, which already exports its equivalent.
-export const STATIC_PROHIBITED_PATTERNS = [
-  /your partner (always|never|tends to|keeps)/i,
-  /\b(toxic|narcissist|codependent|disorder|broken)\b/i,
-  /you should (leave|stay|break up|end)/i,
-  /this relationship is/i,
-];
+/// One list for every provider (Spec 8: the stale copy here had drifted).
+/// Re-exported so the §6.7 eval suite still imports it from this file.
+import { STATIC_PROHIBITED_PATTERNS } from "./gemini_json.ts";
+export { STATIC_PROHIBITED_PATTERNS };
 
 export async function callClaudeJson(params: {
   promptId: string;

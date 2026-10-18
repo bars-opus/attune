@@ -6,6 +6,9 @@ import '../domain/together_live.dart';
 /// This phone's opt-in (Phase 8c R4); off unless set.
 const liveEnabledKey = 'together_live_enabled';
 
+/// Whether the lock-screen plan may show its title on this phone (Spec 1b).
+const liveTitlesKey = 'together_live_titles';
+
 /// Where the lock-screen plan goes (a seam so tests never touch iOS).
 abstract class LiveActivityStore {
   Future<bool> isSupported();
@@ -66,7 +69,12 @@ class TogetherLiveActivity {
       if (plan == null) {
         await store.end();
       } else {
-        await store.show(plan);
+        await store.show(
+          livePlanForLockScreen(
+            plan,
+            showTitles: prefs.getBool(liveTitlesKey) ?? false,
+          ),
+        );
       }
     } catch (_) {}
   }

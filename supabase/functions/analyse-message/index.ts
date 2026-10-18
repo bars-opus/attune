@@ -1,6 +1,8 @@
 import { serve } from "https://deno.land/std@0.177.0/http/server.ts";
 
 import { jsonResponse, requireServiceRole, serviceRoleClient } from "../_shared/attune_auth.ts";
+import { relationshipAiSuppression } from "../_shared/ai_suppression.ts";
+import { isOrdinaryTextRow } from "../_shared/ai_context_loader.ts";
 import { callGeminiJson, partnerNamePatterns } from "../_shared/gemini_json.ts";
 
 const GLOBAL_CONSTRAINTS = `
@@ -96,13 +98,29 @@ export async function loadMessages(
   return data ?? [];
 }
 
-async function processMessage(
+export async function processMessage(
   supabase: ReturnType<typeof serviceRoleClient>,
   message: Record<string, unknown>,
 ) {
   const messageId = String(message.id);
 
   try {
+    // Spec 8 (plan review M4): no Layer 1 for a suppressed relationship.
+    // Set aside (skipped), so it never feeds Layer 2 or Pulse and never
+    // counts as backlog. Setting aside is permanent, so an answer that
+    // cannot be read only defers the message (final review I-1).
+    const suppression = await relationshipAiSuppression(
+      supabase,
+      String(message.relationship_id),
+    );
+    if (suppression === "unknown") {
+      return { message_id: messageId, status: "deferred" };
+    }
+    if (suppression === "yes") {
+      await markMessageDone(supabase, messageId, { message_analysis_skipped: true });
+      return { message_id: messageId, status: "suppressed" };
+    }
+
     const content = typeof message.content === "string" ? message.content.trim() : "";
     if (content.length === 0) {
       await markMessageDone(supabase, messageId, {});
@@ -127,6 +145,12 @@ async function processMessage(
       await markMessageDone(supabase, messageId, {});
       return { message_id: messageId, status: "skipped_relationship_archived" };
     }
+    // Sync audit I-2 (Spec 3a R3-3: AI is active-only). Set aside, not
+    // deferred: a deferred row would come back first in every batch.
+    if (relationship.status !== "active") {
+      await markMessageDone(supabase, messageId, { message_analysis_skipped: true });
+      return { message_id: messageId, status: "skipped_relationship_not_active" };
+    }
 
     const senderName = relationship.user_a.id === senderId
       ? relationship.user_a.display_name
@@ -141,6 +165,7 @@ async function processMessage(
 
     const parsed = await callGeminiJson({
       promptId: "layer1_message_analysis",
+      attribution: { fn: "analyse-message", relationshipId, userId: senderId },
       systemPrompt: GLOBAL_CONSTRAINTS,
       userPrompt,
       maxOutputTokens: 250,
@@ -174,6 +199,7 @@ async function loadRelationshipContext(
     .from("relationships")
     .select(`
       id,
+      status,
       chat_archived_at,
       user_a,
       user_b,
@@ -188,6 +214,7 @@ async function loadRelationshipContext(
 
   return {
     id: data.id as string,
+    status: data.status as string,
     chat_archived_at: data.chat_archived_at as string | null,
     user_a: normalizeJoinedUser(data.users_user_a, data.user_a as string),
     user_b: normalizeJoinedUser(data.users_user_b, data.user_b as string | null),
@@ -207,7 +234,10 @@ async function loadSenderProfile(
   return data ?? {};
 }
 
-async function loadPriorMessages(
+// Sync audit I-1: the model's context is ordinary text only (no pause,
+// note, notice, Assist output, media or deleted row), the same rule the
+// assistant loaders use. Over-fetched so ten ordinary lines survive.
+export async function loadPriorMessages(
   supabase: ReturnType<typeof serviceRoleClient>,
   relationshipId: string,
   createdAt: string,
@@ -220,18 +250,26 @@ async function loadPriorMessages(
       sender_id,
       content,
       created_at,
+      deleted_at,
+      is_system_notice,
+      message_origin,
+      media_url,
+      media_type,
+      game_session_id,
+      message_analysis_skipped,
       users:users!messages_sender_id_fkey(display_name)
     `)
     .eq("relationship_id", relationshipId)
     .lte("created_at", createdAt)
     .order("created_at", { ascending: false })
     .order("id", { ascending: false })
-    .limit(11);
+    .limit(31);
 
   if (error) throw error;
 
   return (data ?? [])
     .filter((row: Record<string, unknown>) => row.id !== messageId)
+    .filter((row: Record<string, unknown>) => isOrdinaryTextRow(row))
     .slice(0, 10)
     .reverse()
     .map((row: Record<string, unknown>) => ({

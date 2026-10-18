@@ -12,6 +12,8 @@
 // returns its result directly with Cache-Control: no-store -- there is
 // no draft, no share, no messages insert anywhere in this file.
 
+import { DRAFT_SAFETY_CONTENT_FLAG, featureFlagEnabled } from "../_shared/feature_flag.ts";
+import { classifyAssistantInput } from "../_shared/assistant_input.ts";
 import { serve } from "https://deno.land/std@0.177.0/http/server.ts";
 import { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2.39.0";
 
@@ -368,6 +370,17 @@ export async function processUnderstandRequest(
     return errorResponse(assistantError("TARGET_UNAVAILABLE"));
   }
 
+  // Spec 8 (research 06 F15 (2); plan review C3): the deterministic
+  // pre-check, before consent, quota and any provider call. A partner's
+  // "no" is not decoded; self-harm gets the supporter card; a threat or a
+  // disclosure is refused exactly as the model would refuse it. Nothing is
+  // stored, and only the outcome travels.
+  const precheck = understandPrecheck(
+    target.content,
+    await featureFlagEnabled(client, DRAFT_SAFETY_CONTENT_FLAG),
+  );
+  if (precheck) return noStoreJsonResponse(precheck);
+
   // Consent -- also before quota/provider call (spec §10.1).
   const consentResult = await client.rpc("get_ai_processing_consent_status", {
     p_relationship_id: target.relationshipId,
@@ -469,6 +482,7 @@ async function handleUnderstand(
 
   const parsed = await deps.callGemini({
     promptId: "ai_understand_v1",
+    attribution: { fn: "ai-understand", relationshipId: target.relationshipId, userId },
     systemPrompt: system,
     userPrompt,
     maxOutputTokens: 700,
@@ -500,6 +514,29 @@ async function handleUnderstand(
   // presence cannot reveal whether the deterministic safety pipeline
   // separately fired for the same target message (spec §6.2).
   return noStoreJsonResponse(validated as unknown as Record<string, unknown>);
+}
+
+/// The fixed response for a pre-check outcome, or null to carry on.
+export function understandPrecheck(
+  content: string,
+  draftLexicon: boolean,
+): Record<string, unknown> | null {
+  const { outcome } = classifyAssistantInput({
+    targetContent: content,
+    targetByRequester: false,
+    draftLexicon,
+  });
+  switch (outcome) {
+    case "boundary":
+      return { status: "boundary" };
+    case "supporter":
+      return { status: "supporter" };
+    case "unsafe_to_infer":
+    case "writer_resources":
+      return { status: "cannot_help", reason: "unsafe_to_infer" };
+    default:
+      return null;
+  }
 }
 
 function errorResponse(error: AssistantError): Response {

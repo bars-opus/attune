@@ -136,6 +136,9 @@ class Breakpoints {
 class OpacityTokens {
   static const double disabled = 0.38; // Disabled elements
   static const double medium = 0.60; // Secondary text/icons
+  /// Secondary text that must read at WCAG AA (4.5:1) on light and dark
+  /// surfaces (Spec 5, plan review I6); InfoRowWidget subtitles.
+  static const double secondaryText = 0.64;
   static const double high = 0.87; // Primary text
   static const double full = 1.0; // Fully opaque
 }

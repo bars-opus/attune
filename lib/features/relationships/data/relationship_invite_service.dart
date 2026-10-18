@@ -112,6 +112,40 @@ class RelationshipInviteService {
     }
   }
 
+  /// How long the caller has been waiting on a partner: since their oldest
+  /// never-accepted invite, expired ones included (Spec 5, plan review C3),
+  /// so a fresh code never resets it. Null when there is none or the server
+  /// cannot say.
+  Future<Duration?> inviteAge() async {
+    final client = _safeClient;
+    if (client == null) return null;
+    try {
+      final seconds = await client.rpc('get_my_invite_age').timeout(timeout);
+      return seconds is num ? Duration(seconds: seconds.toInt()) : null;
+    } catch (error) {
+      debugPrint('[relationship-invite] age failed: ${error.runtimeType}');
+      return null;
+    }
+  }
+
+  /// Day 7's "Use Attune on my own for now" (Spec 5, plan review C2):
+  /// removes the caller's own never-accepted invites; the mode sync then
+  /// resolves to personal mode.
+  Future<void> withdrawPendingInvites() async {
+    final client = _safeClient;
+    if (client == null) {
+      throw const RelationshipInviteException(
+        'Invites are unavailable right now. Please try again later.',
+      );
+    }
+    try {
+      await client.rpc('withdraw_my_pending_invites').timeout(timeout);
+    } catch (error) {
+      debugPrint('[relationship-invite] withdraw failed: ${error.runtimeType}');
+      throw const RelationshipInviteException('Could not update your invite.');
+    }
+  }
+
   Future<InviteAcceptance> acceptInvite(String inviteCode) async {
     final client = _safeClient;
     if (client == null) {
@@ -136,25 +170,7 @@ class RelationshipInviteService {
     } catch (error) {
       debugPrint('[relationship-invite] accept failed: ${error.runtimeType}');
       if (error is RelationshipInviteException) rethrow;
-      // accept-invite/index.ts's handleError always replies with
-      // {"error": "<message>"} plus a real status: 400 bad code, 404
-      // invalid, 409 self-accept/already-accepted-by-someone-else, 410
-      // expired. None of those are worth retrying with the same code, so
-      // callers need to be able to tell them apart from a transient
-      // network/timeout failure instead of showing "try again" for both.
-      if (error is FunctionException) {
-        final details = error.details;
-        final message =
-            details is Map ? details['error'] as String? : null;
-        throw RelationshipInviteException(
-          message ?? 'Could not accept invite.',
-          retryable: error.status >= 500,
-        );
-      }
-      throw const RelationshipInviteException(
-        'Could not accept invite.',
-        retryable: true,
-      );
+      throw inviteAcceptFailure(error);
     }
   }
 
@@ -165,11 +181,41 @@ class RelationshipInviteService {
   }
 }
 
+/// accept-invite's refusal for someone already in an active or paused
+/// relationship (sync audit I-8). Matched on its opening words, which the
+/// server keeps fixed (supabase/functions/accept-invite/index.test.ts).
+const kAlreadyInRelationshipPrefix = "You're already in a relationship";
+
+/// What a failed acceptInvite call means. accept-invite's handleError
+/// always replies with {"error": "<message>"} plus a real status: 400 bad
+/// code, 404 invalid, 409 self-accept/already-accepted/already in a
+/// relationship, 410 expired. None of those are worth retrying with the
+/// same code, so callers can tell them apart from a transient
+/// network/timeout failure instead of showing "try again" for both.
+RelationshipInviteException inviteAcceptFailure(Object error) {
+  if (error is FunctionException) {
+    final details = error.details;
+    final message = details is Map ? details['error'] as String? : null;
+    return RelationshipInviteException(
+      message ?? 'Could not accept invite.',
+      retryable: error.status >= 500,
+      alreadyInRelationship:
+          error.status == 409 &&
+          (message ?? '').startsWith(kAlreadyInRelationshipPrefix),
+    );
+  }
+  return const RelationshipInviteException(
+    'Could not accept invite.',
+    retryable: true,
+  );
+}
+
 class RelationshipInviteException implements Exception {
   const RelationshipInviteException(
     this.message, {
     this.retryable = false,
     this.alreadyActiveRelationship = false,
+    this.alreadyInRelationship = false,
   });
 
   final String message;
@@ -188,6 +234,11 @@ class RelationshipInviteException implements Exception {
   /// the user did anything wrong, so UI callers should trigger a resync
   /// (relationshipModeResyncSignal) rather than show this as an error.
   final bool alreadyActiveRelationship;
+
+  /// True for acceptInvite's 409 when the person is already in an active
+  /// or paused relationship: tell them (showOpenRelationshipNotice) rather
+  /// than drop the link silently.
+  final bool alreadyInRelationship;
 
   @override
   String toString() => message;

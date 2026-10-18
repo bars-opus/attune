@@ -333,6 +333,26 @@ final togetherMirrorEnabledProvider =
       TogetherMirrorEnabled.new,
     );
 
+/// Whether one device surface may show plan titles on this phone (Spec 1b),
+/// keyed by that surface's prefs key ([widgetTitlesKey], [liveTitlesKey],
+/// [mirrorTitlesKey]). Off by default. Each surface re-reads the stored value
+/// itself when it publishes, so this only drives the switch.
+class TogetherSurfaceTitles extends FamilyAsyncNotifier<bool, String> {
+  @override
+  Future<bool> build(String key) async =>
+      (await SharedPreferences.getInstance()).getBool(key) ?? false;
+
+  Future<void> set(bool on) async {
+    await (await SharedPreferences.getInstance()).setBool(arg, on);
+    state = AsyncData(on);
+  }
+}
+
+final togetherSurfaceTitlesProvider =
+    AsyncNotifierProvider.family<TogetherSurfaceTitles, bool, String>(
+      TogetherSurfaceTitles.new,
+    );
+
 final shareSourceProvider = Provider<ShareSource>(
   (ref) => const ReceiveSharingIntentSource(),
 );

@@ -15,7 +15,7 @@
 import { serve } from "https://deno.land/std@0.177.0/http/server.ts";
 
 import { jsonResponse, requireServiceRole, serviceRoleClient } from "../_shared/attune_auth.ts";
-import { sendOneSignalPush } from "../_shared/onesignal_push.ts";
+import { enqueuePush } from "../_shared/push_queue.ts";
 
 serve(async (req) => {
   if (req.method === "OPTIONS") {
@@ -101,12 +101,14 @@ async function notifyTopicVoters(
     const side = vote.vote_type === "up" ? "FOR" : "AGAINST";
 
     try {
-      await sendOneSignalPush({
+      // Spec 1b: queued, so quiet hours apply (this cron runs every hour).
+      await enqueuePush(supabase, {
         userId,
+        type: "forum_topic_activated",
         title: "Your topic is live",
         body: `'${shortTitle}' is now a debate. You're ${side} →`,
-        data: { type: "forum_topic_activated", topic_id: topicId },
-        idempotencyKey: `forum-topic-activated-${topicId}-${userId}`,
+        data: { topic_id: topicId },
+        sourceKey: `forum-topic-activated-${topicId}-${userId}`,
       });
     } catch (pushError) {
       // One recipient's push failing (e.g. no registered device) must not

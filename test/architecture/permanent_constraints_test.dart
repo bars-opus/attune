@@ -34,7 +34,15 @@ void main() {
       test('$fn instructs the model against the banned words', () {
         final file = File('supabase/functions/$fn/index.ts');
         if (!file.existsSync()) return;
-        final src = file.readAsStringSync().toLowerCase();
+        // The whole function, not just index.ts: a prompt may live in a
+        // sibling module (translate-conflict/handler.ts, Spec 8).
+        final src = Directory('supabase/functions/$fn')
+            .listSync()
+            .whereType<File>()
+            .where((f) => f.path.endsWith('.ts') && !f.path.endsWith('.test.ts'))
+            .map((f) => f.readAsStringSync())
+            .join('\n')
+            .toLowerCase();
 
         // A prompt instruction is the floor. It is not a guarantee — the
         // model can still emit one — which is why the paths that publish

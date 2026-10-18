@@ -1,5 +1,5 @@
 /// The lock-screen plan (Together Phase 8c): one shared plan close at hand,
-/// as a countdown. Titles as written; no names, no app wording (R2).
+/// as a countdown. "Next plan" unless titles are on (Spec 1b); no names (R2).
 library;
 
 import 'together_item.dart';
@@ -48,3 +48,13 @@ LivePlan? livePlanFor({
   }
   return best;
 }
+
+/// The lock screen's words for a plan when titles are off (Spec 1b).
+const liveNeutralTitle = 'Next plan';
+
+/// What actually goes to the lock screen: the title only if this phone
+/// opted in.
+LivePlan livePlanForLockScreen(LivePlan plan, {required bool showTitles}) =>
+    showTitles
+        ? plan
+        : LivePlan(title: liveNeutralTitle, start: plan.start, end: plan.end);

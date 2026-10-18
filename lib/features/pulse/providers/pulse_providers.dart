@@ -1,9 +1,11 @@
-// Add to lib/features/pulse/providers/pulse_providers.dart
+// lib/features/pulse/providers/pulse_providers.dart
 
 import 'package:attune/features/auth/providers/auth_provider.dart'
     show authStateProvider;
 import 'package:attune/features/pulse/data/models/pulse_score.dart';
+import 'package:attune/features/pulse/data/models/your_week.dart';
 import 'package:attune/features/pulse/data/repositories/pulse_repository.dart';
+import 'package:attune/features/pulse/domain/pulse_week.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
@@ -24,10 +26,8 @@ final currentUserIdProvider = Provider<String?>((ref) {
   return authState.valueOrNull?.id;
 });
 
-// Current relationship ID. ref.watch on currentUserIdProvider (not read) so
-// a sign-in/sign-out correctly re-fetches which relationship is active,
-// instead of freezing at whatever was true the first time this was
-// evaluated.
+// Current ACTIVE relationship ID (null while paused). ref.watch on
+// currentUserIdProvider so a sign-in/sign-out re-fetches.
 final currentRelationshipIdProvider = FutureProvider<String?>((ref) async {
   final supabase = ref.read(supabaseClientProvider);
   final userId = ref.watch(currentUserIdProvider);
@@ -44,7 +44,52 @@ final currentRelationshipIdProvider = FutureProvider<String?>((ref) async {
   return response?['id'] as String?;
 });
 
-// Submit weekly check-in
+typedef PulseRelationship = ({String id, String status});
+
+/// The current relationship with its status. Unlike
+/// [currentRelationshipIdProvider] it keeps 'paused' visible, so Pulse can
+/// hide itself (F5 (5)) instead of showing a brand-new no-data state.
+final currentRelationshipStatusProvider = FutureProvider<PulseRelationship?>((
+  ref,
+) async {
+  final supabase = ref.read(supabaseClientProvider);
+  final userId = ref.watch(currentUserIdProvider);
+  if (userId == null) return null;
+
+  final row =
+      await supabase
+          .from('relationships')
+          .select('id,status')
+          .or('user_a.eq.$userId,user_b.eq.$userId')
+          .inFilter('status', ['active', 'paused'])
+          .order('created_at', ascending: false)
+          .limit(1)
+          .maybeSingle();
+  if (row == null) return null;
+  return (id: row['id'] as String, status: row['status'] as String);
+});
+
+/// The one call to the compute-pulse edge function. `force: true` asks the
+/// server to rewrite this week's shared row (and claims the caller's 24 h
+/// limit); `force: false` only refreshes my private pass. A Provider so a
+/// widget test can replace it without a Supabase client.
+typedef PulseRecomputeInvoker =
+    Future<void> Function(String relationshipId, {required bool force});
+
+final pulseRecomputeInvokerProvider = Provider<PulseRecomputeInvoker>((ref) {
+  final supabase = ref.read(supabaseClientProvider);
+  return (relationshipId, {required force}) async {
+    await supabase.functions.invoke(
+      'compute-pulse',
+      body: {'relationship_id': relationshipId, 'force_recompute': force},
+    );
+  };
+});
+
+// Submit weekly check-in. Private since Spec 1a: it feeds "Your week" and
+// nothing shared. The non-forced call asks the server for the private pass
+// only (no claim, no shared rewrite) so "Your week" fills in even when the
+// weekly cron is off.
 final submitWeeklyCheckinProvider = FutureProvider.family<
   void,
   ({
@@ -63,12 +108,10 @@ final submitWeeklyCheckinProvider = FutureProvider.family<
   if (userId == null) throw Exception('Not authenticated');
   if (relationshipId == null) throw Exception('No active relationship');
 
-  final weekEnding = _getWeekEnding(DateTime.now());
-
   await repository.submitCheckin(
     userId: userId,
     relationshipId: relationshipId,
-    weekEnding: weekEnding,
+    weekEnding: pulseWeekEnding(DateTime.now()),
     communicationRating: params.communicationRating,
     connectionRating: params.connectionRating,
     conflictHealthRating: params.conflictHealthRating,
@@ -77,69 +120,37 @@ final submitWeeklyCheckinProvider = FutureProvider.family<
     safetyRating: params.safetyRating,
   );
 
-  // After submission, check if both partners have completed
-  final bothCompleted = await repository.haveBothCompletedCheckin(
-    relationshipId: relationshipId,
-    weekEnding: weekEnding,
-  );
+  // Best effort: the answers are saved either way; a failed private pass
+  // just leaves "Your week" showing a dash until the next refresh.
+  try {
+    await ref.read(pulseRecomputeInvokerProvider)(relationshipId, force: false);
+  } catch (_) {}
 
-  if (bothCompleted) {
-    // Trigger immediate pulse recompute
-    await repository.triggerPulseRecompute(relationshipId);
-  }
+  // After the awaits, so this never runs during the provider's own
+  // initialization (see recomputePulseProvider's note below).
+  ref.invalidate(yourWeekProvider);
 });
 
-DateTime _getWeekEnding(DateTime date) {
-  // Get the Sunday of the current week
-  final daysToSunday = DateTime.sunday - date.weekday;
-  return date.add(Duration(days: daysToSunday));
-}
-
-// Track last recompute time per relationship
-final _lastRecomputeTimeProvider = StateProvider<Map<String, DateTime>>(
-  (ref) => {},
-);
-
-// On-demand pulse recompute (rate limited to once per 24 hours)
-final recomputePulseProvider = FutureProvider.family<bool, String>((
+// On-demand pulse recompute. The 24 h limit is enforced by the server
+// (claim_pulse_recompute): a refusal arrives as a FunctionException with
+// status 429 and `retry_after_seconds`, rethrown for the screen to word
+// (pulseRefreshMessage). No client-side bookkeeping — it reset on restart
+// and protected nothing. autoDispose, and the screen invalidates it before
+// each read: a FutureProvider caches its result, and a second tap served
+// from cache would never reach the server (Review Focus 8).
+final recomputePulseProvider = FutureProvider.autoDispose.family<bool, String>((
   ref,
   relationshipId,
 ) async {
-  final supabase = ref.read(supabaseClientProvider);
-  final lastRecomputeMap = ref.read(_lastRecomputeTimeProvider);
-  const rateLimitHours = 24;
+  await ref.read(pulseRecomputeInvokerProvider)(relationshipId, force: true);
 
-  // Check rate limit
-  final lastRecompute = lastRecomputeMap[relationshipId];
-  if (lastRecompute != null) {
-    final hoursSince = DateTime.now().difference(lastRecompute).inHours;
-    if (hoursSince < rateLimitHours) {
-      throw Exception(
-        'Rate limited. You can refresh again in ${rateLimitHours - hoursSince} hours.',
-      );
-    }
-  }
-
-  // Call edge function
-  final response = await supabase.functions.invoke(
-    'compute-pulse',
-    body: {'relationship_id': relationshipId, 'force_recompute': true},
-  );
-
-  // Update last recompute time. Deferred until after the await above —
-  // Riverpod treats a provider's synchronous pre-await code as still part
-  // of its own initialization, and mutating another provider's state in
-  // that window trips "Providers are not allowed to modify other providers
-  // during their initialization," even though this looks like ordinary
-  // rate-limit bookkeeping.
-  ref.read(_lastRecomputeTimeProvider.notifier).state = {
-    ...lastRecomputeMap,
-    relationshipId: DateTime.now(),
-  };
-
-  // Invalidate pulse score providers
+  // Deferred until after the await above — Riverpod treats a provider's
+  // synchronous pre-await code as still part of its own initialization,
+  // and mutating another provider's state in that window trips "Providers
+  // are not allowed to modify other providers during their initialization".
   ref.invalidate(currentPulseScoreProvider);
   ref.invalidate(pulseHistoryProvider);
+  ref.invalidate(yourWeekProvider);
 
   return true;
 });
@@ -150,7 +161,6 @@ final currentPulseScoreProvider = FutureProvider<PulseScore?>((ref) async {
   final relationshipId = await ref.read(currentRelationshipIdProvider.future);
   if (relationshipId == null) return null;
 
-  // Get most recent pulse score
   final response =
       await supabase
           .from('pulse_scores')
@@ -179,4 +189,16 @@ final pulseHistoryProvider = FutureProvider<List<PulseScore>>((ref) async {
       .limit(4);
 
   return response.map((json) => PulseScore.fromJson(json)).toList();
+});
+
+/// My private "Your week": own check-in for the current week plus my latest
+/// private Emotional safety. Self-only by RLS.
+final yourWeekProvider = FutureProvider<YourWeek>((ref) async {
+  final repository = ref.read(pulseRepositoryProvider);
+  final userId = ref.watch(currentUserIdProvider);
+  if (userId == null) return const YourWeek();
+  return repository.fetchYourWeek(
+    userId: userId,
+    weekEndingKey: pulseWeekEndingKey(DateTime.now()),
+  );
 });

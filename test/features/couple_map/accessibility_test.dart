@@ -40,10 +40,9 @@ Future<void> expectGuidelines(WidgetTester t) async {
   );
 }
 
-/// Sheets: the shared BottomSheetHeader's "Done" (AppTextButton) is
-/// deliberately shrink-wrapped to 24 dp app-wide — an owner decision flagged
-/// separately, not changed here. So a sheet checks labels and contrast, and
-/// every one of OUR rows explicitly against 48 dp.
+/// Sheets: the shared BottomSheetHeader's "Done" is a 44 dp target since
+/// Spec 5 (below Android's 48 dp guideline), so a sheet checks labels and
+/// contrast, and every one of OUR rows explicitly against 48 dp.
 Future<void> expectSheetGuidelines(WidgetTester t) async {
   await expectLater(t, meetsGuideline(labeledTapTargetGuideline));
   // Only the sheet's own text: what's behind the scrim is meant to be dim.

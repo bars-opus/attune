@@ -69,9 +69,14 @@ A system that builds a compounding, specific, non-transferable understanding
 of a specific relationship over time — and surfaces that understanding
 back to the people in that relationship as clarity.
 
-The product has a chat system, quizzes, games, a pulse score, a forum,
-and a dating mode. These are the surfaces through which intelligence is
-built and delivered. They are not the product. The intelligence is the product.
+The product has a chat system, a couple's journal (Planning, Calendar,
+Map), quizzes, games, a pulse score, a forum, and a dating mode. These are
+the surfaces through which intelligence is built and delivered. They are
+not the product. The intelligence is the product.
+
+The journal is where a couple's life gets planned, remembered and shared;
+it is a second substrate alongside chat, and the same rules apply to it:
+no scoreboard, no counters, proposals not impositions.
 
 Every message a couple sends builds the pattern memory.
 Every conflict session that resolves or fails updates the analysis engine.
@@ -92,6 +97,12 @@ That is what Attune is.
 Attune surfaces patterns. It does not diagnose. It does not treat.
 It does not tell people what their relationship means or what to do about it.
 Labels belong to clinicians. Attune observes and reflects.
+
+**Not a companion.**
+Attune's AI writes observations and ideas about the couple's own data.
+It never sustains a dialogue, never has a persona, never stands in for
+the partner at 02:00. The right answers to loneliness, grief or crisis
+in Attune are fixed resources, the commons, and the partner.
 
 **Not a judge.**
 Attune never tells users whether their relationship is good or bad,
@@ -350,9 +361,10 @@ not badge theater.
 messages" is a reward. "You completed the communication quiz" is not.
 The number is the reward. The specificity is the reward.
 
-No badges. No streaks. No leaderboards.
-Only accurate mirrors that show people where they actually are,
-where they were, and where they could go.
+No badges. No streaks. No leaderboards. No targets: no positivity
+ratios, no frequency goals, no "thank your partner N times".
+Only accurate, self-facing mirrors that show people where they actually
+are, where they were, and where they could go.
 
 ### Principle 2: Earn loss aversion through genuine value
 
@@ -601,6 +613,11 @@ NEVER: Exit friction designed to prevent cancellation
 NEVER: Periodic data resets to manufacture re-engagement motivation
 NEVER: Notifications designed around DAU optimisation rather than user need
 NEVER: Gamification of relationship health that turns intimacy into a score
+NEVER: A partner-facing count, ratio, trend comparison or "growth area"
+        label about the other partner or the couple
+NEVER: Sex frequency targets, trackers, initiation logs or timing-window
+        desire signalling
+NEVER: A "remind my partner" control, however gentle
 ```
 
 ### Privacy violations
@@ -613,6 +630,13 @@ NEVER: Cycle data shared without explicit opt-in
 NEVER: Forum anonymous identity linked to real profile in any public surface
 NEVER: Raw message content in AI prompt logs
 NEVER: Relationship data used for advertising targeting
+NEVER: Read receipts, seen-state, last-seen, typing indicators or location
+        as defaults, as trust framings, or re-enableable by one partner alone
+NEVER: Special-category preferences (faith, sexual-content comfort, health
+        context, access needs) inferred from any data, sent to an AI prompt
+        without the user's own request carrying them, or shown on any
+        device surface
+NEVER: Ending a relationship notifying the other partner by push, SMS or email
 ```
 
 ### Clinical overreach
@@ -624,6 +648,12 @@ NEVER: Attributing negative behaviour to a named or implied partner
 NEVER: Generating content that could be used as evidence against a partner
 NEVER: Positioning the AI as a substitute for professional clinical help
 NEVER: Safety features positioned as guarantees of safety
+NEVER: Attachment, love-language, horsemen or any typology label applied
+        to the partner or to the pairing
+NEVER: Religious framing in any safety, Healing or ending flow, or used to
+        discourage leaving
+NEVER: AI-written affection, apology or enthusiasm sent in a user's name
+        without the user editing and choosing it
 ```
 
 ### Trust violations
@@ -660,8 +690,11 @@ attribution is private to the sender.
 
 ### Pulse score
 
-**Does:** Compute a relationship health picture from aggregated
-behavioural data across multiple sources, shown to both partners.
+**Does:** Compute a relationship picture from aggregated behavioural
+data across multiple sources. Shared dimensions are shown to both
+partners and move only when both have contributed that week; Emotional
+safety is shown to its author only. No dimension can be used to infer
+the other partner's private answers.
 
 **Never does:** Benchmark a couple against other named couples.
 Never uses the score to create anxiety by design. Never adjusts
@@ -697,7 +730,7 @@ It never promises protection it cannot guarantee.
 
 **Does:** Generate a compatibility profile from the user's own
 behavioural data — attachment patterns, communication style,
-love language, conflict defaults — accumulated during their
+conflict defaults — accumulated during their
 time on Attune.
 
 **Requires explicit separate consent for:**
@@ -731,9 +764,9 @@ The forum is connection, not comparison.
 
 ### Gamification
 
-**Does:** Apply completion drive (visible arcs), variable genuine
-discovery (verdicts, translator results), and hyper-local comparison
-(pulse score benchmarks against similar couples).
+**Does:** Apply completion drive (visible arcs) and variable genuine
+discovery (verdicts, translator results). No comparison to other
+couples, named or anonymous.
 
 **Never does:** Badges for using features. Streaks designed to
 create obligation. Leaderboards of any kind. Manufactured randomness.
@@ -1355,6 +1388,26 @@ ADDITIONS:
 Cross-reference: See ATTUNE_MASTER_SPEC.md for technical
 implementation. See ATTUNE_CLINICAL.md (forthcoming) for
 clinical instrument validation and measurement methodology.
+
+[16 October 2026 — v2.1 — Research programme amendments, owner-approved]
+
+Source: docs/superpowers/research/2026-10-16-couples-research/
+06-synthesis-roadmap.md §8 (market review of 44 apps, evidence-graded
+relationship science, 28 scenario simulations). Owner accepted all
+18 decisions in §10.
+
+1. §1: the couple's journal (Planning, Calendar, Map) named as a
+   second substrate under the same rules.
+2. §2: "Not a companion" added (Decision 28 now in the soul).
+3. §5 Principle 1: no targets — no ratios, frequency goals or quotas.
+4. §8: new NEVER lines — partner-facing counts and labels, sex
+   tracking, "remind my partner", default or one-sided visibility,
+   inferred special-category data, ending notifications, typology
+   labels on the partner or pairing, religious framing in safety or
+   ending flows, AI-written affection sent unedited.
+5. §9: Pulse shared dimensions move only when both contribute;
+   Emotional safety self-facing; no comparison to other couples;
+   love language removed from dating compatibility.
 
 [Future updates go here — date every entry]
 ```

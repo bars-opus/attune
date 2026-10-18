@@ -4,6 +4,7 @@ import 'package:attune/core/providers/profile_providers/profile_provider.dart';
 import 'package:attune/core/utils/exports/export_screens.dart';
 import 'package:attune/features/chat/presentation/state/chat_state.dart';
 import 'package:attune/features/profile/models/profile.dart';
+import 'package:attune/features/profile/widgets/know_yourself_section.dart';
 import 'package:attune/features/profile/widgets/profile_header.dart';
 import 'package:attune/features/profile/widgets/profile_tabs.dart';
 import 'package:attune/features/profile/widgets/tab_bar_delegate.dart';
@@ -235,6 +236,18 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen>
                       showStats: true,
                       showActions: true,
                     ),
+                    // Spec 5 (R5-7): the person's own quizzes, on their own
+                    // profile only.
+                    if (isAuthor)
+                      Padding(
+                        padding: EdgeInsets.fromLTRB(
+                          Spacing.md.w,
+                          Spacing.md.h,
+                          Spacing.md.w,
+                          0,
+                        ),
+                        child: const KnowYourselfSection(),
+                      ),
                   ],
                 ),
               ),

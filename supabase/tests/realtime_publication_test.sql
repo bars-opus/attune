@@ -27,7 +27,9 @@ DECLARE
     'game_sessions',
     'game_session_rounds',
     'thirty_six_question_answers',
-    'in_app_notifications'
+    'in_app_notifications',
+    -- Spec 5 (A1): the client already subscribes (story_read_repository).
+    'story_change_signals'
   ];
   v_missing text;
 BEGIN

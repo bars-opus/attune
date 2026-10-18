@@ -15,13 +15,39 @@ class WidgetLine {
     required this.label,
     required this.startMs,
     required this.endMs,
+    this.neutralTitle = widgetNeutralTitle,
   });
 
   final String title;
+
+  /// What the card shows unless this phone turned plan titles on (Spec 1b).
+  final String neutralTitle;
   final String label;
   final int startMs;
   final int endMs;
 }
+
+/// The card's words for a plan when titles are off (Spec 1b; research 06 §3
+/// F8 (1)): a glance at a locked or borrowed phone says when, never what.
+const widgetNeutralTitle = 'Next plan';
+const widgetNeutralReminderTitle = 'Reminder';
+
+/// What actually goes to the card: titles only where this phone opted in.
+List<WidgetLine> widgetLinesForCard(
+  List<WidgetLine> lines, {
+  required bool showTitles,
+}) => [
+  for (final l in lines)
+    showTitles
+        ? l
+        : WidgetLine(
+          title: l.neutralTitle,
+          label: l.label,
+          startMs: l.startMs,
+          endMs: l.endMs,
+          neutralTitle: l.neutralTitle,
+        ),
+];
 
 DateTime _day(DateTime d) => DateTime(d.year, d.month, d.day);
 
@@ -94,6 +120,10 @@ List<WidgetLine> togetherWidgetLines({
         ),
         startMs: start.millisecondsSinceEpoch,
         endMs: end.millisecondsSinceEpoch,
+        neutralTitle:
+            i.kind == TogetherItemKind.reminder
+                ? widgetNeutralReminderTitle
+                : widgetNeutralTitle,
       ),
     );
   }
@@ -105,6 +135,7 @@ List<WidgetLine> togetherWidgetLines({
         label: '${_jm(w.start, locale)}–${_jm(w.end, locale)}',
         startMs: w.start.millisecondsSinceEpoch,
         endMs: w.end.millisecondsSinceEpoch,
+        neutralTitle: 'Free',
       ),
     );
   }

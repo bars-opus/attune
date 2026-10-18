@@ -97,4 +97,18 @@ BEGIN
   END IF;
 END $$;
 
+-- ...nor any scheduled job (sync audit C-1: the export cron did, and on the
+-- hosted project it would fail on every run).
+DO $$
+DECLARE
+  v_stale text;
+BEGIN
+  SELECT string_agg(j.jobname, ', ') INTO v_stale
+  FROM cron.job j
+  WHERE j.command LIKE '%app.settings%';
+  IF v_stale IS NOT NULL THEN
+    RAISE EXCEPTION 'these cron jobs still read app.settings.*: %', v_stale;
+  END IF;
+END $$;
+
 ROLLBACK;

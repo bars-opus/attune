@@ -1,6 +1,11 @@
 // lib/features/quiz/domain/models/attachment_result.dart
 
 class AttachmentResult {
+  /// Shown with every attachment result (Spec 5, R5-4; research 06 F9).
+  static const String caveat =
+      "Written for a general population; if you're autistic or ADHD some "
+      'items may not fit.';
+
   final int anxietyScore;
   final int avoidanceScore;
   final String resultType;

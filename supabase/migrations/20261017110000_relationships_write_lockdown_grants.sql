@@ -1,0 +1,23 @@
+-- supabase/migrations/20261017110000_relationships_write_lockdown_grants.sql
+--
+-- Relationships: no client UPDATE at all (Spec 1a Task 1; research 06 §3;
+-- SPEC §11 constraints 11-12 depend on status and invite_accepted_at being
+-- server-owned).
+--
+-- "relationship members update limited" (20260606120000:124-128) was never
+-- limited: its USING / WITH CHECK test membership only, so either member could
+-- rewrite status, user_a / user_b, invite_accepted_at, ended_at,
+-- chat_archived_at or any later column from the client, and
+-- 20260724120000:16 granted the table-level UPDATE that made the policy
+-- reachable. Every legitimate write is already a SECURITY DEFINER RPC
+-- (set_relationship_chat_name, set_relationship_avatar, end_relationship, the
+-- chat-import and message-count functions) or a service-role worker
+-- (accept-invite, create-relationship-invite), and lib/ holds no
+-- .from('relationships').update/upsert/delete (grep, 2026-10-17). Dropping the
+-- policy and the privilege changes no shipped behaviour.
+--
+-- Named *_grants.sql and replayed from scripts/local_pg_grants.sql: the local
+-- harness blanket-grants every table to authenticated AFTER migrations, so
+-- this REVOKE would otherwise be silently undone there.
+DROP POLICY IF EXISTS "relationship members update limited" ON public.relationships;
+REVOKE UPDATE, DELETE ON public.relationships FROM PUBLIC, anon, authenticated;

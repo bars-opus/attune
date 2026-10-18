@@ -111,7 +111,9 @@ Deno.test("the function saves nothing: no table access, only its allowed RPCs", 
   assert(!src.includes(".from("), "ai-together must not touch tables directly");
   const rpcs = [...src.matchAll(/rpc\(\s*"([a-z_]+)"/g)].map((m) => m[1]);
   const allowed = new Set(["ai_capability_enabled", "get_together_ai_status", "reserve_ai_assistant_quota",
-    "claim_ai_assistant_provider_start", "mark_ai_assistant_usage_outcome"]);
+    "claim_ai_assistant_provider_start", "mark_ai_assistant_usage_outcome",
+    // Spec 7 (B9): read-only, service role.
+    "user_is_quiet"]);
   for (const r of rpcs) assert(allowed.has(r), `unexpected RPC ${r}`);
 });
 

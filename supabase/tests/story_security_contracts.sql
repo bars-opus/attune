@@ -48,7 +48,8 @@ DO $$ BEGIN
   IF has_table_privilege('authenticated','public.story_items','INSERT') THEN
     RAISE EXCEPTION 'EXPLOIT: authenticated can INSERT story_items directly';
   END IF;
-  IF NOT has_table_privilege('authenticated','public.story_items','SELECT') THEN
+  -- Column-level since Spec 1a (has_been_viewed/seen_shown are RPC-only).
+  IF NOT has_any_column_privilege('authenticated','public.story_items','SELECT') THEN
     RAISE EXCEPTION 'authenticated cannot read story_items';
   END IF;
   IF has_table_privilege('authenticated','public.story_views','SELECT') THEN

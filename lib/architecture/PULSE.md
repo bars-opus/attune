@@ -337,6 +337,14 @@ No moments logged yet:
 
 ### 4.1 The five dimensions
 
+> **Amended 2026-10-17 (Spec 1a; see §11):** the SHARED score has four
+> dimensions — Communication, Connection, Conflict Health, Alignment — with
+> the weights below normalised to 27 % / 27 % / 24 % / 22 % (22/82, 22/82,
+> 20/82, 18/82). Emotional safety is computed per partner and shown only to
+> its author (`pulse_private_scores`). Weekly check-in answers feed no shared
+> dimension, delta or confidence. "Weekly check-in response" in the data
+> sources below is therefore historical for the four shared dimensions.
+
 ```
 1. COMMUNICATION (weight: 22% of overall score)
    What it measures: how clearly and kindly partners
@@ -1221,15 +1229,13 @@ Step 37: Partner logged a moment notification
   (each person sees their own dimension scores).
   Current spec: shared — both see same score.
 
-[OPEN] Check-in — both partners required?
-  Currently: check-in from either partner improves the score.
-  Check-in from both gives a more complete picture.
-  Should there be a visual indicator showing whether
-  both partners have completed this week's check-in?
-  Suggested: yes — show "You ✓  Jordan ✗" on the
-  check-in banner. Does not reveal Jordan's answers,
-  just shows completion status.
-  Confirm before Step 18.
+[CLOSED 2026-10-17 — NO] Check-in — both partners required?
+  Decision: no completion indicator of any kind. "You ✓  Jordan ✗" is a
+  partner-facing status about the other person (ATTUNE_MASTER_SPEC §11
+  constraint 10), and the confidence model no longer counts check-ins
+  for the same reason. Beyond that, no shared dimension reads a check-in
+  at all (see §11), so "both partners required" has no shared number
+  left to gate.
 
 [OPEN] On-demand recompute rate limit
   Set at once per 24 hours.
@@ -1257,3 +1263,66 @@ Step 37: Partner logged a moment notification
 *Review against ATTUNE_SOUL.md before shipping.*
 *No streaks. No streak notifications. No streak counters.*
 *Last reviewed: June 2026*
+
+---
+
+## 11. RULINGS — 2026-10-17 (Spec 1a, privacy defaults)
+
+Source: `docs/superpowers/research/2026-10-16-couples-research/06-synthesis-roadmap.md`
+§3 F5 and `.superpowers/sdd/spec1-map-f5.md` §3. Plan:
+`docs/superpowers/plans/2026-10-17-spec1a-privacy-defaults.md`.
+
+1. **Private check-in answers never feed any shared dimension, delta or
+   confidence.** The roadmap's "recompute only when both have checked in"
+   is insufficient: with both rows, `avg*10` is a multiple of 5, the
+   rounding is lossless, and a partner recovers the other's answer as
+   `2·avg − own`; confidence points that count check-ins publish who
+   answered. The weekly check-in is private; it appears only in "Your
+   week" on the Pulse screen.
+2. **Emotional safety is self-facing.** Computed per member in
+   `compute-pulse` (shared mood base blended with the member's own
+   rating, then the chat safety penalties) into `pulse_private_scores`
+   under `auth.uid()`-only RLS. `pulse_scores.emotional_safety` is
+   nullable and written as NULL. `generate-verdict` no longer reads it.
+3. **Shared overall = (comm·22 + conn·22 + conflict·20 + align·18) / 82**,
+   disclosed as 27 % / 27 % / 24 % / 22 % in the dimension explainer and
+   the user manual. Radar is a four-axis polygon.
+4. **compute-pulse requires the caller to be a member of an active
+   relationship, or the service role.** A user request without
+   `relationship_id` is 400; non-member, paused, ended and missing all
+   answer 404 "Not found". `force_recompute: true` claims
+   `claim_pulse_recompute(relationship, caller)` — one per 24 h **per
+   member** (a per-couple key would let one partner's 429 reveal the
+   other's refresh), atomic, server-side — else 429
+   `{retry_after_seconds}`, and rewrites this week's shared row.
+   `force_recompute: false` (sent by the check-in submit) never rewrites an
+   existing shared row and never touches the claim; it runs only the
+   private pass. Service-role runs (the cron) always rewrite the shared
+   row. The former client-side timer is gone.
+5. **Deltas compare against the previous week's row** (`week_ending <`
+   current), never against the same week's earlier run.
+6. **Week ending = the UTC Sunday on or after the UTC date**, identical in
+   TypeScript (`getWeekEnding`) and Dart (`pulseWeekEnding`). A Sunday is
+   its own week ending; the Sunday 00:07 UTC cron therefore scores the
+   week that just ended.
+7. **Pulse is hidden while `relationships.status = 'paused'`** (no score,
+   no check-in, no refresh). The pause RPC itself ships with Spec 3.
+8. **§6 "If BOTH partners have completed… recomputed immediately / both
+   notified" and §9 Step 23 are withdrawn**; the client's
+   `haveBothCompletedCheckin` (always false under RLS) and its recompute
+   and notification paths are deleted. §9 Step 25 is a four-axis radar;
+   Step 28 is four dimension rows.
+9. **"Show when we've seen things" (Spec 1a Tasks 2–6), for the record
+   here because Pulse's screen hosts Chat Settings:** one per-couple
+   setting, effective only while the relationship is active and both
+   members are on; either member's off is immediate and silent; a read
+   or a story view made while off is never surfaced later; the
+   recipient's read marker lives in `message_reads`, off the published
+   `messages` table, so a read while off emits no realtime event.
+   Outside the toggle, by ruling R-A: view-once media (`viewed_at`,
+   `streak_views_remaining`) stays sender-visible — it is the mechanic of
+   a format the sender chose, not an ambient receipt. By ruling R-B the
+   RPC returns the caller's own vote and the effective state only; the
+   inference "mine on, not effective ⇒ partner off" is inherent to a
+   both-required rule and nothing about the partner's row, timing or an
+   event is ever returned.

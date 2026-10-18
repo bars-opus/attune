@@ -19,6 +19,14 @@ String togetherWhoLabel(
   TogetherWho.us => coupleLabel(coupleName),
 };
 
+/// Lines for a Together row: one each normally; above 1.3x text, 2 title
+/// lines and 3 subtitle lines so nothing is cut to "Dinner at the…" (Spec 5,
+/// R5-13). Shared by agenda and ritual rows.
+({int title, int subtitle}) togetherRowLines(BuildContext context) {
+  final large = MediaQuery.textScalerOf(context).scale(10) / 10 > 1.3;
+  return large ? (title: 2, subtitle: 3) : (title: 1, subtitle: 1);
+}
+
 /// One thing on the Agenda: what, when and whose, in the app's row style.
 class TogetherItemRow extends StatelessWidget {
   const TogetherItemRow({
@@ -106,6 +114,7 @@ class TogetherItemRow extends StatelessWidget {
     final done =
         item.kind == TogetherItemKind.planningItem &&
         item.sourceRef['is_complete'] == true;
+    final lines = togetherRowLines(context);
     return InfoRowWidget(
       padding: const EdgeInsets.symmetric(
         horizontal: Spacing.md,
@@ -123,8 +132,8 @@ class TogetherItemRow extends StatelessWidget {
               )
               : null,
       subtitle: MyDateFormat.join(parts),
-      titleMaxLines: 1,
-      subTitleMaxLines: 1,
+      titleMaxLines: lines.title,
+      subTitleMaxLines: lines.subtitle,
       showDivider: !last,
       // A reminder ends with its occasion (cake, celebration, …).
       trailing:

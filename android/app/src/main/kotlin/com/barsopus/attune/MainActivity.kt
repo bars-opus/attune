@@ -98,6 +98,21 @@ class MainActivity : FlutterActivity() {
                 else -> result.notImplemented()
             }
         }
+
+        // Quick exit (Spec 2; research 06 §3 F3 (2)): leave AND drop the
+        // task, so Attune is not left in Recents. The only method on this
+        // channel; nothing is logged or sent. Reply first: once the activity
+        // finishes the engine may be gone.
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "attune/safety")
+            .setMethodCallHandler { call, result ->
+                when (call.method) {
+                    "finishAndRemoveTask" -> {
+                        result.success(null)
+                        finishAndRemoveTask()
+                    }
+                    else -> result.notImplemented()
+                }
+            }
     }
 
     private fun startScreenshotDetection() {

@@ -104,12 +104,11 @@ class AttachmentQuizDocs implements DocumentationModule {
             title: 'Why we ask',
             numberPrefix: '3',
             content:
-                'Your answers shape the attachment and compatibility insights Attune builds for you and your partner:',
+                'Your answers shape the insights Attune builds for you:',
             type: ManualContentType.bulletList,
             bulletPoints: [
               'A personalised attachment style profile, not a generic quiz result',
-              'Compatibility insights once you and your partner are both linked',
-              'Guidance during conflict that accounts for how each of you responds to distance and repair',
+              'Guidance during conflict that accounts for how you tend to respond to distance and repair',
               'More relevant prompts throughout the app',
             ],
           ),
@@ -125,8 +124,8 @@ class AttachmentQuizDocs implements DocumentationModule {
           title: '',
           content:
               _isRelationship
-                  ? 'Your individual answers stay private. Your partner only ever sees insights derived from both of your answers together, never your raw responses.'
-                  : 'Your answers are private to you. Nothing here is shared with anyone, and if you link with a partner later, they still only ever see derived insights — never your raw responses.',
+                  ? 'Your answers stay private. Your partner never sees your attachment result or your answers; it is about you.'
+                  : 'Your answers are private to you. Nothing here is shared with anyone, and if you link with a partner later, they still never see your result or your answers.',
           type: ManualContentType.important,
         ),
       ],
@@ -174,7 +173,7 @@ class AttachmentQuizDocs implements DocumentationModule {
           id: 'faq_attachment_quiz_2',
           question: 'Can my partner see my individual answers?',
           answer:
-              'No. Your partner only ever sees the compatibility insights derived from both of your answers together, never your raw responses.',
+              'No. Your partner never sees your attachment result or your answers. It is a reading of you, for you.',
           category: 'Onboarding',
           order: 2,
         ),

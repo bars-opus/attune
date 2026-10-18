@@ -11,7 +11,7 @@ class CheckinBanner extends StatelessWidget {
     return SemanticContainerWidget(
       title: 'Weekly check-in',
       content:
-          'Pulse is strongest when both partners submit the weekly check-in. It takes about 60 seconds.',
+          'A private weekly check-in, just for you. It takes about 60 seconds.',
       icon: Icons.schedule,
       backgroundColor: colorScheme.primary.withValues(alpha: 0.1),
       borderColor: colorScheme.primary,

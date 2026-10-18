@@ -1,6 +1,15 @@
 import { serve } from "https://deno.land/std@0.177.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { callGeminiJson } from "../_shared/gemini_json.ts";
+import {
+  callGeminiJson,
+  partnerNamePatterns,
+  STATIC_PROHIBITED_PATTERNS,
+} from "../_shared/gemini_json.ts";
+import { relationshipAiSuppression } from "../_shared/ai_suppression.ts";
+import {
+  HOSTILITY_PATTERN_TYPES,
+  hostilitySignalsEnabled,
+} from "../_shared/hostility_signals.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -27,7 +36,12 @@ const BANNED_PATTERNS = [
   /\bhealthy\b/i,
   /\bunhealthy\b/i,
   /your partner (always|never|tends to|keeps)/i,
+  // Spec 8 (plan review I18): nothing about safety context ever surfaces.
+  /\b(abuse|abusive|unsafe|self[- ]?harm|suicid\w*|violen\w*)\b/i,
+  /\bsafety (check|event|flag|concern|signal)s?\b/i,
 ];
+
+export type VerdictDeps = { callGemini: typeof callGeminiJson };
 
 serve(async (req) => {
   if (req.method === "OPTIONS") {
@@ -40,10 +54,36 @@ serve(async (req) => {
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
     );
 
-    const { job_id, relationship_id } = await req.json().catch(() => ({}));
+    const body = await req.json().catch(() => ({}));
+    const token = (req.headers.get("Authorization") ?? "").replace(/^Bearer\s+/i, "").trim();
+    // Final review m-3: the service role drains the queue; a member may
+    // only nudge their own couple's job (the client calls this after
+    // request_verdict_generation queues it).
+    const allowed = await resolveVerdictScope(token, body, {
+      isServiceToken: (t) => t.length > 0 && t === Deno.env.get("SUPABASE_SERVICE_ROLE_KEY"),
+      userIdFor: async (t) => {
+        const { data, error } = await supabase.auth.getUser(t);
+        return error ? null : data.user?.id ?? null;
+      },
+      isMember: async (userId, relationshipId) => {
+        const { data } = await supabase
+          .from("relationships")
+          .select("id")
+          .eq("id", relationshipId)
+          .or(`user_a.eq.${userId},user_b.eq.${userId}`)
+          .maybeSingle();
+        return data != null;
+      },
+    });
+    if (!allowed.ok) {
+      return new Response(
+        JSON.stringify({ success: false, error: "not_allowed" }),
+        { status: allowed.status, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      );
+    }
     const jobs = await loadJobs(supabase, {
-      jobId: job_id,
-      relationshipId: relationship_id,
+      jobId: allowed.scope.relationshipId ? undefined : body.job_id,
+      relationshipId: allowed.scope.relationshipId ?? body.relationship_id,
     });
 
     const results = [];
@@ -66,6 +106,34 @@ serve(async (req) => {
     );
   }
 });
+
+export type VerdictScopeDeps = {
+  isServiceToken: (token: string) => boolean;
+  userIdFor: (token: string) => Promise<string | null>;
+  isMember: (userId: string, relationshipId: string) => Promise<boolean>;
+};
+
+/// Who may run this, and over what: the service role over anything; a
+/// signed-in member over their own relationship's queued job only.
+export async function resolveVerdictScope(
+  token: string,
+  body: Record<string, unknown>,
+  deps: VerdictScopeDeps,
+): Promise<
+  | { ok: true; scope: { relationshipId?: string } }
+  | { ok: false; status: number }
+> {
+  if (!token) return { ok: false, status: 401 };
+  if (deps.isServiceToken(token)) return { ok: true, scope: {} };
+  const userId = await deps.userIdFor(token).catch(() => null);
+  if (!userId) return { ok: false, status: 401 };
+  const relationshipId = typeof body.relationship_id === "string" ? body.relationship_id : null;
+  if (!relationshipId) return { ok: false, status: 400 };
+  if (!(await deps.isMember(userId, relationshipId).catch(() => false))) {
+    return { ok: false, status: 403 };
+  }
+  return { ok: true, scope: { relationshipId } };
+}
 
 async function loadJobs(
   supabase: any,
@@ -93,7 +161,24 @@ async function loadJobs(
   return data ?? [];
 }
 
-async function processJob(supabase: any, job: any) {
+export async function processJob(supabase: any, job: any) {
+  // Spec 8 (plan review I13): defence in depth behind
+  // request_verdict_generation; before any read, a suppressed couple's
+  // queued job is cancelled, never generated. An answer that cannot be read
+  // leaves the job queued for the next run (final review I-1).
+  const suppression = await relationshipAiSuppression(supabase, job.relationship_id);
+  if (suppression === "unknown") {
+    return { job_id: job.id, status: "deferred" };
+  }
+  if (suppression === "yes") {
+    await supabase
+      .from("verdict_generation_jobs")
+      .update({ status: "cancelled", last_error: null })
+      .eq("id", job.id)
+      .in("status", ["pending", "processing"]);
+    return { job_id: job.id, status: "suppressed" };
+  }
+
   const processing = await supabase
     .from("verdict_generation_jobs")
     .update({
@@ -134,10 +219,7 @@ async function processJob(supabase: any, job: any) {
     }
 
     const context = await buildVerdictContext(supabase, lockedJob);
-    validateEligibility(context);
-
-    const output = await generateVerdict(context);
-    const validated = validateModelOutput(output, context.evidence);
+    const validated = await runVerdict(context, { callGemini: callGeminiJson });
     const confidence = computeConfidence(context);
 
     const verdictPayload = {
@@ -311,6 +393,15 @@ async function buildVerdictContext(supabase: any, job: any) {
     .limit(20);
 
   const sharedProfiles = await loadSharedProfiles(supabase, relationship);
+  const hostilitySignals = await hostilitySignalsEnabled(supabase);
+  // Never sent to the model: used only to refuse an output that names one.
+  const namesRes = await supabase
+    .from("users")
+    .select("display_name")
+    .in("id", [relationship.user_a, relationship.user_b].filter(Boolean));
+  const partnerNames = (namesRes.data ?? [])
+    .map((u: { display_name: string | null }) => u.display_name ?? "")
+    .filter((n: string) => n.trim().length > 0);
 
   const pulseHistory = pulseRes.data ?? [];
   const patterns = patternRes.data ?? [];
@@ -323,6 +414,7 @@ async function buildVerdictContext(supabase: any, job: any) {
     sessions,
     timeline,
     gameInsights,
+    hostilitySignals,
   });
 
   const sourceUpdatedAtMax = evidence.reduce(
@@ -347,6 +439,7 @@ async function buildVerdictContext(supabase: any, job: any) {
     timeline,
     gameInsights,
     sharedProfiles,
+    partnerNames,
     metadata: {
       days_together: relationship.started_at
         ? Math.max(
@@ -375,7 +468,8 @@ async function loadSharedProfiles(supabase: any, relationship: any) {
   const profileRes = await supabase
     .from("psych_profiles")
     .select(
-      "user_id, attachment_style, love_languages, communication_style, conflict_style",
+      // Spec 5 (R5-5, §8.7): what feels loving is never a readout input.
+      "user_id, attachment_style, communication_style, conflict_style",
     )
     .in("user_id", [relationship.user_a, relationship.user_b].filter(Boolean));
 
@@ -388,7 +482,6 @@ async function loadSharedProfiles(supabase: any, relationship: any) {
     for (
       const quizType of [
         "attachment",
-        "love_language",
         "communication",
         "conflict",
       ]
@@ -404,9 +497,6 @@ async function loadSharedProfiles(supabase: any, relationship: any) {
 
       if (quizType === "attachment" && profile.attachment_style) {
         entry.attachment_style = normaliseScores(profile.attachment_style);
-      }
-      if (quizType === "love_language" && profile.love_languages) {
-        entry.love_languages = normaliseScores(profile.love_languages);
       }
       if (quizType === "communication" && profile.communication_style) {
         entry.communication_style = normaliseScores(
@@ -438,12 +528,14 @@ function normaliseScores(input: Record<string, unknown>) {
   return result;
 }
 
-function buildEvidence(input: {
+export function buildEvidence(input: {
   pulseHistory: any[];
   patterns: any[];
   sessions: any[];
   timeline: any[];
   gameInsights: any[];
+  /** Spec 8 (plan review I14): off drops stonewalling/contempt patterns. */
+  hostilitySignals: boolean;
 }) {
   const evidence: any[] = [];
 
@@ -455,7 +547,7 @@ function buildEvidence(input: {
         "connection",
         "conflict_health",
         "alignment",
-        "emotional_safety",
+        // Emotional safety is self-facing since Spec 1a and never evidence.
       ]
     ) {
       evidence.push({
@@ -476,6 +568,12 @@ function buildEvidence(input: {
   }
 
   for (const pattern of input.patterns) {
+    if (
+      !input.hostilitySignals &&
+      HOSTILITY_PATTERN_TYPES.test(String(pattern.pattern_type ?? ""))
+    ) {
+      continue;
+    }
     evidence.push({
       evidence_id: `pattern:${pattern.id}`,
       source_type: "pattern",
@@ -563,17 +661,23 @@ function validateEligibility(context: any) {
   }
 }
 
-async function generateVerdict(context: any) {
-  if (!Deno.env.get("GEMINI_API_KEY")) {
-    throw new Error("missing_gemini_api_key");
-  }
+/// Eligibility, the model, then validation: the whole path from context to
+/// a publishable Verdict, with the provider injected (Spec 8 adversarial
+/// suite). Too little data throws before the model is called.
+export async function runVerdict(context: any, deps: VerdictDeps) {
+  validateEligibility(context);
+  const output = await generateVerdict(context, deps);
+  return validateModelOutput(output, context.evidence, context.partnerNames ?? []);
+}
 
+async function generateVerdict(context: any, deps: VerdictDeps) {
   // The shared helper owns the request shape, the 10s abort, fenced-JSON
   // extraction and the prohibited-pattern filter. It returns null on any
   // failure; this function's callers expect a throw, so the null is
   // converted rather than propagated.
-  const parsed = await callGeminiJson({
+  const parsed = await deps.callGemini({
     promptId: "verdict",
+    attribution: { fn: "generate-verdict", relationshipId: context.relationship?.id ?? null },
     systemPrompt: [
       "ABSOLUTE CONSTRAINTS:",
       "1. Never attribute a negative behaviour to a named or implied partner.",
@@ -584,6 +688,7 @@ async function generateVerdict(context: any) {
     ].join("\n"),
     userPrompt: buildPrompt(context),
     maxOutputTokens: 500,
+    runtimeProhibitedPatterns: partnerNamePatterns(context.partnerNames ?? []),
   });
 
   if (!parsed) {
@@ -638,7 +743,11 @@ Return ONLY valid JSON:
 `;
 }
 
-function validateModelOutput(output: any, evidence: any[]) {
+export function validateModelOutput(
+  output: any,
+  evidence: any[],
+  partnerNames: string[] = [],
+) {
   if (!output || typeof output !== "object") {
     throw new Error("invalid_output");
   }
@@ -683,7 +792,15 @@ function validateModelOutput(output: any, evidence: any[]) {
 
   const evidenceIds = new Set(evidence.map((item: any) => item.evidence_id));
   const allText = JSON.stringify(output);
-  for (const pattern of BANNED_PATTERNS) {
+  // The shared list and the partners' names too, so this holds even when
+  // the provider's own filter is bypassed (Spec 8, plan review I18).
+  for (
+    const pattern of [
+      ...BANNED_PATTERNS,
+      ...STATIC_PROHIBITED_PATTERNS,
+      ...partnerNamePatterns(partnerNames),
+    ]
+  ) {
     if (pattern.test(allText)) {
       throw new Error("banned_language");
     }

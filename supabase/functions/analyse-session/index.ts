@@ -2,6 +2,7 @@ import { serve } from "https://deno.land/std@0.177.0/http/server.ts";
 
 import { jsonResponse, requireServiceRole, serviceRoleClient } from "../_shared/attune_auth.ts";
 import { callGeminiJson, partnerNamePatterns } from "../_shared/gemini_json.ts";
+import { relationshipAiSuppressed } from "../_shared/ai_suppression.ts";
 
 const GLOBAL_CONSTRAINTS = `
 ABSOLUTE CONSTRAINTS — these override all other instructions:
@@ -125,6 +126,9 @@ export async function loadDoneMessagesForSession(
     .eq("message_analysis_done", true)
     .eq("message_analysis_skipped", false)
     .is("included_in_session_id", null)
+    // Sync audit I-5: a message deleted after Layer 1 never enters a
+    // transcript.
+    .is("deleted_at", null)
     .order("created_at", { ascending: true })
     .order("id", { ascending: true });
 
@@ -132,13 +136,30 @@ export async function loadDoneMessagesForSession(
   return rows;
 }
 
-async function processRelationship(
+export async function processRelationship(
   supabase: ReturnType<typeof serviceRoleClient>,
   relationshipId: string,
 ) {
+  // Spec 8 (plan review I11): before any read, so nothing is consumed into
+  // a session that would then never be analysed.
+  if (await relationshipAiSuppressed(supabase, relationshipId)) {
+    return [{ relationship_id: relationshipId, status: "suppressed" }];
+  }
   const relationship = await loadRelationship(supabase, relationshipId);
   if (!relationship || relationship.chat_archived_at) {
     return [];
+  }
+  // Sync audit I-2 (Spec 3a R3-3: AI is active-only). Set aside, not
+  // deferred: a deferred couple would come back first in every sweep.
+  if (relationship.status !== "active") {
+    const { error } = await supabase
+      .from("messages")
+      .update({ message_analysis_skipped: true })
+      .eq("relationship_id", relationshipId)
+      .eq("message_analysis_done", true)
+      .is("included_in_session_id", null);
+    if (error) throw error;
+    return [{ relationship_id: relationshipId, status: "skipped_relationship_not_active" }];
   }
 
   const rows = await loadDoneMessagesForSession(supabase, relationshipId);
@@ -211,6 +232,7 @@ async function analyzeSegment(
 
   const layerTwo = await callGeminiJson({
     promptId: "layer2_session_analysis",
+    attribution: { fn: "analyse-session", relationshipId: relationship.id },
     systemPrompt: GLOBAL_CONSTRAINTS,
     userPrompt: buildLayerTwoPrompt({
       transcriptMessages,
@@ -240,6 +262,7 @@ async function analyzeSegment(
   if (validatedLayerTwo) {
     const layerFour = await callGeminiJson({
       promptId: "layer4_pattern_memory",
+      attribution: { fn: "analyse-session", relationshipId: relationship.id },
       systemPrompt: GLOBAL_CONSTRAINTS,
       userPrompt: buildLayerFourPrompt({
         sessionAnalysis: validatedLayerTwo,
@@ -300,7 +323,7 @@ async function loadRetrySessions(
   return data ?? [];
 }
 
-async function retryExistingSession(
+export async function retryExistingSession(
   supabase: ReturnType<typeof serviceRoleClient>,
   session: { id: string },
 ) {
@@ -311,12 +334,20 @@ async function retryExistingSession(
     .single();
   if (sessionError) throw sessionError;
 
+  // Spec 8 (plan review I11): before the relationship or its messages.
+  if (await relationshipAiSuppressed(supabase, String(sessionRow.relationship_id))) {
+    return { session_id: session.id, status: "suppressed" };
+  }
+
   const relationship = await loadRelationship(
     supabase,
     String(sessionRow.relationship_id),
   );
   if (!relationship || relationship.chat_archived_at) {
     return { session_id: session.id, status: "skipped_relationship_archived" };
+  }
+  if (relationship.status !== "active") {
+    return { session_id: session.id, status: "skipped_relationship_not_active" };
   }
 
   const { data: messages, error: messageError } = await supabase
@@ -335,6 +366,7 @@ async function retryExistingSession(
       users:users!messages_sender_id_fkey(display_name)
     `)
     .eq("included_in_session_id", session.id)
+    .is("deleted_at", null)  // sync audit I-5
     .order("created_at", { ascending: true })
     .order("id", { ascending: true });
   if (messageError) throw messageError;
@@ -362,6 +394,7 @@ async function retryExistingSession(
 
   const layerTwo = await callGeminiJson({
     promptId: "layer2_session_analysis_retry",
+    attribution: { fn: "analyse-session", relationshipId: relationship.id },
     systemPrompt: GLOBAL_CONSTRAINTS,
     userPrompt: buildLayerTwoPrompt({
       transcriptMessages,
@@ -392,6 +425,7 @@ async function retryExistingSession(
 
   const layerFour = await callGeminiJson({
     promptId: "layer4_pattern_memory_retry",
+    attribution: { fn: "analyse-session", relationshipId: relationship.id },
     systemPrompt: GLOBAL_CONSTRAINTS,
     userPrompt: buildLayerFourPrompt({
       sessionAnalysis: validatedLayerTwo,
@@ -654,7 +688,7 @@ Return ONLY valid JSON:
   "repair_landed": boolean,
   "session_resolved": boolean,
   "dominant_topic": string,
-  "root_need_detected": "respect"|"fairness"|"affection"|"security"|"autonomy"|"rest"|null,
+  "root_need_detected": "respect"|"fairness"|"affection"|"security"|"autonomy"|"rest"|"communal_obligation"|null,
   "insight_worthy": boolean,
   "suggested_insight": string | null
 }
@@ -741,7 +775,7 @@ function validateLayerTwo(parsed: Record<string, unknown> | null) {
   }
   if (
     typeof parsed.root_need_detected === "string" &&
-    ["respect", "fairness", "affection", "security", "autonomy", "rest"].includes(
+    ["respect", "fairness", "affection", "security", "autonomy", "rest", "communal_obligation"].includes(
       parsed.root_need_detected,
     )
   ) {

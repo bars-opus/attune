@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:attune/features/relationships/presentation/open_relationship_notice.dart';
 import 'package:attune/core/utils/exports/export_screens.dart';
 import 'package:attune/features/auth/data/passwordless_auth_service.dart';
 import 'package:attune/features/onboarding/data/onboarding_store.dart';
@@ -69,6 +70,13 @@ class _OnboardingGateState extends State<OnboardingGate> {
       // failures (retryable) intentionally keep the code so the next visit
       // tries again, mirroring OnboardingFlow's own retry-once handling.
       if (!error.retryable) await store.clearPendingInviteCode();
+      // Sync audit I-8: already in a relationship (active or paused) —
+      // say why the link did nothing; nothing was ended.
+      if (error.alreadyInRelationship) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) showOpenRelationshipNotice(context, error.message);
+        });
+      }
       return false;
     } catch (_) {
       // Unreachable client/network failure — leave the code in place for

@@ -523,3 +523,35 @@ Deno.test("validateUnderstandOutput accepts a genuinely paraphrased response of 
   );
   assertEquals(result?.status, "ok");
 });
+
+// ---------------------------------------------------------------------------
+// Spec 8 (research 06 F15 (2); plan review C3): the deterministic pre-check
+// runs before consent, quota and the provider. Only the outcome travels.
+// ---------------------------------------------------------------------------
+for (const [content, expected] of [
+  ["Not tonight.", { status: "boundary" }],
+  ["I want to kill myself", { status: "supporter" }],
+  ["I'll kill you", { status: "cannot_help", reason: "unsafe_to_infer" }],
+] as const) {
+  Deno.test({
+    name: `pre-check: "${content}" -> ${expected.status}, no quota, no provider`,
+    sanitizeResources: false,
+    sanitizeOps: false,
+    async fn() {
+      await resetFixtures();
+      await serviceRoleQuery(`UPDATE public.messages SET content = $1 WHERE id = $2`, [content, MSG_FROM_B]);
+      await grantDualConsent();
+      const client = await makeRlsClientForUser(USER_T7_A);
+      const response = await processUnderstandRequest(
+        makeReq(validBody()),
+        { client: client as never, user: { id: USER_T7_A } },
+        { callGemini: neverCalledGemini(), serviceClient: { rpc: () => { throw new Error("no quota for a pre-check"); } } as never },
+      );
+      assertEquals(response.status, 200);
+      assertEquals(await response.json(), expected);
+      assertEquals(response.headers.get("cache-control"), "no-store");
+      const usageRows = await serviceRoleQuery(`SELECT * FROM public.ai_assistant_usage WHERE relationship_id = $1`, [REL_T7]);
+      assertEquals(usageRows.length, 0);
+    },
+  });
+}

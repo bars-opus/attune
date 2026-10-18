@@ -1,3 +1,4 @@
+import 'package:attune/features/wins/domain/win_card.dart';
 import 'package:attune/features/timeline/data/models/timeline_event_model.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
@@ -254,6 +255,29 @@ class TogetherRepository {
   Future<String> addEventMemory(String eventId, String line) async =>
       await _call('add_event_memory', {'p_event_id': eventId, 'p_line': line})
           as String;
+
+  // Spec 7 (B2): Share a win.
+  Future<String> shareAWin(
+    String relationshipId, {
+    required String title,
+    String? note,
+  }) async =>
+      await _call('share_a_win', {
+            'p_relationship_id': relationshipId,
+            'p_title': title,
+            if (note != null && note.trim().isNotEmpty) 'p_note': note,
+          })
+          as String;
+
+  Future<List<WinCard>> listWinCards(String relationshipId) async {
+    final rows =
+        await _call('list_win_cards', {'p_relationship_id': relationshipId})
+            as List;
+    return [for (final r in rows) WinCard.fromRow(Map<String, dynamic>.from(r))];
+  }
+
+  Future<void> dismissWinCard(String eventId) =>
+      _call('dismiss_win_card', {'p_event_id': eventId});
 
   Future<void> dismissMemoryPrompt(String eventId) =>
       _call('dismiss_memory_prompt', {'p_event_id': eventId});

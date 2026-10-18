@@ -132,7 +132,7 @@ final partnerDistanceProvider = StreamProvider.autoDispose
 final coupleMapEnabledProvider = FutureProvider<bool>(
   (ref) => ChatFeatureFlags.isEnabled(
     ref.watch(supabaseClientProvider),
-    'couple_map_enabled',
+    ChatFeatureFlags.coupleMap,
   ),
 );
 

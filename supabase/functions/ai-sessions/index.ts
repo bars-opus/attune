@@ -25,6 +25,7 @@
 // identity fields -- see ACTOR_NAMING_FIELDS and its test.
 
 import { serve } from "https://deno.land/std@0.177.0/http/server.ts";
+import { isOrdinaryTextRow } from "../_shared/ai_context_loader.ts";
 import { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2.39.0";
 
 import {
@@ -668,6 +669,24 @@ export function parsePrepareRequest(
 /// Checked BEFORE calling the RPC, not after: calling first and
 /// comparing the result would already have run the RPC's slot-limit and
 /// reclaim side effects for a request we are about to reject.
+/// Whether `messageId` may be a session's target (sync audit I-3).
+export async function targetIsOrdinary(
+  service: SupabaseClient,
+  relationshipId: string,
+  messageId: string,
+): Promise<boolean> {
+  const { data, error } = await service
+    .from("messages")
+    .select(
+      "id, relationship_id, content, deleted_at, is_system_notice, message_origin, media_url, media_type, game_session_id, message_analysis_skipped",
+    )
+    .eq("id", messageId)
+    .maybeSingle();
+  if (error || !data) return false;
+  const row = data as Record<string, unknown>;
+  return row.relationship_id === relationshipId && isOrdinaryTextRow(row);
+}
+
 async function detectPrepareKeyConflict(
   service: SupabaseClient,
   actorId: string,
@@ -741,6 +760,16 @@ async function handlePrepare(branch: BranchContext): Promise<Response> {
     request,
   );
   if (conflict) return errorResponse(conflict);
+
+  // Sync audit I-3: the target is ordinary text in this relationship; the
+  // RPC would otherwise copy a pause, note, notice or Assist output into
+  // the model's input.
+  if (
+    request.targetMessageId !== null &&
+    !(await targetIsOrdinary(service, request.relationshipId, request.targetMessageId))
+  ) {
+    return errorResponse(sessionError("INVALID_INPUT"));
+  }
 
   // §4.2: "Optional shared window: up to six eligible messages AS OF
   // PREPARE TIME ... Persist source IDs, versions and snapshot time."
@@ -2506,6 +2535,7 @@ async function handleGenerate(branch: BranchContext): Promise<Response> {
       service,
       branch,
       request,
+      relationshipId,
       workerToken,
       system,
       userPrompt,
@@ -2519,6 +2549,7 @@ async function handleGenerate(branch: BranchContext): Promise<Response> {
     service,
     branch,
     request,
+    relationshipId,
     workerToken,
     system,
     userPrompt,
@@ -2617,6 +2648,8 @@ async function dispatchIdeas(
   service: SupabaseClient,
   branch: BranchContext,
   request: GenerateRequest,
+  // The couple, for the cost ledger only (final review I-4).
+  relationshipId: string,
   workerToken: string,
   systemPrompt: string,
   userPrompt: string,
@@ -2625,6 +2658,7 @@ async function dispatchIdeas(
   const gemini = branch.callGemini;
   const parsed = await gemini({
     promptId: `${SESSION_PROMPT_VERSION}_ideas`,
+    attribution: { fn: "ai-sessions", relationshipId, userId: branch.actorId },
     systemPrompt,
     userPrompt,
     maxOutputTokens: 2048,
@@ -2758,6 +2792,8 @@ async function dispatchNearby(
   service: SupabaseClient,
   branch: BranchContext,
   request: GenerateRequest,
+  // The couple, for the cost ledger only (final review I-4).
+  relationshipId: string,
   workerToken: string,
   systemPrompt: string,
   userPrompt: string,
@@ -2768,6 +2804,7 @@ async function dispatchNearby(
   const gemini = branch.callGemini;
   const parsed = await gemini({
     promptId: `${SESSION_PROMPT_VERSION}_nearby_category`,
+    attribution: { fn: "ai-sessions", relationshipId, userId: branch.actorId },
     systemPrompt,
     userPrompt,
     // §5.3: Gemini's Nearby output is "only a category ... or an

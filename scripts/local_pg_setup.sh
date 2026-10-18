@@ -47,6 +47,12 @@ echo "    applied $ok, failed $fail"
 
 echo "==> Applying platform-side grants"
 psql -q -d "$DB" -v ON_ERROR_STOP=1 -f scripts/local_pg_grants.sql
+# Replay every table-level GRANT/REVOKE the migrations make, in order, so the
+# blanket grant above cannot undo a deliberate REVOKE (sync audit I-6). A
+# statement on a table a later migration dropped fails harmlessly.
+echo "==> Replaying migration table privileges"
+python3 scripts/local_pg_table_privileges.py supabase/migrations \
+  | psql -q -d "$DB" >/tmp/attune_privs.log 2>&1 || true
 
 if [ "${1:-}" = "--no-tests" ]; then
   echo "==> Ready: postgresql://$(whoami)@localhost:5432/$DB"

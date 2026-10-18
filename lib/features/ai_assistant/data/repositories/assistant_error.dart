@@ -8,6 +8,9 @@
 /// the UI branches on WHICH of these subtypes it got, the same
 /// reasoning `PlanningError` (lib/features/planning/data/
 /// planning_error.dart) already gives for its own sealed shape.
+/// Spec 8 (plan review C3): the pre-check outcomes shown as fixed cards.
+enum AssistantNotice { boundary, supporter, writerResources }
+
 sealed class AssistantError implements Exception {
   const AssistantError();
 
@@ -24,6 +27,11 @@ sealed class AssistantError implements Exception {
   const factory AssistantError.resultUnavailable() = AssistantResultUnavailableError;
   const factory AssistantError.providerUnavailable() = AssistantProviderUnavailableError;
   const factory AssistantError.internalError() = AssistantInternalError;
+
+  /// Spec 8 (F15 (2)): a fixed card from the deterministic pre-check —
+  /// not a failure, but it ends the request the same way.
+  const factory AssistantError.notice(AssistantNotice notice) =
+      AssistantNoticeError;
 
   /// The ONLY place a raw server `code` string is allowed to become an
   /// [AssistantError]. This is a `switch` over a bare string — not a
@@ -161,4 +169,9 @@ class AssistantProviderUnavailableError extends AssistantError {
 /// `FormatException`/`TypeError` to the UI layer.
 class AssistantInternalError extends AssistantError {
   const AssistantInternalError();
+}
+
+class AssistantNoticeError extends AssistantError {
+  const AssistantNoticeError(this.notice);
+  final AssistantNotice notice;
 }

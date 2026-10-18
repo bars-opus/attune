@@ -122,16 +122,21 @@ function toEvents(items: FeedItem[]): VEvent[] {
   return out;
 }
 
-export function buildCalendar(items: FeedItem[], now: Date): string {
+// feed: false builds a one-off file (Spec 3c export): no refresh hints.
+export function buildCalendar(
+  items: FeedItem[],
+  now: Date,
+  options: { feed?: boolean } = {},
+): string {
+  const feed = options.feed ?? true;
   const lines = [
     "BEGIN:VCALENDAR",
     "VERSION:2.0",
     "PRODID:-//Attune//Together//EN",
     "CALSCALE:GREGORIAN",
     "METHOD:PUBLISH",
-    "X-WR-CALNAME:Together",
-    "REFRESH-INTERVAL;VALUE=DURATION:PT6H",
-    "X-PUBLISHED-TTL:PT6H",
+    feed ? "X-WR-CALNAME:Together" : "X-WR-CALNAME:Attune export",
+    ...(feed ? ["REFRESH-INTERVAL;VALUE=DURATION:PT6H", "X-PUBLISHED-TTL:PT6H"] : []),
   ];
   const stamp = utc(now);
   for (const e of toEvents(items)) {

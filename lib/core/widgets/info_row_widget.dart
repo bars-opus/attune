@@ -397,7 +397,7 @@ class InfoRowWidget extends StatelessWidget {
                                 color:
                                     subTitleFontColor ??
                                     colorScheme.onSurface.withValues(
-                                      alpha: OpacityTokens.medium,
+                                      alpha: OpacityTokens.secondaryText,
                                     ),
                               ),
                           maxLines: subTitleMaxLines ?? 3,
@@ -471,9 +471,14 @@ class InfoRowWidget extends StatelessWidget {
       child: rowContent,
     );
 
+    // One labelled tap target for screen readers: the row's title and
+    // subtitle become the button's label (Spec 5, R5-13). An avatar with its
+    // own tap keeps its separate action, so that row is left as it was.
+    final labelled =
+        onAvatarTap == null ? MergeSemantics(child: tappableRow) : tappableRow;
     return Material.maybeOf(context) == null
-        ? Material(type: MaterialType.transparency, child: tappableRow)
-        : tappableRow;
+        ? Material(type: MaterialType.transparency, child: labelled)
+        : labelled;
   }
 
   // ✅ NEW: Build toggle switch for boolean settings

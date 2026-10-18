@@ -65,7 +65,7 @@ void main() {
         startMs: 1,
         endMs: 2,
       );
-      SharedPreferences.setMockInitialValues({'together_widget_enabled': true});
+      SharedPreferences.setMockInitialValues({'together_widget_enabled': true, 'together_widget_titles': true});
       await TogetherWidgetSync.publishIfEnabled([line]);
       expect(store.saved.single, contains('Dinner'));
       // Sign-out's clearUserData() removes the key.

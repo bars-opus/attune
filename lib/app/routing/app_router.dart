@@ -5,6 +5,8 @@ import 'package:attune/app/documentations/user_manual/data/healing_docs.dart';
 import 'package:attune/app/licenses_screen.dart';
 import 'package:attune/core/intro/presentation/widgets/feature_intro_flow_gate.dart';
 import 'package:attune/app/routing/routing_notifier.dart';
+import 'package:attune/features/safety/presentation/outside_perspective_screen.dart';
+import 'package:attune/features/appreciation/presentation/appreciation_jar_screen.dart';
 import 'package:attune/features/onboarding/presentation/screens/ask2_flow.dart';
 import 'package:attune/core/moderation/presentation/screens/blocked_accounts_screen.dart';
 import 'package:attune/features/opinions/presentation/screen/muted_authors_screen.dart';
@@ -92,6 +94,8 @@ import 'package:attune/features/games/this_or_that/presentation/screens/tone_sel
 import 'package:attune/features/games/love_map/presentation/screens/love_map_screen.dart';
 import 'package:attune/features/games/session_games/presentation/screens/session_game_flow_scaffold.dart';
 import 'package:attune/features/community/presentation/screens/community_feed_screen.dart';
+import 'package:attune/features/quiet_states/presentation/hidden_periods_screen.dart';
+import 'package:attune/features/quiet_states/presentation/quiet_states_screen.dart';
 import 'package:attune/features/quiz/domain/models/attachment_result.dart';
 import 'package:attune/features/quiz/domain/models/communication_style_result.dart';
 import 'package:attune/features/quiz/domain/models/conflict_style_result.dart';
@@ -103,9 +107,9 @@ import 'package:attune/features/quiz/presentation/screens/communication_style_re
 import 'package:attune/features/quiz/presentation/screens/conflict_style_loading_screen.dart';
 import 'package:attune/features/quiz/presentation/screens/conflict_style_quiz_screen.dart';
 import 'package:attune/features/quiz/presentation/screens/conflict_style_result_screen.dart';
-import 'package:attune/features/quiz/presentation/screens/love_language_loading_screen.dart';
 import 'package:attune/features/quiz/presentation/screens/love_language_quiz_screen.dart';
 import 'package:attune/features/quiz/presentation/screens/love_language_result_screen.dart';
+import 'package:attune/features/quiz/presentation/widgets/clinical_quiz_gate.dart';
 import 'package:attune/features/quiz/presentation/screens/quiz_entry_screen.dart';
 import 'package:attune/features/quiz/presentation/screens/quiz_loading_screen.dart';
 import 'package:attune/features/quiz/presentation/screens/quiz_result_screen.dart';
@@ -121,6 +125,9 @@ import 'package:attune/features/dating/presentation/screens/dating_verification_
 import 'package:attune/features/profile/widgets/profile_screen.dart';
 import 'package:attune/core/notifications/presentation/screens/notification_inbox_screen.dart';
 import 'package:attune/features/safety/domain/services/quick_exit_service.dart';
+import 'package:attune/features/account/presentation/signed_in_devices_screen.dart';
+import 'package:attune/features/data_export/presentation/data_export_screen.dart';
+import 'package:attune/features/safety/presentation/screens/safety_pin_screen.dart';
 import 'package:attune/features/safety/presentation/screens/safety_resources_screen.dart';
 import 'package:attune/features/settings/screens/language_screen.dart';
 import 'package:attune/features/settings/screens/settings_screen.dart';
@@ -142,6 +149,12 @@ class RouteNames {
   static const String appInfoScreen = '/appInfoScreen';
   static const String licenses = '/licenses';
   static const String safetyResources = SafetyResourcesScreen.routeName;
+  static const String safetyPin = '/settings/safety-pin';
+  static const String signedInDevices = '/settings/signed-in-devices';
+  static const String dataExport = DataExportScreen.routeName;
+  static const String quietStates = QuietStatesScreen.routeName;
+  static const String hiddenPeriods = HiddenPeriodsScreen.routeName;
+  static const String appreciationJar = AppreciationJarScreen.routeName;
 
   static const String splash = '/splash';
   static const String more = '/more';
@@ -254,7 +267,6 @@ class RouteNames {
   static const String conflictStyleLoading = '/conflictStyleLoading';
   static const String conflictStyleResult = '/conflictStyleResult';
   static const String loveLanguageQuiz = '/loveLanguageQuiz';
-  static const String loveLanguageLoading = '/loveLanguageLoading';
   static const String loveLanguageResult = '/loveLanguageResult';
   static const String communicationStyleQuiz = '/communicationStyleQuiz';
   static const String communicationStyleLoading = '/communicationStyleLoading';
@@ -779,7 +791,10 @@ GoRouter createAppRouter(RoutingNotifier routingNotifier) {
       GoRoute(
         path: RouteNames.conflictStyleQuiz,
         name: 'conflictStyleQuiz',
-        builder: (context, state) => const ConflictStyleQuizScreen(),
+        // Spec 5 (R5-6): behind clinical sign-off.
+        builder:
+            (context, state) =>
+                const ClinicalQuizGate(child: ConflictStyleQuizScreen()),
       ),
       GoRoute(
         path: RouteNames.conflictStyleLoading,
@@ -797,10 +812,12 @@ GoRouter createAppRouter(RoutingNotifier routingNotifier) {
               body: Center(child: Text('Quiz unavailable.')),
             );
           }
-          return ConflictStyleLoadingScreen(
-            result: args.result,
-            answers: args.answers,
-            onComplete: args.onComplete,
+          return ClinicalQuizGate(
+            child: ConflictStyleLoadingScreen(
+              result: args.result,
+              answers: args.answers,
+              onComplete: args.onComplete,
+            ),
           );
         },
       ),
@@ -814,36 +831,19 @@ GoRouter createAppRouter(RoutingNotifier routingNotifier) {
               body: Center(child: Text('Result unavailable.')),
             );
           }
-          return ConflictStyleResultScreen(result: result);
+          return ClinicalQuizGate(
+            child: ConflictStyleResultScreen(result: result),
+          );
         },
       ),
       GoRoute(
         path: RouteNames.loveLanguageQuiz,
         name: 'loveLanguageQuiz',
-        builder: (context, state) => const LoveLanguageQuizScreen(),
-      ),
-      GoRoute(
-        path: RouteNames.loveLanguageLoading,
-        name: 'loveLanguageLoading',
-        builder: (context, state) {
-          final args =
-              state.extra
-                  as ({
-                    LoveLanguageResult result,
-                    Map<int, int?> answers,
-                    VoidCallback onComplete,
-                  })?;
-          if (args == null) {
-            return const Scaffold(
-              body: Center(child: Text('Quiz unavailable.')),
-            );
-          }
-          return LoveLanguageLoadingScreen(
-            result: args.result,
-            answers: args.answers,
-            onComplete: args.onComplete,
-          );
-        },
+        // Spec 5 (R5-5): the editor, from the current answers when changing.
+        builder:
+            (context, state) => LoveLanguageQuizScreen(
+              initial: state.extra as LoveLanguageResult?,
+            ),
       ),
       GoRoute(
         path: RouteNames.loveLanguageResult,
@@ -861,7 +861,10 @@ GoRouter createAppRouter(RoutingNotifier routingNotifier) {
       GoRoute(
         path: RouteNames.communicationStyleQuiz,
         name: 'communicationStyleQuiz',
-        builder: (context, state) => const CommunicationStyleQuizScreen(),
+        // Spec 5 (R5-6): behind clinical sign-off.
+        builder:
+            (context, state) =>
+                const ClinicalQuizGate(child: CommunicationStyleQuizScreen()),
       ),
       GoRoute(
         path: RouteNames.communicationStyleLoading,
@@ -879,10 +882,12 @@ GoRouter createAppRouter(RoutingNotifier routingNotifier) {
               body: Center(child: Text('Quiz unavailable.')),
             );
           }
-          return CommunicationStyleLoadingScreen(
-            result: args.result,
-            answers: args.answers,
-            onComplete: args.onComplete,
+          return ClinicalQuizGate(
+            child: CommunicationStyleLoadingScreen(
+              result: args.result,
+              answers: args.answers,
+              onComplete: args.onComplete,
+            ),
           );
         },
       ),
@@ -896,7 +901,9 @@ GoRouter createAppRouter(RoutingNotifier routingNotifier) {
               body: Center(child: Text('Result unavailable.')),
             );
           }
-          return CommunicationStyleResultScreen(result: result);
+          return ClinicalQuizGate(
+            child: CommunicationStyleResultScreen(result: result),
+          );
         },
       ),
       GoRoute(
@@ -1594,6 +1601,41 @@ GoRouter createAppRouter(RoutingNotifier routingNotifier) {
         path: RouteNames.safetyResources,
         name: 'safetyResources',
         builder: (context, state) => const SafetyResourcesScreen(),
+      ),
+      GoRoute(
+        path: RouteNames.safetyPin,
+        name: 'safetyPin',
+        builder: (context, state) => const SafetyPinScreen(),
+      ),
+      GoRoute(
+        path: RouteNames.signedInDevices,
+        name: 'signedInDevices',
+        builder: (context, state) => const SignedInDevicesScreen(),
+      ),
+      GoRoute(
+        path: RouteNames.dataExport,
+        name: 'dataExport',
+        builder: (context, state) => const DataExportScreen(),
+      ),
+      GoRoute(
+        path: OutsidePerspectiveScreen.routeName,
+        name: 'outsidePerspective',
+        builder: (context, state) => const OutsidePerspectiveScreen(),
+      ),
+      GoRoute(
+        path: RouteNames.quietStates,
+        name: 'quietStates',
+        builder: (context, state) => const QuietStatesScreen(),
+      ),
+      GoRoute(
+        path: RouteNames.hiddenPeriods,
+        name: 'hiddenPeriods',
+        builder: (context, state) => const HiddenPeriodsScreen(),
+      ),
+      GoRoute(
+        path: RouteNames.appreciationJar,
+        name: 'appreciationJar',
+        builder: (context, state) => const AppreciationJarScreen(),
       ),
       GoRoute(
         path: RouteNames.allLegalDocumentation,

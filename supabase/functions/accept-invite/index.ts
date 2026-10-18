@@ -4,7 +4,11 @@ import {
   requireUser,
   serviceRoleClient,
 } from "../_shared/attune_auth.ts";
-import { sendOneSignalPush } from "../_shared/onesignal_push.ts";
+import { enqueuePush } from "../_shared/push_queue.ts";
+
+// Sync audit I-8: shown as is wherever the invite was entered by hand.
+const ALREADY_IN_RELATIONSHIP =
+  "You're already in a relationship on Attune. End it first to join a new one.";
 
 Deno.serve(async (req) => {
   if (req.method !== "POST") {
@@ -58,6 +62,21 @@ Deno.serve(async (req) => {
       throw new HttpError("Invite code has expired", 410);
     }
 
+    // Sync audit I-8: someone in an active or paused relationship cannot
+    // join another; accepting while paused used to end and archive the
+    // paused space without a word. Ending first is instant and silent.
+    const { data: openRelationship, error: openError } = await supabase
+      .from("relationships")
+      .select("id")
+      .in("status", ["active", "paused"])
+      .or(`user_a.eq.${user.id},user_b.eq.${user.id}`)
+      .limit(1)
+      .maybeSingle();
+    if (openError) throw openError;
+    if (openRelationship) {
+      throw new HttpError(ALREADY_IN_RELATIONSHIP, 409);
+    }
+
     const { data: updated, error: updateError } = await supabase
       .from("relationships")
       .update({
@@ -71,7 +90,14 @@ Deno.serve(async (req) => {
       .select("id, status")
       .single();
 
-    if (updateError) throw updateError;
+    if (updateError) {
+      // The database guard (relationship_one_open_chapter_guard) covers a
+      // race with another acceptance.
+      if (String(updateError.message ?? "").includes("relationship:already_open")) {
+        throw new HttpError(ALREADY_IN_RELATIONSHIP, 409);
+      }
+      throw updateError;
+    }
 
     const { error: acceptanceError } = await supabase
       .from("relationship_invite_acceptances")
@@ -90,15 +116,14 @@ Deno.serve(async (req) => {
     // the correctness guarantee, not this push. See design spec
     // docs/superpowers/specs/2026-08-02-relationship-lifecycle-sync-design.md §2.
     try {
-      await sendOneSignalPush({
+      // Spec 1b: queued, so quiet hours apply; the worker sends it.
+      await enqueuePush(supabase, {
         userId: relationship.user_a,
+        type: "invite_accepted",
         title: "Your partner joined Attune",
         body: "You can start chatting now.",
-        data: {
-          type: "invite_accepted",
-          screen: "chat",
-          relationship_id: updated.id,
-        },
+        data: { relationship_id: updated.id },
+        sourceKey: `invite_accepted:${updated.id}`,
       });
     } catch (pushError) {
       console.error(

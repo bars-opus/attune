@@ -1,11 +1,19 @@
 import 'package:attune/core/providers/couple_name_provider.dart';
 import 'package:attune/core/widgets/info_row_widget.dart';
 import 'package:attune/features/pulse/data/models/pulse_score.dart';
+import 'package:attune/features/pulse/data/models/your_week.dart';
+import 'package:attune/features/pulse/domain/pulse_dimensions.dart';
+import 'package:attune/features/pulse/presentation/widgets/dimension_row.dart';
+import 'package:supabase_flutter/supabase_flutter.dart' show FunctionException;
 import 'package:attune/features/pulse/presentation/screens/pulse_screen.dart';
 import 'package:attune/features/pulse/providers/pulse_providers.dart'
-    show currentPulseScoreProvider, currentRelationshipIdProvider, pulseHistoryProvider;
-import 'package:attune/features/quiz/presentation/providers/quiz_providers.dart'
-    show bothPartnersSharedProvider;
+    show
+        currentPulseScoreProvider,
+        currentRelationshipIdProvider,
+        currentRelationshipStatusProvider,
+        pulseHistoryProvider,
+        pulseRecomputeInvokerProvider,
+        yourWeekProvider;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
@@ -94,16 +102,18 @@ void main() {
   Future<ProviderContainer> pumpWithPulse(
     WidgetTester tester, {
     PulseScore? pulse,
-    bool bothSharedQuiz = false,
     String? coupleName,
   }) async {
     final container = ProviderContainer(
       overrides: [
         currentPulseScoreProvider.overrideWith((ref) async => pulse),
         pulseHistoryProvider.overrideWith((ref) async => const []),
-        bothPartnersSharedProvider.overrideWith((ref) async => bothSharedQuiz),
         currentRelationshipIdProvider.overrideWith((ref) async => 'r1'),
         coupleNameProvider.overrideWith((ref, id) async => coupleName),
+        currentRelationshipStatusProvider.overrideWith(
+          (ref) async => (id: 'r1', status: 'active'),
+        ),
+        yourWeekProvider.overrideWith((ref) async => const YourWeek()),
       ],
     );
     addTearDown(container.dispose);
@@ -242,30 +252,15 @@ void main() {
     expect(find.textContaining('Response rate'), findsNothing);
   });
 
-  testWidgets('the attachment-quiz row reflects whether BOTH partners '
-      'have shared', (tester) async {
-    await pumpWithPulse(
-      tester,
-      pulse: pulseScore(overall: 72),
-      bothSharedQuiz: true,
-    );
+  testWidgets('the attachment-quiz row is about you, never the pair (F9)', (
+    tester,
+  ) async {
+    await pumpWithPulse(tester, pulse: pulseScore(overall: 72));
 
-    expect(find.text('Attachment styles'), findsOneWidget);
-    expect(find.text('You have both shared your results'), findsOneWidget);
-  });
-
-  testWidgets('the attachment-quiz row nudges when they have not both '
-      'shared', (tester) async {
-    await pumpWithPulse(
-      tester,
-      pulse: pulseScore(overall: 72),
-      bothSharedQuiz: false,
-    );
-
-    expect(
-      find.text('Take it together to strengthen your Pulse'),
-      findsOneWidget,
-    );
+    expect(find.text('Attachment style'), findsOneWidget);
+    expect(find.text('How you tend to show up in closeness'), findsOneWidget);
+    expect(find.textContaining('both shared'), findsNothing);
+    expect(find.textContaining('fit together'), findsNothing);
   });
 
   testWidgets('tapping Weekly check-in opens the real check-in route', (
@@ -290,7 +285,7 @@ void main() {
     expect(find.text('weekly checkin'), findsOneWidget);
   });
 
-  testWidgets('tapping Attachment styles opens the real quiz route', (
+  testWidgets('tapping Attachment style opens the real quiz route', (
     tester,
   ) async {
     useTallPhoneSurface(tester);
@@ -298,7 +293,7 @@ void main() {
 
     await tester.drag(find.byType(CustomScrollView), const Offset(0, -150));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Attachment styles'));
+    await tester.tap(find.text('Attachment style'));
     await tester.pumpAndSettle();
 
     expect(find.text('quiz entry'), findsOneWidget);
@@ -331,5 +326,126 @@ void main() {
 
     expect(find.text('No pulse score yet'), findsOneWidget);
     expect(find.text('Relationship Center'), findsNothing);
+  });
+
+  testWidgets('before any shared score exists, Your week still shows and the '
+      'empty state does not promise a check-in builds the score (Spec 1a)',
+      (tester) async {
+    // A check-in no longer creates the shared row (its computed_at would
+    // date the private check-in), so the self-facing card must not depend
+    // on one.
+    await pumpWithPulse(tester, pulse: null);
+
+    expect(find.text('No pulse score yet'), findsOneWidget);
+    expect(find.text('Your week', skipOffstage: false), findsOneWidget);
+    expect(
+      find.textContaining('check-in\nto see your relationship pulse'),
+      findsNothing,
+    );
+  });
+
+  testWidgets('paused hides everything: no score, no check-in, no refresh '
+      '(F5 (5))', (tester) async {
+    final container = ProviderContainer(
+      overrides: [
+        currentPulseScoreProvider.overrideWith((ref) async => pulseScore(overall: 72)),
+        pulseHistoryProvider.overrideWith((ref) async => const []),
+        currentRelationshipIdProvider.overrideWith((ref) async => null),
+        currentRelationshipStatusProvider.overrideWith(
+          (ref) async => (id: 'r1', status: 'paused'),
+        ),
+        yourWeekProvider.overrideWith((ref) async => const YourWeek()),
+        coupleNameProvider.overrideWith((ref, id) async => null),
+      ],
+    );
+    addTearDown(container.dispose);
+    await tester.pumpWidget(buildHarness(container));
+    await tester.pump();
+    await tester.pump();
+
+    expect(find.text('Pulse is paused'), findsOneWidget);
+    expect(find.text('Score'), findsNothing);
+    expect(find.text('72'), findsNothing);
+    expect(find.text('Start check-in'), findsNothing);
+    expect(find.text('Weekly check-in'), findsNothing);
+    expect(find.byIcon(Icons.refresh), findsNothing);
+  });
+
+  testWidgets('four shared dimensions, never Emotional Safety', (tester) async {
+    await pumpWithPulse(tester, pulse: pulseScore(overall: 72));
+    for (final d in sharedPulseDimensions) {
+      expect(
+        find.widgetWithText(DimensionRow, d.label, skipOffstage: false),
+        findsOneWidget,
+        reason: d.label,
+      );
+    }
+    expect(find.byType(DimensionRow, skipOffstage: false), findsNWidgets(4));
+    expect(find.text('Emotional Safety', skipOffstage: false), findsNothing);
+  });
+
+  testWidgets('the dimension explainer discloses the weight and the private '
+      'note (F5 (3))', (tester) async {
+    useTallPhoneSurface(tester);
+    await pumpWithPulse(tester, pulse: pulseScore(overall: 72));
+    final row = find.widgetWithText(DimensionRow, 'Communication');
+    await tester.dragUntilVisible(
+      row,
+      find.byType(CustomScrollView),
+      const Offset(0, -200),
+    );
+    await tester.pumpAndSettle();
+    // DimensionRow's GestureDetector defers to its children, so its centre
+    // (blank space between label and score) is not a hit target; tap the label.
+    await tester.tap(
+      find.descendant(of: row, matching: find.text('Communication')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Counts for 27% of the shared score.'), findsOneWidget);
+    expect(find.text(emotionalSafetyPrivateNote), findsOneWidget);
+  });
+
+  testWidgets('a second refresh reaches the server and shows the limit '
+      '(Review Focus 8)', (tester) async {
+    var calls = 0;
+    final container = ProviderContainer(
+      overrides: [
+        currentPulseScoreProvider.overrideWith((ref) async => pulseScore(overall: 72)),
+        pulseHistoryProvider.overrideWith((ref) async => const []),
+        currentRelationshipIdProvider.overrideWith((ref) async => 'r1'),
+        currentRelationshipStatusProvider.overrideWith(
+          (ref) async => (id: 'r1', status: 'active'),
+        ),
+        yourWeekProvider.overrideWith((ref) async => const YourWeek()),
+        coupleNameProvider.overrideWith((ref, id) async => null),
+        pulseRecomputeInvokerProvider.overrideWithValue((
+          relationshipId, {
+          required force,
+        }) async {
+          calls++;
+          expect(force, isTrue, reason: 'the refresh button forces');
+          if (calls >= 2) {
+            throw const FunctionException(
+              status: 429,
+              details: {'retry_after_seconds': 7200},
+            );
+          }
+        }),
+      ],
+    );
+    addTearDown(container.dispose);
+    await tester.pumpWidget(buildHarness(container));
+    await tester.pump();
+    await tester.pump();
+
+    await tester.tap(find.byIcon(Icons.refresh));
+    await tester.pumpAndSettle();
+    expect(calls, 1);
+
+    await tester.tap(find.byIcon(Icons.refresh));
+    await tester.pumpAndSettle();
+    expect(calls, 2, reason: 'a cached provider result must not swallow the tap');
+    expect(find.text('You can refresh again in about 2 hours.'), findsOneWidget);
   });
 }

@@ -1,11 +1,12 @@
 // lib/features/quiz/presentation/screens/partner_quiz_result_screen.dart
 import 'package:attune/core/utils/exports/export_screens.dart';
-import 'package:attune/features/quiz/domain/models/attachment_result.dart';
 import 'package:attune/features/quiz/domain/models/communication_style_result.dart';
 import 'package:attune/features/quiz/domain/models/conflict_style_result.dart';
 import 'package:attune/features/quiz/domain/models/love_language_result.dart';
 import 'package:attune/features/quiz/domain/models/shared_quiz_result.dart';
 import 'package:attune/features/quiz/presentation/providers/quiz_providers.dart';
+import 'package:attune/features/quiz/presentation/screens/love_language_result_screen.dart';
+import 'package:attune/features/quiz/presentation/widgets/clinical_quiz_gate.dart';
 import 'package:attune/features/quiz/presentation/widgets/spectrum_bar.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -21,6 +22,29 @@ class PartnerQuizResultScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    // Spec 5 (R5-6): communication and conflict wait for clinical sign-off.
+    if (quizType == 'communication' || quizType == 'conflict') {
+      return ClinicalQuizGate(child: _screen(context, ref));
+    }
+    return _screen(context, ref);
+  }
+
+  Widget _screen(BuildContext context, WidgetRef ref) {
+    // Spec 5 (research 06 §3 F9 (3)): an attachment result is about the
+    // person who took it, so a partner never opens one (the server holds no
+    // attachment share either).
+    if (quizType == 'attachment') {
+      return Scaffold(
+        appBar: AppBar(),
+        body: Padding(
+          padding: EdgeInsets.all(Spacing.lg.w),
+          child: Text(
+            'Attachment results stay with the person who took them.',
+            style: Theme.of(context).textTheme.bodyLarge,
+          ),
+        ),
+      );
+    }
     final partnerResultAsync = ref.watch(
       partnerQuizResultProvider((quizType, partnerId)),
     );
@@ -30,8 +54,7 @@ class PartnerQuizResultScreen extends ConsumerWidget {
     return Scaffold(
       appBar: AppBar(
         title: Text(switch (quizType) {
-          'attachment' => 'Partner\'s attachment style',
-          'love_language' => 'Partner\'s love languages',
+          'love_language' => 'What feels loving to them',
           'communication' => 'Partner\'s communication style',
           'conflict' => 'Partner\'s conflict style',
           _ => 'Partner\'s quiz result',
@@ -61,16 +84,10 @@ class PartnerQuizResultScreen extends ConsumerWidget {
     TextTheme textTheme,
   ) {
     switch (result.quizType) {
-      case 'attachment':
-        return _buildAttachmentContent(
-          result.attachmentResult!,
-          colorScheme,
-          textTheme,
-        );
       case 'love_language':
         return _buildLoveLanguageContent(
+          context,
           result.loveLanguageResult!,
-          colorScheme,
           textTheme,
         );
       case 'communication':
@@ -90,114 +107,33 @@ class PartnerQuizResultScreen extends ConsumerWidget {
     }
   }
 
-  Widget _buildAttachmentContent(
-    AttachmentResult result,
-    ColorScheme colorScheme,
+  // Spec 5 (R5-5): what feels loving to them right now, grouped; no type.
+  Widget _buildLoveLanguageContent(
+    BuildContext context,
+    LoveLanguageResult result,
     TextTheme textTheme,
   ) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
-          result.displayName,
-          style: textTheme.displayMedium?.copyWith(
-            fontWeight: FontWeight.w600,
-            color: colorScheme.primary,
-          ),
+          LoveLanguageResult.frameworkNote,
+          style: textTheme.bodySmall,
         ),
         Gap(Spacing.lg.h),
-        Text(result.poeticDescription, style: textTheme.bodyLarge),
-        Gap(Spacing.xl.h),
-        Text(
-          'Their spectrum',
-          style: textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
-        ),
-        Gap(Spacing.md.h),
-        _buildAttachmentSpectrumSummary(result, colorScheme, textTheme),
-        Gap(Spacing.xl.h),
-        Text(
-          'What this means in practice',
-          style: textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
-        ),
-        Gap(Spacing.md.h),
-        ...result.practiceBullets.map(
-          (bullet) => Padding(
-            padding: EdgeInsets.only(bottom: Spacing.md.h),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Icon(Icons.info_outline, size: 18, color: colorScheme.primary),
-                Gap(Spacing.sm.w),
-                Expanded(child: Text(bullet, style: textTheme.bodyMedium)),
-              ],
-            ),
+        ...LovingWayGroups(result: result).build(context),
+        if (result.moments.isNotEmpty) ...[
+          Text('Especially', style: textTheme.titleMedium),
+          Gap(Spacing.sm.h),
+          Wrap(
+            spacing: Spacing.sm.w,
+            runSpacing: Spacing.sm.h,
+            children: [
+              for (final m in LovingMoment.values)
+                if (result.moments.contains(m)) Chip(label: Text(m.label)),
+            ],
           ),
-        ),
-        Gap(Spacing.xl.h),
-        _buildDisclaimer(
-          colorScheme,
-          textTheme,
-          'Your partner shared this with you. Attachment styles are not fixed and can shift over time.',
-        ),
-      ],
-    );
-  }
-
-  Widget _buildLoveLanguageContent(
-    LoveLanguageResult result,
-    ColorScheme colorScheme,
-    TextTheme textTheme,
-  ) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          result.getPrimaryDisplay(),
-          style: textTheme.displaySmall?.copyWith(
-            fontWeight: FontWeight.w600,
-            color: colorScheme.primary,
-          ),
-        ),
-        Gap(Spacing.md.h),
-        Text(
-          'Secondary: ${result.getSecondaryDisplay()}',
-          style: textTheme.titleMedium,
-        ),
-        Gap(Spacing.xl.h),
-        Text(
-          'Their spectrum',
-          style: textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
-        ),
-        Gap(Spacing.md.h),
-        ...result.spectrumData.map(
-          (item) => Padding(
-            padding: EdgeInsets.only(bottom: Spacing.sm.h),
-            child: SpectrumBar(
-              label: item['label'] as String,
-              percentage: item['value'] as int,
-              color: colorScheme.primary.withValues(
-                alpha: item['key'] == result.primary ? 1 : 0.45,
-              ),
-              animation: const AlwaysStoppedAnimation<double>(1),
-            ),
-          ),
-        ),
-        Gap(Spacing.xl.h),
-        Text(
-          'What this means',
-          style: textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
-        ),
-        Gap(Spacing.md.h),
-        Text(
-          result.getDescription(result.primary),
-          style: textTheme.bodyMedium,
-        ),
-        Gap(Spacing.xl.h),
-        _buildDisclaimer(
-          colorScheme,
-          textTheme,
-          'Your partner shared this with you. Love languages are a reflection tool, not a fixed label.',
-        ),
+        ],
       ],
     );
   }
@@ -307,74 +243,6 @@ class PartnerQuizResultScreen extends ConsumerWidget {
           'Your partner shared this with you. This reflects how they answered that day. Conflict responses can change with context, power, safety, culture, and relationship dynamics.',
         ),
       ],
-    );
-  }
-
-  Widget _buildAttachmentSpectrumSummary(
-    AttachmentResult result,
-    ColorScheme colorScheme,
-    TextTheme textTheme,
-  ) {
-    final List<Map<String, dynamic>> percentages = [
-      {
-        'label': 'Secure',
-        'value': result.securePercentage,
-        'color': colorScheme.primary,
-      },
-      {
-        'label': 'Anxious',
-        'value': result.anxiousPercentage,
-        'color': Colors.orange,
-      },
-      {
-        'label': 'Avoidant',
-        'value': result.avoidantPercentage,
-        'color': Colors.blue,
-      },
-      {
-        'label': 'Fearful',
-        'value': result.fearfulPercentage,
-        'color': Colors.purple,
-      },
-    ];
-
-    return Column(
-      children:
-          percentages.map((item) {
-            return Padding(
-              padding: EdgeInsets.only(bottom: Spacing.sm.h),
-              child: Row(
-                children: [
-                  SizedBox(
-                    width: 70,
-                    child: Text(item['label'], style: textTheme.bodySmall),
-                  ),
-                  Expanded(
-                    child: ClipRRect(
-                      borderRadius: BorderRadius.circular(
-                        BorderRadiusTokens.sm.r,
-                      ),
-                      child: LinearProgressIndicator(
-                        value: item['value'] / 100,
-                        minHeight: 8,
-                        backgroundColor: colorScheme.surfaceContainerHighest,
-                        color: item['color'],
-                      ),
-                    ),
-                  ),
-                  Gap(Spacing.sm.w),
-                  SizedBox(
-                    width: 35,
-                    child: Text(
-                      '${item['value']}%',
-                      style: textTheme.labelSmall,
-                      textAlign: TextAlign.right,
-                    ),
-                  ),
-                ],
-              ),
-            );
-          }).toList(),
     );
   }
 

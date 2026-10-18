@@ -92,9 +92,14 @@ DateTime? _date(Object? v) {
   return DateTime(p.year, p.month, p.day);
 }
 
+/// The calendar copy's word for a plan when titles are off (Spec 1b). A
+/// place outs a plan as surely as its title, so it goes with it (R-I).
+const mirrorNeutralTitle = 'Plan';
+
 List<MirrorEvent> mirrorEventsFor({
   required List<TogetherItem> items,
   required String? me,
+  bool showTitles = false,
 }) {
   if (me == null) return const [];
   final out = <MirrorEvent>[];
@@ -122,13 +127,15 @@ List<MirrorEvent> mirrorEventsFor({
       end = i.endsAt ?? s.add(const Duration(hours: 1));
     }
     final e = MirrorEvent(
-      title: title,
+      title: showTitles ? title : mirrorNeutralTitle,
       start: start,
       end: end,
       allDay: allDay,
-      location: i.sourceRef['location_name'] as String?,
+      location: showTitles ? i.sourceRef['location_name'] as String? : null,
     );
-    if (seen.add(e.fingerprint)) out.add(e);
+    // Keyed by plan as well as fingerprint: with titles off two plans at the
+    // same time share a fingerprint and must still be two entries (Spec 1b).
+    if (seen.add('${i.id}|${e.fingerprint}')) out.add(e);
   }
   return out;
 }

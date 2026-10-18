@@ -30,6 +30,7 @@ TogetherItem _e(
 void main() {
   test('copies shared, confirmed plans I am in: titles, times and places', () {
     final out = mirrorEventsFor(
+      showTitles: true,
       me: 'ama',
       items: [
         _e(
@@ -73,6 +74,7 @@ void main() {
   test('a three-day trip is one all-day entry; its later days are skipped', () {
     final ref = {'start_date': '2026-11-06', 'end_date': '2026-11-08'};
     final out = mirrorEventsFor(
+      showTitles: true,
       me: 'ama',
       items: [
         _e('Lisbon', day: DateTime(2026, 11, 6), ref: ref),
@@ -234,4 +236,14 @@ void main() {
       );
     },
   );
+
+  test('with titles off, two plans at the same time stay two entries '
+      '(Spec 1b)', () {
+    final at = DateTime(2026, 11, 3, 19);
+    final out = mirrorEventsFor(
+      me: 'ama',
+      items: [_e('Dinner', start: at), _e('Clinic', start: at)],
+    );
+    expect(out.map((e) => e.title), [mirrorNeutralTitle, mirrorNeutralTitle]);
+  });
 }

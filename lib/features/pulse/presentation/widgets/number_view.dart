@@ -1,6 +1,7 @@
 // lib/features/pulse/presentation/widgets/number_view.dart
 
 import 'package:attune/core/utils/exports/export_screens.dart';
+import 'package:attune/features/pulse/domain/pulse_dimensions.dart';
 import 'package:flutter/material.dart';
 import 'package:gap/gap.dart';
 
@@ -46,11 +47,8 @@ class NumberView extends StatelessWidget {
     final textTheme = Theme.of(context).textTheme;
 
     final dimOrder = [
-      ('Communication', dimensions['Communication'] ?? 50),
-      ('Connection', dimensions['Connection'] ?? 50),
-      ('Conflict Health', dimensions['Conflict Health'] ?? 50),
-      ('Alignment', dimensions['Alignment'] ?? 50),
-      ('Emotional Safety', dimensions['Emotional Safety'] ?? 50),
+      for (final d in sharedPulseDimensions)
+        (d.label, dimensions[d.label] ?? 50),
     ];
 
     return dimOrder.map((dim) {

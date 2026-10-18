@@ -1,6 +1,7 @@
 import { serve } from "https://deno.land/std@0.177.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { callGeminiJson } from "../_shared/gemini_json.ts";
+import { pickPatternEvidence } from "./pattern_evidence.ts";
 
 // Persisted on each generated row, so it must name the model that
 // actually ran rather than the Claude constant this replaced.
@@ -112,7 +113,7 @@ serve(async (req) => {
       });
     }
 
-    let output = await maybeGenerateWithGemini(evidence, buildPrompt(evidence));
+    let output = await maybeGenerateWithGemini(evidence, buildPrompt(evidence), user.id);
     if (!output) {
       output = buildFallback(evidence);
     }
@@ -148,15 +149,26 @@ async function buildPostMortemEvidence(userClient: any, adminClient: any, journe
 
   let patterns: string[] = [];
   if (journey.relationship_id) {
-    const patternRes = await adminClient
-      .from("patterns")
-      .select("pattern_type, severity")
+    // Spec 3a (05 D.4 (a)): the role-free snapshot taken at ending first, so
+    // the read-only window and the 12-month deletion never leave Stage 2
+    // without evidence; live patterns only for endings that predate it.
+    const snapshotRes = await adminClient
+      .from("healing_ending_snapshots")
+      .select("pattern_types")
+      .eq("user_id", userId)
       .eq("relationship_id", journey.relationship_id)
-      .neq("severity", "safety")
-      .limit(6);
-    patterns = (patternRes.data ?? [])
-      .map((row: any) => row.pattern_type)
-      .filter((value: unknown): value is string => typeof value === "string");
+      .maybeSingle();
+    let live: unknown[] = [];
+    if (!snapshotRes.data) {
+      const patternRes = await adminClient
+        .from("patterns")
+        .select("pattern_type, severity")
+        .eq("relationship_id", journey.relationship_id)
+        .neq("severity", "safety")
+        .limit(6);
+      live = (patternRes.data ?? []).map((row: any) => row.pattern_type);
+    }
+    patterns = pickPatternEvidence(snapshotRes.data?.pattern_types ?? null, live);
   }
 
   return {
@@ -181,13 +193,14 @@ function buildPrompt(evidence: any) {
   ].join("\n");
 }
 
-async function maybeGenerateWithGemini(evidence: any, prompt: string) {
+async function maybeGenerateWithGemini(evidence: any, prompt: string, userId: string) {
   // The shared helper replaces a hand-rolled Anthropic client here: it
   // owns the request shape, the abort timeout, fenced-JSON extraction and
   // the prohibited-pattern filter. It returns null on any failure, which
   // is the same signal this function already used to fall back.
   const parsed = await callGeminiJson({
     promptId: "healing_post_mortem",
+    attribution: { fn: "generate-healing-post-mortem", userId },
     systemPrompt:
       "You are a careful, non-judgemental reflection assistant. Reply with JSON only.",
     userPrompt: prompt,

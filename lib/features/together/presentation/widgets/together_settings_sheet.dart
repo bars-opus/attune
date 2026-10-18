@@ -5,6 +5,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:intl/intl.dart';
 
+import '../../data/together_calendar_mirror.dart' show mirrorTitlesKey;
+import '../../data/together_live_activity.dart' show liveTitlesKey;
+import '../../data/together_widget_sync.dart' show widgetTitlesKey;
 import '../../domain/calendar_feed.dart';
 import '../../domain/together_overlay.dart';
 import '../../domain/together_prefs.dart';
@@ -33,6 +36,29 @@ class _TogetherSettingsSheet extends ConsumerStatefulWidget {
 
 class _TogetherSettingsSheetState
     extends ConsumerState<_TogetherSettingsSheet> {
+  static const _titlesOnPhone =
+      'Shows what each plan is called. Anyone who sees your phone can read it.';
+  static const _titlesInCalendar =
+      'Copies each plan’s title and place. Anyone who sees your calendar can read them.';
+
+  // Spec 1b: a surface shows "Next plan" unless this phone turns titles on.
+  Widget _titlesRow(String key, String subtitle) {
+    final on = ref.watch(togetherSurfaceTitlesProvider(key)).valueOrNull;
+    if (on == null) return const SizedBox.shrink();
+    return InfoRowWidget(
+      key: ValueKey('together_titles_$key'),
+      title: 'Show plan titles',
+      subtitle: subtitle,
+      icon: Icons.title_outlined,
+      showAvatar: false,
+      showDivider: false,
+      isToggleItem: true,
+      toggleValue: on,
+      onToggleChanged:
+          (v) => ref.read(togetherSurfaceTitlesProvider(key).notifier).set(v),
+    );
+  }
+
   /// What the switches show: the saved prefs once loaded, flipped at once
   /// on a tap, and put back if the save fails.
   TogetherPrefs? _prefs;
@@ -296,9 +322,9 @@ class _TogetherSettingsSheetState
             InfoRowWidget(
               title: 'Next plans on my home screen',
               subtitle:
-                  'Off unless you turn it on. Shows your next plans’ titles and '
-                  'times — no names. Anyone who sees your phone can see it; quick '
-                  'exit clears it.',
+                  'Off unless you turn it on. Shows “Next plan” and the time — no '
+                  'names, and no titles unless you turn them on. Anyone who sees '
+                  'your phone can see it; quick exit clears it.',
               icon: Icons.widgets_outlined,
               showAvatar: false,
               showDivider: false,
@@ -308,15 +334,17 @@ class _TogetherSettingsSheetState
                   (v) =>
                       ref.read(togetherWidgetEnabledProvider.notifier).set(v),
             ),
+            if (widgetOn == true) _titlesRow(widgetTitlesKey, _titlesOnPhone),
           ],
           if (liveSupported && liveOn != null) ...[
             AppDivider(),
             InfoRowWidget(
               title: "Tonight's plan on my lock screen",
               subtitle:
-                  'Off unless you turn it on. A plan you’re both in shows its '
-                  'title, time and a countdown from 4 hours before — no names. '
-                  'Anyone who sees your phone can see it; quick exit clears it.',
+                  'Off unless you turn it on. A plan you’re both in shows as '
+                  '“Next plan” with its time and a countdown from 4 hours before '
+                  '— no names, and no titles unless you turn them on. Anyone who '
+                  'sees your phone can see it; quick exit clears it.',
               icon: Icons.lock_clock_outlined,
               showAvatar: false,
               showDivider: false,
@@ -325,6 +353,7 @@ class _TogetherSettingsSheetState
               onToggleChanged:
                   (v) => ref.read(togetherLiveEnabledProvider.notifier).set(v),
             ),
+            if (liveOn == true) _titlesRow(liveTitlesKey, _titlesOnPhone),
           ],
           if (mirrorOn != null) ...[
             AppDivider(),
@@ -332,10 +361,11 @@ class _TogetherSettingsSheetState
               title: "Copy our plans to my phone's calendar",
               subtitle:
                   'Off unless you turn it on. Adds a calendar called “Plans” '
-                  'with the next 60 days of plans you’re in — titles, times and '
-                  'places only, never names or notes. If your phone keeps '
-                  'calendars in iCloud it may show on your other devices. '
-                  'Turning it off or quick exit deletes it.',
+                  'with the next 60 days of plans you’re in, each as “Plan” with '
+                  'its time — never names or notes, and no titles or places '
+                  'unless you turn them on. If your phone keeps calendars in '
+                  'iCloud it may show on your other devices. Turning it off or '
+                  'quick exit deletes it.',
               icon: Icons.event_available_outlined,
               showAvatar: false,
               showDivider: false,
@@ -343,6 +373,7 @@ class _TogetherSettingsSheetState
               toggleValue: mirrorOn,
               onToggleChanged: (v) => _setMirror(v),
             ),
+            if (mirrorOn == true) _titlesRow(mirrorTitlesKey, _titlesInCalendar),
           ],
           AppDivider(),
           Padding(

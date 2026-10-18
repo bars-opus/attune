@@ -1,6 +1,8 @@
 import 'dart:async';
 
+import 'package:attune/features/relationships/presentation/open_relationship_notice.dart';
 import 'package:attune/core/providers/shared_prefs_provider.dart';
+import 'package:attune/core/services/user_timezone_reporter.dart';
 import 'package:attune/core/utils/exports/export_screens.dart';
 import 'package:attune/features/auth/log_in/presentation/screens/login_profile.dart';
 import 'package:attune/features/auth/data/passwordless_auth_service.dart';
@@ -12,7 +14,6 @@ import 'package:attune/features/onboarding/domain/onboarding_models.dart';
 import 'package:attune/features/onboarding/domain/relationship_mode_sync.dart';
 import 'package:attune/features/opinions/presentation/screen/opinions_tab.dart';
 import 'package:attune/features/relationships/data/relationship_invite_service.dart';
-import 'package:attune/features/safety/presentation/widgets/triple_tap_detector.dart';
 import 'package:attune/home/widgets/home_tab.dart';
 import 'package:attune/home/widgets/home_widget_responsive.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -102,10 +103,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
       // fire the sync. The store was just re-scoped to the new user above,
       // so this reads and writes the right scope.
       _syncRelationshipMode();
+      _reportTimezone();
     });
-    WidgetsBinding.instance.addPostFrameCallback(
-      (_) => _syncRelationshipMode(),
-    );
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _syncRelationshipMode();
+      _reportTimezone();
+    });
     relationshipModeResyncSignal.addListener(_syncRelationshipMode);
   }
 
@@ -119,7 +122,20 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed) _syncRelationshipMode();
+    if (state == AppLifecycleState.resumed) {
+      _syncRelationshipMode();
+      _reportTimezone();
+    }
+  }
+
+  // Quiet hours follow the phone's zone (Spec 1b). The reporter sends only
+  // a changed zone and never throws.
+  void _reportTimezone() {
+    unawaited(
+      ref
+          .read(userTimezoneReporterProvider)
+          .report(_authService.currentUser?.id),
+    );
   }
 
   /// Reconciles the locally-cached OnboardingMode against the server's
@@ -289,6 +305,13 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
       // resurface on every future launch/resume. Transient failures
       // (retryable) keep the code so the next load tries again.
       if (!error.retryable) await store.clearPendingInviteCode();
+      // Sync audit I-8: already in a relationship (active or paused) —
+      // say why the link did nothing; nothing was ended.
+      if (error.alreadyInRelationship) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) showOpenRelationshipNotice(context, error.message);
+        });
+      }
     } catch (_) {
       // Unreachable client/network failure — leave the code in place for
       // a later retry rather than silently discarding a real invite.
@@ -383,7 +406,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
       return home;
     }
 
-    return TripleTapDetector(child: home);
+    // Quick exit lives in the root shell now (Spec 2: one target, every route).
+    return home;
   }
 }
 

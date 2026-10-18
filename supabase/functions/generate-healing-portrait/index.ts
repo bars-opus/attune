@@ -108,7 +108,7 @@ serve(async (req) => {
       });
     }
 
-    let output = await maybeGenerateWithGemini(evidence, buildPrompt(evidence));
+    let output = await maybeGenerateWithGemini(evidence, buildPrompt(evidence), user.id);
     if (!output) {
       output = buildFallback(evidence);
     }
@@ -141,12 +141,16 @@ async function buildPortraitEvidence(userClient: any, journey: any, userId: stri
     .filter((value): value is string => typeof value === "string" && value.trim().length > 0)
     .map((value) => value.trim());
 
+  // Spec 3b (F13 (1)): only the insights of the relationship this journey
+  // is about -- never another chapter's. A self-reported breakup has none.
   let insights: string[] = [];
   try {
+    if (!journey.relationship_id) throw new Error("no relationship");
     const insightRes = await userClient
       .from("personal_insights")
       .select("insight_body")
       .eq("user_id", userId)
+      .eq("relationship_id", journey.relationship_id)
       .order("created_at", { ascending: false })
       .limit(5);
     insights = (insightRes.data ?? [])
@@ -178,13 +182,14 @@ function buildPrompt(evidence: any) {
   ].join("\n");
 }
 
-async function maybeGenerateWithGemini(evidence: any, prompt: string) {
+async function maybeGenerateWithGemini(evidence: any, prompt: string, userId: string) {
   // The shared helper replaces a hand-rolled Anthropic client here: it
   // owns the request shape, the abort timeout, fenced-JSON extraction and
   // the prohibited-pattern filter. It returns null on any failure, which
   // is the same signal this function already used to fall back.
   const parsed = await callGeminiJson({
     promptId: "healing_portrait",
+    attribution: { fn: "generate-healing-portrait", userId },
     systemPrompt:
       "You are a careful, non-judgemental reflection assistant. Reply with JSON only.",
     userPrompt: prompt,

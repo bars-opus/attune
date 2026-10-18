@@ -15,7 +15,11 @@ DO $$
 DECLARE v jsonb; v_msg text;
 BEGIN
   -- Off by default (the flag is seeded false), whatever consent says.
-  PERFORM set_config('test.ai_consent', 'on', true);
+  -- Both partners consent at the current policy (sync audit K-5: the real
+  -- consent events, not the old test stub).
+  INSERT INTO public.ai_processing_consent_events (relationship_id, user_id, policy_version, action, idempotency_key)
+  SELECT '7fa00000-0000-0000-0000-000000000001', u, public.ai_current_consent_policy_version(), 'granted', gen_random_uuid()
+  FROM unnest(ARRAY['7f900000-0000-0000-0000-0000000000a1', '7f900000-0000-0000-0000-0000000000b2']::uuid[]) u;
   PERFORM pg_temp.as_user('7f900000-0000-0000-0000-0000000000a1');
   v := public.get_together_ai_status('7fa00000-0000-0000-0000-000000000001');
   IF (v->>'available')::boolean THEN RAISE EXCEPTION 'CONTRACT VIOLATED: AI available with the flag off'; END IF;
@@ -26,7 +30,9 @@ BEGIN
   IF NOT (public.get_together_ai_status('7fa00000-0000-0000-0000-000000000001')->>'available')::boolean THEN
     RAISE EXCEPTION 'CONTRACT VIOLATED: AI unavailable with flag on and consent';
   END IF;
-  PERFORM set_config('test.ai_consent', 'off', true);
+  INSERT INTO public.ai_processing_consent_events (relationship_id, user_id, policy_version, action, idempotency_key, created_at)
+  VALUES ('7fa00000-0000-0000-0000-000000000001', '7f900000-0000-0000-0000-0000000000b2',
+          public.ai_current_consent_policy_version(), 'withdrawn', gen_random_uuid(), now() + interval '1 second');
   IF (public.get_together_ai_status('7fa00000-0000-0000-0000-000000000001')->>'available')::boolean THEN
     RAISE EXCEPTION 'CONTRACT VIOLATED: AI available without both partners'' consent';
   END IF;

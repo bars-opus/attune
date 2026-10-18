@@ -1,5 +1,6 @@
 // lib/features/auth/presentation/widgets/logout_action.dart
 
+import 'package:attune/features/couple_map/data/couple_map_device_data.dart';
 import 'package:attune/features/together/data/together_device_surfaces.dart';
 import 'package:attune/features/together/presentation/together_providers.dart'
     show
@@ -39,6 +40,9 @@ class LogoutAction {
             // showing this person's plans. Before clearUserData(): the
             // copy's calendar id is one of the settings it wipes.
             await clearTogetherDeviceSurfaces();
+            // The map's home area, pin choice, tile cache and pin faces too, so
+            // the next account on this phone inherits none of them.
+            await clearCoupleMapDeviceData().catchError((Object _) {});
 
             // Clear user-specific SharedPrefs (keeps theme/language).
             await ref.read(preferencesServiceProvider).clearUserData();

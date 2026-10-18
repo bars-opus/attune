@@ -121,3 +121,86 @@ GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public
 
 -- Planning P4: votes, member settings and the gallery are server-only.
 \i supabase/migrations/20261012200910_planning_couple_blocks_grants.sql
+
+-- Spec 1a (Task 1): relationships are read/insert only for clients; every
+-- write is an RPC or the service role. Replayed so the blanket grant above
+-- cannot hand UPDATE back locally.
+\i supabase/migrations/20261017110000_relationships_write_lockdown_grants.sql
+
+-- Spec 1a (Task 2): the seen-receipts votes are RPC-only.
+\i supabase/migrations/20261017120100_seen_receipts_table_grants.sql
+
+-- Spec 1a (Task 3): messages SELECT allowlist (no read_at, no analysis
+-- columns), no UPDATE/DELETE; message_reads RPC-only. Must come after the
+-- story-reply replay above, which only touches INSERT.
+\i supabase/migrations/20261017130100_messages_column_grants.sql
+
+-- Spec 1a (final review I2): the read watermark table is server-only.
+\i supabase/migrations/20261017130300_read_marks_grants.sql
+
+-- Spec 1a (Task 4): story_items SELECT allowlist (no has_been_viewed, no
+-- seen_shown). After the stories replay above, which grants the whole table.
+\i supabase/migrations/20261017140100_story_items_column_grants.sql
+
+-- Spec 1a (Task 7): private Pulse scores are SELECT-only for their author;
+-- the recompute limit table is server-only.
+\i supabase/migrations/20261017150100_pulse_privacy_table_grants.sql
+
+-- Spec 2 (Task 1): session_devices is RPC-only.
+\i supabase/migrations/20261017200100_session_devices_grants.sql
+
+-- Spec 3a (Task 1): lifecycle RPCs, seals and Healing snapshots.
+\i supabase/migrations/20261018100100_relationship_lifecycle_grants.sql
+
+-- Spec 3b (Task 1): deletion and purge are service-role only.
+\i supabase/migrations/20261018110100_chapters_deletion_grants.sql
+
+-- Security lockdown (Spec 3b review C3, I4): analysis_sessions, tag tables, 36Q/import functions.
+\i supabase/migrations/20261017195000_security_lockdown.sql
+
+-- Spec 3b final review M-2: chapter gate helpers.
+\i supabase/migrations/20261018110300_chapter_reads_grants.sql
+
+-- Spec 3c (Task 1): export jobs and functions.
+
+-- Spec 3c (Task 1): export jobs and functions.
+\i supabase/migrations/20261018120100_data_export_grants.sql
+
+-- Spec 5 (Task 1): the pairing cache is closed to clients.
+\i supabase/migrations/20261018130100_retire_attachment_pairing_grants.sql
+
+-- Spec 5 (Task 2): what feels loving is saved through its RPC.
+\i supabase/migrations/20261018130310_save_loving_now_grants.sql
+
+-- Spec 5 (Task 3): the invite clock and withdraw.
+\i supabase/migrations/20261018130610_invite_age_grants.sql
+
+-- Spec 7 (Task 1): quiet states.
+\i supabase/migrations/20261018140010_quiet_states_grants.sql
+
+-- Spec 7 (Task 2): hidden periods.
+\i supabase/migrations/20261018140110_quiet_effects_grants.sql
+
+-- Spec 7 (Task 3): appreciation notes and the jar.
+\i supabase/migrations/20261018140210_appreciation_grants.sql
+
+-- Spec 7 (Task 4): Share a win.
+\i supabase/migrations/20261018140310_share_a_win_grants.sql
+
+-- Spec 7 (Task 5): put a plan away gently.
+\i supabase/migrations/20261018140410_put_away_gently_grants.sql
+
+-- Spec 8 (Task 1): the private safety check.
+\i supabase/migrations/20261018150010_safety_self_check_grants.sql
+
+-- Spec 8 (Task 4): Take a pause.
+\i supabase/migrations/20261018150110_pause_messages_grants.sql
+
+-- Spec 8 (Task 5): AI gates and the provider-call ledger.
+\i supabase/migrations/20261018150310_ai_gates_grants.sql
+
+-- Spec 8 (Task 3): the translator's daily limit.
+\i supabase/migrations/20261018150210_translator_limit_grants.sql
+
+-- Cross-spec sync audit fixes.
+\i supabase/migrations/20261018160010_sync_fixes_grants.sql

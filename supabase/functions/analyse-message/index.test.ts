@@ -13,7 +13,7 @@
 // matcher DSL would be more code than the cases themselves, and a failure
 // would report "fixture gt_001 mismatched" instead of naming the field.
 import { assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
-import { loadMessages, markMessageDone, validateLayerOne } from "./index.ts";
+import { loadMessages, loadPriorMessages, markMessageDone, processMessage, validateLayerOne } from "./index.ts";
 import {
   getSharedPgClient,
   makeServiceRoleClient,
@@ -291,6 +291,110 @@ Deno.test({
       [MSG_PENDING],
     );
     assertEquals(rows[0].message_analysis_done, true);
+  },
+});
+
+// Spec 8 (plan review M4): a suppressed relationship's messages are set
+// aside, not analysed, and never sit in the Pulse backlog.
+Deno.test({
+  name: "processMessage sets a suppressed relationship's message aside without analysing it",
+  fn: async () => {
+    await resetTask5Fixtures();
+    await serviceRoleQuery(
+      `INSERT INTO public.safety_events (relationship_id, at_risk_user_id, source_event_key, trigger_tier, trigger_family, config_version)
+       VALUES ($1, $2, 'am-sup-1', 1, 'test', 'test')`,
+      [REL_T5, USER_T5_A],
+    );
+    try {
+      const client = await makeServiceRoleClient();
+      const [job] = await loadMessages(client as never, { messageId: MSG_PENDING, limit: 5 });
+      const result = await processMessage(client as never, job);
+      assertEquals(result, { message_id: MSG_PENDING, status: "suppressed" });
+      const rows = await serviceRoleQuery(
+        `SELECT message_analysis_done, message_analysis_skipped, tone_score FROM public.messages WHERE id = $1`,
+        [MSG_PENDING],
+      );
+      assertEquals(rows[0].message_analysis_done, true);
+      assertEquals(rows[0].message_analysis_skipped, true);
+      assertEquals(rows[0].tone_score, null);
+    } finally {
+      await serviceRoleQuery(`DELETE FROM public.safety_events WHERE relationship_id = $1`, [REL_T5]);
+    }
+  },
+});
+
+// Final review I-1: an unreadable answer defers the message; it is never
+// set aside, because setting aside is permanent.
+Deno.test({
+  name: "processMessage defers, untouched, when suppression cannot be read",
+  fn: async () => {
+    const touched: string[] = [];
+    const client = {
+      rpc: () => Promise.resolve({ data: null, error: { message: "db down" } }),
+      from: (t: string) => {
+        touched.push(t);
+        throw new Error("touched " + t);
+      },
+    };
+    const result = await processMessage(client as never, {
+      id: MSG_PENDING,
+      relationship_id: REL_T5,
+      sender_id: USER_T5_A,
+      content: "pending analysis",
+      created_at: new Date().toISOString(),
+    });
+    assertEquals(result, { message_id: MSG_PENDING, status: "deferred" });
+    assertEquals(touched, []);
+  },
+});
+
+// Sync audit I-2: Layer 1 runs only while the relationship is active; a
+// paused or ended couple's message is set aside (deferring it would refill
+// every batch and starve every other couple).
+Deno.test({
+  name: "processMessage sets a paused relationship's message aside",
+  fn: async () => {
+    await resetTask5Fixtures();
+    await serviceRoleQuery(`UPDATE public.relationships SET status = 'paused' WHERE id = $1`, [REL_T5]);
+    const client = await makeServiceRoleClient();
+    const [job] = await loadMessages(client as never, { messageId: MSG_PENDING, limit: 5 });
+    const result = await processMessage(client as never, job);
+    assertEquals(result, { message_id: MSG_PENDING, status: "skipped_relationship_not_active" });
+    const rows = await serviceRoleQuery(
+      `SELECT message_analysis_skipped, tone_score FROM public.messages WHERE id = $1`,
+      [MSG_PENDING],
+    );
+    assertEquals(rows[0].message_analysis_skipped, true);
+    assertEquals(rows[0].tone_score, null);
+  },
+});
+
+// Sync audit I-1: the context the model sees is ordinary text only — no
+// pause, note, notice, Assist output or deleted message.
+Deno.test({
+  name: "loadPriorMessages gives the model ordinary messages only",
+  fn: async () => {
+    await resetTask5Fixtures();
+    // Only send_pause makes a pause; the fixture borrows its switch.
+    await serviceRoleQuery(`SELECT set_config('attune.send_pause', 'on', false)`);
+    await serviceRoleQuery(
+      `INSERT INTO public.messages (relationship_id, sender_id, client_message_id, content, source,
+         media_type, message_analysis_skipped, is_system_notice, deleted_at, message_origin, created_at)
+       VALUES
+        ($1, $2, gen_random_uuid(), 'a fixed pause', 'native', 'pause', true, false, NULL, 'user', now() - interval '5 minutes'),
+        ($1, $2, gen_random_uuid(), 'Goal reached', 'native', NULL, false, true, NULL, 'user', now() - interval '4 minutes'),
+        ($1, $2, gen_random_uuid(), 'deleted words', 'native', NULL, false, false, now(), 'user', now() - interval '3 minutes'),
+        ($1, $2, gen_random_uuid(), 'an ordinary line', 'native', NULL, false, false, NULL, 'user', now() - interval '2 minutes')`,
+      [REL_T5, USER_T5_B],
+    );
+    await serviceRoleQuery(`SELECT set_config('attune.send_pause', 'off', false)`);
+    const client = await makeServiceRoleClient();
+    const prior = await loadPriorMessages(client as never, REL_T5, new Date().toISOString(), MSG_PENDING);
+    const texts = prior.map((m: { content: string }) => m.content);
+    assertEquals(texts.includes("an ordinary line"), true);
+    for (const banned of ["a fixed pause", "Goal reached", "deleted words"]) {
+      assertEquals(texts.includes(banned), false, banned);
+    }
   },
 });
 

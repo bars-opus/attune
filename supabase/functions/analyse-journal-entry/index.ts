@@ -128,7 +128,7 @@ async function handleAnalyseEntry(
     });
   }
 
-  let output = await maybeGenerate(content);
+  let output = await maybeGenerate(content, userId);
   if (!output) {
     output = buildFallback();
   }
@@ -171,6 +171,7 @@ async function handleGetPatterns(adminClient: any, userId: string) {
   const prompt = buildPatternsPrompt(analyses);
   const result = await callGeminiJson({
     promptId: "journal_patterns",
+    attribution: { fn: "analyse-journal-entry", userId },
     systemPrompt: patternsSystemPrompt(),
     userPrompt: prompt,
     maxOutputTokens: 220,
@@ -227,9 +228,10 @@ function buildPatternsPrompt(analyses: Array<{ observation: string; tone: string
   return `PAST ANALYSES (most recent first):\n${JSON.stringify(analyses)}`;
 }
 
-async function maybeGenerate(content: string) {
+async function maybeGenerate(content: string, userId: string) {
   const result = await callGeminiJson({
     promptId: "journal_entry_analysis",
+    attribution: { fn: "analyse-journal-entry", userId },
     systemPrompt: analysisSystemPrompt(),
     userPrompt: buildAnalysisPrompt(content),
     maxOutputTokens: 220,

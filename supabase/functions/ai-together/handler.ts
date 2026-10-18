@@ -142,6 +142,7 @@ export async function processTogetherAi(
       });
       const raw = await deps.callGemini({
         promptId: "together_capture_v1",
+        attribution: { fn: "ai-together", relationshipId: relationship_id, userId: userScoped.user.id },
         systemPrompt: p.system,
         userPrompt: p.user,
         maxOutputTokens: 512,
@@ -151,12 +152,19 @@ export async function processTogetherAi(
       await mark(draft ? "succeeded" : "provider_failed");
       return draft ? ok({ draft }) : errorResponse("PROVIDER_FAILED");
     }
+    // Spec 7 (B9): a quiet requester's ideas stay gentle. Read as the
+    // service role; never logged, never sent to the model as a reason.
+    const quiet = await deps.service.rpc("user_is_quiet", {
+      p_user: userScoped.user.id,
+    });
     const p = buildIdeasPrompt({
       startLocal: (ideas as { startLocal: string }).startLocal,
       endLocal: (ideas as { endLocal: string }).endLocal,
+      quiet: !quiet.error && rpcTrue(quiet.data, "user_is_quiet"),
     });
     const raw = await deps.callGemini({
       promptId: "together_ideas_v1",
+      attribution: { fn: "ai-together", relationshipId: relationship_id, userId: userScoped.user.id },
       systemPrompt: p.system,
       userPrompt: p.user,
       maxOutputTokens: 512,

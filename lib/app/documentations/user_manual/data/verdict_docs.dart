@@ -15,7 +15,7 @@ class VerdictDocs implements DocumentationModule {
   int get order => 6;
 
   @override
-  String getTitle(BuildContext context) => 'The Verdict';
+  String getTitle(BuildContext context) => 'Monthly readout';
 
   @override
   String get id => 'verdict';
@@ -31,10 +31,10 @@ class VerdictDocs implements DocumentationModule {
   List<ManualSection> getSections(BuildContext context) => [
     ManualSection(
       id: 'verdict_what_it_is',
-      title: 'What the Verdict is',
+      title: 'What the monthly readout is',
       subtitle: 'A summary, not a grade',
       icon: Icons.fact_check_outlined,
-      category: 'Verdict',
+      category: 'Monthly readout',
       order: 1,
       contents: [
         ManualContent(
@@ -42,21 +42,21 @@ class VerdictDocs implements DocumentationModule {
           title: 'What your data actually shows',
           numberPrefix: '1',
           content:
-              'Once a month, the Verdict pulls together everything already known about your relationship — your Pulse history, shared patterns, and recent activity — into a short, sourced summary. It tells you what the data shows, offers one conversation starter, and stops there.',
+              'Once a month, the monthly readout pulls together everything already known about your relationship — your Pulse history, shared patterns, and recent activity — into a short, sourced summary. It tells you what the data shows, offers one conversation starter, and stops there.',
           type: ManualContentType.text,
         ),
         ManualContent(
           id: 'verdict_not_judgment',
           title: '',
           content:
-              'The Verdict never judges, diagnoses, scores, or ranks your relationship. It never tells you whether to stay together, and it\'s never compared against other couples.',
+              'The monthly readout never judges, diagnoses, scores, or ranks your relationship. It never tells you whether to stay together, and it\'s never compared against other couples.',
           type: ManualContentType.important,
         ),
         ManualContent(
           id: 'verdict_shared',
           title: 'Shared, and only about the relationship',
           content:
-              'Both of you see the same Verdict. It only ever describes relationship-level patterns — never which of you specifically did what. If it mentions a pattern like pursuing and withdrawing, it won\'t say who was doing which.',
+              'Both of you see the same readout. It only ever describes relationship-level patterns — never which of you specifically did what. If it mentions a pattern like pursuing and withdrawing, it won\'t say who was doing which.',
           numberPrefix: '2',
           type: ManualContentType.text,
         ),
@@ -64,10 +64,10 @@ class VerdictDocs implements DocumentationModule {
     ),
     ManualSection(
       id: 'verdict_contents',
-      title: 'What\'s inside a Verdict',
+      title: 'What\'s inside a monthly readout',
       subtitle: 'Headline, strengths, one thing to watch',
       icon: Icons.article_outlined,
-      category: 'Verdict',
+      category: 'Monthly readout',
       order: 2,
       contents: [
         ManualContent(
@@ -86,7 +86,7 @@ class VerdictDocs implements DocumentationModule {
           id: 'verdict_sources',
           title: '',
           content:
-              'Every claim in a Verdict links back to something specific — a Pulse score trend, a pattern that showed up in shared sessions, or a logged event. You can always tap to see exactly what a claim is based on.',
+              'Every claim in a monthly readout links back to something specific — a Pulse score trend, a pattern that showed up in shared sessions, or a logged event. You can always tap to see exactly what a claim is based on.',
           type: ManualContentType.tip,
         ),
       ],
@@ -96,14 +96,14 @@ class VerdictDocs implements DocumentationModule {
       title: 'How confidence works',
       subtitle: 'Always labeled, never hidden',
       icon: Icons.verified_outlined,
-      category: 'Verdict',
+      category: 'Monthly readout',
       order: 3,
       contents: [
         ManualContent(
           id: 'verdict_confidence_visible',
           title: 'Confidence is always shown',
           content:
-              'Every Verdict shows how much data it\'s based on — for example, "Based on 9 weeks of data." This is never hidden, so you always know how much to weigh a given month\'s summary.',
+              'Every readout shows how much data it\'s based on — for example, "Based on 9 weeks of data." This is never hidden, so you always know how much to weigh a given month\'s summary.',
           numberPrefix: '1',
           type: ManualContentType.text,
         ),
@@ -111,7 +111,7 @@ class VerdictDocs implements DocumentationModule {
           id: 'verdict_hedging',
           title: 'Language matches the evidence',
           content:
-              'Stronger claims are only stated directly when there\'s genuinely strong evidence behind them. Weaker evidence gets hedged language, like "some patterns suggest" — the Verdict is always honest about how sure it actually is.',
+              'Stronger claims are only stated directly when there\'s genuinely strong evidence behind them. Weaker evidence gets hedged language, like "some patterns suggest" — the monthly readout is always honest about how sure it actually is.',
           numberPrefix: '2',
           type: ManualContentType.text,
         ),
@@ -122,14 +122,14 @@ class VerdictDocs implements DocumentationModule {
       title: 'When you\'ll get one',
       subtitle: 'Only when there\'s enough real data',
       icon: Icons.calendar_month_outlined,
-      category: 'Verdict',
+      category: 'Monthly readout',
       order: 4,
       contents: [
         ManualContent(
           id: 'verdict_eligibility_explain',
           title: 'A real minimum, not a guess',
           content:
-              'A Verdict is only generated once your relationship has built up enough history — several weeks of Pulse scores and a handful of analyzed sessions. Below that threshold, you\'ll see an honest empty state rather than a Verdict stretched thin from too little data.',
+              'A monthly readout is only generated once your relationship has built up enough history — several weeks of Pulse scores and a handful of analyzed sessions. Below that threshold, you\'ll see an honest empty state rather than a monthly readout stretched thin from too little data.',
           numberPrefix: '1',
           type: ManualContentType.text,
         ),
@@ -137,14 +137,14 @@ class VerdictDocs implements DocumentationModule {
           id: 'verdict_once_per_month',
           title: '',
           content:
-              'One Verdict is generated per calendar month, at the start of the following month. You can\'t regenerate or create multiple versions of the same month\'s Verdict.',
+              'One readout is generated per calendar month, at the start of the following month. You can\'t regenerate or create multiple versions of the same month\'s readout.',
           type: ManualContentType.tip,
         ),
         ManualContent(
           id: 'verdict_no_safety',
           title: '',
           content:
-              'The Verdict never includes anything related to safety detections or crisis resources — that\'s handled entirely separately, and independently accessible whenever you need it.',
+              'The monthly readout never includes anything related to safety detections or crisis resources — that\'s handled entirely separately, and independently accessible whenever you need it.',
           type: ManualContentType.important,
         ),
       ],
@@ -156,50 +156,50 @@ class VerdictDocs implements DocumentationModule {
     return [
       FAQModel(
         id: 'faq_verdict_grade',
-        question: 'Is the Verdict a score or grade for our relationship?',
+        question: 'Is the monthly readout a score or grade for our relationship?',
         answer:
-            'No. There\'s no overall score, ranking, or grade — the Verdict describes specific, sourced patterns from your data and stops there. It never scores your relationship\'s worth or health.',
-        category: 'Verdict',
+            'No. There\'s no overall score, ranking, or grade — the monthly readout describes specific, sourced patterns from your data and stops there. It never scores your relationship\'s worth or health.',
+        category: 'Monthly readout',
         order: 1,
       ),
       FAQModel(
         id: 'faq_verdict_who_did_what',
-        question: 'Does the Verdict say which of us did something specific?',
+        question: 'Does the monthly readout say which of us did something specific?',
         answer:
-            'No. It only ever describes relationship-level patterns, never attributing a specific behavior to one partner by name. That kind of personal detail stays in your own private insights, never the shared Verdict.',
-        category: 'Verdict',
+            'No. It only ever describes relationship-level patterns, never attributing a specific behavior to one partner by name. That kind of personal detail stays in your own private insights, never the shared readout.',
+        category: 'Monthly readout',
         order: 2,
       ),
       FAQModel(
         id: 'faq_verdict_no_verdict',
-        question: 'Why haven\'t we gotten a Verdict yet?',
+        question: 'Why haven\'t we gotten a monthly readout yet?',
         answer:
-            'A Verdict requires a minimum amount of relationship history — several weeks of Pulse scores and analyzed sessions. Until that threshold is reached, you\'ll see an honest empty state instead of a thin, unreliable summary.',
-        category: 'Verdict',
+            'A monthly readout requires a minimum amount of relationship history — several weeks of Pulse scores and analyzed sessions. Until that threshold is reached, you\'ll see an honest empty state instead of a thin, unreliable summary.',
+        category: 'Monthly readout',
         order: 3,
       ),
       FAQModel(
         id: 'faq_verdict_regenerate',
-        question: 'Can we regenerate this month\'s Verdict?',
+        question: 'Can we regenerate this month\'s readout?',
         answer:
-            'No — one Verdict exists per calendar month, generated once. It reflects a fixed snapshot of your data from that period rather than being regenerable on demand.',
-        category: 'Verdict',
+            'No — one readout exists per calendar month, generated once. It reflects a fixed snapshot of your data from that period rather than being regenerable on demand.',
+        category: 'Monthly readout',
         order: 4,
       ),
       FAQModel(
         id: 'faq_verdict_evidence',
-        question: 'Can I see what a Verdict claim is actually based on?',
+        question: 'Can I see what a monthly readout claim is actually based on?',
         answer:
             'Yes — every claim links to specific evidence, and you can tap it to see the source, the time window, and how much data supports it.',
-        category: 'Verdict',
+        category: 'Monthly readout',
         order: 5,
       ),
       FAQModel(
         id: 'faq_verdict_tells_decide',
-        question: 'Will the Verdict tell us whether to stay together?',
+        question: 'Will the monthly readout tell us whether to stay together?',
         answer:
-            'No, never. The Verdict describes what the data shows and offers one optional conversation starter — it never tells you what to decide about your relationship.',
-        category: 'Verdict',
+            'No, never. The monthly readout describes what the data shows and offers one optional conversation starter — it never tells you what to decide about your relationship.',
+        category: 'Monthly readout',
         order: 6,
       ),
     ];

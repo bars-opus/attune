@@ -11,23 +11,30 @@ class EndRelationshipAction {
   static void confirmAndEnd(
     BuildContext context, {
     required String relationshipId,
+    RelationshipLifecycleService? service,
+    VoidCallback? onEnded,
   }) {
     BottomSheetUtils.showDocumentationBottomSheet(
-      maxHeight: 340.h,
+      maxHeight: 420.h,
       context: context,
       widget: ConfirmationDialog(
         noIcon: true,
         type: ConfirmationType.warning,
-        title: 'End this relationship?',
-        confirmText: 'End relationship',
+        // Spec 3a (F1 (1), (2)): no one is notified, and the chat stays
+        // readable for both for 30 days.
+        title: 'End your shared space?',
+        confirmText: 'End',
         message:
-            'This can\'t be undone. Your chat history will be archived and '
-            'no longer accessible from either side.',
+            "You'll both be able to read your chat for 30 days, then it closes. "
+            'Closed chats are deleted after 12 months. '
+            "Your partner won't get a notification; they'll see it the next "
+            'time they open Attune.',
         onConfirm: () async {
           try {
-            await RelationshipLifecycleService().endRelationship(
+            await (service ?? RelationshipLifecycleService()).endRelationship(
               relationshipId: relationshipId,
             );
+            onEnded?.call();
             // The couple's plans leave this phone's home screen, lock
             // screen and calendar (Together Phase 8). Never throws.
             await clearTogetherDeviceSurfaces();

@@ -307,6 +307,12 @@ class ChatController extends StateNotifier<ChatState> {
   StreamSubscription<void>? _realtimeSubscription;
   Timer? _refreshDebounce;
   Timer? _readDebounce;
+
+  /// Partner messages already reported read in this session. While the
+  /// couple's seen-state is off the server never sets a receipt on them, so
+  /// without this every visible sync would call mark_conversation_read again
+  /// (Spec 1a). Pruned to the loaded window after each call.
+  final Set<String> _markedReadIds = <String>{};
   Timer? _presenceHeartbeat;
   Timer? _retryTimer;
 
@@ -2299,15 +2305,27 @@ class ChatController extends StateNotifier<ChatState> {
     // foregrounded conversation (Spec 6.4). Receipt failures do not block
     // display and are retried idempotently on the next visible sync.
     if (!_isViewActive) return;
-    if (!state.messages.any(
-      (message) => !message.isMine && message.readAt == null,
-    )) {
-      return;
-    }
+    final pending = state.messages
+        .where(
+          (message) =>
+              !message.isMine &&
+              message.readAt == null &&
+              !_markedReadIds.contains(message.id),
+        )
+        .map((message) => message.id)
+        .toList();
+    if (pending.isEmpty) return;
     try {
       await ref
           .read(chatRepositoryProvider)
           .markConversationRead(relationshipId);
+      _markedReadIds
+        ..addAll(pending)
+        ..retainAll(state.messages.map((message) => message.id).toSet());
+      // While receipts are off the read changes no messages row, so no
+      // realtime event refreshes the conversations list; bump it here or
+      // the unread badge stays stale (Spec 1a).
+      ref.read(conversationsRefreshProvider.notifier).state++;
     } catch (_) {
       // Idempotent; a later visible sync retries.
     }

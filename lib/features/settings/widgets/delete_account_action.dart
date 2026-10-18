@@ -1,4 +1,5 @@
 // lib/features/settings/widgets/delete_account_action.dart
+import 'package:attune/features/couple_map/data/couple_map_device_data.dart';
 import 'package:attune/features/together/data/together_device_surfaces.dart';
 import 'package:attune/core/providers/routing_providers.dart';
 import 'package:attune/core/providers/shared_prefs_provider.dart';
@@ -35,9 +36,11 @@ class DeleteAccountAction {
         message:
             'This permanently deletes your account, messages, photos, quiz '
             'answers and insights. It cannot be undone.\n\n'
-            'Anything you shared with a partner is anonymised so it can no '
-            'longer be linked to you. Safety records are kept in anonymised '
-            'form only, as the law requires.',
+            // Spec 3b (R3b-7): what deletion does to a shared space.
+            "If you're in a shared space, it ends; your messages, photos and "
+            'game answers are removed from it. Shared history such as Pulse stays with the '
+            'space until it is deleted, 12 months after it closes. Safety '
+            'records are kept in anonymised form only, as the law requires.',
         onConfirm: () async {
           final ref = ProviderScope.containerOf(context, listen: false);
           try {
@@ -52,6 +55,9 @@ class DeleteAccountAction {
             // Together's card, lock-screen plan and calendar copy go too —
             // before clearUserData(), which wipes the copy's calendar id.
             await clearTogetherDeviceSurfaces();
+            // The map's home area, pin choice, tile cache and pin faces too, so
+            // the next account on this phone inherits none of them.
+            await clearCoupleMapDeviceData().catchError((Object _) {});
             await ref.read(preferencesServiceProvider).clearUserData();
             ref.read(routingNotifierProvider).clearUser();
 

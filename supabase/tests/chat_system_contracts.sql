@@ -414,35 +414,49 @@ END
 $$;
 
 -- Receipt RPC replay is monotonic: a second mark_conversation_read does not
--- change the already-set read_at, and re-marking delivered is a no-op once read
+-- change the already-set marker, and re-marking delivered is a no-op once read
 -- (Spec 16 "Receipt RPC replay -> timestamp remains monotonic and unchanged").
+-- The recipient's marker lives in message_reads since Spec 1a (not
+-- client-readable), so it is read here as the table owner.
 SELECT public.test_set_auth('00000000-0000-0000-0000-0000000000a1');
 DO $$
 DECLARE
   v_first_read timestamptz;
   v_second_read timestamptz;
+  v_replayed int;
   v_redelivered int;
 BEGIN
+  RESET ROLE;
   SELECT read_at INTO v_first_read
-  FROM public.messages
-  WHERE id = '20000000-0000-0000-0000-000000000002';
+  FROM public.message_reads
+  WHERE message_id = '20000000-0000-0000-0000-000000000002';
+  IF v_first_read IS NULL THEN
+    RAISE EXCEPTION 'the first read left no message_reads row';
+  END IF;
+  PERFORM public.test_set_auth('00000000-0000-0000-0000-0000000000a1');
 
-  -- Replay read.
-  PERFORM public.mark_conversation_read('10000000-0000-0000-0000-000000000001');
-  SELECT read_at INTO v_second_read
-  FROM public.messages
+  -- Replay read: nothing left to mark, so the RPC returns no row for it.
+  SELECT count(*) INTO v_replayed
+  FROM public.mark_conversation_read('10000000-0000-0000-0000-000000000001')
   WHERE id = '20000000-0000-0000-0000-000000000002';
-
-  IF v_second_read IS DISTINCT FROM v_first_read THEN
-    RAISE EXCEPTION 'read_at changed on replay (% -> %)', v_first_read, v_second_read;
+  IF v_replayed <> 0 THEN
+    RAISE EXCEPTION 'mark_conversation_read replay re-marked an already-read message';
   END IF;
 
-  -- Replay delivered on an already-read message returns no rows (delivered_at
-  -- already non-null, so COALESCE leaves it unchanged and it is filtered).
+  RESET ROLE;
+  SELECT read_at INTO v_second_read
+  FROM public.message_reads
+  WHERE message_id = '20000000-0000-0000-0000-000000000002';
+  PERFORM public.test_set_auth('00000000-0000-0000-0000-0000000000a1');
+  IF v_second_read IS DISTINCT FROM v_first_read THEN
+    RAISE EXCEPTION 'read marker changed on replay (% -> %)', v_first_read, v_second_read;
+  END IF;
+
+  -- Replay delivered on an already-delivered message returns no rows.
   SELECT count(*) INTO v_redelivered
   FROM public.mark_delivered(ARRAY['20000000-0000-0000-0000-000000000002'::uuid]);
   IF v_redelivered <> 0 THEN
-    RAISE EXCEPTION 'mark_delivered replay unexpectedly updated an already-read message';
+    RAISE EXCEPTION 'mark_delivered replay unexpectedly updated an already-delivered message';
   END IF;
 END
 $$;
@@ -475,9 +489,13 @@ DO $$
 DECLARE
   v_count int;
 BEGIN
+  -- Fixture write as the table owner: since 20261017110000 members hold no
+  -- UPDATE on relationships (Spec 1a Task 1).
+  RESET ROLE;
   UPDATE public.relationships
   SET status = 'ended', ended_at = now()
   WHERE id = '10000000-0000-0000-0000-000000000001';
+  PERFORM public.test_set_auth('00000000-0000-0000-0000-0000000000a1');
 
   -- Member can still read the ended relationship's history.
   SELECT count(*) INTO v_count
@@ -500,6 +518,7 @@ BEGIN
   EXCEPTION WHEN OTHERS THEN NULL;
   END;
 
+  RESET ROLE;
   UPDATE public.relationships
   SET status = 'active', ended_at = NULL
   WHERE id = '10000000-0000-0000-0000-000000000001';
@@ -514,9 +533,12 @@ DECLARE
   v_count int;
   v_read int;
 BEGIN
+  -- Fixture write as the table owner (Spec 1a Task 1: no member UPDATE).
+  RESET ROLE;
   UPDATE public.relationships
   SET chat_archived_at = now(), chat_archived_reason = 'manual_end'
   WHERE id = '10000000-0000-0000-0000-000000000001';
+  PERFORM public.test_set_auth('00000000-0000-0000-0000-0000000000a1');
 
   SELECT count(*) INTO v_count
   FROM public.messages
@@ -544,105 +566,123 @@ BEGIN
   EXCEPTION WHEN OTHERS THEN NULL;
   END;
 
+  RESET ROLE;
   UPDATE public.relationships
   SET chat_archived_at = NULL, chat_archived_reason = NULL
   WHERE id = '10000000-0000-0000-0000-000000000001';
 END
 $$;
 
--- Conversation streak: both members on two consecutive days -> streak 2
-SELECT public.test_set_auth('00000000-0000-0000-0000-0000000000a1');
-DO $$
-DECLARE v int;
-BEGIN
-  -- Each member inserts only their OWN messages: messages' RLS forbids
-  -- writing on a partner's behalf, so a single combined INSERT as user A
-  -- is rejected by the policy -- correctly.
-  -- created_at is NOT in messages' client INSERT allowlist (20260939020000)
-  -- and no client writes it -- the server defaults it. Insert as a client
-  -- legitimately can, then backdate out-of-band below, so this test keeps
-  -- exercising the RLS policy rather than a privilege clients never have.
-  INSERT INTO public.messages (relationship_id, sender_id, client_message_id, content)
-  VALUES
-   ('10000000-0000-0000-0000-000000000001','00000000-0000-0000-0000-0000000000a1', gen_random_uuid(), 'a today'),
-   ('10000000-0000-0000-0000-000000000001','00000000-0000-0000-0000-0000000000a1', gen_random_uuid(), 'a yest');
-END $$;
-
-SELECT public.test_set_auth('00000000-0000-0000-0000-0000000000b2');
+-- Spec 1b: the chat streak counter is gone -- no function, no flag (SOUL §5
+-- P1). The streak camera (streak_clips, mark_streak_viewed) is unrelated.
 DO $$
 BEGIN
-  INSERT INTO public.messages (relationship_id, sender_id, client_message_id, content)
-  VALUES
-   ('10000000-0000-0000-0000-000000000001','00000000-0000-0000-0000-0000000000b2', gen_random_uuid(), 'b today'),
-   ('10000000-0000-0000-0000-000000000001','00000000-0000-0000-0000-0000000000b2', gen_random_uuid(), 'b yest');
+  IF to_regprocedure('public.chat_conversation_streak(uuid,integer)') IS NOT NULL THEN
+    RAISE EXCEPTION 'CONTRACT VIOLATED: chat_conversation_streak still exists';
+  END IF;
+  IF EXISTS (SELECT 1 FROM public.feature_flags WHERE key = 'chat_streaks') THEN
+    RAISE EXCEPTION 'CONTRACT VIOLATED: the chat_streaks flag still exists';
+  END IF;
 END $$;
 
--- Backdate the two "yest" rows as the table owner: created_at is
--- server-owned, so a client could never do this, and the streak needs two
--- distinct days.
-RESET ROLE;
-UPDATE public.messages SET created_at = now() - interval '1 day'
- WHERE relationship_id = '10000000-0000-0000-0000-000000000001'
-   AND content IN ('a yest','b yest');
-
-SELECT public.test_set_auth('00000000-0000-0000-0000-0000000000a1');
-DO $$
-DECLARE v int;
-BEGIN
-  SELECT public.chat_conversation_streak('10000000-0000-0000-0000-000000000001', 0) INTO v;
-  IF v < 2 THEN RAISE EXCEPTION 'expected streak >= 2, got %', v; END IF;
-END $$;
-
--- Outsider gets streak 0
-SELECT public.test_set_auth('00000000-0000-0000-0000-0000000000c3');
-DO $$
-DECLARE v int;
-BEGIN
-  SELECT public.chat_conversation_streak('10000000-0000-0000-0000-000000000001', 0) INTO v;
-  IF v <> 0 THEN RAISE EXCEPTION 'outsider expected streak 0, got %', v; END IF;
-END $$;
-
--- The receipt round trip, from the SENDER's side.
+-- The receipt round trip, from the SENDER's side (Spec 1a: gated by the
+-- couple's "Show when we've seen things").
 --
--- Every existing assertion here checks the recipient's call succeeds. None
--- checked that the sender can then SEE it -- which is the entire purpose of
--- a receipt. If RLS or a column grant hid delivered_at/read_at from the
--- sender, every test above would still pass while ticks never appeared.
+-- The fixture couple has no seen_receipt_prefs rows, so the setting is off:
+-- B reading must leave A a delivery tick (from mark_delivered) and NO read
+-- tick, A must not be able to select read_at, and the read must not change
+-- any messages row (realtime). Once both turn it on, a NEW read shows; the
+-- read that happened while off never does; one partner turning it off again
+-- stops new receipts at once.
 DO $$
-DECLARE v_delivered boolean; v_read boolean;
+DECLARE v_delivered boolean; v_receipt boolean; v_leak boolean; v_before text; v_after text;
 BEGIN
-  -- A (the sender) sees no receipt on a fresh message.
-  PERFORM public.test_set_auth('00000000-0000-0000-0000-0000000000a1');
-  SELECT delivered_at IS NOT NULL, read_at IS NOT NULL
-    INTO v_delivered, v_read
-  FROM public.messages WHERE id = '20000000-0000-0000-0000-000000000001';
-
-  -- B marks it delivered.
+  -- B marks A's message delivered (the device's own delivery RPC), then
+  -- reads the conversation while off.
   PERFORM public.test_set_auth('00000000-0000-0000-0000-0000000000b2');
   PERFORM public.mark_delivered(ARRAY['20000000-0000-0000-0000-000000000001'::uuid]);
+  RESET ROLE;
+  SELECT string_agg(m.xmin::text || ':' || md5(m::text), '|' ORDER BY m.id) INTO v_before
+  FROM public.messages m WHERE m.relationship_id = '10000000-0000-0000-0000-000000000001';
+  PERFORM public.test_set_auth('00000000-0000-0000-0000-0000000000b2');
+  PERFORM public.mark_conversation_read('10000000-0000-0000-0000-000000000001');
+  RESET ROLE;
+  SELECT string_agg(m.xmin::text || ':' || md5(m::text), '|' ORDER BY m.id) INTO v_after
+  FROM public.messages m WHERE m.relationship_id = '10000000-0000-0000-0000-000000000001';
+  IF v_after IS DISTINCT FROM v_before THEN
+    RAISE EXCEPTION 'CONTRACT VIOLATED: a read while receipts were off changed a messages row';
+  END IF;
 
-  -- A must now see delivered.
+  -- A sees delivered, and no receipt.
   PERFORM public.test_set_auth('00000000-0000-0000-0000-0000000000a1');
-  SELECT delivered_at IS NOT NULL INTO v_delivered
+  SELECT delivered_at IS NOT NULL, read_receipt_at IS NOT NULL
+    INTO v_delivered, v_receipt
   FROM public.messages WHERE id = '20000000-0000-0000-0000-000000000001';
   IF NOT v_delivered THEN
     RAISE EXCEPTION 'the sender cannot see their own delivery receipt';
   END IF;
+  IF v_receipt THEN
+    RAISE EXCEPTION 'CONTRACT VIOLATED: a read while receipts were off produced a receipt';
+  END IF;
 
-  -- B reads the conversation.
+  -- A cannot read the legacy private marker either.
+  BEGIN
+    SELECT read_at IS NOT NULL INTO v_leak
+    FROM public.messages WHERE id = '20000000-0000-0000-0000-000000000001';
+    RAISE EXCEPTION 'CONTRACT VIOLATED: the sender can select messages.read_at';
+  EXCEPTION WHEN insufficient_privilege THEN NULL;
+  END;
+
+  -- Both turn it on.
+  PERFORM public.set_seen_receipts('10000000-0000-0000-0000-000000000001', true);
+  PERFORM public.test_set_auth('00000000-0000-0000-0000-0000000000b2');
+  PERFORM public.set_seen_receipts('10000000-0000-0000-0000-000000000001', true);
+
+  -- The earlier read stays hidden.
+  PERFORM public.test_set_auth('00000000-0000-0000-0000-0000000000a1');
+  SELECT read_receipt_at IS NOT NULL INTO v_receipt
+  FROM public.messages WHERE id = '20000000-0000-0000-0000-000000000001';
+  IF v_receipt THEN
+    RAISE EXCEPTION 'CONTRACT VIOLATED: turning receipts on revealed a read made while off';
+  END IF;
+
+  -- A new message from A, read by B while on: A sees the receipt, and the
+  -- receipt implies delivered (spec 5.2).
+  RESET ROLE;
+  INSERT INTO public.messages (id, relationship_id, sender_id, client_message_id, content, message_analysis_done, safety_processed_at)
+  VALUES ('20000000-0000-0000-0000-000000000003', '10000000-0000-0000-0000-000000000001',
+          '00000000-0000-0000-0000-0000000000a1', '30000000-0000-0000-0000-000000000003',
+          'second from A', true, now())
+  ON CONFLICT (id) DO NOTHING;
   PERFORM public.test_set_auth('00000000-0000-0000-0000-0000000000b2');
   PERFORM public.mark_conversation_read('10000000-0000-0000-0000-000000000001');
-
-  -- A must now see read, and read must imply delivered.
   PERFORM public.test_set_auth('00000000-0000-0000-0000-0000000000a1');
-  SELECT delivered_at IS NOT NULL, read_at IS NOT NULL
-    INTO v_delivered, v_read
-  FROM public.messages WHERE id = '20000000-0000-0000-0000-000000000001';
-  IF NOT v_read THEN
-    RAISE EXCEPTION 'the sender cannot see their own read receipt';
+  SELECT delivered_at IS NOT NULL, read_receipt_at IS NOT NULL
+    INTO v_delivered, v_receipt
+  FROM public.messages WHERE id = '20000000-0000-0000-0000-000000000003';
+  IF NOT v_receipt THEN
+    RAISE EXCEPTION 'the sender cannot see their read receipt while the setting is on';
   END IF;
   IF NOT v_delivered THEN
-    RAISE EXCEPTION 'read_at is set but delivered_at is not (spec 5.2)';
+    RAISE EXCEPTION 'read_receipt_at is set but delivered_at is not (spec 5.2)';
+  END IF;
+
+  -- B turns it off alone: a further read shows nothing new to A.
+  PERFORM public.test_set_auth('00000000-0000-0000-0000-0000000000b2');
+  PERFORM public.set_seen_receipts('10000000-0000-0000-0000-000000000001', false);
+  RESET ROLE;
+  INSERT INTO public.messages (id, relationship_id, sender_id, client_message_id, content, message_analysis_done, safety_processed_at)
+  VALUES ('20000000-0000-0000-0000-000000000004', '10000000-0000-0000-0000-000000000001',
+          '00000000-0000-0000-0000-0000000000a1', '30000000-0000-0000-0000-000000000004',
+          'third from A', true, now())
+  ON CONFLICT (id) DO NOTHING;
+  PERFORM public.test_set_auth('00000000-0000-0000-0000-0000000000b2');
+  PERFORM public.mark_conversation_read('10000000-0000-0000-0000-000000000001');
+  PERFORM public.test_set_auth('00000000-0000-0000-0000-0000000000a1');
+  SELECT read_receipt_at IS NOT NULL INTO v_receipt
+  FROM public.messages WHERE id = '20000000-0000-0000-0000-000000000004';
+  IF v_receipt THEN
+    RAISE EXCEPTION 'CONTRACT VIOLATED: one partner turning receipts off did not stop them';
   END IF;
 END
 $$;

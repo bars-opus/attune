@@ -35,7 +35,8 @@ BEGIN
   SELECT metadata->>'title', metadata->>'body' INTO v_title, v_body FROM public.scheduled_notifications
   WHERE source_key = 'together_daily:7e100000-0000-0000-0000-0000000000a1:2026-11-10';
   IF v_title <> 'Today' THEN RAISE EXCEPTION 'CONTRACT VIOLATED: title %', v_title; END IF;
-  IF v_body NOT LIKE '%19:00 Dinner at Buka%' OR v_body NOT LIKE '%Kofi''s big day: Interview at 10:00%' THEN
+  -- Spec 1b (ruling R-E): counts, times and nudges -- never titles.
+  IF v_body IS DISTINCT FROM '1 plan today at 19:00 · Kofi''s big day at 10:00 — a word of luck?' THEN
     RAISE EXCEPTION 'CONTRACT VIOLATED: summary body %', v_body;
   END IF;
   IF v_body LIKE '%Therapy%' OR v_body LIKE '%Ring%' OR v_body LIKE '%Busy%' THEN
@@ -86,7 +87,7 @@ BEGIN
   SELECT count(*) INTO v_n FROM public.scheduled_notifications WHERE source_key = 'together_daily:7e100000-0000-0000-0000-0000000000b2:2026-11-12';
   IF v_n <> 0 THEN RAISE EXCEPTION 'CONTRACT VIOLATED: summary sent with daily_summary off'; END IF;
   SELECT metadata->>'body' INTO v_body FROM public.scheduled_notifications WHERE source_key = 'together_daily:7e100000-0000-0000-0000-0000000000a1:2026-11-12';
-  IF v_body IS NULL OR v_body NOT LIKE '%Cinema%' OR v_body LIKE '%big day%' THEN
+  IF v_body IS DISTINCT FROM '1 plan today' THEN
     RAISE EXCEPTION 'CONTRACT VIOLATED: care-off summary %', v_body;
   END IF;
 END $$;
@@ -98,7 +99,7 @@ BEGIN
   PERFORM public.together_enqueue_daily('2026-11-08T08:05:00Z');
   SELECT metadata->>'title', metadata->>'body' INTO v_title, v_body FROM public.scheduled_notifications
   WHERE source_key = 'together_daily:7e100000-0000-0000-0000-0000000000a1:2026-11-08';
-  IF v_title <> 'Your week together' OR v_body NOT LIKE '%Tue%Dinner at Buka%' THEN
+  IF v_title <> 'Your week together' OR v_body IS DISTINCT FROM '2 plans this week, first Tue 19:00' THEN
     RAISE EXCEPTION 'CONTRACT VIOLATED: week ahead % / %', v_title, v_body;
   END IF;
   PERFORM public.together_enqueue_daily('2026-12-01T08:05:00Z');
@@ -141,8 +142,17 @@ BEGIN
   PERFORM public.together_enqueue_daily('2026-11-11T08:05:00Z');
   SELECT metadata->>'body' INTO v_tue FROM public.scheduled_notifications WHERE source_key = 'together_daily:7e100000-0000-0000-0000-0000000000c3:2026-11-10';
   SELECT metadata->>'body' INTO v_wed FROM public.scheduled_notifications WHERE source_key = 'together_daily:7e100000-0000-0000-0000-0000000000c3:2026-11-11';
-  IF v_tue LIKE '%Call%' THEN RAISE EXCEPTION 'CONTRACT VIOLATED: London Tuesday shows a Wednesday 02:00 call: %', v_tue; END IF;
-  IF v_wed IS NULL OR v_wed NOT LIKE '%02:00 Call%' THEN RAISE EXCEPTION 'CONTRACT VIOLATED: London Wednesday summary %', v_wed; END IF;
+  IF v_tue IS NOT NULL THEN RAISE EXCEPTION 'CONTRACT VIOLATED: London Tuesday shows a Wednesday 02:00 call: %', v_tue; END IF;
+  IF v_wed IS DISTINCT FROM '1 plan today at 02:00' THEN RAISE EXCEPTION 'CONTRACT VIOLATED: London Wednesday summary %', v_wed; END IF;
 END $$;
 
+-- 6. Spec 1b: no summary anywhere carries a plan title.
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM public.scheduled_notifications
+             WHERE metadata->>'type' = 'together_daily'
+               AND metadata->>'body' ~ '(Dinner|Interview|Therapy|Ring|Exam|Cinema|Call|Viva)') THEN
+    RAISE EXCEPTION 'CONTRACT VIOLATED: a daily summary carries a plan title';
+  END IF;
+END $$;
 ROLLBACK;

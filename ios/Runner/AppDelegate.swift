@@ -16,6 +16,7 @@ import UIKit
   private var screenshotChannel: FlutterMethodChannel?
   private var screenshotObserver: NSObjectProtocol?
   private var recordingHapticsChannel: FlutterMethodChannel?
+  private var switcherCover: UIView?
 
   override func application(
     _ application: UIApplication,
@@ -27,6 +28,16 @@ import UIKit
     // attribution menu's opt-out flips.
     UserDefaults.standard.set(false, forKey: "MGLMapboxMetricsEnabled")
     GeneratedPluginRegistrant.register(with: self)
+
+    // Quick exit / privacy (Spec 2; research 06 §3 F3 (3)): a native cover the
+    // moment Attune leaves the foreground, so the app-switcher snapshot never
+    // shows content (Flutter's own cover can miss the snapshot frame).
+    NotificationCenter.default.addObserver(
+      forName: UIApplication.willResignActiveNotification, object: nil, queue: .main
+    ) { [weak self] _ in self?.showSwitcherCover() }
+    NotificationCenter.default.addObserver(
+      forName: UIApplication.didBecomeActiveNotification, object: nil, queue: .main
+    ) { [weak self] _ in self?.hideSwitcherCover() }
 
     guard let controller = window?.rootViewController as? FlutterViewController else {
       return super.application(application, didFinishLaunchingWithOptions: launchOptions)
@@ -109,5 +120,24 @@ import UIKit
       NotificationCenter.default.removeObserver(observer)
       screenshotObserver = nil
     }
+  }
+
+  private func showSwitcherCover() {
+    guard switcherCover == nil, let window = window else { return }
+    let cover = UIView(frame: window.bounds)
+    // Follows light/dark mode, so the switcher shows a plain screen.
+    if #available(iOS 13.0, *) {
+      cover.backgroundColor = window.backgroundColor ?? .systemBackground
+    } else {
+      cover.backgroundColor = window.backgroundColor ?? .white
+    }
+    cover.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+    window.addSubview(cover)
+    switcherCover = cover
+  }
+
+  private func hideSwitcherCover() {
+    switcherCover?.removeFromSuperview()
+    switcherCover = nil
   }
 }

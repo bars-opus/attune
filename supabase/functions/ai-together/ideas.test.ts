@@ -26,3 +26,20 @@ Deno.test("a fully free day (08:00–22:00, 14 hours) can get ideas", () => {
   assert(validateIdeasRequest({ window_start_local: "2026-11-07T08:00", window_end_local: "2026-11-07T22:00" }).ok);
   assert(!validateIdeasRequest({ window_start_local: "2026-11-07T08:00", window_end_local: "2026-11-08T08:30" }).ok);
 });
+
+// Spec 7 (B9, plan review M12): a quiet person's ideas stay gentle; the
+// prompt never says why.
+Deno.test("a quiet requester gets gentle ideas, with no state named", () => {
+  const p = buildIdeasPrompt({ startLocal: "2026-11-05T19:00", endLocal: "2026-11-05T22:00", quiet: true });
+  assertStringIncludes(p.system, "Keep ideas gentle, low-effort and unceremonious.");
+  for (const word of ["quiet", "loss", "grief", "hard time", "depress", "sad"]) {
+    assert(!p.system.toLowerCase().includes(word) && !p.user.toLowerCase().includes(word), word);
+  }
+  const plain = buildIdeasPrompt({ startLocal: "2026-11-05T19:00", endLocal: "2026-11-05T22:00" });
+  assert(!plain.system.includes("gentle, low-effort"));
+});
+
+Deno.test("the handler asks whether the requester is quiet", async () => {
+  const src = await Deno.readTextFile(new URL("./handler.ts", import.meta.url));
+  assertStringIncludes(src, 'deps.service.rpc("user_is_quiet"');
+});

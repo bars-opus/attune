@@ -1,15 +1,15 @@
+import 'package:attune/app/feature_flag_refresher.dart';
 import 'dart:async';
 
+import 'package:attune/app/app_shell.dart';
 import 'package:attune/app/theme/app_theme.dart';
 import 'package:attune/core/notifications/services/onesignal_service.dart';
 import 'package:attune/core/providers/locale_provider.dart';
 import 'package:attune/core/providers/routing_providers.dart';
 import 'package:attune/core/providers/theme_provider.dart';
-import 'package:attune/core/services/app_privacy_cover.dart';
 import 'package:attune/core/ui/feedback/sound_service.dart';
 import 'package:attune/core/utils/screen_util_config.dart';
 import 'package:attune/features/couple_map/widget/presentation/couple_widget_publisher.dart';
-import 'package:attune/features/together/presentation/widgets/share_intake_listener.dart';
 import 'package:attune/i10n/generated/app_localizations.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_quill/flutter_quill.dart'
@@ -73,19 +73,15 @@ class _AppState extends ConsumerState<App> {
           localizationsDelegates: appLocalizationsDelegates,
           supportedLocales: AppLocalizations.supportedLocales,
           routerConfig: router,
-          builder: (context, child) {
-            // Outside the privacy cover, which unmounts its child while the
-            // app is in the background, exactly when a share arrives.
-            return ShareIntakeListener(
-              onShare: () => showTogetherForShare(router),
-              child: AppPrivacyCover(
-                child: MediaQuery.withClampedTextScaling(
-                  maxScaleFactor: 1.0,
+          // The root shell (Spec 2): lock gate, privacy cover, quick exit.
+          // Flags re-read on resume and sign-in (sync audit 2026-10-18).
+          builder:
+              (context, child) => FeatureFlagRefresher(
+                child: appShell(
+                  router: router,
                   child: child ?? const SizedBox.shrink(),
                 ),
               ),
-            );
-          },
         );
       },
     );

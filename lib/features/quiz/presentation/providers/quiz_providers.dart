@@ -1,14 +1,12 @@
 // lib/features/quiz/providers/quiz_providers.dart
 
-import 'package:attune/features/quiz/domain/models/attachment_compatibility.dart';
+import 'package:attune/features/chat/domain/services/chat_feature_flags.dart';
 import 'package:attune/features/quiz/domain/models/attachment_result.dart';
 import 'package:attune/features/quiz/data/repositories/quiz_repository.dart';
 import 'package:attune/features/quiz/domain/models/communication_style_result.dart';
 import 'package:attune/features/quiz/domain/models/conflict_style_result.dart';
 import 'package:attune/features/quiz/domain/models/love_language_result.dart';
 import 'package:attune/features/quiz/domain/models/shared_quiz_result.dart';
-import 'package:attune/features/quiz/domain/services/attachment_compatibility_service.dart';
-import 'package:attune/features/quiz/domain/services/attachment_scoring_service.dart';
 import 'package:attune/features/quiz/domain/services/quiz_notification_service.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -146,6 +144,11 @@ final hasSharedQuizProvider = FutureProvider.family<bool, (String, String)>((
 // Share quiz result with partner (with notification)
 final shareQuizResultProvider =
     FutureProvider.family<void, ({String quizType})>((ref, params) async {
+      // Spec 5 (F9 (3)): an attachment result is about you; it is never
+      // shared (the server refuses it too).
+      if (params.quizType == 'attachment') {
+        throw UnsupportedError('Attachment results are not shared');
+      }
       final supabase = ref.read(supabaseClientProvider);
       final notificationService = QuizNotificationService(supabase);
       final userId = supabase.auth.currentUser?.id;
@@ -244,58 +247,33 @@ final partnerQuizResultProvider = FutureProvider.family<
   if (shareRes == null) return null;
 
   switch (quizType) {
-    case 'attachment':
+    // No 'attachment' case: an attachment result is about the person who
+    // took it and is never shared (Spec 5, F9 (3); final review M-2).
+    case 'love_language':
+      // The shared response itself (a partner cannot read psych_profiles);
+      // save_loving_now keeps the share on the newest answers.
       final quizRes =
           await supabase
               .from('quiz_responses')
-              .select('anxiety_score, avoidance_score, result_type')
+              .select('result_data')
               .eq('id', shareRes['quiz_response_id'])
-              .single();
-
-      return SharedQuizResult.attachment(
-        AttachmentResult(
-          anxietyScore: quizRes['anxiety_score'],
-          avoidanceScore: quizRes['avoidance_score'],
-          resultType: quizRes['result_type'],
-          displayName: AttachmentScoringService.getDisplayNameFromType(
-            quizRes['result_type'],
-          ),
-          poeticDescription:
-              AttachmentScoringService.getPoeticDescriptionFromType(
-                quizRes['result_type'],
-              ),
-          practiceBullets: AttachmentScoringService.getPracticeBulletsFromType(
-            quizRes['result_type'],
-          ),
-          securePercentage: 0,
-          anxiousPercentage: 0,
-          avoidantPercentage: 0,
-          fearfulPercentage: 0,
-        ),
-      );
-    case 'love_language':
-      final profileRes =
-          await supabase
-              .from('psych_profiles')
-              .select('love_languages')
-              .eq('user_id', partnerId)
               .maybeSingle();
-
-      final loveLanguages = profileRes?['love_languages'];
-      if (loveLanguages is! Map) return null;
-
+      final resultData = quizRes?['result_data'];
+      if (resultData is! Map) return null;
       return SharedQuizResult.loveLanguage(
-        LoveLanguageResult.fromJson(Map<String, dynamic>.from(loveLanguages)),
+        LoveLanguageResult.fromJson(Map<String, dynamic>.from(resultData)),
       );
     case 'communication':
-      final profileRes =
+      // The shared response itself: a partner cannot read psych_profiles
+      // (owner-only RLS); the "shared aggregate read" policy allows exactly
+      // this row (Spec 5 final review).
+      final quizRes =
           await supabase
-              .from('psych_profiles')
-              .select('communication_style')
-              .eq('user_id', partnerId)
+              .from('quiz_responses')
+              .select('result_data')
+              .eq('id', shareRes['quiz_response_id'])
               .maybeSingle();
-
-      final communicationStyle = profileRes?['communication_style'];
+      final communicationStyle = quizRes?['result_data'];
       if (communicationStyle is! Map) return null;
 
       return SharedQuizResult.communication(
@@ -395,7 +373,7 @@ final userQuizzesStatusProvider = FutureProvider<
   result['love_language'] = QuizCompletionStatus(
     completed:
         completedQuizzes.contains('love_language') && loveLanguageData != null,
-    displayName: loveLanguageData?.getPrimaryDisplay(),
+    displayName: loveLanguageData?.summary,
     loveLanguageResult: loveLanguageData,
   );
 
@@ -435,366 +413,29 @@ final userQuizzesStatusProvider = FutureProvider<
   return result;
 });
 
-// Check if both partners have shared their attachment results
-final bothPartnersSharedProvider = FutureProvider<bool>((ref) async {
-  final supabase = ref.read(supabaseClientProvider);
-  final userId = supabase.auth.currentUser?.id;
-  if (userId == null) return false;
 
-  final relationshipRes =
-      await supabase
-          .from('relationships')
-          .select('user_a, user_b')
-          .or('user_a.eq.$userId,user_b.eq.$userId')
-          .eq('status', 'active')
-          .maybeSingle();
+// Spec 5 (research 06 §3 F9): no pairing or compatibility statement about the
+// couple is ever computed or shown; the compatibility providers are gone.
 
-  if (relationshipRes == null) return false;
-
-  final partnerId =
-      relationshipRes['user_a'] == userId
-          ? relationshipRes['user_b']
-          : relationshipRes['user_a'];
-
-  if (partnerId == null) return false;
-
-  final userShare =
-      await supabase
-          .from('quiz_shares')
-          .select('id')
-          .eq('sharer_user_id', userId)
-          .eq('recipient_user_id', partnerId)
-          .eq('quiz_type', 'attachment')
-          .maybeSingle();
-
-  final partnerShare =
-      await supabase
-          .from('quiz_shares')
-          .select('id')
-          .eq('sharer_user_id', partnerId)
-          .eq('recipient_user_id', userId)
-          .eq('quiz_type', 'attachment')
-          .maybeSingle();
-
-  return userShare != null && partnerShare != null;
-});
-
-// Get attachment compatibility (with Claude API)
-final attachmentCompatibilityProvider = FutureProvider<
-  AttachmentCompatibility?
->((ref) async {
-  final supabase = ref.read(supabaseClientProvider);
-  final userId = supabase.auth.currentUser?.id;
-  if (userId == null) return null;
-
-  final relationshipRes =
-      await supabase
-          .from('relationships')
-          .select('user_a, user_b')
-          .or('user_a.eq.$userId,user_b.eq.$userId')
-          .eq('status', 'active')
-          .maybeSingle();
-
-  if (relationshipRes == null) return null;
-
-  final partnerId =
-      relationshipRes['user_a'] == userId
-          ? relationshipRes['user_b']
-          : relationshipRes['user_a'];
-
-  if (partnerId == null) return null;
-
-  final cachedRes =
-      await supabase
-          .from('attachment_compatibility_cache')
-          .select('*')
-          .eq('relationship_id', relationshipRes['id'])
-          .maybeSingle();
-
-  if (cachedRes != null) {
-    final partnerProfile =
-        await supabase
-            .from('profiles')
-            .select('display_name')
-            .eq('id', partnerId)
-            .single();
-
-    return AttachmentCompatibility(
-      userType: cachedRes['type_a'] as String? ?? 'Secure',
-      partnerType: cachedRes['type_b'] as String? ?? 'Secure',
-      partnerName: partnerProfile['display_name'] as String? ?? 'Partner',
-      partnerId: partnerId,
-      pairingName: cachedRes['pairing_name'] as String? ?? 'A balanced dynamic',
-      pairingDescription:
-          cachedRes['pairing_description'] as String? ??
-          'These two styles bring different but workable rhythms.',
-      naturalStrength:
-          cachedRes['natural_strength'] as String? ??
-          'You can learn from each other over time',
-      watchArea:
-          cachedRes['watch_area'] as String? ??
-          'Notice how you handle distance and closeness',
-    );
-  }
-
-  final userShare =
-      await supabase
-          .from('quiz_shares')
-          .select('quiz_response_id')
-          .eq('sharer_user_id', userId)
-          .eq('recipient_user_id', partnerId)
-          .eq('quiz_type', 'attachment')
-          .single();
-
-  final partnerShare =
-      await supabase
-          .from('quiz_shares')
-          .select('quiz_response_id')
-          .eq('sharer_user_id', partnerId)
-          .eq('recipient_user_id', userId)
-          .eq('quiz_type', 'attachment')
-          .single();
-
-  final userQuiz =
-      await supabase
-          .from('quiz_responses')
-          .select('result_type')
-          .eq('id', userShare['quiz_response_id'])
-          .single();
-
-  final partnerQuiz =
-      await supabase
-          .from('quiz_responses')
-          .select('result_type')
-          .eq('id', partnerShare['quiz_response_id'])
-          .single();
-
-  final userType = userQuiz['result_type'] as String;
-  final partnerType = partnerQuiz['result_type'] as String;
-
-  final partnerProfile =
-      await supabase
-          .from('profiles')
-          .select('display_name')
-          .eq('id', partnerId)
-          .single();
-
-  final compatibility = await _generateCompatibilityNote(userType, partnerType);
-
-  await supabase.rpc(
-    'upsert_attachment_compatibility_cache',
-    params: {
-      'p_relationship_id': relationshipRes['id'],
-      'p_type_a': userType,
-      'p_type_b': partnerType,
-      'p_pairing_name': compatibility['pairing_name'],
-      'p_pairing_description': compatibility['pairing_description'],
-      'p_natural_strength': compatibility['natural_strength'],
-      'p_watch_area': compatibility['watch_area'],
-    },
-  );
-
-  return AttachmentCompatibility(
-    userType: AttachmentScoringService.getDisplayNameFromType(userType),
-    partnerType: AttachmentScoringService.getDisplayNameFromType(partnerType),
-    partnerName: partnerProfile['display_name'] as String? ?? 'Partner',
-    partnerId: partnerId,
-    pairingName: compatibility['pairing_name'] ?? 'A balanced dynamic',
-    pairingDescription:
-        compatibility['pairing_description'] ??
-        'These two styles bring different but workable rhythms.',
-    naturalStrength:
-        compatibility['natural_strength'] ??
-        'You can learn from each other over time',
-    watchArea:
-        compatibility['watch_area'] ??
-        'Notice how you handle distance and closeness',
-  );
-});
-
-// Provider to check if compatibility needs refresh
-final needsCompatibilityRefreshProvider = FutureProvider<bool>((ref) async {
-  final supabase = ref.read(supabaseClientProvider);
-  final userId = supabase.auth.currentUser?.id;
-  if (userId == null) return false;
-
-  // Get relationship
-  final relationshipRes =
-      await supabase
-          .from('relationships')
-          .select('id, user_a, user_b')
-          .or('user_a.eq.$userId,user_b.eq.$userId')
-          .eq('status', 'active')
-          .maybeSingle();
-
-  if (relationshipRes == null) return false;
-
-  final partnerId =
-      relationshipRes['user_a'] == userId
-          ? relationshipRes['user_b']
-          : relationshipRes['user_a'];
-
-  // Get the most recent shared quiz response for both users
-  final userShare =
-      await supabase
-          .from('quiz_shares')
-          .select('quiz_response_id, shared_at')
-          .eq('sharer_user_id', userId)
-          .eq('recipient_user_id', partnerId)
-          .eq('quiz_type', 'attachment')
-          .order('shared_at', ascending: false)
-          .limit(1)
-          .maybeSingle();
-
-  final partnerShare =
-      await supabase
-          .from('quiz_shares')
-          .select('quiz_response_id, shared_at')
-          .eq('sharer_user_id', partnerId)
-          .eq('recipient_user_id', userId)
-          .eq('quiz_type', 'attachment')
-          .order('shared_at', ascending: false)
-          .limit(1)
-          .maybeSingle();
-
-  if (userShare == null || partnerShare == null) return false;
-
-  // Get cached compatibility
-  final cachedRes =
-      await supabase
-          .from('attachment_compatibility_cache')
-          .select('generated_at')
-          .eq('relationship_id', relationshipRes['id'])
-          .maybeSingle();
-
-  if (cachedRes == null) return true;
-
-  final cachedDate = DateTime.parse(cachedRes['generated_at']);
-  final userShareDate = DateTime.parse(userShare['shared_at']);
-  final partnerShareDate = DateTime.parse(partnerShare['shared_at']);
-
-  // If either share is newer than the cached compatibility, refresh needed
-  return userShareDate.isAfter(cachedDate) ||
-      partnerShareDate.isAfter(cachedDate);
-});
-
-// Provider that refreshes compatibility when needed
-final refreshedAttachmentCompatibilityProvider =
-    FutureProvider<AttachmentCompatibility?>((ref) async {
-      // First check if refresh is needed
-      final needsRefresh = await ref.read(
-        needsCompatibilityRefreshProvider.future,
+// Save "what feels loving to me right now" (Spec 5, R5-5). The server
+// checks the shape, stores the next version and moves any existing share
+// to it (save_loving_now).
+final saveLoveLanguageResultProvider =
+    FutureProvider.family<void, LoveLanguageResult>((ref, result) async {
+      final supabase = ref.read(supabaseClientProvider);
+      await supabase.rpc(
+        'save_loving_now',
+        params: {'p_result': result.toJson()},
       );
-
-      if (needsRefresh) {
-        // Invalidate the cached compatibility to force refresh
-        ref.invalidate(attachmentCompatibilityProvider);
-      }
-
-      return ref.watch(attachmentCompatibilityProvider.future);
     });
 
-// Claude API call for compatibility note
-// Deterministic, personalised compatibility note (no client AI call, no API key).
-// AttachmentCompatibilityService keys on the two attachment types and guarantees
-// the ATTACHMENT spec's banned-word / no-blame constraints by construction.
-Future<Map<String, String>> _generateCompatibilityNote(
-  String typeA,
-  String typeB,
-) async {
-  return AttachmentCompatibilityService.noteFor(typeA, typeB).toMap();
-}
-
-// Save love language result
-final saveLoveLanguageResultProvider = FutureProvider.family<
-  void,
-  ({Map<int, int?> answers, LoveLanguageResult result})
->((ref, params) async {
-  final supabase = ref.read(supabaseClientProvider);
-  final userId = supabase.auth.currentUser?.id;
-
-  if (userId == null) throw Exception('Not authenticated');
-
-  // Format answers for storage
-  final formattedAnswers = <String, int?>{};
-  params.answers.forEach((key, value) {
-    formattedAnswers['Q${key + 1}'] = value;
-  });
-
-  // Get current version (for retake handling)
-  final existing =
-      await supabase
-          .from('quiz_responses')
-          .select('version')
-          .eq('user_id', userId)
-          .eq('quiz_type', 'love_language')
-          .order('version', ascending: false)
-          .limit(1)
-          .maybeSingle();
-
-  final nextVersion = (existing != null ? (existing['version'] as int) + 1 : 1);
-
-  // If this is a retake, move current result to history
-  if (existing != null) {
-    final currentResponse =
-        await supabase
-            .from('quiz_responses')
-            .select('*')
-            .eq('user_id', userId)
-            .eq('quiz_type', 'love_language')
-            .eq('version', existing['version'])
-            .single();
-
-    await supabase.from('psych_profile_history').insert({
-      'user_id': userId,
-      'quiz_type': 'love_language',
-      'result_type': currentResponse['result_type'] ?? '',
-      'version': currentResponse['version'],
-      'recorded_at': currentResponse['completed_at'],
-    });
-  }
-
-  // Insert new response
-  await supabase.from('quiz_responses').insert({
-    'user_id': userId,
-    'quiz_type': 'love_language',
-    'responses': formattedAnswers,
-    'result_type': params.result.primary,
-    'version': nextVersion,
-  });
-
-  // Update psych_profiles
-  final existingProfile =
-      await supabase
-          .from('psych_profiles')
-          .select('love_languages, completed_quizzes')
-          .eq('user_id', userId)
-          .maybeSingle();
-
-  if (existingProfile == null) {
-    // Create new profile
-    await supabase.from('psych_profiles').insert({
-      'user_id': userId,
-      'love_languages': params.result.toJson(),
-      'completed_quizzes': ['love_language'],
-      'last_updated': DateTime.now().toIso8601String(),
-    });
-  } else {
-    // Update existing profile
-    final currentQuizzes = existingProfile['completed_quizzes'] as List? ?? [];
-    if (!currentQuizzes.contains('love_language')) {
-      currentQuizzes.add('love_language');
-    }
-
-    await supabase
-        .from('psych_profiles')
-        .update({
-          'love_languages': params.result.toJson(),
-          'completed_quizzes': currentQuizzes,
-          'last_updated': DateTime.now().toIso8601String(),
-        })
-        .eq('user_id', userId);
-  }
+// Spec 5 (R5-6): the communication and conflict quizzes wait for clinical
+// sign-off; off unless the flag says otherwise.
+final quizClinicalSignoffProvider = FutureProvider<bool>((ref) {
+  return ChatFeatureFlags.isEnabled(
+    ref.watch(supabaseClientProvider),
+    ChatFeatureFlags.quizClinicalSignoff,
+  );
 });
 
 // Save communication quiz result
@@ -835,16 +476,18 @@ final saveCommunicationQuizResultProvider = FutureProvider.family<
     });
   }
 
+  final completedAt = DateTime.now().toUtc();
+  final resultJson = params.result.copyWith(completedAt: completedAt).toJson();
+
   await supabase.from('quiz_responses').insert({
     'user_id': userId,
     'quiz_type': 'communication',
     'responses': formattedAnswers,
     'result_type': params.result.primary,
+    // What a partner reads once it is shared (they cannot read psych_profiles).
+    'result_data': resultJson,
     'version': nextVersion,
   });
-
-  final completedAt = DateTime.now().toUtc();
-  final resultJson = params.result.copyWith(completedAt: completedAt).toJson();
 
   final existingProfile =
       await supabase

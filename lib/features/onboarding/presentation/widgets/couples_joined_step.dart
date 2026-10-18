@@ -1,4 +1,5 @@
 import 'package:attune/core/utils/exports/export_screens.dart';
+import 'package:attune/features/chat/domain/seen_receipts.dart';
 import 'package:attune/features/onboarding/presentation/widgets/onboarding_info_tile.dart';
 import 'package:attune/features/onboarding/presentation/widgets/onboarding_step_frame.dart';
 
@@ -26,6 +27,16 @@ class CouplesJoinedStep extends StatelessWidget {
             icon: Icons.chat_bubble_outline,
             title: 'Your shared space is open',
             subtitle: 'Your private chat is ready for the two of you.',
+          ),
+          // F4 (4): new couples start with seen-state off; say so once, here.
+          Padding(
+            padding: EdgeInsets.symmetric(horizontal: Spacing.xs.w),
+            child: Text(
+              seenReceiptsAsk1Line,
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: colorScheme.onSurfaceVariant,
+              ),
+            ),
           ),
           // Fixed gap rather than Spacer: Spacer needs a bounded height, which
           // conflicts with the card.s scroll fallback on short screens.

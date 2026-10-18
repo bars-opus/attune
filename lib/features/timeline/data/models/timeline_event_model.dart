@@ -21,6 +21,9 @@ class TimelineEventModel {
   /// The Together event this moment remembers, if any.
   final String? coupleEventId;
 
+  /// Shared through "Share a win" (Spec 7, B2).
+  final bool isWin;
+
   bool get isPrivate => visibility == 'private';
 
   TimelineEventModel({
@@ -37,6 +40,7 @@ class TimelineEventModel {
     this.deletedAt,
     this.visibility = 'shared',
     this.coupleEventId,
+    this.isWin = false,
   });
 
   factory TimelineEventModel.fromJson(Map<String, dynamic> json) {
@@ -60,6 +64,7 @@ class TimelineEventModel {
               : null,
       visibility: json['visibility'] as String? ?? 'shared',
       coupleEventId: json['couple_event_id'] as String?,
+      isWin: json['is_win'] == true,
     );
   }
 
@@ -78,10 +83,12 @@ class TimelineEventModel {
       'deleted_at': deletedAt?.toIso8601String(),
       'visibility': visibility,
       'couple_event_id': coupleEventId,
+      'is_win': isWin,
     };
   }
 
   String get eventTypeDisplay {
+    if (isWin) return 'Win';
     switch (eventType) {
       case 'milestone':
         return 'Milestone';

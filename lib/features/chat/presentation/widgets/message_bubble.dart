@@ -137,6 +137,9 @@ class MessageBubble extends StatelessWidget {
     this.currentUserId,
     this.isStarred = false,
     this.isPinned = false,
+    this.isInJar = false,
+    this.onSaveToJar,
+    this.onRemoveFromJar,
     this.onCopy,
     this.onStar,
     this.onUnstar,
@@ -272,6 +275,12 @@ class MessageBubble extends StatelessWidget {
   final String? currentUserId;
   final bool isStarred;
   final bool isPinned;
+
+  /// Spec 7 (B1): a received "I noticed…" note this person kept, and the
+  /// actions to keep or let it go (null: not offered).
+  final bool isInJar;
+  final VoidCallback? onSaveToJar;
+  final VoidCallback? onRemoveFromJar;
   final VoidCallback? onCopy;
   final VoidCallback? onStar;
   final VoidCallback? onUnstar;
@@ -632,6 +641,9 @@ class MessageBubble extends StatelessWidget {
                                     // `ai_assist_enabled`, which
                                     // NOTHING gated before this.
                                     assistEnabled: assistEnabled,
+                                    isInJar: isInJar,
+                                    onSaveToJar: onSaveToJar,
+                                    onRemoveFromJar: onRemoveFromJar,
                                   ),
                                 )
                                 : null,
@@ -1600,6 +1612,20 @@ class _BubbleBody extends StatelessWidget {
           label: message.content,
           isMine: isMine,
           foregroundColor: onBubbleColor,
+        ),
+      );
+    } else if (message.isAppreciation) {
+      // Spec 7 (B1): an "I noticed…" note is ordinary text with a subtle
+      // leaf above it; the text block below draws the words.
+      children.add(
+        Semantics(
+          label: 'An I noticed note',
+          child: Icon(
+            Icons.eco_outlined,
+            key: const ValueKey('appreciation-leaf'),
+            size: 16,
+            color: onBubbleColor.withValues(alpha: 0.75),
+          ),
         ),
       );
     } else if (message.isPlace) {

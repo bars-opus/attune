@@ -77,7 +77,7 @@ BEGIN
     AND user_id = '7a000000-0000-0000-0000-0000000000b2'
     AND metadata->>'type' = 'moment_logged'
     AND metadata->>'title' = 'Ama added a moment'
-    AND metadata->>'body' = 'Beach day';
+    AND metadata->>'body' = 'Open Attune to see it.';
   IF v_partner <> 1 THEN
     RAISE EXCEPTION 'CONTRACT VIOLATED: expected 1 partner push, got %', v_partner;
   END IF;

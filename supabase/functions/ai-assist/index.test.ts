@@ -599,6 +599,67 @@ Deno.test("validateNearbyCategoryOutput rejects an unknown extra field", () => {
   );
 });
 
+
+// ---------------------------------------------------------------------------
+// Spec 8 (research 06 F15 (2); plan review C3): the deterministic pre-check
+// runs before consent, quota and the provider, for ideas and nearby alike.
+// ---------------------------------------------------------------------------
+for (const [content, instruction, expected] of [
+  ["Not tonight.", null, { status: "boundary" }],
+  ["I want to kill myself", null, { status: "supporter" }],
+  ["want to get dinner tonight?", "he hits me and I don't know what to say", { status: "writer_resources" }],
+] as const) {
+  Deno.test({
+    name: `assist pre-check: "${content}" / ${instruction} -> ${expected.status}`,
+    sanitizeResources: false,
+    sanitizeOps: false,
+    async fn() {
+      await resetFixtures();
+      await serviceRoleQuery(`UPDATE public.messages SET content = $1 WHERE id = $2`, [content, MSG_TARGET]);
+      await grantDualConsent();
+      // The draft victimisation list runs only with its flag (final review I-6).
+      await serviceRoleQuery(`UPDATE public.feature_flags SET enabled = true WHERE key = 'private_safety_check'`);
+      const client = await makeRlsClientForUser(USER_T6_A);
+      let response: Response;
+      try {
+        response = await processAssistRequest(
+          makeReq({ request_id: crypto.randomUUID(), message_id: MSG_TARGET, assist_kind: "ideas", user_instruction: instruction }),
+          { client: client as never, user: { id: USER_T6_A } },
+          { callGemini: neverCalledGemini(), searchMapbox: neverCalledMapbox(),
+            serviceClient: { rpc: () => { throw new Error("no quota for a pre-check"); } } as never },
+        );
+      } finally {
+        await serviceRoleQuery(`UPDATE public.feature_flags SET enabled = false WHERE key = 'private_safety_check'`);
+      }
+      assertEquals(await response.json(), expected);
+      // Final review m-4: as Understand's.
+      assertEquals(response.headers.get("cache-control"), "no-store");
+      const usageRows = await serviceRoleQuery(`SELECT * FROM public.ai_assistant_usage WHERE relationship_id = $1`, [REL_T6]);
+      assertEquals(usageRows.length, 0);
+    },
+  });
+}
+
+Deno.test({
+  name: "assist pre-check: a threat in the partner's message is refused as the model's own failure would be",
+  sanitizeResources: false,
+  sanitizeOps: false,
+  async fn() {
+    await resetFixtures();
+    await serviceRoleQuery(`UPDATE public.messages SET content = $1 WHERE id = $2`, ["I'll kill you", MSG_TARGET]);
+    await grantDualConsent();
+    const client = await makeRlsClientForUser(USER_T6_A);
+    const response = await processAssistRequest(
+      makeReq({ request_id: crypto.randomUUID(), message_id: MSG_TARGET, assist_kind: "ideas", user_instruction: null }),
+      { client: client as never, user: { id: USER_T6_A } },
+      { callGemini: neverCalledGemini(), searchMapbox: neverCalledMapbox(),
+        serviceClient: { rpc: () => { throw new Error("no quota for a pre-check"); } } as never },
+    );
+    const body = await response.json();
+    assertEquals(body.code, "RESULT_UNAVAILABLE");
+  },
+});
+
 Deno.test({
   name: "teardown: close shared pg connection (ai-assist)",
   fn: async () => {

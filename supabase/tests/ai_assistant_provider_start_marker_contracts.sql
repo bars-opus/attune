@@ -2,6 +2,8 @@
 -- Run: psql -q -d attune_test -f supabase/tests/ai_assistant_provider_start_marker_contracts.sql
 \set ON_ERROR_STOP on
 
+-- Sync audit M-14: one transaction, rolled back, so no fixture is left behind.
+BEGIN;
 DO $$
 DECLARE
   v_rel uuid := 'a5000000-0000-0000-0000-000000000001';
@@ -85,3 +87,4 @@ BEGIN
 
   RAISE NOTICE 'provider-start marker contracts: all held';
 END $$;
+ROLLBACK;

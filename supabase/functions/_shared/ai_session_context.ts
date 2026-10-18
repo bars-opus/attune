@@ -69,6 +69,7 @@
 //     pre-image injective. See buildDigestPreimage.
 
 import { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2.39.0";
+import { relationshipAiSuppressed } from "./ai_suppression.ts";
 
 // ---------------------------------------------------------------------------
 // Spec §4.2's literal numbers. Named, because a bare 2400 three
@@ -260,6 +261,9 @@ export function isEligibleWindowRow(row: Record<string, unknown>): boolean {
     row.message_origin !== "attune_assist" &&
     !row.media_url &&
     !row.game_session_id &&
+    // Spec 8 (plan review I8): no typed or analysis-skipped row.
+    (row.media_type ?? null) === null &&
+    row.message_analysis_skipped !== true &&
     typeof row.content === "string" &&
     (row.content as string).trim().length > 0;
 }
@@ -405,12 +409,17 @@ export async function selectSharedWindow(
     throw new RangeError("utcOffsetMinutes out of [-840,840]");
   }
 
+  // Spec 8 (F15 (1); final review I-3): a suppressed couple's chat never
+  // enters a session. Empty, exactly like a day with nothing eligible;
+  // fail closed (an empty window is never destructive).
+  if (await relationshipAiSuppressed(client, relationshipId)) return [];
+
   const dayStartUtc = civilDayStartUtc(now, utcOffsetMinutes);
 
   const { data: rows, error } = await client
     .from("messages")
     .select(
-      "id, sender_id, created_at, edited_at, content, deleted_at, is_system_notice, message_origin, media_url, game_session_id",
+      "id, sender_id, created_at, edited_at, content, deleted_at, is_system_notice, message_origin, media_url, game_session_id, media_type, message_analysis_skipped",
     )
     .eq("relationship_id", relationshipId)
     .gte("created_at", dayStartUtc.toISOString())

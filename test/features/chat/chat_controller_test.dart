@@ -222,6 +222,54 @@ void main() {
       expect(repo.markReadCalls, isNotEmpty);
     });
 
+    test('receipts off: a message already marked is not re-marked on the '
+        'next sync (Spec 1a)', () async {
+      final repo = FakeChatRepository(currentUserId: userId);
+      repo.seedIncoming(
+        id: 'inc-1',
+        relationshipId: relId,
+        senderId: 'partner',
+        content: 'hi from partner',
+        createdAt: DateTime.now(),
+      );
+      final b = await boot(repo);
+
+      b.controller.setViewActive(true);
+      await Future<void>.delayed(const Duration(milliseconds: 550));
+      expect(repo.markReadCalls, hasLength(1));
+
+      // The fake, like the server while receipts are off, leaves readAt null
+      // on the partner's message. Another visible sync must not call again.
+      await b.controller.markAsRead();
+      await b.controller.markAsRead();
+      expect(repo.markReadCalls, hasLength(1));
+    });
+
+    test('a read refreshes the conversations list, so the unread badge clears '
+        'even when receipts are off and no messages event fires (Spec 1a)',
+        () async {
+      final repo = FakeChatRepository(currentUserId: userId);
+      repo.seedIncoming(
+        id: 'inc-1',
+        relationshipId: relId,
+        senderId: 'partner',
+        content: 'hi from partner',
+        createdAt: DateTime.now(),
+      );
+      final b = await boot(repo);
+      final before = b.container.read(conversationsRefreshProvider);
+
+      b.controller.setViewActive(true);
+      await Future<void>.delayed(const Duration(milliseconds: 550));
+      expect(repo.markReadCalls, hasLength(1));
+      expect(b.container.read(conversationsRefreshProvider), greaterThan(before));
+
+      // Nothing new to mark: no call, no extra list refresh.
+      final after = b.container.read(conversationsRefreshProvider);
+      await b.controller.markAsRead();
+      expect(b.container.read(conversationsRefreshProvider), after);
+    });
+
     test('leaving the view clears presence', () async {
       final repo = FakeChatRepository(currentUserId: userId);
       final b = await boot(repo);

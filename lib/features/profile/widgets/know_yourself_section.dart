@@ -4,7 +4,6 @@ import 'package:attune/core/utils/exports/export_screens.dart';
 import 'package:attune/features/quiz/domain/models/attachment_result.dart';
 import 'package:attune/features/quiz/domain/models/communication_style_result.dart';
 import 'package:attune/features/quiz/domain/models/conflict_style_result.dart';
-import 'package:attune/features/quiz/domain/models/love_language_result.dart';
 import 'package:attune/features/quiz/presentation/providers/quiz_providers.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -14,6 +13,9 @@ class KnowYourselfSection extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final quizStatusAsync = ref.watch(userQuizzesStatusProvider);
+    // Spec 5 (R5-6): communication and conflict wait for clinical sign-off.
+    final signedOff =
+        ref.watch(quizClinicalSignoffProvider).valueOrNull ?? false;
 
     return Container(
       padding: EdgeInsets.all(Spacing.md.w),
@@ -62,18 +64,25 @@ class KnowYourselfSection extends ConsumerWidget {
                     ),
                     _buildQuizTile(
                       context,
-                      title: 'Love languages',
+                      title: 'What feels loving',
+                      startLabel: 'Add yours',
                       isCompleted:
                           quizStatus['love_language']?.completed ?? false,
                       resultType: quizStatus['love_language']?.displayName,
-                      onTap:
-                          () => _navigateToQuiz(
-                            context,
-                            ref,
-                            'love_language',
-                            loveLanguageResult:
-                                quizStatus['love_language']?.loveLanguageResult,
-                          ),
+                      // Spec 5 (R5-5): no quiz intro; it is a short editor
+                      // that can be changed any time.
+                      onTap: () {
+                        final current =
+                            quizStatus['love_language']?.loveLanguageResult;
+                        if (current != null) {
+                          context.pushNamed(
+                            'loveLanguageResult',
+                            extra: current,
+                          );
+                        } else {
+                          context.pushNamed('loveLanguageQuiz');
+                        }
+                      },
                     ),
                     Divider(
                       height: 32,
@@ -84,6 +93,7 @@ class KnowYourselfSection extends ConsumerWidget {
                     _buildQuizTile(
                       context,
                       title: 'Communication style',
+                      comingSoon: !signedOff,
                       isCompleted:
                           quizStatus['communication']?.completed ?? false,
                       resultType: quizStatus['communication']?.displayName,
@@ -106,6 +116,7 @@ class KnowYourselfSection extends ConsumerWidget {
                     _buildQuizTile(
                       context,
                       title: 'Conflict style',
+                      comingSoon: !signedOff,
                       isCompleted: quizStatus['conflict']?.completed ?? false,
                       resultType: quizStatus['conflict']?.displayName,
                       onTap:
@@ -131,9 +142,28 @@ class KnowYourselfSection extends ConsumerWidget {
     required bool isCompleted,
     String? resultType,
     required VoidCallback onTap,
+    bool comingSoon = false,
+    String startLabel = 'Start quiz',
   }) {
     final colorScheme = Theme.of(context).colorScheme;
     final textTheme = Theme.of(context).textTheme;
+
+    if (comingSoon) {
+      return Padding(
+        padding: EdgeInsets.symmetric(vertical: Spacing.sm.h),
+        child: Row(
+          children: [
+            Expanded(child: Text(title, style: textTheme.titleMedium)),
+            Text(
+              'Coming soon',
+              style: textTheme.bodySmall?.copyWith(
+                color: colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ],
+        ),
+      );
+    }
 
     return GestureDetector(
       onTap: onTap,
@@ -178,7 +208,7 @@ class KnowYourselfSection extends ConsumerWidget {
               Row(
                 children: [
                   Text(
-                    'Start quiz',
+                    startLabel,
                     style: textTheme.bodySmall?.copyWith(
                       color: colorScheme.onSurface.withValues(alpha: 0.6),
                     ),
@@ -202,7 +232,6 @@ class KnowYourselfSection extends ConsumerWidget {
     WidgetRef ref,
     String quizType, {
     AttachmentResult? attachmentResult,
-    LoveLanguageResult? loveLanguageResult,
     CommunicationStyleResult? communicationStyleResult,
     ConflictStyleResult? conflictStyleResult,
   }) {
@@ -219,7 +248,7 @@ class KnowYourselfSection extends ConsumerWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    'Your $quizType result',
+                    'Your attachment style',
                     style: Theme.of(context).textTheme.titleLarge,
                   ),
                   Gap(Spacing.md.h),
@@ -233,6 +262,14 @@ class KnowYourselfSection extends ConsumerWidget {
                   Text(
                     attachmentResult.poeticDescription,
                     style: Theme.of(context).textTheme.bodyMedium,
+                  ),
+                  // Every attachment result carries it (Spec 5, R5-4).
+                  Gap(Spacing.md.h),
+                  Text(
+                    AttachmentResult.caveat,
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
                   ),
                   Gap(Spacing.xl.h),
                   Row(
@@ -261,80 +298,6 @@ class KnowYourselfSection extends ConsumerWidget {
                         ),
                       ),
                     ],
-                  ),
-                ],
-              ),
-            ),
-      );
-    } else if (loveLanguageResult != null) {
-      showModalBottomSheet(
-        context: context,
-        isScrollControlled: true,
-        builder:
-            (context) => Container(
-              padding: EdgeInsets.all(Spacing.lg.w),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Your love language result',
-                    style: Theme.of(context).textTheme.titleLarge,
-                  ),
-                  Gap(Spacing.md.h),
-                  Text(
-                    loveLanguageResult.getPrimaryDisplay(),
-                    style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                      color: Theme.of(context).colorScheme.primary,
-                    ),
-                  ),
-                  Gap(Spacing.md.h),
-                  Text(
-                    loveLanguageResult.getDescription(
-                      loveLanguageResult.primary,
-                    ),
-                    style: Theme.of(context).textTheme.bodyMedium,
-                  ),
-                  Gap(Spacing.xl.h),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: AppButton(
-                          label: 'View result',
-                          onPressed: () {
-                            Navigator.pop(context);
-                            context.pushNamed(
-                              'loveLanguageResult',
-                              extra: loveLanguageResult,
-                            );
-                          },
-                          size: ButtonSize.medium,
-                        ),
-                      ),
-                      Gap(Spacing.md.w),
-                      Expanded(
-                        child: AppButton(
-                          label: 'Retake quiz',
-                          onPressed: () {
-                            Navigator.pop(context);
-                            context.pushNamed('quizEntry', extra: quizType);
-                          },
-                          size: ButtonSize.medium,
-                          customColor:
-                              Theme.of(
-                                context,
-                              ).colorScheme.surfaceContainerHighest,
-                          textColor: Theme.of(context).colorScheme.onSurface,
-                        ),
-                      ),
-                    ],
-                  ),
-                  Gap(Spacing.sm.h),
-                  Center(
-                    child: TextButton(
-                      onPressed: () => Navigator.pop(context),
-                      child: const Text('Close'),
-                    ),
                   ),
                 ],
               ),

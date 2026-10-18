@@ -146,9 +146,6 @@ class FakeChatRepository implements ChatRepository {
   /// conversation; set to a read-only/archived one to test those lifecycles.
   Conversation? conversationOverride;
 
-  /// Value returned by [fetchStreak].
-  int streakValue = 0;
-
   /// Pushes a realtime "something changed" signal to subscribers.
   void emitRealtime() => _events.add(null);
 
@@ -174,7 +171,7 @@ class FakeChatRepository implements ChatRepository {
       'content': content,
       'created_at': createdAt.toUtc().toIso8601String(),
       'delivered_at': deliveredAt?.toUtc().toIso8601String(),
-      'read_at': readAt?.toUtc().toIso8601String(),
+      'read_receipt_at': readAt?.toUtc().toIso8601String(),
       'media_url': mediaType == null ? null : 'https://example.com/m.mp4',
       'media_type': mediaType,
       'streak_views_remaining': streakViewsRemaining,
@@ -544,9 +541,6 @@ class FakeChatRepository implements ChatRepository {
       serverMessages[messageId] = existing.copyWith(viewedAt: DateTime.now());
     }
   }
-
-  @override
-  Future<int> fetchStreak(String relationshipId) async => streakValue;
 
   /// Every call to [setRelationshipChatName], in call order.
   final List<({String relationshipId, String chatName})> setChatNameCalls = [];

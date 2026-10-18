@@ -52,7 +52,9 @@ class HealingRepository {
         .from('relationships')
         .select('id, ended_at')
         .or('user_a.eq.$userId,user_b.eq.$userId')
-        .eq('status', 'ended')
+        // Spec 3a: an archived space (its 30-day window closed) still
+        // starts Healing.
+        .inFilter('status', ['ended', 'archived'])
         .order('ended_at', ascending: false)
         .limit(1)
         .maybeSingle()

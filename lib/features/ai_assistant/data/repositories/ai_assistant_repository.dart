@@ -138,10 +138,20 @@ class AiAssistantRepository {
     return _invoke(
       'ai-assist',
       body: body,
-      onResult: (data) => AssistDraftModel.fromJson(
-        Map<String, dynamic>.from(data as Map),
-        assistKind: assistKind,
-      ),
+      onResult: (data) {
+        // Spec 8 (F15 (2)): the pre-check's fixed outcomes.
+        final notice = switch ((data as Map)['status']) {
+          'boundary' => AssistantNotice.boundary,
+          'supporter' => AssistantNotice.supporter,
+          'writer_resources' => AssistantNotice.writerResources,
+          _ => null,
+        };
+        if (notice != null) throw AssistantError.notice(notice);
+        return AssistDraftModel.fromJson(
+          Map<String, dynamic>.from(data),
+          assistKind: assistKind,
+        );
+      },
     );
   }
 
@@ -300,6 +310,8 @@ class AiAssistantRepository {
     }
     try {
       return onResult(data);
+    } on AssistantError {
+      rethrow;
     } catch (error) {
       // A malformed/unparseable success-status response should never
       // happen server-side, but the client must not crash on it — map

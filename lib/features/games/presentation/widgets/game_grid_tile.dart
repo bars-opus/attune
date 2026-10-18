@@ -30,6 +30,66 @@ class GameGridTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final palette = GamePalette.of(gameType);
+    // Spec 5 (R5-13, F16): above 1.3x text the card grows to fit its words
+    // (at least its usual height) instead of clipping inside a fixed shape.
+    final large = MediaQuery.textScalerOf(context).scale(10) / 10 > 1.3;
+
+    final card = Material(
+      color: Colors.transparent,
+      child: Ink(
+        decoration: BoxDecoration(
+          color: palette.end,
+
+          borderRadius: BorderRadius.circular(20),
+        ),
+        child: InkWell(
+          onTap: comingSoon ? null : onTap,
+          borderRadius: BorderRadius.circular(20),
+          child: Padding(
+            padding: const EdgeInsets.all(14),
+            child: Column(
+              mainAxisSize: large ? MainAxisSize.min : MainAxisSize.max,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Center(
+                  child: GameIcon(gameType: gameType, size: large ? 72 : 100),
+                ),
+                if (large) const SizedBox(height: 10) else const Spacer(),
+                Text(
+                  title,
+                  maxLines: large ? 2 : 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: GameHubTheme.primaryText,
+                    fontSize: 15,
+                    fontWeight: FontWeight.w700,
+                    height: 1.15,
+                  ),
+                ),
+                const SizedBox(height: 3),
+                Text(
+                  comingSoon ? 'Coming soon' : subtitle,
+                  maxLines: large ? 4 : 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    // Tinted toward the card's own hue rather than
+                    // flat grey, so the subtitle belongs to the
+                    // card instead of sitting on top of it.
+                    color: Color.lerp(
+                      palette.start,
+                      GameHubTheme.primaryText,
+                      0.55,
+                    )!.withValues(alpha: 0.85),
+                    fontSize: 12,
+                    height: 1.25,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
 
     return Semantics(
       button: !comingSoon,
@@ -38,64 +98,23 @@ class GameGridTile extends StatelessWidget {
         // Dimmed rather than hidden: the catalogue doubles as a roadmap,
         // and a greyed card still says the game is planned.
         opacity: comingSoon ? 0.5 : 1,
-        child: AspectRatio(
-          // Slightly taller than wide, as the reference is: a square card
-          // leaves the two text lines cramped against the icon.
-          aspectRatio: 0.86,
-          child: Material(
-            color: Colors.transparent,
-            child: Ink(
-              decoration: BoxDecoration(
-                color: palette.end,
-
-                borderRadius: BorderRadius.circular(20),
-              ),
-              child: InkWell(
-                onTap: comingSoon ? null : onTap,
-                borderRadius: BorderRadius.circular(20),
-                child: Padding(
-                  padding: const EdgeInsets.all(14),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Center(child: GameIcon(gameType: gameType, size: 100)),
-                      const Spacer(),
-                      Text(
-                        title,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          color: GameHubTheme.primaryText,
-                          fontSize: 15,
-                          fontWeight: FontWeight.w700,
-                          height: 1.15,
+        child:
+            large
+                ? LayoutBuilder(
+                  builder:
+                      (context, box) => ConstrainedBox(
+                        constraints: BoxConstraints(
+                          minHeight: box.maxWidth / 0.86,
                         ),
+                        child: card,
                       ),
-                      const SizedBox(height: 3),
-                      Text(
-                        comingSoon ? 'Coming soon' : subtitle,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          // Tinted toward the card's own hue rather than
-                          // flat grey, so the subtitle belongs to the
-                          // card instead of sitting on top of it.
-                          color: Color.lerp(
-                            palette.start,
-                            GameHubTheme.primaryText,
-                            0.55,
-                          )!.withValues(alpha: 0.85),
-                          fontSize: 12,
-                          height: 1.25,
-                        ),
-                      ),
-                    ],
-                  ),
+                )
+                : AspectRatio(
+                  // Slightly taller than wide, as the reference is: a square
+                  // card leaves the two text lines cramped against the icon.
+                  aspectRatio: 0.86,
+                  child: card,
                 ),
-              ),
-            ),
-          ),
-        ),
       ),
     );
   }

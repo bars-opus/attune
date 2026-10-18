@@ -1,14 +1,12 @@
 // lib/features/pulse/data/repositories/pulse_repository.dart
 
-import 'package:attune/core/notifications/services/attune_notification_service.dart';
+import 'package:attune/features/pulse/data/models/your_week.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 class PulseRepository {
   final SupabaseClient _supabase;
-  final AttuneNotificationService _notificationService;
 
-  PulseRepository(this._supabase)
-    : _notificationService = AttuneNotificationService();
+  PulseRepository(this._supabase);
 
   Future<void> submitCheckin({
     required String userId,
@@ -34,121 +32,44 @@ class PulseRepository {
     }, onConflict: 'user_id,week_ending');
   }
 
-  Future<bool> haveBothCompletedCheckin({
-    required String relationshipId,
-    required DateTime weekEnding,
+  /// My own check-in and my private Emotional safety, both for
+  /// [weekEndingKey]. Both tables are auth.uid()-only on the server, so this
+  /// can never read the partner's rows (Spec 1a).
+  ///
+  /// The former haveBothCompletedCheckin / triggerPulseRecompute /
+  /// notification paths are gone: RLS made the first always false, and no
+  /// shared number moves on a check-in any more.
+  Future<YourWeek> fetchYourWeek({
+    required String userId,
+    required String weekEndingKey,
   }) async {
-    final response = await _supabase
-        .from('weekly_checkins')
-        .select('user_id')
-        .eq('relationship_id', relationshipId)
-        .eq('week_ending', weekEnding.toIso8601String().split('T')[0]);
-
-    // Get relationship to find both user IDs
-    final relationshipRes =
+    final checkinRow =
         await _supabase
-            .from('relationships')
-            .select('user_a, user_b')
-            .eq('id', relationshipId)
-            .single();
-
-    final userIds = response.map((r) => r['user_id'] as String).toList();
-    final bothUsers = [relationshipRes['user_a'], relationshipRes['user_b']];
-
-    return bothUsers.every((id) => userIds.contains(id));
-  }
-
-  Future<void> triggerPulseRecompute(String relationshipId) async {
-    try {
-      // Supabase throws on function errors in the current SDK surface.
-      await _supabase.functions.invoke(
-        'compute-pulse',
-        body: {'relationship_id': relationshipId, 'force_recompute': true},
-      );
-
-      // After pulse is recomputed, send notifications to both partners
-      await _sendPulseUpdatedNotifications(relationshipId);
-    } catch (e) {
-      print('Error recomputing pulse: $e');
-    }
-  }
-
-  Future<void> _sendPulseUpdatedNotifications(String relationshipId) async {
-    try {
-      // Get the most recent pulse score
-      final pulseResponse =
-          await _supabase
-              .from('pulse_scores')
-              .select('*')
-              .eq('relationship_id', relationshipId)
-              .order('week_ending', ascending: false)
-              .limit(1)
-              .single();
-
-      // Get previous pulse for delta
-      final previousResponse =
-          await _supabase
-              .from('pulse_scores')
-              .select('overall_score')
-              .eq('relationship_id', relationshipId)
-              .order('week_ending', ascending: false)
-              .limit(1)
-              .maybeSingle();
-
-      final newScore = pulseResponse['overall_score'] as int;
-      final delta =
-          previousResponse != null
-              ? newScore - (previousResponse['overall_score'] as int)
-              : null;
-
-      // Get relationship members
-      final relationshipRes =
-          await _supabase
-              .from('relationships')
-              .select('user_a, user_b')
-              .eq('id', relationshipId)
-              .single();
-
-      // Send notifications to both partners
-      await _notificationService.sendPulseUpdated(
-        userId: relationshipRes['user_a'] as String,
-        newScore: newScore,
-        delta: delta,
-      );
-
-      await _notificationService.sendPulseUpdated(
-        userId: relationshipRes['user_b'] as String,
-        newScore: newScore,
-        delta: delta,
-      );
-    } catch (e) {
-      print('Error sending pulse notifications: $e');
-    }
-  }
-
-  Future<Map<String, dynamic>?> getCurrentPulse(String relationshipId) async {
-    final response =
-        await _supabase
-            .from('pulse_scores')
-            .select('*')
-            .eq('relationship_id', relationshipId)
-            .order('week_ending', ascending: false)
-            .limit(1)
+            .from('weekly_checkins')
+            .select(
+              'communication_rating,connection_rating,conflict_health_rating,'
+              'conflict_health_na,alignment_rating,safety_rating',
+            )
+            .eq('user_id', userId)
+            .eq('week_ending', weekEndingKey)
             .maybeSingle();
-
-    return response;
-  }
-
-  Future<List<Map<String, dynamic>>> getPulseHistory(
-    String relationshipId,
-  ) async {
-    final response = await _supabase
-        .from('pulse_scores')
-        .select('*')
-        .eq('relationship_id', relationshipId)
-        .order('week_ending', ascending: false)
-        .limit(4);
-
-    return response;
+    // This week only: last week's private score must not read as this
+    // week's (I5).
+    final scoreRow =
+        await _supabase
+            .from('pulse_private_scores')
+            .select('emotional_safety,week_ending')
+            .eq('user_id', userId)
+            .eq('week_ending', weekEndingKey)
+            .maybeSingle();
+    return YourWeek(
+      checkin:
+          checkinRow == null ? null : WeeklyCheckinAnswers.fromJson(checkinRow),
+      emotionalSafety: (scoreRow?['emotional_safety'] as num?)?.toInt(),
+      weekEnding:
+          scoreRow == null
+              ? null
+              : DateTime.parse(scoreRow['week_ending'] as String),
+    );
   }
 }

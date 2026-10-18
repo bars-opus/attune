@@ -119,6 +119,11 @@ Future<void> _pump(
   VoidCallback? onAttachImage,
   VoidCallback? onAttachVideo,
   VoidCallback? onAttachFile,
+  VoidCallback? onAppreciation,
+  VoidCallback? onShareWin,
+  VoidCallback? onAskSupport,
+  VoidCallback? onHardMoment,
+  VoidCallback? onSendLongPress,
   VoidCallback? onCaptureVideo,
   VoidCallback? onOpenGames,
   bool showTranslator = false,
@@ -137,6 +142,11 @@ Future<void> _pump(
     onAttachImage: onAttachImage,
     onAttachVideo: onAttachVideo,
     onAttachFile: onAttachFile,
+    onAppreciation: onAppreciation,
+    onShareWin: onShareWin,
+    onAskSupport: onAskSupport,
+    onHardMoment: onHardMoment,
+    onSendLongPress: onSendLongPress,
     onCaptureVideo: onCaptureVideo,
     onOpenGames: onOpenGames,
     showTranslator: showTranslator,
@@ -400,6 +410,66 @@ void main() {
       await tester.pump(const Duration(milliseconds: 400));
     },
   );
+
+  testWidgets('Spec 7: I noticed…, Share a win and Ask for support appear only when given', (tester) async {
+    final taps = <String>[];
+    await _pump(
+      tester,
+      controller: TextEditingController(),
+      showAttachImage: true,
+      onAttachImage: () {},
+      onAppreciation: () => taps.add('noticed'),
+      onShareWin: () => taps.add('win'),
+      onAskSupport: () => taps.add('support'),
+    );
+    await tester.tap(find.byIcon(Icons.attach_file_rounded));
+    await tester.pumpAndSettle();
+    expect(find.text('I noticed…'), findsOneWidget);
+    expect(find.text('Share a win'), findsOneWidget);
+    await tester.tap(find.text('Ask for support'));
+    await tester.pumpAndSettle();
+    expect(taps, ['support']);
+
+    await tester.pumpWidget(const SizedBox());
+    await _pump(tester, controller: TextEditingController(), showAttachImage: true, onAttachImage: () {});
+    await tester.tap(find.byIcon(Icons.attach_file_rounded));
+    await tester.pumpAndSettle();
+    expect(find.text('I noticed…'), findsNothing);
+    expect(find.text('Share a win'), findsNothing);
+    expect(find.text('Ask for support'), findsNothing);
+  });
+
+  testWidgets('Spec 8: one "In a hard moment" entry; long-press send opens repair, never sends', (tester) async {
+    final taps = <String>[];
+    final controller = TextEditingController(text: 'draft');
+    await _pump(
+      tester,
+      controller: controller,
+      showAttachImage: true,
+      onAttachImage: () {},
+      onSend: () => taps.add('send'),
+      onHardMoment: () => taps.add('hard'),
+      onSendLongPress: () => taps.add('repair'),
+    );
+    await tester.pump();
+    await tester.longPress(find.byTooltip('Send message'));
+    await tester.pumpAndSettle();
+    expect(taps, ['repair']);
+    expect(controller.text, 'draft');
+    controller.clear();
+    await tester.pumpAndSettle();
+    await tester.tap(find.byIcon(Icons.attach_file_rounded));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('In a hard moment'));
+    await tester.pumpAndSettle();
+    expect(taps, ['repair', 'hard']);
+
+    await tester.pumpWidget(const SizedBox());
+    await _pump(tester, controller: TextEditingController(), showAttachImage: true, onAttachImage: () {});
+    await tester.tap(find.byIcon(Icons.attach_file_rounded));
+    await tester.pumpAndSettle();
+    expect(find.text('In a hard moment'), findsNothing);
+  });
 
   testWidgets(
     'attach ("+") icon opens a sheet with just Photos + Files when only showAttachImage is true (video off)',

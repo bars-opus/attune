@@ -10,6 +10,10 @@ class AppTextButton extends StatelessWidget {
   final AlignmentGeometry alignment;
   final TextStyle? textStyle;
 
+  /// Shrink-wrapped by default; a caller that needs a 44 dp target passes
+  /// one (Spec 5: BottomSheetHeader).
+  final Size minimumSize;
+
   const AppTextButton({
     super.key,
     this.text = 'Done',
@@ -20,6 +24,7 @@ class AppTextButton extends StatelessWidget {
     this.alignment = Alignment.topRight,
     this.textStyle,
     this.fontSize,
+    this.minimumSize = Size.zero,
   });
 
   @override
@@ -45,7 +50,7 @@ class AppTextButton extends StatelessWidget {
             },
         style: TextButton.styleFrom(
           padding: padding ?? Spacing.horizontalMd,
-          minimumSize: Size.zero,
+          minimumSize: minimumSize,
           tapTargetSize: MaterialTapTargetSize.shrinkWrap,
         ),
         child: Text(text, style: effectiveStyle),

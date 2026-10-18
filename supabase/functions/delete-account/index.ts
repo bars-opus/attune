@@ -17,14 +17,13 @@
 // longer. Doing it inline means the guarantee is discharged the moment the
 // request returns 200.
 //
-// The actual erasure is a single `auth.admin.deleteUser`. Everything below
-// public.users is reached by ON DELETE CASCADE across 40 tables (verified
-// against the schema), so this function deliberately does NOT enumerate
-// tables: a hand-written delete list silently misses every table added
-// afterwards, which is exactly how "we deleted your data" becomes untrue.
-// The cascade is the contract; 20260906120000_account_deletion_schema.sql
-// fixes the three FK/constraint defects that previously made it fail or
-// over-delete.
+// The erasure is `prepare_account_deletion` (the rows a cascade cannot
+// reach or must not over-delete, enumerated in SQL and pinned by
+// supabase/tests/account_deletion_contracts.sql) followed by
+// `auth.admin.deleteUser`, whose ON DELETE CASCADE reaches everything else
+// below public.users. A new table is covered by its cascade or added to
+// prepare_account_deletion and that contract; this file lists no tables
+// (sync audit M-10).
 import { serve } from "https://deno.land/std@0.177.0/http/server.ts";
 import {
   HttpError,
@@ -80,6 +79,24 @@ serve(async (req) => {
       .insert({ user_ref: userId, email_ref: userEmail })
       .select("id")
       .maybeSingle();
+
+    // Spec 3b (R3b-4): end the person's shared spaces (no push; the
+    // partner keeps a 30-day window over what remains), delete the
+    // shared-answer data that cannot be split by person, and queue their
+    // media, before the auth user goes. Idempotent: a retry after a failed
+    // deleteUser re-runs it safely (that failure leaves the spaces ended).
+    const { error: prepareError } = await supabase.rpc("prepare_account_deletion", {
+      p_user_id: userId,
+    });
+    if (prepareError) {
+      if (auditRow?.id) {
+        await supabase
+          .from("account_deletion_requests")
+          .update({ failure_reason: `prepare: ${prepareError.message}`.slice(0, 500) })
+          .eq("id", auditRow.id);
+      }
+      throw prepareError;
+    }
 
     // The single destructive call. Cascades through public.users into
     // every dependent table; the BEFORE DELETE trigger added in
@@ -162,9 +179,10 @@ async function sendDeletionConfirmation(email: string): Promise<void> {
       subject: "Your Attune account has been deleted",
       body:
         "Your Attune account and personal data have been permanently deleted.\n\n" +
-        "Anything you shared with a partner has been anonymised so it can no " +
-        "longer be linked to you. Safety records are retained in anonymised " +
-        "form only, as required by law.\n\n" +
+        "If you were in a shared space, it has ended; your messages, photos and game answers were removed from it. " +
+        "Shared history such as Pulse stays with the space until it is deleted, " +
+        "12 months after it closes. Safety records are kept in anonymised form " +
+        "only, as required by law.\n\n" +
         "If you did not request this, contact support immediately.",
     }),
   });

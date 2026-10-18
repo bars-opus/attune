@@ -79,3 +79,13 @@ Deno.test("the same item on the same day twice is one entry (no duplicate UIDs)"
   const uids = l.filter((x) => x.startsWith("UID:"));
   assertEquals(new Set(uids).size, uids.length);
 });
+
+// Spec 3c: a downloaded file is not a subscription -- no refresh hints.
+Deno.test("file mode omits the feed refresh lines", () => {
+  const out = buildCalendar([], new Date("2026-10-18T09:00:00Z"), { feed: false });
+  assert(!out.includes("REFRESH-INTERVAL"), "no REFRESH-INTERVAL");
+  assert(!out.includes("X-PUBLISHED-TTL"), "no X-PUBLISHED-TTL");
+  assert(out.includes("X-WR-CALNAME:Attune export"), "named as an export");
+  const feed = buildCalendar([], new Date("2026-10-18T09:00:00Z"));
+  assert(feed.includes("REFRESH-INTERVAL"), "the feed keeps its refresh hint");
+});

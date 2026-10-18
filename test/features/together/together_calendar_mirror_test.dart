@@ -98,7 +98,7 @@ void main() {
   setUp(() {
     cal = FakeMirrorCalendar();
     TogetherMirror.calendar = cal;
-    SharedPreferences.setMockInitialValues({'together_mirror_enabled': true});
+    SharedPreferences.setMockInitialValues({'together_mirror_enabled': true, 'together_mirror_titles': true});
   });
 
   Future<bool> sync(List<TogetherItem> items) =>

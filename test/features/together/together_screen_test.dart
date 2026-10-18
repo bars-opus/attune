@@ -1,6 +1,8 @@
 import 'package:attune/core/widgets/card_inkwell.dart';
 import 'dart:async';
 
+import 'package:attune/features/wins/presentation/win_providers.dart';
+import 'package:attune/features/appreciation/data/appreciation_service.dart';
 import 'package:attune/features/planning/presentation/planning_providers.dart';
 import 'package:attune/features/quiz/presentation/providers/quiz_providers.dart'
     as quiz;
@@ -70,6 +72,8 @@ Future<FakeTogetherGateway> _pump(
   FakeMirrorCalendar? mirror,
   bool embedded = false,
   String? coupleName,
+  bool appreciation = false,
+  List<Map<String, dynamic>> wins = const [],
 }) async {
   // Never the real lock-screen channel or phone calendar in tests.
   TogetherLiveActivity.store = live ?? FakeLiveStore();
@@ -96,6 +100,8 @@ Future<FakeTogetherGateway> _pump(
     'get_together_overlay': (_) => {'level': 'free_windows'},
     'replace_my_busy_blocks': (_) => 0,
     'set_planning_timezone': (_) => {'timezone': 'UTC'},
+    'list_win_cards': (_) => wins,
+    'dismiss_win_card': (_) => null,
   });
   _stopFailing = () => failing = false;
   await t.pumpWidget(
@@ -125,6 +131,8 @@ Future<FakeTogetherGateway> _pump(
           (ref, id) => const Stream.empty(),
         ),
         remindersListProvider.overrideWith(_Reminders.new),
+        appreciationEnabledProvider.overrideWith((ref) async => appreciation),
+        winsEnabledProvider.overrideWith((ref) async => wins.isNotEmpty),
       ],
       child: ScreenUtilInit(
         designSize: const Size(375, 812),
@@ -155,6 +163,14 @@ class _Reminders extends RemindersListNotifier {
     ),
   ];
 }
+
+// Spec 1b: these tests exercise the screen's wiring with plan titles on;
+// the titles-off default is pinned in together_surface_titles_test.dart.
+const _titlesOn = <String, Object>{
+  'together_widget_titles': true,
+  'together_live_titles': true,
+  'together_mirror_titles': true,
+};
 
 void main() {
   for (final embedded in [false, true])
@@ -291,6 +307,38 @@ void main() {
     expect(find.text('Coming up'), findsOneWidget);
     expect(find.textContaining('In 18 days'), findsOneWidget);
     expect(find.text('Our story'), findsOneWidget);
+  });
+
+  testWidgets('appreciation: write a note, open the jar — only while it is on (Spec 7, B1)', (t) async {
+    await _pump(t, appreciation: true);
+    await t.scrollUntilVisible(find.text('Notice something'), 200, scrollable: find.byType(Scrollable).first);
+    expect(find.text('Notice something'), findsOneWidget);
+    expect(find.text('Your appreciation jar'), findsOneWidget);
+    await t.pumpWidget(const SizedBox());
+    await _pump(t);
+    expect(find.text('Notice something'), findsNothing);
+  });
+
+  testWidgets('a partner\'s win: an in-app card to ask about it, put aside on dismiss (Spec 7, B2)', (t) async {
+    final g = await _pump(t, wins: [
+      {'event_id': 'w1', 'title': 'Got the grant!', 'created_at': '2026-11-02T08:00:00Z'},
+    ]);
+    expect(find.text('Kofi shared a win: Got the grant!'), findsOneWidget);
+    expect(find.text('Ask Kofi about it — what was the best part?'), findsOneWidget);
+    await t.tap(find.byTooltip('Not now'));
+    await t.pumpAndSettle();
+    expect(g.calls.where((c) => c.$1 == 'dismiss_win_card').single.$2, {'p_event_id': 'w1'});
+    expect(find.text('Kofi shared a win: Got the grant!'), findsNothing);
+  });
+
+  testWidgets('a win card stays when the chat cannot open (Spec 7 final review M-10)', (t) async {
+    final g = await _pump(t, wins: [
+      {'event_id': 'w1', 'title': 'Got the grant!', 'created_at': '2026-11-02T08:00:00Z'},
+    ]);
+    await t.tap(find.text('Kofi shared a win: Got the grant!'));
+    await t.pumpAndSettle();
+    expect(g.calls.where((c) => c.$1 == 'dismiss_win_card'), isEmpty);
+    expect(find.text('Kofi shared a win: Got the grant!'), findsOneWidget);
   });
 
   testWidgets('an empty today says so, quietly', (t) async {
@@ -677,7 +725,7 @@ void main() {
   testWidgets('with the home-screen card on, the hub fills it with my plans', (
     t,
   ) async {
-    SharedPreferences.setMockInitialValues({'together_widget_enabled': true});
+    SharedPreferences.setMockInitialValues({..._titlesOn, 'together_widget_enabled': true});
     final store = FakeWidgetStore();
     TogetherWidgetSync.store = store;
     await _pump(
@@ -696,7 +744,7 @@ void main() {
   });
 
   testWidgets('turning the card on fills it straight away', (t) async {
-    SharedPreferences.setMockInitialValues({});
+    SharedPreferences.setMockInitialValues({..._titlesOn});
     final store = FakeWidgetStore();
     TogetherWidgetSync.store = store;
     await _pump(
@@ -720,8 +768,37 @@ void main() {
     expect(store.saved.where((s) => s != null).last, contains('Dinner'));
   });
 
+  testWidgets('turning plan titles on re-sends the card straight away '
+      '(Spec 1b)', (t) async {
+    SharedPreferences.setMockInitialValues({'together_widget_enabled': true});
+    final store = FakeWidgetStore();
+    TogetherWidgetSync.store = store;
+    await _pump(
+      t,
+      upcoming: [
+        _row(
+          'd',
+          '2026-11-03',
+          startsAt: '2026-11-03T19:00:00Z',
+          title: 'Dinner',
+        ),
+      ],
+    );
+    await t.pumpAndSettle();
+    expect(store.saved.where((s) => s != null).last, contains('Next plan'));
+    expect(store.saved.where((s) => s != null).last, isNot(contains('Dinner')));
+    final container = ProviderScope.containerOf(
+      t.element(find.byType(TogetherScreen)),
+    );
+    await container
+        .read(togetherSurfaceTitlesProvider(widgetTitlesKey).notifier)
+        .set(true);
+    await t.pumpAndSettle();
+    expect(store.saved.where((s) => s != null).last, contains('Dinner'));
+  });
+
   testWidgets('with the card off (the default), nothing is written', (t) async {
-    SharedPreferences.setMockInitialValues({});
+    SharedPreferences.setMockInitialValues({..._titlesOn});
     final store = FakeWidgetStore();
     TogetherWidgetSync.store = store;
     await _pump(
@@ -742,7 +819,7 @@ void main() {
   testWidgets(
     'with the lock-screen plan on, the hub shows tonight’s shared plan',
     (t) async {
-      SharedPreferences.setMockInitialValues({'together_live_enabled': true});
+      SharedPreferences.setMockInitialValues({..._titlesOn, 'together_live_enabled': true});
       final live = FakeLiveStore();
       await _pump(
         t,
@@ -765,7 +842,7 @@ void main() {
   testWidgets('a renamed plan updates the lock-screen plan on the next load', (
     t,
   ) async {
-    SharedPreferences.setMockInitialValues({'together_live_enabled': true});
+    SharedPreferences.setMockInitialValues({..._titlesOn, 'together_live_enabled': true});
     final live = FakeLiveStore();
     final rows = [
       _row(
@@ -789,7 +866,7 @@ void main() {
   testWidgets('with no plan close, the hub ends the lock-screen plan', (
     t,
   ) async {
-    SharedPreferences.setMockInitialValues({'together_live_enabled': true});
+    SharedPreferences.setMockInitialValues({..._titlesOn, 'together_live_enabled': true});
     final live = FakeLiveStore();
     await _pump(
       t,
@@ -811,7 +888,7 @@ void main() {
   testWidgets('turning the lock-screen plan on shows it straight away', (
     t,
   ) async {
-    SharedPreferences.setMockInitialValues({});
+    SharedPreferences.setMockInitialValues({..._titlesOn});
     final live = FakeLiveStore();
     await _pump(
       t,
@@ -836,7 +913,7 @@ void main() {
   testWidgets('with the calendar copy on, opening Together copies our plans', (
     t,
   ) async {
-    SharedPreferences.setMockInitialValues({'together_mirror_enabled': true});
+    SharedPreferences.setMockInitialValues({..._titlesOn, 'together_mirror_enabled': true});
     final mirror = FakeMirrorCalendar();
     await _pump(
       t,
@@ -855,7 +932,7 @@ void main() {
   });
 
   testWidgets('turning the calendar copy on copies straight away', (t) async {
-    SharedPreferences.setMockInitialValues({});
+    SharedPreferences.setMockInitialValues({..._titlesOn});
     final mirror = FakeMirrorCalendar();
     await _pump(
       t,
@@ -880,7 +957,7 @@ void main() {
   testWidgets('the first visit copies each plan once, into one calendar', (
     t,
   ) async {
-    SharedPreferences.setMockInitialValues({'together_mirror_enabled': true});
+    SharedPreferences.setMockInitialValues({..._titlesOn, 'together_mirror_enabled': true});
     // A slow phone: the visit's sync is still waiting when the opt-in loads.
     final gate = Completer<void>();
     final mirror = FakeMirrorCalendar(gate: gate);
@@ -906,7 +983,7 @@ void main() {
   testWidgets(
     'with no relationship any more, nothing of it is left on the phone',
     (t) async {
-      SharedPreferences.setMockInitialValues({'together_mirror_enabled': true});
+      SharedPreferences.setMockInitialValues({..._titlesOn, 'together_mirror_enabled': true});
       final mirror = FakeMirrorCalendar();
       final id = await mirror.create('Plans');
       (await SharedPreferences.getInstance()).setString(

@@ -1,8 +1,10 @@
 // lib/features/safety/presentation/screens/safety_resources_screen.dart
 
+import 'package:attune/features/safety/self_check/safety_self_check_row.dart';
 import 'package:attune/core/utils/exports/export_screens.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../providers/safety_providers.dart';
+import 'safety_pin_screen.dart';
 
 class SafetyResourcesScreen extends ConsumerWidget {
   static const routeName = '/safety-resources';
@@ -33,6 +35,10 @@ class SafetyResourcesScreen extends ConsumerWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            // Spec 2 (F2 (6)): offered once, until set or dismissed.
+            const SafetyPinPromptCard(),
+            // Spec 8 (F14): the private check-in, while it is on.
+            const SafetySelfCheckRow(),
             // Disclaimer
             Container(
               padding: EdgeInsets.all(Spacing.md.w),

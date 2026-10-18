@@ -162,10 +162,15 @@ class _FakeReelGateway implements StoryReadGateway {
     markViewedCalls.add(storyItemId);
   }
 
+  int ringSummaryCalls = 0;
+
   @override
   Future<List<StoryRingSummary>> getRingSummary({
     required String relationshipId,
-  }) async => const [];
+  }) async {
+    ringSummaryCalls++;
+    return const [];
+  }
 
   @override
   Future<List<StoryDayCount>> listDayCounts({
@@ -998,4 +1003,60 @@ void main() {
       },
     );
   });
+
+  testWidgets(
+    'a partner view refreshes my own ring locally (Spec 1a: the server bumps '
+    'no signal while receipts are off)',
+    (tester) async {
+      final gateway = _FakeReelGateway(
+        items: [_item(id: 'a', createdAt: DateTime.utc(2026, 9, 1))],
+      );
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            currentUserProvider.overrideWithValue(_signedInUser),
+            storyReadGatewayProvider.overrideWithValue(gateway),
+          ],
+          child: MaterialApp(
+            theme: AppTheme.lightTheme,
+            home: Column(
+              children: [
+                // Keeps the autoDispose ring provider alive, as the rings row
+                // under the reel does in the app.
+                Consumer(
+                  builder: (_, ref, __) {
+                    ref.watch(storyRingSummaryProvider(_relationshipId));
+                    return const SizedBox.shrink();
+                  },
+                ),
+                Expanded(
+                  child: StoryReelScreen(
+                    relationshipId: _relationshipId,
+                    authorId: _partnerId,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+      // The ring provider fetched once when the Consumer first built --
+      // before any item rendered or _maybeMarkViewed (unawaited) ran.
+      expect(gateway.ringSummaryCalls, 1, reason: 'one initial fetch');
+      await tester.pump();
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 50));
+      expect(gateway.markViewedCalls, ['a']);
+      // markViewed is awaited inside _maybeMarkViewed, which nobody awaits;
+      // give the invalidate a few frames to land.
+      await tester.pump();
+      await tester.pump();
+      await tester.pump();
+      expect(
+        gateway.ringSummaryCalls,
+        greaterThanOrEqualTo(2),
+        reason: 'at least one more fetch after the view',
+      );
+    },
+  );
 }

@@ -468,4 +468,42 @@ void main() {
       );
     });
   });
+
+  group('read receipts (Spec 1a)', () {
+    Map<String, dynamic> row({String? readAt, String? receiptAt}) => {
+      'id': 'm1',
+      'relationship_id': 'r1',
+      'sender_id': 'me',
+      'client_message_id': 'c1',
+      'content': 'hi',
+      'created_at': '2026-10-17T10:00:00Z',
+      'delivered_at': '2026-10-17T10:01:00Z',
+      'read_at': readAt,
+      'read_receipt_at': receiptAt,
+      'media_url': null,
+      'media_thumbnail_url': null,
+      'media_type': null,
+      'source': 'native',
+    };
+
+    test('the tick comes from read_receipt_at only', () {
+      final m = Message.fromRow(
+        row(receiptAt: '2026-10-17T10:05:00Z'),
+        currentUserId: 'me',
+      );
+      expect(m.status, MessageStatus.read);
+      expect(m.readAt, DateTime.utc(2026, 10, 17, 10, 5).toLocal());
+    });
+
+    test('a private read_at alone never becomes a tick', () {
+      // read_at is not selectable by clients any more; if a stale cache or a
+      // misconfigured grant ever hands it over, it still must not render.
+      final m = Message.fromRow(
+        row(readAt: '2026-10-17T10:05:00Z'),
+        currentUserId: 'me',
+      );
+      expect(m.readAt, isNull);
+      expect(m.status, MessageStatus.delivered);
+    });
+  });
 }

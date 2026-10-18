@@ -2,8 +2,11 @@
 import {
   assertEquals,
 } from "https://deno.land/std@0.224.0/assert/mod.ts";
-import { clamp, getWeekEnding, confidenceFrom, rollupConfidence } from "./index.ts";
-import { computeChatWeight, applyChatSignals, weightedMean, type DimensionState, type ChatSignals } from "./index.ts";
+import { clamp, getWeekEnding, weekEndingKey, confidenceFrom, rollupConfidence } from "./index.ts";
+import {
+  computeChatWeight, applyChatSignals, weightedMean, type DimensionState, type ChatSignals,
+  SHARED_WEIGHTS, overallFromShared, callerMayRecompute, privateEmotionalSafety, shouldComputeShared,
+} from "./index.ts";
 
 Deno.test("clamp: clamps below min", () => {
   assertEquals(clamp(-5, 0, 100), 0);
@@ -17,10 +20,22 @@ Deno.test("clamp: passes through in-range value", () => {
   assertEquals(clamp(42, 0, 100), 42);
 });
 
-Deno.test("getWeekEnding: a Wednesday rolls forward to the next Sunday", () => {
-  const wed = new Date("2026-08-12T10:00:00Z"); // a Wednesday
-  const result = getWeekEnding(wed);
-  assertEquals(result.getDay(), 0); // Sunday
+Deno.test("getWeekEnding: a Wednesday rolls forward to the next Sunday (UTC)", () => {
+  const wed = new Date("2026-08-12T10:00:00Z");
+  assertEquals(weekEndingKey(wed), "2026-08-16");
+  assertEquals(getWeekEnding(wed).getUTCDay(), 0);
+});
+
+Deno.test("getWeekEnding: a Sunday is its own week ending, matching Dart", () => {
+  assertEquals(weekEndingKey(new Date("2026-08-16T10:00:00Z")), "2026-08-16");
+  assertEquals(weekEndingKey(new Date("2026-08-16T23:59:59Z")), "2026-08-16");
+});
+
+Deno.test("getWeekEnding: Saturday 23:59 UTC and Sunday 00:01 UTC share a week ending", () => {
+  assertEquals(weekEndingKey(new Date("2026-08-15T23:59:00Z")), "2026-08-16");
+  assertEquals(weekEndingKey(new Date("2026-08-16T00:01:00Z")), "2026-08-16");
+  // Monday 00:01 UTC is the next week, whatever the phone's zone says.
+  assertEquals(weekEndingKey(new Date("2026-08-17T00:01:00Z")), "2026-08-23");
 });
 
 Deno.test("confidenceFrom: below 2 points is none", () => {
@@ -589,4 +604,63 @@ Deno.test("applyGameSignals: output stays within 0-100", () => {
   );
   assertEquals(high.connection <= 100, true);
   assertEquals(high.alignment <= 100, true);
+});
+
+Deno.test("overallFromShared: four weights, normalised from 22/22/20/18", () => {
+  assertEquals(SHARED_WEIGHTS.communication + SHARED_WEIGHTS.connection + SHARED_WEIGHTS.conflictHealth + SHARED_WEIGHTS.alignment, 82);
+  assertEquals(overallFromShared({ communication: 100, connection: 100, conflictHealth: 100, alignment: 100 }), 100);
+  assertEquals(overallFromShared({ communication: 0, connection: 0, conflictHealth: 0, alignment: 100 }), 22);
+  assertEquals(overallFromShared({ communication: 100, connection: 100, conflictHealth: 0, alignment: 0 }), 54);
+  // The disclosed percentages (tooltip + manual) are these, and they sum to 100.
+  const pct = [SHARED_WEIGHTS.communication, SHARED_WEIGHTS.connection, SHARED_WEIGHTS.conflictHealth, SHARED_WEIGHTS.alignment]
+    .map((w) => Math.round((w * 100) / 82));
+  assertEquals(pct, [27, 27, 24, 22]);
+});
+
+Deno.test("rollupConfidence: four dimensions — 3 high is high, 2 medium is medium, 1 medium is low", () => {
+  assertEquals(rollupConfidence(["high", "high", "high", "medium"]), "high");
+  assertEquals(rollupConfidence(["medium", "medium", "low", "low"]), "medium");
+  assertEquals(rollupConfidence(["medium", "low", "low", "none"]), "low");
+  assertEquals(rollupConfidence(["low", "low", "low", "low"]), "none");
+});
+
+Deno.test("shouldComputeShared: the cron and a granted force write; a user's non-forced call never does", () => {
+  assertEquals(shouldComputeShared(true, false), true);
+  assertEquals(shouldComputeShared(false, true), true);
+  // A check-in submit must not create this week's shared row either: its
+  // computed_at would tell the partner when the private check-in happened.
+  assertEquals(shouldComputeShared(false, false), false);
+});
+
+Deno.test("callerMayRecompute: members of an ACTIVE relationship only", () => {
+  const rel = { id: "r", user_a: "a", user_b: "b", status: "active" };
+  assertEquals(callerMayRecompute("a", rel), true);
+  assertEquals(callerMayRecompute("b", rel), true);
+  assertEquals(callerMayRecompute("c", rel), false);
+  assertEquals(callerMayRecompute("a", { ...rel, status: "paused" }), false);
+  assertEquals(callerMayRecompute("a", { ...rel, status: "ended" }), false);
+  assertEquals(callerMayRecompute("a", null), false);
+  assertEquals(callerMayRecompute("a", undefined), false);
+});
+
+const noChat: ChatSignals = {
+  analysedCount: 0, avgTone: null, violationRate: null, severeRate: null, bidTurnRate: null,
+  bidsTotal: 0, sessionCount: 0, conflictSessionCount: 0, avgEscalation: null, repairRate: null,
+  attemptRate: null, stonewallRate: null, pursueWithdrawRate: null,
+};
+
+Deno.test("privateEmotionalSafety: nothing without the member's own check-in", () => {
+  assertEquals(privateEmotionalSafety({ moodBase: 70, safetyRating: null, signals: noChat, chatWeight: 1 }), null);
+});
+
+Deno.test("privateEmotionalSafety: blends the shared mood base with my own rating", () => {
+  assertEquals(privateEmotionalSafety({ moodBase: null, safetyRating: 8, signals: noChat, chatWeight: 0 }), 65);
+  assertEquals(privateEmotionalSafety({ moodBase: 70, safetyRating: 9, signals: noChat, chatWeight: 0 }), 80);
+  assertEquals(privateEmotionalSafety({ moodBase: 20, safetyRating: 1, signals: noChat, chatWeight: 1 }), 15);
+});
+
+Deno.test("privateEmotionalSafety: chat severity still lowers it, within 0..100", () => {
+  const severe = { ...noChat, analysedCount: 20, severeRate: 0.5 };
+  assertEquals(privateEmotionalSafety({ moodBase: 70, safetyRating: 9, signals: severe, chatWeight: 1 }), 68);
+  assertEquals(privateEmotionalSafety({ moodBase: 0, safetyRating: 1, signals: severe, chatWeight: 1 }), 0);
 });

@@ -9,6 +9,10 @@ import '../domain/together_mirror.dart';
 /// This phone's opt-in (Phase 8d); off unless set.
 const mirrorEnabledKey = 'together_mirror_enabled';
 
+/// Whether the calendar copy may carry plan titles and places on this phone
+/// (Spec 1b). A change replaces every entry (titles are in the fingerprint).
+const mirrorTitlesKey = 'together_mirror_titles';
+
 /// The copy's calendar on this phone (the only thing stored, R3).
 const mirrorCalendarKey = 'together_mirror_calendar_id';
 
@@ -141,7 +145,11 @@ class TogetherMirror {
       final from = DateTime(now.year, now.month, now.day);
       final to = DateTime(from.year, from.month, from.day + mirrorDays);
       final desired = [
-        for (final e in mirrorEventsFor(items: await load(from, to), me: me))
+        for (final e in mirrorEventsFor(
+          items: await load(from, to),
+          me: me,
+          showTitles: prefs.getBool(mirrorTitlesKey) ?? false,
+        ))
           if (!e.start.isBefore(from)) e,
       ];
       // Entries from before today stay as history (R3).

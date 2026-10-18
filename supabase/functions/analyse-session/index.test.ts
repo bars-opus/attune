@@ -24,6 +24,8 @@ import { assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
 import {
   loadCandidateRelationshipIds,
   loadDoneMessagesForSession,
+  processRelationship,
+  retryExistingSession,
 } from "./index.ts";
 import {
   getSharedPgClient,
@@ -118,6 +120,99 @@ Deno.test({
     const ids = (rows ?? []).map((r: Record<string, unknown>) => r.id);
     assertEquals(ids.includes(MSG_DONE_AND_SKIPPED), false);
     assertEquals(ids.includes(MSG_DONE), true);
+  },
+});
+
+// Spec 8 (plan review I11): a suppressed relationship is refused at entry,
+// before any message is read or consumed into a session.
+Deno.test({
+  name: "processRelationship refuses a suppressed relationship before consuming anything",
+  fn: async () => {
+    await resetTask5Fixtures();
+    await serviceRoleQuery(
+      `INSERT INTO public.safety_events (relationship_id, at_risk_user_id, source_event_key, trigger_tier, trigger_family, config_version)
+       VALUES ($1, $2, 'as-sup-1', 2, 'test', 'test')`,
+      [REL_T5, USER_T5_A],
+    );
+    try {
+      const client = await makeServiceRoleClient();
+      const results = await processRelationship(client as never, REL_T5);
+      assertEquals(results, [{ relationship_id: REL_T5, status: "suppressed" }]);
+      const consumed = await serviceRoleQuery(
+        `SELECT count(*)::int AS n FROM public.messages WHERE relationship_id = $1 AND included_in_session_id IS NOT NULL`,
+        [REL_T5],
+      );
+      assertEquals((consumed[0] as { n: number }).n, 0);
+      const sessions = await serviceRoleQuery(
+        `SELECT count(*)::int AS n FROM public.analysis_sessions WHERE relationship_id = $1`,
+        [REL_T5],
+      );
+      assertEquals((sessions[0] as { n: number }).n, 0);
+    } finally {
+      await serviceRoleQuery(`DELETE FROM public.safety_events WHERE relationship_id = $1`, [REL_T5]);
+    }
+  },
+});
+
+Deno.test({
+  name: "retryExistingSession refuses a suppressed relationship's pending session",
+  fn: async () => {
+    await resetTask5Fixtures();
+    const session = await serviceRoleQuery(
+      `INSERT INTO public.analysis_sessions (relationship_id, started_at, ended_at, message_count)
+       VALUES ($1, now() - interval '2 hours', now() - interval '1 hour', 2) RETURNING id`,
+      [REL_T5],
+    );
+    const sessionId = (session[0] as { id: string }).id;
+    await serviceRoleQuery(
+      `INSERT INTO public.safety_self_checks (user_id, relationship_id, answered_at, until, positive_until)
+       VALUES ($1, $2, now(), now() + interval '180 days', now() + interval '180 days')`,
+      [USER_T5_B, REL_T5],
+    );
+    try {
+      const client = await makeServiceRoleClient();
+      const result = await retryExistingSession(client as never, { id: sessionId });
+      assertEquals(result, { session_id: sessionId, status: "suppressed" });
+      const row = await serviceRoleQuery(
+        `SELECT escalation_score FROM public.analysis_sessions WHERE id = $1`,
+        [sessionId],
+      );
+      assertEquals((row[0] as { escalation_score: unknown }).escalation_score, null);
+    } finally {
+      await serviceRoleQuery(`DELETE FROM public.safety_self_checks WHERE relationship_id = $1`, [REL_T5]);
+      await serviceRoleQuery(`DELETE FROM public.analysis_sessions WHERE id = $1`, [sessionId]);
+    }
+  },
+});
+
+// Sync audit I-2: Layer 2 runs only while active; a paused couple's
+// pending messages are set aside, never consumed into a session.
+Deno.test({
+  name: "processRelationship sets a paused relationship's messages aside",
+  fn: async () => {
+    await resetTask5Fixtures();
+    await serviceRoleQuery(`UPDATE public.relationships SET status = 'paused' WHERE id = $1`, [REL_T5]);
+    const client = await makeServiceRoleClient();
+    const results = await processRelationship(client as never, REL_T5);
+    assertEquals(results, [{ relationship_id: REL_T5, status: "skipped_relationship_not_active" }]);
+    const rows = await serviceRoleQuery(
+      `SELECT message_analysis_skipped, included_in_session_id FROM public.messages WHERE id = $1`,
+      [MSG_DONE],
+    );
+    assertEquals(rows[0].message_analysis_skipped, true);
+    assertEquals(rows[0].included_in_session_id, null);
+  },
+});
+
+// Sync audit I-5: a message deleted after Layer 1 never enters a transcript.
+Deno.test({
+  name: "loadDoneMessagesForSession skips deleted messages",
+  fn: async () => {
+    await resetTask5Fixtures();
+    await serviceRoleQuery(`UPDATE public.messages SET deleted_at = now(), content = NULL WHERE id = $1`, [MSG_DONE]);
+    const client = await makeServiceRoleClient();
+    const rows = await loadDoneMessagesForSession(client as never, REL_T5);
+    assertEquals((rows ?? []).map((r: Record<string, unknown>) => r.id).includes(MSG_DONE), false);
   },
 });
 

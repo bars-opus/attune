@@ -22,7 +22,10 @@ abstract final class CoupleMapLocalKeys {
 class SecureCoupleMapLocalStore implements CoupleMapLocalStore {
   static const _storage = FlutterSecureStorage(
     aOptions: AndroidOptions(encryptedSharedPreferences: true),
-    iOptions: IOSOptions(accessibility: KeychainAccessibility.first_unlock),
+    // This device only: the home area never syncs through iCloud Keychain.
+    iOptions: IOSOptions(
+      accessibility: KeychainAccessibility.first_unlock_this_device,
+    ),
   );
   @override
   Future<String?> read(String key) async {

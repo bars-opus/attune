@@ -4,8 +4,6 @@ import 'package:attune/app/theme/design_tokens.dart';
 import 'package:attune/core/utils/exports/export_screens.dart';
 import 'package:attune/features/quiz/data/local/quiz_progress_store.dart';
 import 'package:attune/features/quiz/domain/models/attachment_result.dart';
-import 'package:attune/features/quiz/presentation/providers/quiz_providers.dart';
-import 'package:attune/features/quiz/presentation/widgets/share_quiz_button.dart';
 import 'package:attune/features/quiz/presentation/widgets/spectrum_bar.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:gap/gap.dart';
@@ -236,6 +234,16 @@ class _QuizResultScreenState extends ConsumerState<QuizResultScreen>
                           ),
                         ),
 
+                        Gap(Spacing.md.h),
+
+                        // Instrument caveat (Spec 5, research 06 §3 F9).
+                        Text(
+                          AttachmentResult.caveat,
+                          style: textTheme.bodySmall?.copyWith(
+                            color: colorScheme.onSurfaceVariant,
+                          ),
+                        ),
+
                         Gap(Spacing.xl.h),
 
                         // Action buttons
@@ -263,17 +271,10 @@ class _QuizResultScreenState extends ConsumerState<QuizResultScreen>
 
   Widget _buildActionButtons(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
-    final isInCouplesMode =
-        ref.watch(userRelationshipModeProvider).valueOrNull == 'couples';
 
+    // No share action: an attachment result is about you (Spec 5, F9 (3)).
     return Column(
       children: [
-        // Share button - handles everything internally
-        if (isInCouplesMode)
-          ShareQuizButton(quizType: widget.quizType, result: widget.result),
-
-        if (isInCouplesMode) Gap(Spacing.md.h),
-
         // Retake and Back buttons
         Row(
           children: [
@@ -298,45 +299,6 @@ class _QuizResultScreenState extends ConsumerState<QuizResultScreen>
           ],
         ),
       ],
-    );
-  }
-
-  void _showShareConfirmation(BuildContext context) {
-    showDialog(
-      context: context,
-      builder:
-          (context) => AlertDialog(
-            title: const Text('Share your result?'),
-            content: Text(
-              '${ref.read(partnerNameProvider)} will be able to see your attachment style result. This cannot be undone.',
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(context),
-                child: const Text('Cancel'),
-              ),
-              TextButton(
-                onPressed: () async {
-                  Navigator.pop(context);
-                  await ref.read(
-                    shareQuizResultProvider((quizType: 'attachment')).future,
-                  );
-                  if (mounted) {
-                    setState(() {});
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                        content: Text('Result shared with partner'),
-                      ),
-                    );
-                  }
-                },
-                style: TextButton.styleFrom(
-                  foregroundColor: Theme.of(context).colorScheme.primary,
-                ),
-                child: const Text('Yes, share it'),
-              ),
-            ],
-          ),
     );
   }
 

@@ -1,21 +1,26 @@
 // lib/features/conflict_translator/data/models/translator_request.dart
 
+/// Spec 8 (plan review M5): gentle structure (NVC) or plain words.
+enum TranslatorRegister { nvc, plain }
+
 class TranslatorRequest {
   final String message;
-  final TranslatorContext? context;
   final String relationshipId;
+  final TranslatorRegister register;
 
   const TranslatorRequest({
     required this.message,
-    this.context,
     required this.relationshipId,
+    this.register = TranslatorRegister.nvc,
   });
 
+  /// Only the sender's own words (Spec 8, plan review I9): no profile and no
+  /// partner tone summary ever leave the device for the translator.
   Map<String, dynamic> toJson() {
     return {
       'message': message,
-      'context': context?.toJson(),
       'relationship_id': relationshipId,
+      'register': register.name,
     };
   }
 }

@@ -163,7 +163,7 @@ user-aware behavior. The principles checklist is the final pre-merge scan.
    - 8.2 Psychological Profiling
    - 8.3 Relationship Tracking
    - 8.4 Games & Connection
-   - 8.5 Insights & Verdict
+   - 8.5 Insights & Monthly readout
    - 8.6 Conflict Translator
    - 8.7 Safety System
    - 8.8 Onboarding & Cold Start
@@ -202,7 +202,7 @@ Every other relationship app tells people generic advice. Attune shows people th
 Most people repeat the same relationship mistakes for years because they have no objective data, no pattern recognition, and no shared language for what is actually happening between them.
 
 ### What success looks like for the user
-They get a clear verdict on their relationship — specific, sourced, honest — without being told what to decide.
+They understand their own patterns and act on them with each other — more specific appreciation, quicker repair after a flooded moment, hard conversations started sooner and more gently, and a regular strengths-first check-up — without ever being told what to decide. The monthly readout is one artefact of that understanding, not the goal. *(Amended 2026-10-16, research programme §8.6.)*
 
 ### Positioning (locked in — refines decision 4)
 Attune is not a WhatsApp replacement for everyone. It is **the chat for this
@@ -248,6 +248,8 @@ Countermeasures (each specced elsewhere; this section names the strategy):
 | Personal mode | Individuals — between relationships, solo users, waiting partners | Self-reflection, pattern awareness, growth | Build alongside couples |
 | Healing mode | Post-breakup users | Structured recovery journey before dating unlocks | Month 4 |
 | Dating mode | Single users ready to date again | Psychology-first matching using real behavioural data | Month 6+ |
+
+Couple shape is a profile on the relationship (stage, distance, intent, household) plus per-partner preferences — not a mode and not a type. Modes remain personal / couplesPending / couples. *(Added 2026-10-16, §8.11.)*
 
 ### Mode transitions
 ```
@@ -355,6 +357,7 @@ SemanticContainerWidget(
 - **AI:** Anthropic Claude API — model configured via `CLAUDE_MODEL` env var,
   default `claude-sonnet-5`. Never hardcode the model id at call sites.
   (`claude-sonnet-4-20250514` is deprecated/retired — do not use.)
+  *(Provider, 2026-10-18: runtime AI runs on Gemini through `supabase/functions/_shared/gemini_json.ts`, model from `GEMINI_MODEL`. Where this spec says Claude or `callClaude` for a runtime call, read the Gemini port: it keeps the same prompt ids, prohibited patterns and failure behaviour. `_shared/claude_json.ts` is unused.)*
 
 ### Auth system
 
@@ -1250,27 +1253,16 @@ Rules:
 - framing_note is private — never shown to recipient
 ```
 
-### Compatibility preview (day one, cold start)
-```
-Generate a day-one compatibility preview. No message history exists yet.
-
-PERSON A: Attachment: {{a_attachment}}, Admires: "{{a_admire}}",
-          Hoping for: "{{a_hoping}}", Working on: "{{a_different}}"
-PERSON B: Attachment: {{b_attachment}}, Admires: "{{b_admire}}",
-          Hoping for: "{{b_hoping}}", Working on: "{{b_different}}"
-
-Return ONLY valid JSON:
-{
-  "pairing_type": string (named dynamic, not "secure + anxious"),
-  "pairing_description": string (max 35 words, warm and specific),
-  "natural_strength": string (max 25 words),
-  "watch_area": string (max 25 words, about the dynamic not one person),
-  "first_suggestion": string (max 20 words, actionable tonight),
-  "data_note": "This is based on your profiles, not your history yet."
-}
-```
+### Ask-2 reward (replaces the compatibility preview)
+*(Retired 2026-10-18, Spec 5, per decision 30 and §8.7.)* No prompt generates a
+pairing, type or compatibility statement about the couple. The Ask-2 reward is
+the person's own two anchors ("You admire", "You hope for more of") reflected
+back, plus "Something for tonight": a Love map round or This or That. The
+pairing cache table stays empty and its write RPC is removed.
 
 ### Claude API call standard pattern
+*(Provider, 2026-10-18: runtime AI runs on Gemini through `supabase/functions/_shared/gemini_json.ts`, model from `GEMINI_MODEL`. Where this spec says Claude or `callClaude` for a runtime call, read the Gemini port: it keeps the same prompt ids, prohibited patterns and failure behaviour. `_shared/claude_json.ts` is unused.)*
+
 ```javascript
 // Use for ALL Claude API calls in the system — no exceptions (Deno edge fn)
 const ANTHROPIC_VERSION = '2023-06-01'
@@ -1369,6 +1361,7 @@ const partnerNamePattern = (displayName) =>
 ```
 
 #### Failure behavior (locked in — all Claude calls)
+*(Applies to the Gemini port as well; see the provider note in the Claude API call standard pattern.)*
 ```javascript
 const callClaude = async (userPrompt, systemPrompt, promptId, runtimePatterns = []) => {
   try {
@@ -1646,12 +1639,15 @@ Expanded drawer (Month 2):
 
 | Quiz | Questions | Measures | Required for onboarding |
 |---|---|---|---|
-| Attachment style | 25 | Secure/anxious/avoidant/fearful spectrum | Personal mode: up-front. Couples: Ask 2, post-chat-unlock (decision 29). Still gates the compatibility preview |
-| Love languages | 15 | Quality time/words/touch/acts/gifts spectrum | No — prompted after chat unlocks |
+| Attachment style | 25 | Secure/anxious/avoidant/fearful spectrum | Personal mode: up-front. Couples: Ask 2, post-chat-unlock (decision 29). Self-facing; never shared with a partner (Spec 5) |
+| What feels loving to me right now | multi-select, rated, context-tagged (stressed / sad / celebrating) | Current preferences, changeable, shared only by choice; labelled 'a popular framework, not a science' | No — offered after chat unlocks. Never a typology, never a 'primary language', never a compatibility input. *(Replaces the love-languages typology, 2026-10-16, §8.7.)* |
 | Communication style | 20 | Passive/assertive/aggressive/passive-aggressive | No — Month 2 prompt |
 | Conflict style | 18 | Conflict defaults, escalation patterns | No — Month 2 prompt |
 
 #### Results are spectrums, not labels
+
+Attachment results are dimensional and self-facing. No pairing, type or compatibility statement about the couple is ever generated from any quiz. Every attachment result carries the caveat: "Written for a general population; if you're autistic or ADHD some items may not fit." *(Added 2026-10-16, §8.7; wording fixed by 06-synthesis F9 and shipped in Spec 5, 2026-10-18.)*
+
 ```javascript
 // Store as percentages across all types — never a single label
 attachment_style: {
@@ -1701,13 +1697,12 @@ const FRAMEWORK_CONFIDENCE = {
 #### Cycle tracking
 - Private by default — partner sees nothing unless opt-in
 - If sharing enabled: partner sees phase only (period/fertile/pms/none), not raw cycle data
-- AI note for partner: max 2 sentences, emotionally supportive framing, never clinical
+- Partner note: a fixed template chosen by the tracker, never AI-written. The partner never receives a fertile-window or 'good day' nudge. No intercourse logging. The feature degrades to nothing during a declared treatment period if the user chooses. *(Amended 2026-10-16, §8.8.)*
 - Lives in the **Profile / Settings sub-section** under Chat, not Pulse — it's personal, not relational
 
 #### Reminders
 - Anniversaries and birthdays: set manually
 - Weekly check-in: recurring every Sunday (default on, user can change day)
-- AI-generated reminders: based on pattern data (e.g. "You haven't logged a highlight in 3 weeks")
 - Notification style: single notification, never a barrage
 
 ---
@@ -1727,7 +1722,7 @@ const FRAMEWORK_CONFIDENCE = {
 - 8 questions about partner's current emotional/preference state
 - User answers what they think partner would say
 - Lock in answer → partner's real answer revealed
-- Score tracked: below 6.5/8 = attentiveness flag
+- Score shown only to the person who guessed; no attentiveness flag is computed or stored (decision 33)
 - Most diagnostically valuable game in the set
 - ~10 minutes
 
@@ -1754,7 +1749,7 @@ Both partners submit answers independently before either sees the other's respon
 
 ---
 
-### 8.5 Insights & Verdict
+### 8.5 Insights & Monthly readout
 
 > **Soul + clinical dependency:** Verdicts are sourced pattern summaries, not
 > judgments. Before implementing verdict copy or generation, read
@@ -1956,7 +1951,7 @@ Future<List<SafetyResourceEvent>> getSafetyEvents() async {
 └─────────────────────────────────────┘
 ```
 - **Single** → Personal mode onboarding track (no invite, no waiting screen)
-- **In a relationship** → Couples mode onboarding track (invite partner, waiting screen, compatibility preview)
+- **In a relationship** → Couples mode onboarding track (invite partner, waiting screen, Ask-2 reward)
 
 > The relationship reflection quiz is clinically interpretive. Its final
 > instrument path (full ECR-R, ECR-RS, or ECR-R-inspired adaptation) is blocked
@@ -2060,8 +2055,8 @@ communicate?"), never to a deficit.
 
 Ask 2 contains, in order: the intelligence introduction → relationship
 reflection quiz → three relationship anchors → and, when both partners
-have completed them, the **compatibility preview** as the completion
-reward (explicitly labelled as profile-based). Ask 2 rules:
+have completed them, the **Ask-2 reward** (the person's own two anchors
+reflected back plus something for tonight; decision 30). Ask 2 rules:
 
 - Fully skippable with zero loss of chat function; declining is never
   penalized or nagged. One gentle later reminder maximum, then silence.
@@ -2084,9 +2079,8 @@ reward (explicitly labelled as profile-based). Ask 2 rules:
 #### Waiting screen (not a dead end — an accelerated onboarding)
 ```
 ✓ Profile complete — invite sent
-○ Relationship reflection quiz (optional head start — counts toward your
-  compatibility preview once you're both in)
-○ Love language quiz (4 min)
+○ Relationship reflection quiz (optional head start — about you, for you)
+○ What feels loving (under a minute)
 ○ Write your first reflection
 [Start a reflection]
 ```
@@ -2098,11 +2092,15 @@ If partner hasn't completed onboarding after 48 hours, chat unlocks in solo refl
 - AI analyses entries (tone, NVC) — data accumulates usefully
 - When partner joins: "You wrote X reflections. Keep private or share?" Default: KEEP PRIVATE
 
+*(Implemented 2026-10-18, Spec 5: the waiting step and the locked Chat screen show the reflection space from 48 hours, timed by `get_my_invite_age()` from the oldest pending invite. Reflections are private by construction, so the prompt is the line "Your reflections stay private to you."; no share flow exists.)*
+
 #### Day 7 pivot screen (gentle, no drama)
 Three options presented to waiting user only:
 1. Keep waiting (renew invite if expired)
 2. Switch to Personal mode
 3. Invite someone else (doesn't cancel existing invite)
+
+*(Implemented 2026-10-18, Spec 5: "Keep waiting" fetches the live invite or mints one; "Use Attune on my own for now" calls `withdraw_my_pending_invites()` and the mode sync resolves to personal mode; "Invite someone else" mints an additional invite.)*
 
 #### Early content plan (revised v2.22 for the two-ask design)
 ```
@@ -2111,8 +2109,8 @@ Hour 0:    Chat unlocks with optional conversation starter prompt
            at signup, foregrounded later)
 Day 3+:    Ask 2 fires when the trigger conditions are met — intelligence
            introduction anchored to a positive observation, then quiz +
-           anchors; both complete → compatibility preview (profile-based,
-           clearly labelled)
+           anchors; both complete → the Ask-2 reward (own anchors +
+           something for tonight; decision 30)
 Week 1:    First session analysis fires
 Week 2:    First pattern candidate; first surfaced insight is held until
            it can come from a real (moderate-tension) exchange — the
@@ -2149,7 +2147,7 @@ AVAILABLE:
 
 NOT AVAILABLE:
 ✗ Shared pulse score
-✗ Partner compatibility preview
+✗ Pairing or compatibility statements (never generated, in any mode)
 ✗ Session analysis (requires two participants)
 ✗ Shared timeline
 ✗ Couple games (partner-dependent mechanics)
@@ -2880,7 +2878,7 @@ couple recognition.
 
 6. SAFETY SYSTEM IS NEVER LLM-DEPENDENT
    The safety trigger system is hard-coded keyword matching.
-   It never routes through Claude or any other AI model.
+   It never routes through any AI model.
    An AI model can fail, hallucinate, or be unavailable.
    The safety system cannot be any of those things.
 
@@ -2896,6 +2894,39 @@ couple recognition.
 9. patterns TABLE HAS NO user_id COLUMN
    Patterns describe relationship dynamics, not individuals.
    This is enforced at the schema level, not just in code.
+
+10. NO PARTNER-FACING COUNTS
+    No surface, RPC, export or analytics event shows one partner a count,
+    ratio, trend or label about the other partner's behaviour or the
+    couple's performance. Couple-level totals of a shared pot are permitted;
+    per-person totals are not.
+
+11. ENDING NEVER NOTIFIES
+    Pausing or ending a relationship sends no push, SMS or email to the
+    other partner. Discovery is in-app, on next open, with warm fixed copy.
+
+12. SHARED VISIBILITY IS SYMMETRIC, OFF BY DEFAULT, AND REVOCABLE SILENTLY
+    Read receipts, seen-state, presence and availability are off until
+    both enable them; either can turn them off alone and silently; turning
+    them on again requires both.
+
+13. SPECIAL-CATEGORY PREFERENCES ARE NEVER INFERRED
+    Faith, sexual-content comfort, health context and access needs are set
+    only by the user, stored under auth.uid()-only RLS, never sent to an
+    AI prompt without the user's own request carrying them, and never
+    rendered on a widget, lock screen, calendar mirror or notification.
+
+14. WRITER-FACING DISCLOSURE ROUTING IS DETERMINISTIC AND PROVIDER-SUPPRESSING
+    A disclosure of victimisation or self-harm by the writer skips every
+    AI call for that text, shows the writer resources, persists nothing,
+    and tells the partner nothing.
+
+15. THE COUPLE PROFILE PRODUCES NO TYPE
+    Stage, distance, household and preferences tune content. They never
+    generate a couple type, score, label or compatibility statement.
+
+(Constraints 10–15 added 2026-10-16 from the research programme §8.10,
+owner-approved.)
 ```
 
 ---
@@ -2935,7 +2966,7 @@ Message data is discoverable in divorce/custody proceedings in many jurisdiction
 |---|---|
 | 1 | Supabase setup — all tables, RLS policies, auth, environment |
 | 2 | Real-time chat — text, delivery status, push notifications, optimistic UI |
-| 3 | Attachment quiz + onboarding flow + waiting screen + compatibility preview |
+| 3 | Attachment quiz + onboarding flow + waiting screen + Ask-2 reward |
 | 4 | Layer 1 AI pipeline + drift cache + offline queue + debug |
 
 **Month 1 cuts (moved to Month 2 — deliberate):**
@@ -2991,12 +3022,12 @@ If a feature is not in the Month 1 north star, it does not get built in Month 1.
 | Feature | Why it matters | Target month |
 |---|---|---|
 | Time capsule messages | High retention, zero competitors, shareable | Month 4 |
-| Anniversary relationship report | Viral loop — AI-generated story of the relationship | Month 4 |
+| Our year | Templated recap from the couple's own plans, rituals, places and prompts first; AI narrative only behind the verdict gates; shareable as a story, never a score | Phase B / D |
 | Voice messages | Couples use them heavily — painful cut from v1 | Month 4 |
 | Message reactions | Standard chat feature | Month 4 |
-| Weekly intimacy challenges | Personalised to love language, retention mechanic | Month 4 |
+| Intimacy layer | Opt-in per partner, clinician-authored; desire education, yes/maybe/no lists revealing only mutual yeses, talk starters; no frequency, no completion, no tracking | Phase C |
 | Message editing/deletion | Standard chat feature | Month 4 |
-| Live conflict cooldown | Real-time escalation banner — press-worthy | Month 5 |
+| Pause chip and repair tray | User-initiated flooding break with a stated return, fixed repair phrases, apology helper; pull-only, never detected | Phase B |
 | Ritual builder | Research-backed intimacy, sticky habit loop | Month 5 |
 | Therapist integration + export | B2B revenue, distribution channel | Month 5–6 |
 | Healing mode | Post-breakup structured journey | Month 4 |
@@ -3019,7 +3050,7 @@ All 25 major architectural decisions made in the review session. These are locke
 |---|---|---|---|
 | 1 | AI cost per couple | Full per-message analysis at launch, optimise with real data | Can't optimise what you haven't measured |
 | 2 | Sparse analysis data | `analysis_skipped` column added as future-proofing | Schema flexibility without premature optimisation |
-| 3 | Couple unlink | Either user can unlink, 30-day soft delete, both revert to Personal mode | Clean exit, no data hostage |
+| 3 | Couple unlink | Either user can unlink, 30-day soft delete, both revert to Personal mode *(revised by decision 31)* | Clean exit, no data hostage |
 | 4 | Primary vs supplemental chat | Attune IS the primary chat app — not supplemental | Supplemental means competing with WhatsApp passively. Primary means building something people switch to. |
 | 5 | Chat feature parity | Text + push notifications + image sharing + full delivery-status lifecycle for launch | Image sharing is non-negotiable — couples send photos constantly |
 | 6 | Image storage | Client-side compress to 800KB, private bucket, indefinite retention | Performance + privacy + no surprise storage bills |
@@ -3029,13 +3060,13 @@ All 25 major architectural decisions made in the review session. These are locke
 | 10 | Conflict translator | Opt-in only via "Help me say this", recipient never knows, logs feed pattern memory | Automatic activation is condescending; push not pull |
 | 11 | Navigation | 2 tabs: Opinions and Chat; Opinions default for anonymous/single users, Chat default for couples; dot not badge | Attune has two primary surfaces: anonymous community and relationship workspace. Pulse/Games/Insights/Profile are tools under Chat, not equal apps |
 | 12 | Asymmetric data | `personal_insights` table with RLS iron wall, no couple report ever | The pattern is shared. The role is private. This is permanent. |
-| 13 | Cold start | Compatibility preview day one, profile-based with explicit labelling, 48hr content plan | Honesty about data confidence is a retention mechanic |
+| 13 | Cold start | Compatibility preview day one, profile-based with explicit labelling, 48hr content plan *(revised by decision 30)* | Honesty about data confidence is a retention mechanic |
 | 14 | Safety system | At-risk user only, 3-tier hard-coded triggers, discreet exit top of Month 3 | DV organisations confirmed: dual notification escalates risk |
 | 15 | Asymmetric adoption | 48hr solo reflection fallback, one notification only, day 7 pivot, "Personal mode" label | Hard gate churns most motivated users; waiting screen is accelerated onboarding |
 | 16 | Clinical validation | Advisor found Month 1, full review Month 2, credential line in marketing | Psychological claims require psychological accountability |
 | 17 | Chat architecture | Optimistic UI + Supabase source of truth + drift (SQLite) read cache — NOT local-first | Local-first breaks the AI pipeline; optimistic UI creates WhatsApp feel. (Cache library was MMKV pre-Flutter-pivot; drift is the Flutter equivalent, v2.16) |
 | 18 | Onboarding fork | Screen one asks "single or in a relationship?" — routes entire onboarding experience | Different users need different flows from the first second |
-| 19 | Chat locking | One chat section per couple. Read-only after relationship ends. Permanently archived when either partner starts new relationship | Prevents ex-communication on platform; creates clean new starts |
+| 19 | Chat locking | One chat section per couple. Read-only after relationship ends. Permanently archived when either partner starts new relationship *(revised by decision 31)* | Prevents ex-communication on platform; creates clean new starts |
 | 20 | Dating pool entry | Eligibility is automatic after trusted Healing gates; enrollment requires separate Dating opt-in, terms/privacy acceptance, adults-only gate, profile review/activation, and an optional separate historical-data choice | Existing self-data may seed a private draft, but the user controls enrollment and historical-data use |
 | 21 | Forum anonymity | Daily-rotating keyed author hash (HMAC with server secret) — no direct user_id FK on forum posts | Identity-free discussion; daily rotation prevents cross-day correlation while enabling coherent same-day threads; server-secret HMAC prevents retroactive de-anonymisation by anyone holding a user list |
 | 22 | Opinion/forum labels | 'taken', 'single', 'exploring', 'just having fun' are Opinions/forum display labels only — not account states | Keeps mode architecture clean; labels are social signal only, no backend consequence |
@@ -3047,6 +3078,10 @@ All 25 major architectural decisions made in the review session. These are locke
 | 28 | Non-conversational AI posture | Attune's AI is never a conversational companion: insights, Pulse, Verdicts, and game reflections are reports about the couple's own data; no chatty AI persona, no sustained AI-user dialogue, no anthropomorphic AI character — permanently | Dual grounding: (a) design — the product's voice is a wise attentive friend *writing observations*, not a synthetic relationship partner (ATTUNE_SOUL.md); (b) regulatory — 2026 US state companion-chatbot laws (CA SB 243, OR SB 1546 et al.) regulate AI that "sustains a relationship across multiple interactions"; a report-generating AI is likely out of scope, a companion is squarely in it. See ATTUNE_RISK_SOLUTIONS.md Section 7.5 |
 | 29 | Two-ask couples onboarding (revises decisions 13/15's sequencing; documented reason: July 2026 simulation + adversarial review) | Ask 1 (invite → link → chat unlocks) carries zero AI vocabulary; quiz + anchors + intelligence introduction move to Ask 2, triggered days later and anchored to an observed positive signal; compatibility preview becomes Ask 2's completion reward rather than an hour-0 artifact; AI processing remains fully disclosed at signup consent | The invited partner's threat response spikes at "AI/analysis" language arriving before lived trust — not at the couples-app concept; simulations confirmed this across personas, and the invited-partner-never-engages complaint is attested verbatim in competitor reviews. Chat-first sequencing trades the day-one preview for a materially better shot at both partners actually arriving — and the preview converts better as an earned reward than as an unrequested analysis |
 
+| 30 | Non-typing Ask-2 reward (revises 13; documented reason: 2026-10-16 research programme, 06-synthesis-roadmap.md §8.11) | Ask-2 reward is the two anchors reflected back plus "something for tonight". No pairing, type or compatibility statement from any quiz | Attachment labels become accusations (02 §2.3); the pairing card conflicted with the other quiz specs; the anxious partner was handed a label for the avoidant one (04 S4) |
+| 31 | Relationship lifecycle (revises 3 and 19; same documented reason, §8.11, 05 Part D) | Either partner can pause or end alone, instantly, with no notification to the other. Ended → 30-day read-only window per person with export (including full chat text; never AI-derived partner data or safety data) → archived (or immediately when either starts a new relationship, or by "seal my side now"). Archived media and messages hard-deleted at 12 months unless legal hold, told at ending. Both re-inviting within 90 days with no new relationship reopens the same space. The ending design reserves a child-only "Keep the family calendar" for co-parents | Separation is the highest-risk window; the market's angriest reviews are lost memories and old data resurfacing with a new partner (01 §5); the soul promised export (SOUL §7) |
+| 32 | Attunement loop (2026-10-16, owner Q3/Q7) | A quarterly strengths-first check-up is the primary attunement artefact; the weekly check-in is optional and private. The Verdict is held and renamed "Monthly readout", an optional AI appendix only after the verdict gates and the AI safety suites pass | Marriage Checkup RCT (Córdova 2014); gains fade without boosters; responsiveness predicts quality more than insight (Joel 2020) |
+| 33 | Scope decisions (2026-10-16, owner Q1, Q5, Q6, Q8–Q18) | Intimacy in scope narrowly in Phase C (clinician- and sex-therapist-authored, both partners opt in, no frequency anything); couple profile fields, never types; faith opt-in per partner — Christian (Protestant/Pentecostal, Catholic) and Muslim at the Ghana launch, Jewish for diaspora, secular default always; one plan covers both partners, free core, premium = packs/depth/permanence; Mirror attentiveness flag removed; no polyamory support now (stated honestly); no in-app video calling; "Plans" card first under Chat; advisory board formed now; WhatsApp import only after Phase B is stable; co-parenting surface committed in principle; opt-in aggregate outcome panel | 06-synthesis-roadmap.md §10, each with its recommendation and sources |
 ---
 
 ## 16. OPEN QUESTIONS & FUTURE UPDATES
@@ -3124,11 +3159,10 @@ All 25 major architectural decisions made in the review session. These are locke
        Added: July 2026
        Resolved: July 2026
 
-[OPEN] "Verdict" in-app surface language
-       Internal spec term stays "verdict". In-app display language
-       may benefit from softer framing ("monthly readout", "pattern
-       report", "relationship pulse"). Decision deferred to UI design phase.
-       Status: Open — decide before Month 2 week 8 verdict screen build
+[RESOLVED] "Verdict" in-app surface language
+       Internal spec term stays "verdict". In-app display language is
+       "Monthly readout" (decision 32); every user-facing string uses it.
+       Status: Resolved 2026-10-18 (Spec 5)
        Added: June 2026
 ```
 
@@ -3615,7 +3649,7 @@ Per-message analysis with Claude for every message, for every couple, indefinite
 
 2. Cold start is still hard.
 
-Yes, there's a compatibility preview day one using profile anchors. But the real magic — pattern detection, pulse scores, verdicts — requires weeks of data. The 48-hour solo reflection fallback is clever, but will users wait? The master spec acknowledges this (day 7 pivot screen), but retention on day 3-7 for a "waiting" user is an open question.
+Yes, there was a compatibility preview day one using profile anchors (since retired: decision 30). But the real magic — pattern detection, pulse scores, verdicts — requires weeks of data. The 48-hour solo reflection fallback is clever, but will users wait? The master spec acknowledges this (day 7 pivot screen), but retention on day 3-7 for a "waiting" user is an open question.
 
 3. The Ghana cultural calibration is underdeveloped.
 
@@ -3705,7 +3739,7 @@ The constraint that makes it work: It's not a leaderboard. It's not "you're in t
 
 Estimated coefficient: High. Couples who receive a well-designed anniversary report will share it at rates similar to Spotify Wrapped (which drove massive user growth annually).
 
-Viral Engine 2: The Compatibility Preview (Day One)
+Viral Engine 2: The Compatibility Preview (Day One) — retired 2026-10-18 (decision 30); kept here as the review's original text
 When a couple completes onboarding, they get a cold-start compatibility preview. The prompt is designed to be warm, specific, and not generic.
 
 The spec doesn't explicitly say "shareable," but the design suggests it:

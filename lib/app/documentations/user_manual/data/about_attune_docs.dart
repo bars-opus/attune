@@ -169,6 +169,22 @@ class AboutAttuneDocs implements DocumentationModule {
         category: 'About Attune',
         order: 4,
       ),
+      FAQModel(
+        id: 'faq_about_delete_account',
+        question: 'What happens to my data if I delete my account?',
+        answer:
+            'Your account, messages, photos, quiz answers, journal, Healing and insights are deleted, and your photos are removed from storage. If you are in a shared space, it ends without notifying your partner; your messages, photos and game answers are removed from it. Shared history such as Pulse stays with the space until it is deleted, 12 months after it closes. Safety records are kept in anonymised form only, as the law requires.',
+        category: 'About Attune',
+        order: 5,
+      ),
+      FAQModel(
+        id: 'faq_about_download_data',
+        question: 'Can I download my data?',
+        answer:
+            'Yes, at any time: Settings → Download my data. You get a file with your messages and the photos you shared, plans, calendar, your stories, check-ins, journal and quiz answers. After a shared space ends you can still download it for up to 30 days. It includes the insights and readouts Attune showed you, but never anything about safety, never your partner\'s private items, and never the behind-the-scenes analysis of your chats. A large download comes in a few parts. It is kept for 7 days.',
+        category: 'About Attune',
+        order: 6,
+      ),
     ];
   }
 }

@@ -54,6 +54,11 @@ class ChatTextField extends StatefulWidget {
     this.onCaptureVideo,
     this.onAttachFile,
     this.onSharePlace,
+    this.onAppreciation,
+    this.onShareWin,
+    this.onAskSupport,
+    this.onHardMoment,
+    this.onSendLongPress,
     this.onOpenGames,
     this.showAttachImage = false,
     this.showAttachVideo = false,
@@ -94,6 +99,19 @@ class ChatTextField extends StatefulWidget {
 
   /// Opens the share-a-place sheet. Null hides the Location entry.
   final VoidCallback? onSharePlace;
+
+  /// Spec 7: "I noticed…", "Share a win" and "Ask for support"; each shown
+  /// only when its callback is given (the feature is on).
+  final VoidCallback? onAppreciation;
+  final VoidCallback? onShareWin;
+  final VoidCallback? onAskSupport;
+
+  /// Spec 8 (B3; plan review M8): the conflict toolkit, one attach entry.
+  final VoidCallback? onHardMoment;
+
+  /// Spec 8 (B3 (b)): long-press on send opens the repair tray; it never
+  /// sends.
+  final VoidCallback? onSendLongPress;
 
   /// File attach — placeholder for now, wired into the '+' sheet.
   final VoidCallback? onAttachFile;
@@ -237,6 +255,7 @@ class ComposerSatellite extends StatelessWidget {
     this.child,
     this.fillColor,
     this.iconColor,
+    this.onLongPress,
   }) : assert(icon != null || child != null, 'Provide either icon or child');
 
   final IconData? icon;
@@ -245,6 +264,7 @@ class ComposerSatellite extends StatelessWidget {
   final Widget? child;
   final Color? fillColor;
   final Color? iconColor;
+  final VoidCallback? onLongPress;
 
   /// The satellite's diameter. Public so a caller can reserve the same
   /// space the composer does.
@@ -271,6 +291,7 @@ class ComposerSatellite extends StatelessWidget {
             clipBehavior: Clip.antiAlias,
             child: InkWell(
               onTap: onTap,
+              onLongPress: onLongPress,
               customBorder: const CircleBorder(),
               child: SizedBox(
                 width: size,
@@ -903,6 +924,30 @@ class _ChatTextFieldState extends State<ChatTextField>
         // picker. Now shares a place the user describes themselves.
         onTap: widget.onSharePlace,
       ),
+      if (widget.onAppreciation != null)
+        _ChatAttachAction(
+          title: 'I noticed…',
+          icon: Icons.eco_outlined,
+          onTap: widget.onAppreciation,
+        ),
+      if (widget.onShareWin != null)
+        _ChatAttachAction(
+          title: 'Share a win',
+          icon: Icons.emoji_events_outlined,
+          onTap: widget.onShareWin,
+        ),
+      if (widget.onAskSupport != null)
+        _ChatAttachAction(
+          title: 'Ask for support',
+          icon: Icons.volunteer_activism_outlined,
+          onTap: widget.onAskSupport,
+        ),
+      if (widget.onHardMoment != null)
+        _ChatAttachAction(
+          title: 'In a hard moment',
+          icon: Icons.self_improvement_outlined,
+          onTap: widget.onHardMoment,
+        ),
     ];
   }
 
@@ -1634,6 +1679,7 @@ class _ChatTextFieldState extends State<ChatTextField>
                   widget.enabled && (_hasText || widget.gameStaged)
                       ? _handleSend
                       : null,
+              onLongPress: widget.enabled ? widget.onSendLongPress : null,
               tooltip:
                   widget.gameStaged ? 'Send game invitation' : 'Send message',
               fillColor:

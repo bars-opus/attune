@@ -2,12 +2,24 @@
 
 import 'dart:async';
 import 'package:attune/features/safety/domain/services/quick_exit_service.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 
 class TripleTapDetector extends StatefulWidget {
   final Widget child;
 
-  const TripleTapDetector({super.key, required this.child});
+  /// What three taps do; quick exit from this context by default.
+  final VoidCallback? onTripleTap;
+
+  /// Off (taps ignored) while nobody is signed in.
+  final bool enabled;
+
+  const TripleTapDetector({
+    super.key,
+    required this.child,
+    this.onTripleTap,
+    this.enabled = true,
+  });
 
   @override
   State<TripleTapDetector> createState() => _TripleTapDetectorState();
@@ -17,7 +29,9 @@ class _TripleTapDetectorState extends State<TripleTapDetector> {
   int _tapCount = 0;
   Timer? _tapTimer;
 
-  void _handleTap(BuildContext context) {
+  void _handleTap(BuildContext context, PointerDownEvent event) {
+    // Touch only: a mouse or stylus near the toolbar is not a panic gesture.
+    if (!widget.enabled || event.kind != PointerDeviceKind.touch) return;
     _tapCount++;
 
     // Reset after 2 seconds of inactivity
@@ -29,7 +43,7 @@ class _TripleTapDetectorState extends State<TripleTapDetector> {
     if (_tapCount >= 3) {
       _tapCount = 0;
       _tapTimer?.cancel();
-      QuickExitService.execute(context);
+      (widget.onTripleTap ?? () => QuickExitService.execute(context))();
     }
   }
 
@@ -40,10 +54,13 @@ class _TripleTapDetectorState extends State<TripleTapDetector> {
     return Stack(
       children: [
         widget.child,
+        // The toolbar band only (Spec 2 review I8): a centred tab, title or
+        // search field just below it must not count towards the gesture.
         Positioned(
-          top: topInset + 8,
+          top: topInset,
           left: 0,
           right: 0,
+          height: kToolbarHeight,
           child: Center(
             child: Semantics(
               label: 'Quick exit gesture area',
@@ -62,8 +79,12 @@ class _TripleTapDetectorState extends State<TripleTapDetector> {
               // without blocking or double-counting its taps.
               child: Listener(
                 behavior: HitTestBehavior.translucent,
-                onPointerDown: (_) => _handleTap(context),
-                child: const SizedBox(width: 72, height: 72),
+                onPointerDown: (event) => _handleTap(context, event),
+                child: const SizedBox(
+                  key: Key('quick_exit_zone'),
+                  width: 72,
+                  height: kToolbarHeight,
+                ),
               ),
             ),
           ),

@@ -9,6 +9,10 @@ const _payloadKey = 'together_widget_v1';
 /// This phone's opt-in (Phase 8a R2); off unless set.
 const enabledKey = 'together_widget_enabled';
 
+/// Whether the card may show plan titles on this phone (Spec 1b). Off by
+/// default; read from storage at every publish, like [enabledKey].
+const widgetTitlesKey = 'together_widget_titles';
+
 /// Where receive_sharing_intent's iOS share extension leaves the shared text
 /// in the App Group; the plugin never removes it (Phase 8b R7).
 const shareExtensionKeys = ['ShareKey', 'ShareMessageKey'];
@@ -55,7 +59,13 @@ class TogetherWidgetSync {
   static Future<void> publishIfEnabled(List<WidgetLine> lines) async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      if (prefs.getBool(enabledKey) ?? false) await publish(lines);
+      if (!(prefs.getBool(enabledKey) ?? false)) return;
+      await publish(
+        widgetLinesForCard(
+          lines,
+          showTitles: prefs.getBool(widgetTitlesKey) ?? false,
+        ),
+      );
     } catch (_) {}
   }
 

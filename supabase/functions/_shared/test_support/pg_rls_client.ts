@@ -188,6 +188,15 @@ class QueryBuilder {
     const { data } = await this.exec();
     return { data: data && data.length > 0 ? data[0] : null, error: null };
   }
+
+  // supabase-js's .single(): an error unless exactly one row.
+  async single(): Promise<{ data: PgRow | null; error: { message: string } | null }> {
+    const { data } = await this.exec();
+    if (!data || data.length !== 1) {
+      return { data: null, error: { message: "JSON object requested, multiple (or no) rows returned" } };
+    }
+    return { data: data[0], error: null };
+  }
 }
 
 // Supports markMessageDone's shape:
@@ -204,6 +213,12 @@ class UpdateBuilder {
 
   eq(col: string, value: unknown): this {
     this.filters.push({ col, op: "eq", value });
+    return this;
+  }
+
+  // supabase-js's .is(col, null) for an update's WHERE (sync audit I-2).
+  is(col: string, value: unknown): this {
+    this.filters.push({ col, op: value === null ? "is_null" : "eq", value });
     return this;
   }
 
@@ -230,6 +245,7 @@ class UpdateBuilder {
       })
       .join(", ");
     const whereParts = this.filters.map((f) => {
+      if (f.op === "is_null") return `${quoteIdent(f.col)} IS NULL`;
       params.push(f.value);
       return `${quoteIdent(f.col)} = $${params.length}`;
     });

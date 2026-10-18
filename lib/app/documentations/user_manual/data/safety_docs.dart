@@ -140,7 +140,7 @@ class SafetyDocs implements DocumentationModule {
           id: 'safety_quick_exit_how',
           title: 'How to trigger it',
           content:
-              'From any screen in the app, triple-tap the Attune logo within about two seconds to instantly leave — the app is immediately replaced with a neutral, unbranded screen that works even offline.',
+              'From any screen in the app, triple-tap the top centre of the screen within about two seconds to leave at once. Attune shows a neutral, unbranded screen, and on Android it also closes. It works even offline.',
           numberPrefix: '1',
           type: ManualContentType.text,
         ),
@@ -155,7 +155,7 @@ class SafetyDocs implements DocumentationModule {
           id: 'safety_pin',
           title: 'Returning to the app afterward',
           content:
-              'Setting up Quick Exit requires you to create a separate safety PIN. That PIN — not just your fingerprint or face — is required to get back into the sensitive parts of the app after a quick exit, as an extra layer of protection.',
+              'You can set a Safety PIN in Settings → Safety PIN, or from Support Resources. After a quick exit, Attune asks for it before it opens again, and you can choose to be asked every time Attune opens. If you forget it, sign out and sign back in with your phone number. Nothing is erased. Without a PIN, a quick exit signs you out instead.',
           numberPrefix: '2',
           type: ManualContentType.text,
         ),
@@ -220,9 +220,9 @@ class SafetyDocs implements DocumentationModule {
       ),
       FAQModel(
         id: 'faq_safety_quick_exit_pin',
-        question: 'Why do I need a separate PIN for Quick Exit?',
+        question: 'What does the Safety PIN do?',
         answer:
-            'The safety PIN is a deliberate extra layer, distinct from your regular biometric unlock, required specifically to return to sensitive content after a quick exit — this is intentional and cannot be bypassed with just a fingerprint or face scan.',
+            'It stops someone who picks up your phone after a quick exit from opening Attune. It is separate from your phone\'s lock, fingerprint or face. Set it in Settings → Safety PIN. Too many wrong tries make Attune wait before the next one. If you forget it, sign out and sign back in with your phone number.',
         category: 'Safety',
         order: 6,
       ),
@@ -233,6 +233,14 @@ class SafetyDocs implements DocumentationModule {
             'No — Attune cannot make claims about erasing evidence of activity on your device. If you\'re concerned about a shared or monitored device, please keep that limitation in mind.',
         category: 'Safety',
         order: 7,
+      ),
+      FAQModel(
+        id: 'faq_safety_signed_in',
+        question: 'Can I see where my account is signed in?',
+        answer:
+            'Yes. Settings → Where you\'re signed in lists every phone signed in to your account. You can sign out all the others at once; it can take up to an hour for another phone to notice.',
+        category: 'Safety',
+        order: 8,
       ),
     ];
   }

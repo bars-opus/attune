@@ -39,6 +39,27 @@ const MAX_TOTAL_CONTEXT_CHARS = 12000;
 const ASSIST_ROW_CAP = 6;
 const UNDERSTAND_ROW_CAP = 19;
 
+/// Ordinary, analysable text only (spec §4.2 plus Spec 8 review I8): no
+/// system notice, deletion, Assist output, media, game, typed message
+/// (pause, pause_reply, appreciation…) or row kept out of analysis.
+///
+/// The user-scoped loaders cannot select message_analysis_skipped (it is
+/// not in the client column allowlist), so there the media_type check is
+/// the real guard: every message the server sets aside today is typed.
+/// Do not rely on the skipped check alone for an untyped row (final
+/// review m-10).
+export function isOrdinaryTextRow(row: Record<string, unknown>): boolean {
+  return !row.deleted_at &&
+    !row.is_system_notice &&
+    row.message_origin !== "attune_assist" &&
+    !row.media_url &&
+    !row.game_session_id &&
+    (row.media_type ?? null) === null &&
+    row.message_analysis_skipped !== true &&
+    typeof row.content === "string" &&
+    (row.content as string).trim().length > 0;
+}
+
 export async function loadAiAssistantTarget(
   client: SupabaseClient,
   userId: string,
@@ -54,7 +75,7 @@ export async function loadAiAssistantTarget(
   const { data: message, error } = await client
     .from("messages")
     .select(
-      "id, relationship_id, sender_id, created_at, content, deleted_at, is_system_notice, message_origin, media_url, game_session_id",
+      "id, relationship_id, sender_id, created_at, content, deleted_at, is_system_notice, message_origin, media_url, game_session_id, media_type",
     )
     .eq("id", messageId)
     .maybeSingle();
@@ -68,6 +89,11 @@ export async function loadAiAssistantTarget(
     return { ok: false, code: "TARGET_UNAVAILABLE" };
   }
   if (message.media_url || message.game_session_id) {
+    return { ok: false, code: "TARGET_UNAVAILABLE" };
+  }
+  // Spec 8 (plan review I8): a Pause, its reply, an "I noticed…" note or
+  // anything kept out of analysis is never read.
+  if (!isOrdinaryTextRow(message as Record<string, unknown>)) {
     return { ok: false, code: "TARGET_UNAVAILABLE" };
   }
   const content = typeof message.content === "string" ? message.content : "";
@@ -133,7 +159,7 @@ export async function loadBoundedContext(
   let beforeQuery = client
     .from("messages")
     .select(
-      "id, sender_id, created_at, content, deleted_at, is_system_notice, message_origin, media_url, game_session_id",
+      "id, sender_id, created_at, content, deleted_at, is_system_notice, message_origin, media_url, game_session_id, media_type",
     )
     .eq("relationship_id", target.relationshipId)
     .lt("created_at", target.createdAt)
@@ -145,7 +171,7 @@ export async function loadBoundedContext(
   let afterQuery = client
     .from("messages")
     .select(
-      "id, sender_id, created_at, content, deleted_at, is_system_notice, message_origin, media_url, game_session_id",
+      "id, sender_id, created_at, content, deleted_at, is_system_notice, message_origin, media_url, game_session_id, media_type",
     )
     .eq("relationship_id", target.relationshipId)
     .gt("created_at", target.createdAt)
@@ -159,14 +185,7 @@ export async function loadBoundedContext(
     afterQuery,
   ]);
 
-  const isEligible = (row: Record<string, unknown>) =>
-    !row.deleted_at &&
-    !row.is_system_notice &&
-    row.message_origin !== "attune_assist" &&
-    !row.media_url &&
-    !row.game_session_id &&
-    typeof row.content === "string" &&
-    (row.content as string).trim().length > 0;
+  const isEligible = isOrdinaryTextRow;
 
   const before = (beforeRows ?? []).filter(isEligible).slice(0, beforeCount);
   const after = (afterRows ?? []).filter(isEligible).slice(0, afterCount);

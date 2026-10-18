@@ -54,6 +54,10 @@ List<Widget> buildMessageActionItems({
   /// load-bearing rather than tidy.** See the RULING 23 note at
   /// `canAskAttune` below.
   bool assistEnabled = true,
+  // Spec 7 (B1): a received "I noticed…" note can be kept in the jar.
+  bool isInJar = false,
+  VoidCallback? onSaveToJar,
+  VoidCallback? onRemoveFromJar,
 }) {
   final windowNow = DateTime.now();
   final canEdit = message.canEdit(
@@ -195,6 +199,15 @@ List<Widget> buildMessageActionItems({
         leading: const Icon(Icons.auto_awesome_outlined),
         title: 'Ask Attune',
         onSelected: onAskAttune,
+      ),
+    if (message.isAppreciation &&
+        message.senderId != currentUserId &&
+        !message.isDeleted &&
+        (isInJar ? onRemoveFromJar : onSaveToJar) != null)
+      item(
+        leading: Icon(isInJar ? Icons.eco : Icons.eco_outlined),
+        title: isInJar ? 'Remove from my jar' : 'Save to my jar',
+        onSelected: (isInJar ? onRemoveFromJar : onSaveToJar)!,
       ),
     if (canEdit)
       item(

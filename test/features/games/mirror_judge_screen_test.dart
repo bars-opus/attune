@@ -42,7 +42,7 @@ void main() {
 
   testWidgets('Yes and Not quite use the same button type', (tester) async {
     // I2: a FilledButton on "Yes" visually nudges toward the affirmative
-    // in the exact measurement the §8.4 attentiveness flag reads. Both
+    // in the exact judgement the score is made of. Both
     // must render as the same widget type so neither is visually
     // preferred.
     await tester.pumpWidget(

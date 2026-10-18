@@ -1,7 +1,9 @@
 import 'dart:async';
 
 import 'package:attune/core/utils/exports/export_screens.dart';
+import 'package:attune/features/chat/data/seen_receipts_repository.dart';
 import 'package:attune/features/chat/domain/entities/conversation.dart';
+import 'package:attune/features/chat/domain/seen_receipts.dart';
 import 'package:attune/features/chat/presentation/providers/chat_experience_providers.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:attune/features/settings/data/streak_replay_preference.dart';
@@ -48,6 +50,12 @@ class ChatSettingsStaticRows extends ConsumerWidget {
     final conversation = this.conversation;
 
     final allowStreakReplays = ref.watch(streakReplayPreferenceProvider);
+    // Off while loading or on error, like the location toggle above it.
+    final seenReceipts =
+        relationshipId == null
+            ? SeenReceipts.off
+            : ref.watch(seenReceiptsProvider(relationshipId)).valueOrNull ??
+                SeenReceipts.off;
 
     return Padding(
       padding: const EdgeInsets.all(Spacing.md),
@@ -103,6 +111,44 @@ class ChatSettingsStaticRows extends ConsumerWidget {
                               // real state.
                               ref.invalidate(
                                 coupleMapPresenceProvider(relationshipId),
+                              );
+                            }
+                          },
+                ),
+
+                // One setting for chat read ticks and story seen marks
+                // (Spec 1a). Shows my own vote; the subtitle says whether it
+                // is on for both. Either partner's off is immediate and
+                // silent; on needs both (SPEC §11 constraint 12).
+                InfoRowWidget(
+                  key: const ValueKey('seen_receipts_toggle'),
+                  title: seenReceiptsTitle,
+                  subtitle: seenReceiptsSubtitle(seenReceipts),
+                  icon: Icons.done_all_rounded,
+                  isToggleItem: true,
+                  showAvatar: false,
+                  showTrailingArrow: false,
+                  showDivider: true,
+                  toggleValue: seenReceipts.mine,
+                  iconColor: Colors.grey,
+                  onToggleChanged:
+                      relationshipId == null
+                          ? (_) {}
+                          : (value) async {
+                            final repository = ref.read(
+                              seenReceiptsRepositoryProvider,
+                            );
+                            try {
+                              await repository.set(relationshipId, value);
+                            } catch (_) {
+                              if (context.mounted) {
+                                context.showErrorSnackbar(
+                                  seenReceiptsFailureCopy,
+                                );
+                              }
+                            } finally {
+                              ref.invalidate(
+                                seenReceiptsProvider(relationshipId),
                               );
                             }
                           },

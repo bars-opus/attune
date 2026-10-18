@@ -2,6 +2,7 @@ import 'package:attune/core/utils/exports/export_screens.dart';
 import 'package:attune/features/onboarding/presentation/widgets/invite_card.dart';
 import 'package:attune/features/onboarding/presentation/widgets/onboarding_info_tile.dart';
 import 'package:attune/features/onboarding/presentation/widgets/onboarding_step_frame.dart';
+import 'package:attune/features/onboarding/presentation/widgets/pending_invite_guide.dart';
 import 'package:attune/features/relationships/data/relationship_invite_service.dart';
 
 class CouplesWaitingStep extends StatefulWidget {
@@ -9,10 +10,15 @@ class CouplesWaitingStep extends StatefulWidget {
     super.key,
     required this.inviteService,
     required this.onFinish,
+    this.onUseAlone,
   });
 
   final RelationshipInviteService inviteService;
   final VoidCallback onFinish;
+
+  /// After day 7's "Use Attune on my own for now" has withdrawn the invites
+  /// (Spec 5, R5-10); defaults to [onFinish].
+  final VoidCallback? onUseAlone;
 
   @override
   State<CouplesWaitingStep> createState() => _CouplesWaitingStepState();
@@ -22,23 +28,55 @@ class _CouplesWaitingStepState extends State<CouplesWaitingStep> {
   RelationshipInvite? _invite;
   bool _isCreatingInvite = false;
   String? _errorMessage;
+  Duration? _age;
 
   @override
   void initState() {
     super.initState();
     if (widget.inviteService.isConfigured) {
       _createInvite();
+      _loadAge();
     }
   }
 
-  Future<void> _createInvite() async {
+  Future<void> _loadAge() async {
+    final age = await widget.inviteService.inviteAge();
+    if (mounted) setState(() => _age = age);
+  }
+
+  Future<void> _useAlone() async {
+    setState(() {
+      _isCreatingInvite = true;
+      _errorMessage = null;
+    });
+    try {
+      await widget.inviteService.withdrawPendingInvites();
+      if (!mounted) return;
+      (widget.onUseAlone ?? widget.onFinish)();
+    } catch (error) {
+      if (mounted) {
+        setState(() {
+          _errorMessage =
+              error is RelationshipInviteException
+                  ? error.message
+                  : 'Could not update your invite.';
+        });
+      }
+    } finally {
+      if (mounted) setState(() => _isCreatingInvite = false);
+    }
+  }
+
+  Future<void> _createInvite({bool forceNew = false}) async {
     setState(() {
       _isCreatingInvite = true;
       _errorMessage = null;
     });
 
     try {
-      final invite = await widget.inviteService.createInvite();
+      final invite = await widget.inviteService.createInvite(
+        forceNew: forceNew,
+      );
       if (mounted) setState(() => _invite = invite);
     } catch (error) {
       if (mounted) {
@@ -57,7 +95,6 @@ class _CouplesWaitingStepState extends State<CouplesWaitingStep> {
   @override
   Widget build(BuildContext context) {
     final invite = _invite;
-    final colorScheme = Theme.of(context).colorScheme;
 
     return OnboardingStepFrame(
       title: 'Invite your partner',
@@ -114,16 +151,16 @@ class _CouplesWaitingStepState extends State<CouplesWaitingStep> {
             ),
             Gap(Spacing.smMd.h),
           ],
-          Text(
-            'Next: use private reflection mode while your partner completes onboarding.',
-            style: TextStyle(color: colorScheme.onSurfaceVariant),
-          ),
-          Gap(Spacing.smMd.h),
-          AppButton(
-            label: 'Enter reflection mode',
-            onPressed: widget.onFinish,
-            size: ButtonSize.small,
-            height: OnboardingTokens.actionButtonHeight.h,
+          // Spec 5 (R5-9, R5-10): by how long they have waited.
+          PendingInviteGuide(
+            age: _age,
+            busy: _isCreatingInvite,
+            onContinue: widget.onFinish,
+            onReflect: widget.onFinish,
+            // C4: a plain fetch returns the live invite or mints one.
+            onKeepWaiting: _createInvite,
+            onUseAlone: _useAlone,
+            onInviteSomeoneElse: () => _createInvite(forceNew: true),
           ),
         ],
       ),

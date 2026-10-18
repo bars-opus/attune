@@ -75,14 +75,15 @@ BEGIN
   IF v_body IS DISTINCT FROM 'Today' THEN RAISE EXCEPTION 'CONTRACT VIOLATED: day-of body %', v_body; END IF;
 END $$;
 
--- 3. An ended couple hears nothing; a paused one still does.
+-- 3. An ended or paused couple hears nothing: Spec 3a made the reminder
+--    generator active-only ("reminders stop" while paused; sync audit K-2).
 DO $$
 BEGIN
   IF pg_temp.sent('reminder:7e500000-0000-0000-0000-000000000009:%') <> 0 THEN
     RAISE EXCEPTION 'CONTRACT VIOLATED: an ended relationship still gets reminders';
   END IF;
-  IF pg_temp.sent('reminder:7e500000-0000-0000-0000-000000000008:2026-11-10:7e300000-0000-0000-0000-0000000000c3:0') <> 1 THEN
-    RAISE EXCEPTION 'CONTRACT VIOLATED: a paused relationship lost its reminders';
+  IF pg_temp.sent('reminder:7e500000-0000-0000-0000-000000000008:%') <> 0 THEN
+    RAISE EXCEPTION 'CONTRACT VIOLATED: a paused relationship still gets reminders';
   END IF;
 END $$;
 

@@ -1,6 +1,7 @@
 // lib/features/pulse/presentation/widgets/radar_chart.dart
 import 'dart:math';
 import 'package:attune/core/utils/exports/export_screens.dart';
+import 'package:attune/features/pulse/domain/pulse_dimensions.dart';
 import 'package:flutter/material.dart';
 import 'package:gap/gap.dart';
 
@@ -121,14 +122,6 @@ class _RadarChartState extends State<RadarChart> with SingleTickerProviderStateM
   }
 
   void _showTooltip(String label, int score) {
-    final descriptions = {
-      'Communication': 'How clearly and kindly you express yourselves',
-      'Connection': 'Emotional closeness and warmth',
-      'Conflict Health': 'How well you navigate disagreements',
-      'Alignment': 'Shared values and direction',
-      'Emotional Safety': 'Feeling safe to be vulnerable',
-    };
-
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
@@ -137,12 +130,13 @@ class _RadarChartState extends State<RadarChart> with SingleTickerProviderStateM
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(
-              'Score: $score/100',
-              style: const TextStyle(fontWeight: FontWeight.bold),
-            ),
+            Text('Score: $score/100', style: const TextStyle(fontWeight: FontWeight.bold)),
             const SizedBox(height: 8),
-            Text(descriptions[label] ?? ''),
+            Text(pulseDimensionByLabel(label)?.description ?? ''),
+            if (pulseDimensionByLabel(label) case final d?) ...[
+              const SizedBox(height: 8),
+              Text(sharedWeightLine(d)),
+            ],
           ],
         ),
         actions: [
@@ -155,16 +149,8 @@ class _RadarChartState extends State<RadarChart> with SingleTickerProviderStateM
     );
   }
 
-  String _getShortLabel(String label) {
-    switch (label) {
-      case 'Communication': return 'Comm';
-      case 'Connection': return 'Conn';
-      case 'Conflict Health': return 'Conflict';
-      case 'Alignment': return 'Align';
-      case 'Emotional Safety': return 'Safety';
-      default: return label;
-    }
-  }
+  String _getShortLabel(String label) =>
+      pulseDimensionByLabel(label)?.shortLabel ?? label;
 }
 
 class _RadarPainter extends CustomPainter {
@@ -180,12 +166,9 @@ class _RadarPainter extends CustomPainter {
     required this.backgroundColor,
   });
 
+  // Four axes since Spec 1a; the painter already draws any n-gon.
   final List<String> _order = [
-    'Communication',
-    'Connection',
-    'Conflict Health',
-    'Alignment',
-    'Emotional Safety',
+    for (final d in sharedPulseDimensions) d.label,
   ];
 
   @override

@@ -3,7 +3,13 @@
 import 'package:attune/core/providers/couple_name_provider.dart';
 import 'package:attune/core/utils/date_formatter.dart';
 import 'package:attune/core/utils/exports/export_screens.dart';
+import 'package:attune/features/safety/presentation/outside_perspective_screen.dart';
+import 'package:attune/features/safety/self_check/safety_self_check_row.dart';
 import 'package:attune/features/pulse/data/models/pulse_score.dart';
+import 'package:attune/features/pulse/domain/pulse_dimensions.dart';
+import 'package:attune/features/pulse/domain/pulse_refresh_copy.dart';
+import 'package:attune/features/pulse/presentation/widgets/pulse_paused_state.dart';
+import 'package:attune/features/pulse/presentation/widgets/your_week_card.dart';
 import 'package:attune/features/pulse/presentation/widgets/dimension_row.dart';
 import 'package:attune/features/pulse/presentation/widgets/number_view.dart';
 import 'package:attune/features/pulse/presentation/widgets/radar_chart.dart';
@@ -12,8 +18,6 @@ import 'package:attune/features/pulse/presentation/widgets/checkin_banner.dart';
 import 'package:attune/features/pulse/presentation/widgets/trend_chart.dart';
 import 'package:attune/features/pulse/presentation/widgets/visualisation_switcher.dart';
 import 'package:attune/features/pulse/providers/pulse_providers.dart';
-import 'package:attune/features/quiz/presentation/providers/quiz_providers.dart'
-    show bothPartnersSharedProvider;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -62,6 +66,9 @@ class _PulseScreenState extends ConsumerState<PulseScreen>
         currentRelationshipIdProvider.future,
       );
       if (relationshipId != null) {
+        // A FutureProvider caches its last result; without this a second
+        // tap would resolve from cache and never reach the server.
+        ref.invalidate(recomputePulseProvider(relationshipId));
         await ref.read(recomputePulseProvider(relationshipId).future);
         ref.invalidate(currentPulseScoreProvider);
         ref.invalidate(pulseHistoryProvider);
@@ -70,7 +77,7 @@ class _PulseScreenState extends ConsumerState<PulseScreen>
       if (mounted) {
         ScaffoldMessenger.of(
           context,
-        ).showSnackBar(SnackBar(content: Text(e.toString())));
+        ).showSnackBar(SnackBar(content: Text(pulseRefreshMessage(e))));
       }
     } finally {
       if (mounted) setState(() => _isRefreshing = false);
@@ -84,6 +91,22 @@ class _PulseScreenState extends ConsumerState<PulseScreen>
     final textTheme = Theme.of(context).textTheme;
     final pulseAsync = ref.watch(currentPulseScoreProvider);
     final historyAsync = ref.watch(pulseHistoryProvider);
+    // Hidden while paused (F5 (5)): no score, no check-in, no refresh.
+    final relationship =
+        ref.watch(currentRelationshipStatusProvider).valueOrNull;
+    if (relationship?.status == 'paused') {
+      return CustomScrollView(
+        slivers: [
+          SliverOverlapInjector(
+            handle: NestedScrollView.sliverOverlapAbsorberHandleFor(context),
+          ),
+          const SliverFillRemaining(
+            hasScrollBody: false,
+            child: PulsePausedState(),
+          ),
+        ],
+      );
+    }
 
     return RefreshIndicator(
       onRefresh: _refreshPulse,
@@ -152,27 +175,16 @@ class _PulseScreenState extends ConsumerState<PulseScreen>
                         return _buildNoDataState();
                       }
 
-                      // Build dimension map for visualisations
-                      final dimensions = {
-                        'Communication': pulse.communication,
-                        'Connection': pulse.connection,
-                        'Conflict Health': pulse.conflictHealth,
-                        'Alignment': pulse.alignment,
-                        'Emotional Safety': pulse.emotionalSafety,
+                      // The four shared dimensions (Spec 1a). Emotional
+                      // safety is self-facing: see YourWeekCard below.
+                      final dimensions = <String, int>{
+                        for (final d in sharedPulseDimensions)
+                          d.label: pulse.scoreFor(d.key),
                       };
 
-                      final deltas = {
-                        'Communication': pulse.getDeltaForDimension(
-                          'communication',
-                        ),
-                        'Connection': pulse.getDeltaForDimension('connection'),
-                        'Conflict Health': pulse.getDeltaForDimension(
-                          'conflict_health',
-                        ),
-                        'Alignment': pulse.getDeltaForDimension('alignment'),
-                        'Emotional Safety': pulse.getDeltaForDimension(
-                          'emotional_safety',
-                        ),
+                      final deltas = <String, int?>{
+                        for (final d in sharedPulseDimensions)
+                          d.label: pulse.getDeltaForDimension(d.key),
                       };
 
                       return Column(
@@ -253,6 +265,8 @@ class _PulseScreenState extends ConsumerState<PulseScreen>
                           ),
                           Gap(Spacing.sm.h),
                           const _RelationshipCenterPanel(),
+                          Gap(Spacing.md.h),
+                          const YourWeekCard(),
                           Gap(Spacing.md.h),
 
                           // Dimensions rows
@@ -429,7 +443,7 @@ class _PulseScreenState extends ConsumerState<PulseScreen>
           icon: Icons.show_chart,
           title: 'No pulse score yet',
           subtitle:
-              'Complete your first weekly check-in\nto see your relationship pulse.',
+              'Log a moment together\nto start your relationship pulse.',
         ),
         Gap(Spacing.lg.h),
         AppButton(
@@ -463,35 +477,19 @@ class _PulseScreenState extends ConsumerState<PulseScreen>
           customColor: colorScheme.surfaceContainerHighest,
           textColor: colorScheme.onSurface,
         ),
+        // The private check-in never creates the shared score (Spec 1a), so
+        // "Your week" must show before one exists.
+        Gap(Spacing.lg.h),
+        const YourWeekCard(),
       ],
     );
   }
 
-  String _getDimensionKey(String label) {
-    switch (label) {
-      case 'Communication':
-        return 'communication';
-      case 'Connection':
-        return 'connection';
-      case 'Conflict Health':
-        return 'conflict_health';
-      case 'Alignment':
-        return 'alignment';
-      case 'Emotional Safety':
-        return 'emotional_safety';
-      default:
-        return '';
-    }
-  }
+  String _getDimensionKey(String label) =>
+      pulseDimensionByLabel(label)?.key ?? '';
 
   void _showDimensionTooltip(String label, int score, String confidence) {
-    final descriptions = {
-      'Communication': 'How clearly and kindly you express yourselves',
-      'Connection': 'Emotional closeness and warmth',
-      'Conflict Health': 'How well you navigate disagreements',
-      'Alignment': 'Shared values and direction',
-      'Emotional Safety': 'Feeling safe to be vulnerable',
-    };
+    final dimension = pulseDimensionByLabel(label);
 
     showDialog(
       context: context,
@@ -507,15 +505,25 @@ class _PulseScreenState extends ConsumerState<PulseScreen>
                   style: const TextStyle(fontWeight: FontWeight.bold),
                 ),
                 const SizedBox(height: 8),
-                Text(descriptions[label] ?? ''),
+                Text(dimension?.description ?? ''),
+                if (dimension != null) ...[
+                  const SizedBox(height: 8),
+                  // F5 (3): the re-weighting is disclosed where the number is.
+                  Text(sharedWeightLine(dimension)),
+                ],
                 if (confidence == 'low')
                   const Padding(
                     padding: EdgeInsets.only(top: 8),
                     child: Text(
-                      'Limited data — this will improve with more check-ins, logged moments, and time as we learn from your conversations.',
+                      'Limited data — this will improve with more logged moments and time as we learn from your conversations.',
                       style: TextStyle(fontStyle: FontStyle.italic),
                     ),
                   ),
+                const SizedBox(height: 8),
+                const Text(
+                  emotionalSafetyPrivateNote,
+                  style: TextStyle(fontStyle: FontStyle.italic),
+                ),
               ],
             ),
             actions: [
@@ -580,7 +588,6 @@ class _RelationshipCenterPanel extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final colorScheme = Theme.of(context).colorScheme;
     final pulseAsync = ref.watch(currentPulseScoreProvider);
-    final bothSharedQuizAsync = ref.watch(bothPartnersSharedProvider);
 
     return CardInkWell(
       child: Column(
@@ -601,18 +608,26 @@ class _RelationshipCenterPanel extends ConsumerWidget {
             showDivider: true,
             onTap: () => context.pushNamed('weeklyCheckin'),
           ),
-          // Attachment quiz — the one other real, already-built input to
-          // Pulse (PULSE.md §5: both partners completing it adds +20 to
-          // Alignment, one partner only adds +5). bothPartnersSharedProvider
-          // is mutual by construction (it checks BOTH directions of
-          // quiz_shares), so this states a shared fact about the couple
-          // rather than reporting on either partner individually.
-          bothSharedQuizAsync.when(
-            loading: () => _quizRow(context, colorScheme, bothShared: null),
-            error: (_, _) => _quizRow(context, colorScheme, bothShared: null),
-            data:
-                (bothShared) =>
-                    _quizRow(context, colorScheme, bothShared: bothShared),
+          // Attachment quiz — an input to Pulse (PULSE.md §5). Spec 5 (F9
+          // (3)): the result is about you, so the row never states whether
+          // either partner has shared or how two styles fit.
+          _quizRow(context, colorScheme),
+          // Spec 8 (F14): offered every 90 days while it is on.
+          const SafetySelfCheckRow(dueOnly: true),
+          // Spec 8 (B10): a resource, never a recommendation; shown once
+          // its content is live.
+          if (ref.watch(outsidePerspectiveEnabledProvider))
+          InfoRowWidget(
+            title: 'A trained outside perspective',
+            subtitle: 'What couples counselling is, and how to find it',
+            icon: Icons.support_agent_outlined,
+            iconColor: colorScheme.info,
+            circularRadius: 10,
+            backgroundColor: colorScheme.info.withValues(alpha: .2),
+            showAvatar: true,
+            showTrailingArrow: true,
+            showDivider: true,
+            onTap: () => context.push(OutsidePerspectiveScreen.routeName),
           ),
           InfoRowWidget(
             title: 'Relationship tips',
@@ -636,22 +651,10 @@ class _RelationshipCenterPanel extends ConsumerWidget {
     );
   }
 
-  /// The attachment-quiz row. [bothShared] null means "still resolving or
-  /// unavailable" — the row still renders with its real title/icon (same
-  /// convention ChatSettingsStaticRows uses for a not-yet-loaded
-  /// conversation) rather than flashing a spinner into the list.
-  Widget _quizRow(
-    BuildContext context,
-    ColorScheme colorScheme, {
-    required bool? bothShared,
-  }) {
+  Widget _quizRow(BuildContext context, ColorScheme colorScheme) {
     return InfoRowWidget(
-      title: 'Attachment styles',
-      subtitle: switch (bothShared) {
-        true => 'You have both shared your results',
-        false => 'Take it together to strengthen your Pulse',
-        null => 'See how your styles fit together',
-      },
+      title: 'Attachment style',
+      subtitle: 'How you tend to show up in closeness',
       icon: Icons.favorite_outline,
       iconColor: colorScheme.primary,
       circularRadius: 10,

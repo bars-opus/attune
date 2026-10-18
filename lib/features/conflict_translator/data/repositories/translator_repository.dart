@@ -5,6 +5,30 @@ import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 
+/// The server's per-day cap (Spec 8, plan review I9) was reached: its own
+/// answer, never a "try again" (sync audit 2026-10-18).
+class TranslatorLimitReached implements Exception {
+  const TranslatorLimitReached(this.message);
+
+  final String message;
+}
+
+const kTranslatorLimitCopy =
+    "You've used the translator a lot today. Try again tomorrow.";
+
+/// What a failed translate call means to the sheet.
+Exception translatorFailure(Object error) {
+  if (error is FunctionException && error.status == 429) {
+    final details = error.details;
+    final message = details is Map ? details['message'] : null;
+    return TranslatorLimitReached(
+      message is String && message.isNotEmpty ? message : kTranslatorLimitCopy,
+    );
+  }
+  if (error is TimeoutException) return Exception('TIMEOUT');
+  return Exception('Failed to translate: $error');
+}
+
 class TranslatorRepository {
   final SupabaseClient _supabase;
 
@@ -13,13 +37,13 @@ class TranslatorRepository {
   Future<TranslatorResponse> translate({
     required String message,
     required String relationshipId,
-    TranslatorContext? context,
+    TranslatorRegister register = TranslatorRegister.nvc,
   }) async {
     try {
       final request = TranslatorRequest(
         message: message,
-        context: context,
         relationshipId: relationshipId,
+        register: register,
       );
 
       final response = await _supabase.functions.invoke(
@@ -33,10 +57,8 @@ class TranslatorRepository {
       }
 
       return TranslatorResponse.fromJson(data);
-    } on TimeoutException {
-      throw Exception('TIMEOUT');
     } catch (e) {
-      throw Exception('Failed to translate: $e');
+      throw translatorFailure(e);
     }
   }
 

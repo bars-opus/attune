@@ -19,6 +19,10 @@ void main() {
     expect(resolveModeFromRelationshipStatus('paused'), OnboardingMode.personal);
   });
 
+  test('archived status resolves to personal (Spec 3a)', () {
+    expect(resolveModeFromRelationshipStatus('archived'), OnboardingMode.personal);
+  });
+
   test('null status (no relationship row) resolves to personal', () {
     expect(resolveModeFromRelationshipStatus(null), OnboardingMode.personal);
   });

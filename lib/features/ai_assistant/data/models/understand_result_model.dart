@@ -79,6 +79,12 @@ sealed class UnderstandResultModel {
           );
         }
         return UnderstandResultCannotHelp(reason: reason);
+      // Spec 8 (F15 (2); plan review C3): fixed outcomes of the
+      // deterministic pre-check — no readings, nothing derived.
+      case 'boundary':
+        return const UnderstandResultBoundary();
+      case 'supporter':
+        return const UnderstandResultSupporter();
       default:
         throw FormatException(
           'UnderstandResultModel.fromJson: unrecognized status "$status"',
@@ -110,6 +116,16 @@ class UnderstandResultOk extends UnderstandResultModel {
 /// same generic "can't help with this" copy regardless of which one it
 /// is (spec §6.1) — promote to an enum if per-reason copy is ever
 /// needed.
+/// The partner's message is a "no" (Spec 8): it is not read for meaning.
+class UnderstandResultBoundary extends UnderstandResultModel {
+  const UnderstandResultBoundary();
+}
+
+/// The partner's message speaks of self-harm (Spec 8): the supporter card.
+class UnderstandResultSupporter extends UnderstandResultModel {
+  const UnderstandResultSupporter();
+}
+
 class UnderstandResultCannotHelp extends UnderstandResultModel {
   final String reason;
 

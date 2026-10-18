@@ -17,7 +17,7 @@ class CheckinCompleteScreen extends StatelessWidget {
             child: SemanticContainerWidget(
               title: 'Check-in saved',
               content:
-                  'Your weekly reflection has been recorded. Shared pulse tools stay relationship-aware and update as more data arrives.',
+                  'Your weekly reflection has been saved. Only you can see your answers; they show in Your week on Pulse.',
               icon: Icons.favorite,
               backgroundColor: colorScheme.primary.withValues(alpha: 0.1),
               borderColor: colorScheme.primary,

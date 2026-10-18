@@ -5,6 +5,7 @@ import 'package:attune/features/auth/providers/auth_provider.dart';
 import 'package:attune/features/chat/data/repositories/chat_repository.dart';
 import 'package:attune/features/chat/domain/entities/conversation.dart';
 import 'package:attune/features/chat/domain/entities/message.dart';
+import 'package:attune/features/chat/domain/services/unread_count.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:attune/features/chat/utils/chat_log.dart';
@@ -35,7 +36,7 @@ class SupabaseChatRepository implements ChatRepository {
   static const _messageColumns =
       'id,relationship_id,sender_id,client_message_id,content,created_at,'
       'sort_at,game_session_id,'
-      'delivered_at,read_at,media_url,media_thumbnail_url,media_type,'
+      'delivered_at,read_receipt_at,media_url,media_thumbnail_url,media_type,'
       'media_duration_ms,media_waveform,media_width,media_height,source,'
       'reply_to_message_id,quoted_text,deleted_at,edited_at,'
       'is_view_once,viewed_at,is_system_notice,streak_views_remaining,'
@@ -806,23 +807,6 @@ class SupabaseChatRepository implements ChatRepository {
   }
 
   @override
-  Future<int> fetchStreak(String relationshipId) async {
-    try {
-      final offset = DateTime.now().timeZoneOffset.inMinutes;
-      final res = await _supabase.rpc(
-        'chat_conversation_streak',
-        params: {
-          'p_relationship_id': relationshipId,
-          'p_utc_offset_minutes': offset,
-        },
-      );
-      return (res as num?)?.toInt() ?? 0;
-    } catch (_) {
-      return 0;
-    }
-  }
-
-  @override
   Future<bool> canAccessRelationship(String relationshipId) async {
     final row =
         await _supabase
@@ -900,13 +884,13 @@ class SupabaseChatRepository implements ChatRepository {
     String relationshipId,
     String currentUserId,
   ) async {
-    final rows = await _supabase
-        .from('messages')
-        .select('id')
-        .eq('relationship_id', relationshipId)
-        .neq('sender_id', currentUserId)
-        .isFilter('read_at', null);
-    return rows.length;
+    // read_at is the recipient's private marker and is not selectable by
+    // clients (Spec 1a); the count comes from a SECURITY DEFINER reader.
+    final raw = await _supabase.rpc(
+      'count_unread_messages',
+      params: {'p_relationship_id': relationshipId},
+    );
+    return parseUnreadCount(raw);
   }
 
   String? _partnerIdFor(

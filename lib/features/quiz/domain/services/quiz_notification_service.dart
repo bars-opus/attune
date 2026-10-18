@@ -26,12 +26,10 @@ class QuizNotificationService {
     String body;
 
     switch (quizType) {
-      case 'attachment':
-        title = '$sharerName shared their attachment style';
-        body = 'See how your styles compare in your profile.';
-        break;
+      // No 'attachment' case: attachment results are never shared (Spec 5,
+      // F9 (3)).
       case 'love_language':
-        title = '$sharerName shared their love language';
+        title = '$sharerName shared what feels loving to them';
         body = 'See their result in your profile.';
         break;
       case 'communication':

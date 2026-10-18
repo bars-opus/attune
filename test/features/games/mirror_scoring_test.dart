@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:attune/features/games/mirror/domain/services/mirror_scoring.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -22,24 +24,12 @@ void main() {
     });
   });
 
-  group('isAttentivenessFlagged', () {
-    test('flags below the 6.5 threshold (§8.4)', () {
-      expect(isAttentivenessFlagged(6), isTrue);
-      expect(isAttentivenessFlagged(0), isTrue);
-    });
-
-    test('does not flag at or above the threshold', () {
-      // 6.5 of 8 means 7 is the first passing whole score.
-      expect(isAttentivenessFlagged(7), isFalse);
-      expect(isAttentivenessFlagged(8), isFalse);
-    });
-
-    test('the boundary is exclusive on the low side', () {
-      // Guards the off-by-one: 6 < 6.5 flags, 7 > 6.5 does not. A >=
-      // comparison against 6 or a rounding of 6.5 to 7 would break one
-      // of these two assertions.
-      expect(isAttentivenessFlagged(6), isTrue);
-      expect(isAttentivenessFlagged(7), isFalse);
-    });
+  test('the score is a count, never a flag (Spec 1b: no attentiveness '
+      'judgement is computed or stored)', () {
+    final src = File(
+      'lib/features/games/mirror/domain/services/mirror_scoring.dart',
+    ).readAsStringSync();
+    expect(src.contains('isAttentivenessFlagged'), isFalse);
+    expect(src.contains('kAttentivenessFlagThreshold'), isFalse);
   });
 }

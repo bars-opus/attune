@@ -112,6 +112,8 @@ async function processJob(
         sender_id,
         content,
         media_type,
+        deleted_at,
+        is_system_notice,
         relationships!inner (
           id,
           status,
@@ -127,6 +129,11 @@ async function processJob(
     if (!message) {
       await finalizeJob(supabase, outboxId, "done", "message_missing");
       return { outbox_id: outboxId, status: "skipped", reason: "message_missing" };
+    }
+
+    if (!messagePushable(message)) {
+      await finalizeJob(supabase, outboxId, "done", "suppressed_message_state");
+      return { outbox_id: outboxId, status: "suppressed", reason: "suppressed_message_state" };
     }
 
     const relationship = unwrapRelationship(message.relationships);
@@ -289,6 +296,13 @@ async function finalizeJob(
     .update(payload)
     .eq("id", outboxId);
   if (error) throw error;
+}
+
+/// Sync audit M-5: a message deleted before the worker ran, or a system
+/// notice (it can carry a plan title, which Spec 1b keeps off lock
+/// screens), is never pushed.
+export function messagePushable(message: Record<string, unknown>): boolean {
+  return !message.deleted_at && message.is_system_notice !== true;
 }
 
 function previewBody(message: Record<string, unknown>) {

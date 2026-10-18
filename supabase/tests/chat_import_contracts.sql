@@ -158,6 +158,9 @@ SELECT public.test_set_chat_import_auth('71000000-0000-0000-0000-0000000000b2');
 SELECT public.delete_chat_import((SELECT job_id FROM import_test_state), false);
 DO $$
 BEGIN
+  -- import_job_id is not client-selectable since Spec 1a (20261017130100);
+  -- check as the table owner.
+  RESET ROLE;
   IF EXISTS (SELECT 1 FROM public.messages WHERE import_job_id = (SELECT job_id FROM import_test_state)) THEN
     RAISE EXCEPTION 'partner deletion left imported messages';
   END IF;

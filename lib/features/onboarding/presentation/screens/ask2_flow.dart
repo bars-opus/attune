@@ -1,4 +1,5 @@
 import 'package:attune/core/utils/exports/export_screens.dart';
+import 'package:attune/features/safety/self_check/safety_self_check_row.dart';
 import 'package:attune/features/onboarding/data/ask2_submission_service.dart';
 import 'package:attune/features/onboarding/domain/onboarding_models.dart';
 import 'package:attune/features/onboarding/presentation/widgets/anchors_step.dart';
@@ -73,20 +74,11 @@ class _Ask2FlowState extends State<Ask2Flow> {
 
   Future<void> _markAsk2StateCompleted() async {
     // ask2_state has no client UPDATE grant (Task 3's migration) — writes go
-    // through this SECURITY DEFINER RPC only, same pattern as
-    // upsert_attachment_compatibility_cache. Handles both 'prompted' and
+    // through this SECURITY DEFINER RPC only. Handles both 'prompted' and
     // 'reminded' source states in one call (its WHERE clause covers both).
     //
-    // The compatibility pairing itself (upsert_attachment_compatibility_cache
-    // — p_relationship_id, p_type_a, p_type_b, p_pairing_name,
-    // p_pairing_description, p_natural_strength, p_watch_area) is NOT called
-    // here: this task only triggers cache regeneration *eligibility*, it does
-    // not compute the pairing content. That computation is the existing
-    // Claude-driven compatibility feature (lib/features/quiz/presentation/
-    // providers/quiz_providers.dart) and is not yet wired to run
-    // automatically on both-partners-complete, so calling the upsert RPC
-    // from here would mean inventing placeholder pairing content — out of
-    // scope per the design doc.
+    // Spec 5 (F9): no compatibility pairing is ever computed or shown; the
+    // reward is the person's own anchors reflected back (Ask2RevealStep).
     await Supabase.instance.client.rpc(
       'complete_ask2',
       params: {'p_relationship_id': widget.relationshipId},
@@ -118,7 +110,17 @@ class _Ask2FlowState extends State<Ask2Flow> {
         controllers: _anchorControllers,
         onNext: _finish,
       ),
-      _ => Ask2RevealStep(onDone: () => Navigator.of(context).maybePop()),
+      _ => Ask2RevealStep(
+        anchors: _anchorControllers.map((c) => c.text).toList(),
+        // Spec 8 (F14, review §1.8): the private check-in is offered once
+        // here, skippable, and never stored with Ask-2.
+        onDone: () async {
+          await offerSafetySelfCheck(context);
+          if (context.mounted) Navigator.of(context).maybePop();
+        },
+        onLoveMap: () => context.push(RouteNames.loveMap),
+        onThisOrThat: () => context.push(RouteNames.thisOrThatGamesHub),
+      ),
     };
 
     final cardKey = _step == _quizStep ? _quizStep * 1000 + _questionIndex : _step;

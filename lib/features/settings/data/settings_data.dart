@@ -2,14 +2,17 @@
 import 'package:attune/features/auth/presentation/widgets/logout_action.dart';
 import 'package:attune/features/relationships/data/relationship_lifecycle_service.dart';
 import 'package:attune/features/relationships/presentation/widgets/end_relationship_action.dart';
+import 'package:attune/features/relationships/presentation/widgets/pause_relationship_action.dart';
 import 'package:attune/features/settings/utility/settings_exports.dart';
 import 'package:attune/features/settings/widgets/delete_account_action.dart';
 
 class SettingsDataSource {
   static List<SettingsSection> getSettingsSections(
     BuildContext context,
-    String currentUserId,
-  ) {
+    String currentUserId, {
+    bool quietStatesOn = false,
+    bool outsidePerspectiveOn = false,
+  }) {
     // Access localization for language prefence
     final loc = AppLocalizations.of(context)!;
     final theme = Theme.of(context);
@@ -77,6 +80,27 @@ class SettingsDataSource {
               routeName: '/mutedAuthorsScreen',
               iconColor: Colors.red,
               order: 5,
+            ),
+            SettingsConfig(
+              id: 'signed_in_devices',
+              title: "Where you're signed in",
+              subtitle: 'See the phones on your account',
+              icon: Icons.devices_outlined,
+              type: SettingsItemType.navigation,
+              routeName: '/settings/signed-in-devices',
+              iconColor: Colors.blueGrey,
+              order: 8,
+            ),
+            // Spec 3c (F1 (5)): a copy of what's theirs, at any time.
+            SettingsConfig(
+              id: 'download_my_data',
+              title: 'Download my data',
+              subtitle: "A copy of what's yours",
+              icon: Icons.download_outlined,
+              type: SettingsItemType.navigation,
+              routeName: '/settings/download-my-data',
+              iconColor: Colors.blueGrey,
+              order: 9,
             ),
             SettingsConfig(
               id: 'qr_code',
@@ -183,6 +207,52 @@ class SettingsDataSource {
             iconColor: Colors.redAccent,
             order: 2,
           ),
+          // Spec 8 (B10): a resource, never a recommendation; shown once
+          // its content is live.
+          if (outsidePerspectiveOn)
+          SettingsConfig(
+            id: 'outside_perspective',
+            title: 'A trained outside perspective',
+            subtitle: 'What couples counselling is, and how to find it',
+            icon: Icons.support_agent_outlined,
+            type: SettingsItemType.navigation,
+            routeName: '/support/outside-perspective',
+            iconColor: Colors.grey,
+            order: 3,
+          ),
+          SettingsConfig(
+            id: 'safety_pin',
+            title: 'Safety PIN',
+            subtitle: 'Asked for after you use quick exit',
+            icon: Icons.pin_outlined,
+            type: SettingsItemType.navigation,
+            routeName: '/settings/safety-pin',
+            iconColor: Colors.redAccent,
+            order: 5,
+          ),
+          // Spec 7 (B9): private; nobody else sees it. Only once the
+          // feature is on (final review I-2).
+          if (quietStatesOn)
+          SettingsConfig(
+            id: 'quiet_states',
+            title: 'Quiet for a while',
+            subtitle: 'When celebrations would feel wrong',
+            icon: Icons.cloud_outlined,
+            type: SettingsItemType.navigation,
+            routeName: '/settings/quiet',
+            iconColor: Colors.grey,
+            order: 6,
+          ),
+          SettingsConfig(
+            id: 'hidden_periods',
+            title: 'Hide a period',
+            subtitle: 'Dates that never come back as memories',
+            icon: Icons.visibility_off_outlined,
+            type: SettingsItemType.navigation,
+            routeName: '/settings/hidden-periods',
+            iconColor: Colors.grey,
+            order: 7,
+          ),
           SettingsConfig(
             id: 'feedback',
             title: loc.feedbackItemTitle,
@@ -268,10 +338,42 @@ class SettingsDataSource {
               iconColor: Colors.red,
               order: 2,
             ),
+            // Spec 3a (F1 (3)): read-only for both, nothing new shared, no
+            // notification; either resumes or ends within 30 days.
+            SettingsConfig(
+              id: 'pause_relationship',
+              title: 'Pause our shared space',
+              subtitle: 'Chat becomes read-only for both of you',
+              icon: Icons.pause_circle_outline,
+              type: SettingsItemType.destructive,
+              onTap: () async {
+                final container = ProviderScope.containerOf(
+                  context,
+                  listen: false,
+                );
+                final relationshipId = await container.read(
+                  activeRelationshipIdProvider.future,
+                );
+                if (relationshipId == null) {
+                  if (context.mounted) {
+                    context.showErrorSnackbar('No active shared space to pause.');
+                  }
+                  return;
+                }
+                if (context.mounted) {
+                  PauseRelationshipAction.confirmAndPause(
+                    context,
+                    relationshipId: relationshipId,
+                  );
+                }
+              },
+              iconColor: theme.colorScheme.error,
+              order: 3,
+            ),
             SettingsConfig(
               id: 'endRelationship',
               title: 'End relationship',
-              subtitle: 'Permanently end your relationship on Attune',
+              subtitle: 'Your chat stays readable for 30 days, then closes',
               icon: Icons.heart_broken_outlined,
               type: SettingsItemType.destructive,
               onTap: () async {

@@ -832,6 +832,34 @@ Deno.test({
   },
 });
 
+// Spec 8 (final review I-3): a suppressed couple's chat never enters a
+// session; the window is empty, exactly as on a day with nothing eligible.
+Deno.test({
+  name: "selectSharedWindow is empty for a suppressed relationship",
+  fn: async () => {
+    await resetFixtures();
+    const service = await makeServiceRoleClient();
+    const now = new Date("2026-10-10T12:00:00.000Z");
+    const dayStart = civilDayStartUtc(now, 0);
+    await insertMessage("today one", new Date(dayStart.getTime() + 60_000));
+    const members = await serviceRoleQuery(
+      `SELECT user_a FROM public.relationships WHERE id = $1`,
+      [REL],
+    );
+    await serviceRoleQuery(
+      `INSERT INTO public.safety_events (relationship_id, at_risk_user_id, source_event_key, trigger_tier, trigger_family, config_version)
+       VALUES ($1, $2, 'window-sup-1', 3, 'test', 'test')`,
+      [REL, members[0].user_a],
+    );
+    try {
+      const window = await selectSharedWindow(service as never, REL, null, 0, now);
+      assertEquals(window, []);
+    } finally {
+      await serviceRoleQuery(`DELETE FROM public.safety_events WHERE relationship_id = $1`, [REL]);
+    }
+  },
+});
+
 Deno.test({
   name: "selectSharedWindow takes the NEWEST six of the day, not the oldest",
   fn: async () => {

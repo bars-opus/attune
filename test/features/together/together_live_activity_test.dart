@@ -67,7 +67,7 @@ void main() {
     () async {
       await TogetherLiveActivity.showIfEnabled(_plan);
       expect(store.shown, isEmpty);
-      SharedPreferences.setMockInitialValues({'together_live_enabled': true});
+      SharedPreferences.setMockInitialValues({'together_live_enabled': true, 'together_live_titles': true});
       await TogetherLiveActivity.showIfEnabled(_plan);
       expect(store.shown, [_plan]);
       await TogetherLiveActivity.showIfEnabled(null);

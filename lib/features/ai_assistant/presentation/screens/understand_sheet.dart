@@ -34,6 +34,8 @@
 // (Task 5) rather than a modal bottom sheet.
 library;
 
+import 'package:attune/features/ai_assistant/presentation/widgets/assistant_notice_card.dart';
+import 'package:attune/features/safety/presentation/outside_perspective_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -163,6 +165,13 @@ class _UnderstandSheetState extends ConsumerState<UnderstandSheet> {
                 return switch (result) {
                   UnderstandResultOk() => _ResultBody(result: result),
                   UnderstandResultCannotHelp() => const _CannotHelpBody(),
+                  // Spec 8 (F15 (2)): fixed, requester-only cards.
+                  UnderstandResultBoundary() => const AssistantNoticeCard(
+                    notice: AssistantNotice.boundary,
+                  ),
+                  UnderstandResultSupporter() => const AssistantNoticeCard(
+                    notice: AssistantNotice.supporter,
+                  ),
                 };
               },
             ),
@@ -172,6 +181,9 @@ class _UnderstandSheetState extends ConsumerState<UnderstandSheet> {
             // `_SafetyResourcesLink`'s own doc for why this must never
             // be conditioned on any branch-specific signal.
             const _SafetyResourcesLink(),
+            // Spec 8 (F15 (3), B10; plan review I17): always shown, like
+            // the safety link above, so it carries no information.
+            const _OutsidePerspectiveFooter(),
           ],
         ),
       ),
@@ -309,6 +321,43 @@ class _SafetyResourcesLink extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+/// Research 06 F15 (3), verbatim.
+const kUnderstandFooter =
+    'These are guesses from the words alone. Only they know what they meant. '
+    'If this is about trust, a trained outside perspective helps more than a '
+    'reading.';
+
+class _OutsidePerspectiveFooter extends ConsumerWidget {
+  const _OutsidePerspectiveFooter();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final colorScheme = Theme.of(context).colorScheme;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          kUnderstandFooter,
+          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+            color: colorScheme.onSurfaceVariant,
+          ),
+        ),
+        // The words always show; the link only once the card is live.
+        if (ref.watch(outsidePerspectiveEnabledProvider))
+          TextButton(
+            onPressed:
+                () => Navigator.of(context).push(
+                  MaterialPageRoute<void>(
+                    builder: (_) => const OutsidePerspectiveScreen(),
+                  ),
+                ),
+            child: const Text('A trained outside perspective'),
+          ),
+      ],
     );
   }
 }

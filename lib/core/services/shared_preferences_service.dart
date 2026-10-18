@@ -41,6 +41,9 @@ class PreferencesService {
 
     // Remove all keys except those in keepKeys
     for (final key in keys) {
+      // Per-account device baseline (Spec 2): keyed by user id, so keeping
+      // it shows no one anything, and dropping it hides a new device.
+      if (key.startsWith('account_known_sessions:')) continue;
       if (!keepKeys.contains(key)) {
         await _prefs.remove(key);
       }

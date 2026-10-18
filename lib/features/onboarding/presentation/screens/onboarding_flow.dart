@@ -335,6 +335,12 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
                 : CouplesWaitingStep(
                   inviteService: _inviteService,
                   onFinish: _finish,
+                  // Day 7 "on my own for now" (Spec 5 final review I-1):
+                  // finish as personal, never as couplesPending.
+                  onUseAlone: () {
+                    setState(() => _mode = OnboardingMode.personal);
+                    _finish();
+                  },
                 )
             : PersonalReadyStep(onFinish: _finish),
     };

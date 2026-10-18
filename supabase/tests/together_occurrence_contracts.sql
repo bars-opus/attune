@@ -94,12 +94,14 @@ BEGIN
 
   v_lines := public.together_digest_lines('7c100000-0000-0000-0000-000000000001',
     '7c000000-0000-0000-0000-0000000000a1', '2026-10-23', '2026-10-23', 'Europe/London', true, false);
-  IF EXISTS (SELECT 1 FROM unnest(v_lines) l WHERE l LIKE '%Date night%') THEN
+  -- The digest names no plan since Spec 1b (push copy); it counts them
+  -- (sync audit K-7).
+  IF EXISTS (SELECT 1 FROM unnest(v_lines) l WHERE l LIKE '% plan%') THEN
     RAISE EXCEPTION 'CONTRACT VIOLATED: skipped date in the digest %', v_lines;
   END IF;
   v_lines := public.together_digest_lines('7c100000-0000-0000-0000-000000000001',
     '7c000000-0000-0000-0000-0000000000a1', '2026-10-30', '2026-10-30', 'Europe/London', true, false);
-  IF NOT EXISTS (SELECT 1 FROM unnest(v_lines) l WHERE l LIKE '%Date night%') THEN
+  IF NOT EXISTS (SELECT 1 FROM unnest(v_lines) l WHERE l = '1 plan today at 19:00') THEN
     RAISE EXCEPTION 'CONTRACT VIOLATED: other dates missing from the digest %', v_lines;
   END IF;
 END $$;

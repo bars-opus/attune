@@ -18,6 +18,7 @@
 // for why nothing else about the draft is reachable from that path.
 library;
 
+import 'package:attune/features/ai_assistant/presentation/widgets/assistant_notice_card.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -273,7 +274,12 @@ class _AssistSheetState extends ConsumerState<AssistSheet> {
             const SizedBox(height: 24),
             draftAsync.when(
               loading: () => const Center(child: CircularProgressIndicator()),
-              error: (error, _) => _ErrorNotice(message: _errorMessageFor(error)),
+              // Spec 8 (F15 (2)): a pre-check card, not an error.
+              error:
+                  (error, _) =>
+                      error is AssistantNoticeError
+                          ? AssistantNoticeCard(notice: error.notice)
+                          : _ErrorNotice(message: _errorMessageFor(error)),
               data: (draft) {
                 if (draft == null) return const SizedBox.shrink();
                 return _DraftPreview(

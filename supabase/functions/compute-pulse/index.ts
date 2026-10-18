@@ -1,105 +1,162 @@
 // supabase/functions/compute-pulse/index.ts
+//
+// Pulse (Spec 1a Task 7; PULSE.md §11 ruling). The four SHARED dimensions
+// come from shared moments, chat aggregates and games only; private check-in
+// answers never enter them, their deltas or their confidence. Emotional
+// safety is computed per member into pulse_private_scores (auth.uid()-only
+// RLS). The caller must be a member of an ACTIVE relationship (or the
+// service role, which the weekly cron uses); a forced recompute is limited
+// to one per relationship per 24 h by claim_pulse_recompute.
 
 import { serve } from 'https://deno.land/std@0.177.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+import { relationshipAiSuppressed } from '../_shared/ai_suppression.ts'
+import { hostilitySignalsEnabled } from '../_shared/hostility_signals.ts'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 }
 
+export interface RelationshipRow {
+  id: string
+  user_a: string | null
+  user_b: string | null
+  status: string
+}
+
+interface ClaimRow {
+  granted: boolean
+  retry_after_seconds: number
+}
+
+function json(body: unknown, status = 200): Response {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+  })
+}
+
+function bearerToken(req: Request): string {
+  return (req.headers.get('Authorization') ?? '').replace(/^Bearer\s+/i, '').trim()
+}
+
+/// A user may recompute only a relationship they belong to and that is
+/// active. Paused/ended/missing/not-mine all read the same to the caller.
+export function callerMayRecompute(
+  callerId: string,
+  rel: RelationshipRow | null | undefined,
+): boolean {
+  if (!rel || rel.status !== 'active') return false
+  return rel.user_a === callerId || rel.user_b === callerId
+}
+
 serve(async (req) => {
-  // Handle CORS preflight
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders })
   }
 
   try {
-    const supabase = createClient(
-      Deno.env.get('SUPABASE_URL')!,
-      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
-    )
+    const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
+    const supabase = createClient(Deno.env.get('SUPABASE_URL')!, serviceKey)
 
-    const { relationship_id, force_recompute } = await req.json().catch(() => ({}))
-    const weekEnding = getWeekEnding(new Date())
+    const body = await req.json().catch(() => ({}))
+    const relationshipId =
+      typeof body?.relationship_id === 'string' ? body.relationship_id : null
+    const forceRecompute = body?.force_recompute === true
 
-    // Get all active relationships
-    let relationships: any[]
-    if (relationship_id) {
-      const { data } = await supabase
+    const token = bearerToken(req)
+    const isService = token !== '' && token === serviceKey
+
+    let relationships: RelationshipRow[]
+    if (isService) {
+      // The weekly cron (invoke_edge_function) and operators: one or all.
+      let query = supabase
         .from('relationships')
-        .select('id, user_a, user_b')
-        .eq('id', relationship_id)
+        .select('id, user_a, user_b, status')
         .eq('status', 'active')
-      relationships = data || []
+      if (relationshipId) query = query.eq('id', relationshipId)
+      const { data } = await query
+      relationships = (data ?? []) as RelationshipRow[]
     } else {
-      const { data } = await supabase
+      if (!token) return json({ error: 'Not authenticated' }, 401)
+      const { data: auth, error: authError } = await supabase.auth.getUser(token)
+      if (authError || !auth?.user) return json({ error: 'Not authenticated' }, 401)
+      if (!relationshipId) return json({ error: 'relationship_id is required' }, 400)
+
+      const { data: rel } = await supabase
         .from('relationships')
-        .select('id, user_a, user_b')
-        .eq('status', 'active')
-      relationships = data || []
+        .select('id, user_a, user_b, status')
+        .eq('id', relationshipId)
+        .maybeSingle()
+      if (!callerMayRecompute(auth.user.id, rel as RelationshipRow | null)) {
+        // One answer for "not yours", "paused" and "does not exist".
+        return json({ error: 'Not found' }, 404)
+      }
+      if (forceRecompute) {
+        const { data: claim, error: claimError } = await supabase.rpc('claim_pulse_recompute', {
+          p_relationship_id: relationshipId,
+          p_user_id: auth.user.id,
+        })
+        if (claimError) throw claimError
+        const row = (claim as ClaimRow[] | null)?.[0]
+        if (!row?.granted) {
+          return new Response(
+            JSON.stringify({
+              error: 'rate_limited',
+              retry_after_seconds: row?.retry_after_seconds ?? 86400,
+            }),
+            { status: 429, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+          )
+        }
+      }
+      relationships = [rel as RelationshipRow]
     }
 
+    const weekEnding = getWeekEnding(new Date())
     const results = []
     for (const relationship of relationships) {
-      const pulseScore = await _computePulseScore(supabase, relationship.id, weekEnding, force_recompute)
-      if (pulseScore) {
-        // pulseScore already carries relationship_id (it is the row that
-        // was upserted), so the explicit key here was silently overwritten
-        // by the spread. Same value either way — but the compiler flagged
-        // it, and a reader could reasonably assume the explicit one won.
-        results.push({ ...pulseScore })
-      }
+      const pulseScore = await _computePulseScore(supabase, relationship, weekEnding, {
+        isService,
+        force: forceRecompute,
+      })
+      if (pulseScore) results.push({ ...pulseScore })
     }
 
-    return new Response(
-      JSON.stringify({ success: true, computed: results.length, results }),
-      { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-    )
+    return json({ success: true, computed: results.length, results })
   } catch (error) {
-    // `error` is typed unknown in a catch clause, so .message was a type
-    // error. Beyond the types: the raw message was being returned to the
-    // caller, and a Postgrest failure here can quote row contents — §10
-    // and checklist 4.4/5.5 keep that out of both logs and responses.
+    // Only the error's name: a Postgrest message can quote row contents
+    // (checklist 4.4 / 5.5).
     console.error('compute-pulse failed:', error instanceof Error ? error.name : typeof error)
-    return new Response(
-      JSON.stringify({ error: 'Could not compute pulse scores' }),
-      { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-    )
+    return json({ error: 'Could not compute pulse scores' }, 500)
   }
 })
 
+/// Service-role runs (the weekly cron) always write the shared row: a forced
+/// mid-week refresh creates this week's row early, and a "skip if it exists"
+/// guard would turn the Sunday run into a no-op (Review Focus 9). A granted
+/// force rewrites it too. A user's non-forced call (the check-in submit)
+/// never writes it -- not even to create a missing week, since that row's
+/// computed_at would tell the partner when the private check-in happened --
+/// and only refreshes the private pass.
+export function shouldComputeShared(isService: boolean, force: boolean): boolean {
+  return isService || force
+}
+
 async function _computePulseScore(
   supabase: any,
-  relationshipId: string,
+  relationship: RelationshipRow,
   weekEnding: Date,
-  forceRecompute: boolean
+  opts: { isService: boolean; force: boolean },
 ) {
-  // Check if already computed for this week
-  if (!forceRecompute) {
-    const { data: existing } = await supabase
-      .from('pulse_scores')
-      .select('id')
-      .eq('relationship_id', relationshipId)
-      .eq('week_ending', weekEnding.toISOString().split('T')[0])
-      .maybeSingle()
-
-    if (existing) return null
-  }
+  const relationshipId = relationship.id
+  const weekKey = weekEndingKey(weekEnding)
 
   // ──────────────────────────────────────────────────────────
-  // FETCH ALL DATA SOURCES
+  // FETCH THE SHARED DATA SOURCES (no private answers in here)
   // ──────────────────────────────────────────────────────────
 
   // 1. Timeline events (last 30 days for scoring)
-  //
-  // The `: { data: any[] | null }` annotations on this query and the
-  // check-ins one below are needed because `supabase` is typed `any` in
-  // this function's signature, so destructured query results carry no
-  // element type and every .filter/.reduce callback over them became an
-  // implicit any. Typing the arrays at the source fixes ~18 errors at
-  // once instead of annotating each callback, and changes no runtime
-  // behaviour.
   const thirtyDaysAgo = new Date()
   thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30)
 
@@ -112,46 +169,15 @@ async function _computePulseScore(
     .gte('occurred_at', thirtyDaysAgo.toISOString().split('T')[0])
     .is('deleted_at', null)
 
-  // 2. Weekly check-ins for this week
-  const { data: checkins }: { data: any[] | null } = await supabase
-    .from('weekly_checkins')
-    .select('*')
-    .eq('relationship_id', relationshipId)
-    .eq('week_ending', weekEnding.toISOString().split('T')[0])
+  // The shared mood base, reused by the private pass.
+  const allEventsWithMood = timelineEvents?.filter(e => e.mood_score) || []
+  const moodBase = allEventsWithMood.length > 0
+    ? Math.round(
+        (allEventsWithMood.reduce((sum, e) => sum + e.mood_score, 0) / allEventsWithMood.length) * 10,
+      )
+    : null
 
-  // 3. Attachment quiz completion status
-  const { data: relationship } = await supabase
-    .from('relationships')
-    .select('user_a, user_b')
-    .eq('id', relationshipId)
-    .single()
-
-  const { data: userAProfile } = await supabase
-    .from('psych_profiles')
-    .select('attachment_style')
-    .eq('user_id', relationship.user_a)
-    .maybeSingle()
-
-  const { data: userBProfile } = await supabase
-    .from('psych_profiles')
-    .select('attachment_style')
-    .eq('user_id', relationship.user_b)
-    .maybeSingle()
-
-  const bothCompletedAttachment = 
-    userAProfile?.attachment_style !== null && 
-    userBProfile?.attachment_style !== null
-
-  // 4. Get previous pulse score for deltas
-  const { data: previousPulse } = await supabase
-    .from('pulse_scores')
-    .select('*')
-    .eq('relationship_id', relationshipId)
-    .order('week_ending', { ascending: false })
-    .limit(1)
-    .maybeSingle()
-
-  // 5. Chat signal aggregates (last 30 days), via the pre-aggregating RPC
+  // 2. Chat signal aggregates (last 30 days), via the pre-aggregating RPC
   // — never select(*) raw messages/sessions rows into this function
   // (Algorithm Quality Review Checklist v3.1 item 2.14).
   const { data: chatSignalRows } = await supabase
@@ -161,7 +187,7 @@ async function _computePulseScore(
     })
   const chatRow = chatSignalRows?.[0] ?? null
 
-  const chatSignals: ChatSignals = {
+  const rawChatSignals: ChatSignals = {
     analysedCount: chatRow?.analysed_count ?? 0,
     avgTone: chatRow?.avg_tone ?? null,
     violationRate: chatRow?.violation_rate ?? null,
@@ -191,10 +217,25 @@ async function _computePulseScore(
     mirrorRoundsScored: gameRow?.mirror_rounds_scored ?? 0,
   }
 
-  const pendingBacklog = chatRow?.pending_backlog_count ?? 0
-  const coverageDays = chatRow?.first_analysed_at
-    ? Math.min(30, (Date.now() - new Date(chatRow.first_analysed_at).getTime()) / 86_400_000)
-    : 0
+  // Spec 8 (plan review I12, I14): a suppressed couple reads exactly as one
+  // with no chat data; stonewalling and contempt only behind their flag.
+  const [suppressed, hostilitySignals] = await Promise.all([
+    relationshipAiSuppressed(supabase, relationshipId),
+    hostilitySignalsEnabled(supabase),
+  ])
+  const gatedChat = gateChatInputs(
+    {
+      signals: rawChatSignals,
+      coverageDays: chatRow?.first_analysed_at
+        ? Math.min(30, (Date.now() - new Date(chatRow.first_analysed_at).getTime()) / 86_400_000)
+        : 0,
+      pendingBacklog: chatRow?.pending_backlog_count ?? 0,
+    },
+    { suppressed, hostilitySignals },
+  )
+  const chatSignals = gatedChat.signals
+  const pendingBacklog = gatedChat.pendingBacklog
+  const coverageDays = gatedChat.coverageDays
 
   // Backlog gate: if the session-analysis sweep is more than 50 messages
   // behind, treat chat as having zero weight this run rather than score
@@ -202,20 +243,51 @@ async function _computePulseScore(
   const chatWeight = pendingBacklog > 50 ? 0 : computeChatWeight(coverageDays)
   const hasChatSignal = chatWeight > 0.5
 
-  // ──────────────────────────────────────────────────────────
-  // COMPUTE EACH DIMENSION
-  // ──────────────────────────────────────────────────────────
-
-  // COMMUNICATION (22% weight)
-  let communication = 50 // baseline
-
-  // Check-in contribution
-  if (checkins && checkins.length > 0) {
-    const avgRating = checkins.reduce((sum, c) => sum + (c.communication_rating || 0), 0) / checkins.length
-    communication = Math.round(avgRating * 10)
+  // A check-in submit calls this non-forced: only the private pass runs, so
+  // "Your week" fills in without creating or touching the shared row or the
+  // caller's claim. The cron (service role) and a granted force fall through
+  // and write the shared row.
+  if (!shouldComputeShared(opts.isService, opts.force)) {
+    await _computePrivateScores(supabase, relationship, weekKey, moodBase, chatSignals, chatWeight)
+    return null
   }
 
-  // Conflict events affect communication
+  // 3. Attachment quiz completion status
+  const { data: userAProfile } = await supabase
+    .from('psych_profiles')
+    .select('attachment_style')
+    .eq('user_id', relationship.user_a)
+    .maybeSingle()
+
+  const { data: userBProfile } = await supabase
+    .from('psych_profiles')
+    .select('attachment_style')
+    .eq('user_id', relationship.user_b)
+    .maybeSingle()
+
+  // != null: a missing profile row used to read as "completed" (undefined !== null).
+  const bothCompletedAttachment =
+    userAProfile?.attachment_style != null && userBProfile?.attachment_style != null
+
+  // 4. Previous WEEK's score for deltas. A forced recompute of the current
+  // week must diff against last week, never against its own earlier run
+  // (spec1-map-f5 §3.2).
+  const { data: previousPulse } = await supabase
+    .from('pulse_scores')
+    .select('*')
+    .eq('relationship_id', relationshipId)
+    .lt('week_ending', weekKey)
+    .order('week_ending', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+
+  // ──────────────────────────────────────────────────────────
+  // COMPUTE THE FOUR SHARED DIMENSIONS
+  // ──────────────────────────────────────────────────────────
+
+  // COMMUNICATION
+  let communication = 50 // baseline
+
   const conflicts = timelineEvents?.filter(e => e.event_type === 'conflict') || []
   const conflictPenalty = conflicts.length * 3
   communication = clamp(communication - conflictPenalty, 0, 100)
@@ -225,57 +297,26 @@ async function _computePulseScore(
   const resolutionBonus = resolvedConflicts.length * 5
   communication = clamp(communication + resolutionBonus, 0, 100)
 
-
-  // CONNECTION (22% weight)
-  let connection = 50
-
+  // CONNECTION
   const positiveEvents = timelineEvents?.filter(e =>
     e.event_type === 'milestone' || e.event_type === 'highlight'
   ) || []
-  connection = clamp(50 + (positiveEvents.length * 8), 0, 100)
+  let connection = clamp(50 + (positiveEvents.length * 8), 0, 100)
 
-  // Anniversary events
   const anniversaryEvents = timelineEvents?.filter(e => e.event_type === 'anniversary') || []
   if (anniversaryEvents.length > 0) {
     connection = clamp(connection + 15, 0, 100)
   }
 
-  // Check-in contribution
-  if (checkins && checkins.length > 0) {
-    const avgRating = checkins.reduce((sum, c) => sum + (c.connection_rating || 0), 0) / checkins.length
-    const checkinScore = avgRating * 10
-    connection = Math.round((connection + checkinScore) / 2)
-  }
-
-
-  // CONFLICT HEALTH (20% weight)
-  //
-  // An explicit weighted blend of every available source, replacing the
-  // former overwrite-then-average chain (mood overwrote the 70 baseline;
-  // check-in then averaged against whatever mood produced; a chat term
-  // appended on top would have depended on evaluation order in a way
-  // nobody could reason about). Sources are ABSOLUTE anchors, not deltas,
-  // and chat sources sit at 0.8 weight — deliberately subordinate to the
-  // human-reported sources at 1.0.
-  //
-  // Note this is the one dimension whose chat signal is NOT applied by
-  // applyChatSignals below: the blend needs all four source candidates in
-  // scope simultaneously, which only holds here.
+  // CONFLICT HEALTH: an explicit weighted blend of the shared sources. Chat
+  // sources sit at 0.8 weight, subordinate to the human-logged mood at 1.0.
   const conflictMoods = conflicts.filter(c => c.mood_score).map(c => c.mood_score)
   const avgConflictMood = conflictMoods.length
     ? conflictMoods.reduce((a: number, b: number) => a + b, 0) / conflictMoods.length
     : null
-  const validConflictCheckins = (checkins ?? []).filter(
-    c => !c.conflict_health_na && c.conflict_health_rating
-  )
-  const conflictCheckinScore = validConflictCheckins.length
-    ? (validConflictCheckins.reduce((sum: number, c: any) => sum + (c.conflict_health_rating || 0), 0) /
-        validConflictCheckins.length) * 10
-    : null
 
   const conflictSources: { v: number; w: number }[] = []
   if (avgConflictMood != null) conflictSources.push({ v: avgConflictMood * 10, w: 1.0 })
-  if (conflictCheckinScore != null) conflictSources.push({ v: conflictCheckinScore, w: 1.0 })
   if (
     chatSignals.repairRate != null &&
     chatSignals.attemptRate != null &&
@@ -294,126 +335,65 @@ async function _computePulseScore(
     ? clamp(Math.round(weightedMean(conflictSources)), 0, 100)
     : 70 // optimistic baseline
 
-
-  // ALIGNMENT (18% weight)
+  // ALIGNMENT
   let alignment = 50
-
   if (bothCompletedAttachment) {
     alignment = clamp(alignment + 20, 0, 100)
   }
 
-  if (checkins && checkins.length > 0) {
-    const avgRating = checkins.reduce((sum, c) => sum + (c.alignment_rating || 0), 0) / checkins.length
-    const checkinScore = avgRating * 10
-    alignment = Math.round((alignment + checkinScore) / 2)
-  }
-
-
-  // EMOTIONAL SAFETY (18% weight)
-  let emotionalSafety = 50
-
-  const allEventsWithMood = timelineEvents?.filter(e => e.mood_score) || []
-  if (allEventsWithMood.length > 0) {
-    const avgMood = allEventsWithMood.reduce((sum, e) => sum + e.mood_score, 0) / allEventsWithMood.length
-    emotionalSafety = Math.round(avgMood * 10)
-  }
-
-  if (checkins && checkins.length > 0) {
-    const avgRating = checkins.reduce((sum, c) => sum + (c.safety_rating || 0), 0) / checkins.length
-    const checkinScore = avgRating * 10
-    emotionalSafety = Math.round((emotionalSafety + checkinScore) / 2)
-  }
-
-
-  // ──────────────────────────────────────────────────────────
-  // APPLY CHAT SIGNAL ADJUSTMENTS (coverage-ramped)
-  // — Alignment has no chat signal; not touched here.
-  // — Conflict Health already blended its chat sources above.
-  // ──────────────────────────────────────────────────────────
+  // Chat adjustments (coverage-ramped). applyChatSignals also carries the
+  // Emotional-safety penalties; here only the two shared outputs are used.
   const chatAdjusted = applyChatSignals(
-    { communication, connection, emotionalSafety },
+    { communication, connection, emotionalSafety: 0 },
     chatSignals,
     chatWeight
   )
   communication = chatAdjusted.communication
   connection = chatAdjusted.connection
-  emotionalSafety = chatAdjusted.emotionalSafety
 
-  // Game signals (§7: Connection <- engagement, Alignment <- values
-  // overlap). Applied after chat so both contribute; a couple with no
-  // completed games gets an exact no-op here.
+  // Game signals (§7: Connection <- engagement, Alignment <- values overlap).
   const gameAdjusted = applyGameSignals({ connection, alignment }, gameSignals)
   connection = gameAdjusted.connection
   alignment = gameAdjusted.alignment
 
   // ──────────────────────────────────────────────────────────
-  // PER-DIMENSION CONFIDENCE (evidence-points model)
+  // PER-DIMENSION CONFIDENCE (evidence-points model, shared sources only:
+  // counting a partner's private answer here would publish that they
+  // answered — SPEC §11 constraint 10)
   // ──────────────────────────────────────────────────────────
   const communicationPoints =
-    Math.min(checkins?.length ?? 0, 2) * 2 +
     Math.min(conflicts.length, 4) * 1 +
     Math.min(Math.floor(chatSignals.analysedCount / 10), 3) * 1.5
   const communicationConfidence = confidenceFrom(communicationPoints, hasChatSignal)
 
   const connectionPoints =
     Math.min(positiveEvents.length, 4) * 1 +
-    Math.min(checkins?.length ?? 0, 2) * 2 +
     Math.min(chatSignals.bidsTotal >= 5 ? 1 : 0, 1) * 4.5 +
     Math.min(gameSignals.sessionsCompleted, 3) * 1
   const connectionConfidence = confidenceFrom(connectionPoints, hasChatSignal)
 
   const conflictHealthPoints =
     Math.min(conflicts.length, 4) * 1 +
-    Math.min(checkins?.length ?? 0, 2) * 2 +
     Math.min(chatSignals.sessionCount, 4) * 1.5
   const conflictHealthConfidence = confidenceFrom(conflictHealthPoints, hasChatSignal)
 
   const alignmentPoints =
     (bothCompletedAttachment ? 3 : 0) +
-    Math.min(checkins?.length ?? 0, 2) * 2 +
     (gameSignals.slidingScalePairs >= 4 ? 2 : 0)
-  // Alignment has no chat signal — hasChatSignal never promotes it past
-  // what checkins/attachment alone earn, but the confidenceFrom function
-  // itself still requires hasChatSignal for the 'high' branch, so
-  // Alignment structurally cannot reach 'high' without chat existing
-  // SOMEWHERE in the relationship's overall data — this matches the
-  // spec's "no chat signal maps to Alignment" note; it simply never gets
-  // the evidence points that would put it in the 9+ bracket from chat,
-  // though hasChatSignal being true (from OTHER dimensions' chat data)
-  // could still let it reach high on 9+ points from checkins/attachment
-  // alone. This is acceptable: hasChatSignal is a relationship-level
-  // gate (chat pipeline is active), not a per-dimension one.
   const alignmentConfidence = confidenceFrom(alignmentPoints, hasChatSignal)
 
-  const safetyPoints =
-    Math.min(allEventsWithMood.length, 4) * 1 +
-    Math.min(checkins?.length ?? 0, 2) * 2 +
-    Math.min(chatSignals.analysedCount >= 10 ? 1 : 0, 1) * 4.5
-  const safetyConfidence = confidenceFrom(safetyPoints, hasChatSignal)
+  // OVERALL SCORE (four shared dimensions, weights normalised from 22/22/20/18)
+  const overall = overallFromShared({ communication, connection, conflictHealth, alignment })
 
-
-  // OVERALL SCORE
-  const overall = Math.round(
-    communication * 0.22 +
-    connection * 0.22 +
-    conflictHealth * 0.20 +
-    alignment * 0.18 +
-    emotionalSafety * 0.18
-  )
-
-
-  // DATA CONFIDENCE (overall)
   const confidences: Confidence[] = [
     communicationConfidence,
     connectionConfidence,
     conflictHealthConfidence,
     alignmentConfidence,
-    safetyConfidence,
   ]
   const overallConfidence = rollupConfidence(confidences)
 
-
-  // DELTAS vs previous week
+  // DELTAS vs the previous week
   let deltas = null
   if (previousPulse) {
     deltas = {
@@ -422,28 +402,26 @@ async function _computePulseScore(
       connection: connection - previousPulse.connection,
       conflict_health: conflictHealth - previousPulse.conflict_health,
       alignment: alignment - previousPulse.alignment,
-      emotional_safety: emotionalSafety - previousPulse.emotional_safety,
     }
   }
 
-
-  // SAVE TO DATABASE
+  // SAVE THE SHARED ROW
   const pulseData = {
     relationship_id: relationshipId,
-    week_ending: weekEnding.toISOString().split('T')[0],
+    week_ending: weekKey,
     overall_score: overall,
     communication,
     connection,
     conflict_health: conflictHealth,
     alignment,
-    emotional_safety: emotionalSafety,
+    // Self-facing since Spec 1a: never in the shared row.
+    emotional_safety: null,
     data_confidence: overallConfidence,
     dimension_confidence: {
       communication: communicationConfidence,
       connection: connectionConfidence,
       conflict_health: conflictHealthConfidence,
       alignment: alignmentConfidence,
-      emotional_safety: safetyConfidence,
     },
     delta_vs_previous: deltas,
   }
@@ -453,56 +431,147 @@ async function _computePulseScore(
     .upsert(pulseData, { onConflict: 'relationship_id,week_ending' })
 
   if (upsertError) {
-    console.error('Failed to save pulse score:', upsertError.message)
-    throw new Error(`Failed to save pulse score for relationship ${relationshipId}: ${upsertError.message}`)
+    console.error('Failed to save pulse score:', upsertError.code ?? 'error')
+    throw new Error(`Failed to save pulse score for relationship ${relationshipId}`)
   }
 
+  // Each member's private Emotional safety (self-only table). Also runs on
+  // the early-return path above, so it never depends on a shared recompute.
+  await _computePrivateScores(supabase, relationship, weekKey, moodBase, chatSignals, chatWeight)
+
   // Diagnostics: raw chat aggregates for tuning/observability, written to
-  // a service-role-only table never exposed to clients (see Task 1's
-  // pulse_score_diagnostics — no RLS policy for `authenticated`).
-  // Best-effort: a failure here must not fail the pulse computation
-  // itself, since this is observability, not correctness.
+  // a service-role-only table never exposed to clients. Best-effort.
   const { error: diagnosticsError } = await supabase
     .from('pulse_score_diagnostics')
     .upsert(
       {
         relationship_id: relationshipId,
-        week_ending: weekEnding.toISOString().split('T')[0],
+        week_ending: weekKey,
         chat_weight: chatWeight,
         raw_signals: chatSignals,
       },
       { onConflict: 'relationship_id,week_ending' }
     )
   if (diagnosticsError) {
-    console.error('Failed to write pulse score diagnostics (non-fatal):', diagnosticsError.message)
+    console.error('Failed to write pulse score diagnostics (non-fatal):', diagnosticsError.code ?? 'error')
   }
 
   return pulseData
 }
 
+/// The only reader of the check-in table in this function. One row per member
+/// who checked in this week, into pulse_private_scores (auth.uid()-only).
+async function _computePrivateScores(
+  supabase: any,
+  relationship: RelationshipRow,
+  weekKey: string,
+  moodBase: number | null,
+  chatSignals: ChatSignals,
+  chatWeight: number,
+) {
+  const { data: checkins }: { data: any[] | null } = await supabase
+    .from('weekly_checkins')
+    .select('user_id, safety_rating')
+    .eq('relationship_id', relationship.id)
+    .eq('week_ending', weekKey)
+
+  for (const checkin of checkins ?? []) {
+    const score = privateEmotionalSafety({
+      moodBase,
+      safetyRating: checkin.safety_rating ?? null,
+      signals: chatSignals,
+      chatWeight,
+    })
+    if (score == null) continue
+    const { error } = await supabase
+      .from('pulse_private_scores')
+      .upsert(
+        {
+          relationship_id: relationship.id,
+          user_id: checkin.user_id,
+          week_ending: weekKey,
+          emotional_safety: score,
+          computed_at: new Date().toISOString(),
+        },
+        { onConflict: 'user_id,week_ending' },
+      )
+    if (error) {
+      console.error('Failed to save private pulse score:', error.code ?? 'error')
+    }
+  }
+}
+
+/// The UTC Sunday on or after the UTC date of `date`. A Sunday is its own
+/// week ending — the same rule as Dart's pulseWeekEnding, and the one the
+/// Sunday 00:07 UTC cron needs (the old `7 - getDay()` made a Sunday roll a
+/// whole week forward).
 export function getWeekEnding(date: Date): Date {
-  const result = new Date(date)
-  const daysToSunday = 7 - result.getDay() // Sunday = 0 in JS
-  result.setDate(result.getDate() + daysToSunday)
-  result.setHours(0, 0, 0, 0)
-  return result
+  const day = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()))
+  const daysToSunday = (7 - day.getUTCDay()) % 7
+  day.setUTCDate(day.getUTCDate() + daysToSunday)
+  return day
+}
+
+export function weekEndingKey(date: Date): string {
+  return getWeekEnding(date).toISOString().split('T')[0]
 }
 
 export function clamp(value: number, min: number, max: number): number {
   return Math.min(Math.max(value, min), max)
 }
 
+/// The shared weights (PULSE.md §4.1 minus Emotional safety), normalised at
+/// use: 22/82, 22/82, 20/82, 18/82 ≈ 27 %, 27 %, 24 %, 22 %.
+export const SHARED_WEIGHTS = {
+  communication: 22,
+  connection: 22,
+  conflictHealth: 20,
+  alignment: 18,
+} as const
+
+export interface SharedDimensions {
+  communication: number
+  connection: number
+  conflictHealth: number
+  alignment: number
+}
+
+export function overallFromShared(d: SharedDimensions): number {
+  const total =
+    SHARED_WEIGHTS.communication + SHARED_WEIGHTS.connection +
+    SHARED_WEIGHTS.conflictHealth + SHARED_WEIGHTS.alignment
+  return Math.round(
+    (d.communication * SHARED_WEIGHTS.communication +
+      d.connection * SHARED_WEIGHTS.connection +
+      d.conflictHealth * SHARED_WEIGHTS.conflictHealth +
+      d.alignment * SHARED_WEIGHTS.alignment) / total,
+  )
+}
+
+/// One member's private Emotional safety: the shared mood base (or 50)
+/// blended with their own rating, then the chat safety penalties. Null when
+/// they have not checked in — there is nothing private to show.
+export function privateEmotionalSafety(input: {
+  moodBase: number | null
+  safetyRating: number | null
+  signals: ChatSignals
+  chatWeight: number
+}): number | null {
+  if (input.safetyRating == null) return null
+  const base = input.moodBase ?? 50
+  const blended = Math.round((base + input.safetyRating * 10) / 2)
+  const adjusted = applyChatSignals(
+    { communication: 0, connection: 0, emotionalSafety: blended },
+    input.signals,
+    input.chatWeight,
+  )
+  return clamp(Math.round(adjusted.emotionalSafety), 0, 100)
+}
+
 /**
  * Weighted mean of independent score sources, each `{ v: value, w: weight }`.
- *
- * Zero-weight sources fall out of numerator AND denominator naturally, so a
- * source at `w: 0` (e.g. a chat source when `chatWeight` is 0) contributes
- * nothing rather than skewing the blend — this is what makes the chat
- * no-op guarantee hold structurally rather than by an explicit guard.
- *
- * Returns the 70 optimistic baseline when total weight is zero (every
- * source present but all zero-weighted), matching the caller's
- * `sources.length ? … : 70` fallback for the no-sources case.
+ * Zero-weight sources fall out naturally. Returns the 70 optimistic baseline
+ * when total weight is zero.
  */
 export function weightedMean(sources: { v: number; w: number }[]): number {
   const totalWeight = sources.reduce((sum, s) => sum + s.w, 0)
@@ -524,8 +593,6 @@ export interface ChatSignals {
   bidTurnRate: number | null
   bidsTotal: number
   sessionCount: number
-  // Sessions with escalation_score >= 0.5 — the population repairRate and
-  // attemptRate are computed over. A strict subset of sessionCount.
   conflictSessionCount: number
   avgEscalation: number | null
   repairRate: number | null
@@ -534,13 +601,50 @@ export interface ChatSignals {
   pursueWithdrawRate: number | null
 }
 
+/** What a couple with no analysed chat looks like. */
+export const NO_CHAT_SIGNALS: ChatSignals = {
+  analysedCount: 0,
+  avgTone: null,
+  violationRate: null,
+  severeRate: null,
+  bidTurnRate: null,
+  bidsTotal: 0,
+  sessionCount: 0,
+  conflictSessionCount: 0,
+  avgEscalation: null,
+  repairRate: null,
+  attemptRate: null,
+  stonewallRate: null,
+  pursueWithdrawRate: null,
+}
+
+export interface ChatInputs {
+  signals: ChatSignals
+  coverageDays: number
+  pendingBacklog: number
+}
+
 /**
- * The dimensions adjusted by chat signal as *relative deltas on top of an
- * already-computed baseline*. Conflict Health is deliberately absent: the
- * spec computes it as a weighted blend of independent absolute sources
- * (mood, check-in, chat-repair, chat-escalation) rather than as a delta
- * chain, so it is computed inline in `_computePulseScore` via
- * `weightedMean` instead of being mutated here.
+ * Spec 8 (F15 (1); plan review I12, I14). Suppressed: the no-chat-data
+ * inputs, so every confidence and weight reads as sparsity. Hostility off:
+ * stonewalling and contempt are dropped.
+ */
+export function gateChatInputs(
+  raw: ChatInputs,
+  opts: { suppressed: boolean; hostilitySignals: boolean },
+): ChatInputs {
+  if (opts.suppressed) {
+    return { signals: NO_CHAT_SIGNALS, coverageDays: 0, pendingBacklog: 0 }
+  }
+  if (opts.hostilitySignals) return raw
+  return { ...raw, signals: { ...raw.signals, stonewallRate: null, severeRate: null } }
+}
+
+/**
+ * The dimensions adjusted by chat signal as relative deltas on an
+ * already-computed baseline. emotionalSafety stays in this shape because
+ * privateEmotionalSafety reuses the same penalties; the shared path ignores
+ * that output.
  */
 export interface DimensionState {
   communication: number
@@ -573,13 +677,8 @@ export function applyChatSignals(
       connection = clamp(connection + (signals.bidTurnRate - 0.5) * 24 * chatWeight, 0, 100)
     }
 
-    // CONFLICT HEALTH is not adjusted here — see DimensionState's note;
-    // it is a weighted blend computed inline in _computePulseScore.
-
-    // EMOTIONAL SAFETY
+    // EMOTIONAL SAFETY (private path only)
     if (signals.severeRate != null && signals.analysedCount >= 10) {
-      // Deliberate double-count with communication's violationRate above
-      // — contempt/character_attack damage both clarity and safety.
       const safetyPenalty = Math.min(signals.severeRate / 0.1, 1) * 12
       emotionalSafety = clamp(emotionalSafety - safetyPenalty * chatWeight, 0, 100)
     }
@@ -598,43 +697,26 @@ export interface GameSignals {
   mirrorRoundsScored: number
 }
 
-/// Connection and Alignment only. Separate from DimensionState because
-/// that type carries emotionalSafety and no alignment — chat signals and
-/// game signals touch different dimensions.
 export interface GameDimensionState {
   connection: number
   alignment: number
 }
 
 /// Blends game signals into the two dimensions §7 says they belong to.
-///
-/// Deliberately does NOT consume mirrorRoundsScored: Mirror accuracy is
-/// per-person, and feeding it into a shared relationship score would
-/// leak an asymmetric signal into a mutually-visible number (§11.1, one
-/// step removed). It is returned by the RPC for diagnostics only.
+/// Deliberately does NOT consume mirrorRoundsScored (per-person, §11.1).
 export function applyGameSignals(
   dimensions: GameDimensionState,
   signals: GameSignals
 ): GameDimensionState {
   let { connection, alignment } = dimensions
 
-  // CONNECTION — engagement. Capped at +10 so volume alone cannot max
-  // the dimension; its other sources are more meaningful.
   if (signals.sessionsCompleted > 0) {
-    connection = clamp(
-      connection + Math.min(signals.sessionsCompleted * 2, 10),
-      0,
-      100
-    )
+    connection = clamp(connection + Math.min(signals.sessionsCompleted * 2, 10), 0, 100)
   }
 
-  // ALIGNMENT — values overlap, gated on at least 4 rated statements so
-  // a single answer cannot move the score.
   if (signals.slidingScalePairs >= 4 && signals.slidingScaleAvgGap != null) {
     const maxGap = 9
     const clampedGap = Math.max(0, Math.min(maxGap, signals.slidingScaleAvgGap))
-    // Centred on the mid gap: closer than 4.5 pulls up, wider pulls
-    // down, and the magnitude is capped at +/-15.
     const delta = ((maxGap / 2 - clampedGap) / (maxGap / 2)) * 15
     alignment = clamp(alignment + delta, 0, 100)
   }
@@ -642,23 +724,25 @@ export function applyGameSignals(
   return { connection, alignment }
 }
 
-type Confidence = 'none' | 'low' | 'medium' | 'high'
+export type Confidence = 'none' | 'low' | 'medium' | 'high'
 
 export function confidenceFrom(points: number, hasChatSignal: boolean): Confidence {
   if (points < 2) return 'none'
   if (points < 5) return 'low'
   if (points < 9) return 'medium'
-  // 'high' requires chat signal per PULSE.md §7 ("requires chat AI
-  // pipeline") — a relationship with abundant timeline/check-in
-  // evidence but no chat caps at 'medium'.
+  // 'high' requires chat signal per PULSE.md §7.
   return hasChatSignal ? 'high' : 'medium'
 }
 
+/// Fraction-based so it reads the same for four shared dimensions as it did
+/// for five: ≥ 3/4 high → high; ≥ 1/2 medium → medium; any medium → low.
 export function rollupConfidence(confidences: Confidence[]): Confidence {
+  const n = confidences.length
+  if (n === 0) return 'none'
   const highCount = confidences.filter((c) => c === 'high').length
   const mediumCount = confidences.filter((c) => c === 'medium').length
-  if (highCount >= 4) return 'high'
-  if (mediumCount >= 3) return 'medium'
+  if (highCount / n >= 0.75) return 'high'
+  if (mediumCount / n >= 0.5) return 'medium'
   if (mediumCount >= 1) return 'low'
   return 'none'
 }

@@ -10,7 +10,9 @@ class PulseScore {
   final int connection;
   final int conflictHealth;
   final int alignment;
-  final int emotionalSafety;
+  /// Self-facing since Spec 1a: null on every new row. Kept nullable for
+  /// history; never rendered on a shared surface.
+  final int? emotionalSafety;
   final String dataConfidence;
   final Map<String, dynamic>? dimensionConfidence;
   final Map<String, dynamic>? deltaVsPrevious;
@@ -42,7 +44,7 @@ class PulseScore {
       connection: json['connection'],
       conflictHealth: json['conflict_health'],
       alignment: json['alignment'],
-      emotionalSafety: json['emotional_safety'],
+      emotionalSafety: json['emotional_safety'] as int?,
       dataConfidence: json['data_confidence'],
       dimensionConfidence: json['dimension_confidence'],
       deltaVsPrevious: json['delta_vs_previous'],
@@ -58,4 +60,13 @@ class PulseScore {
     if (dimensionConfidence == null) return 'low';
     return dimensionConfidence![dimension] as String? ?? 'low';
   }
+
+  /// A shared dimension's score by its server key; 0 for anything else.
+  int scoreFor(String key) => switch (key) {
+    'communication' => communication,
+    'connection' => connection,
+    'conflict_health' => conflictHealth,
+    'alignment' => alignment,
+    _ => 0,
+  };
 }

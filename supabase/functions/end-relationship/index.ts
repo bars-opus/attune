@@ -1,17 +1,23 @@
 // supabase/functions/end-relationship/index.ts
+//
+// Spec 3a (research 06 §3 F1 (1)): ending sends nothing to the other partner.
+// They learn in-app, on their next open. The app now calls the
+// end_relationship RPC directly; this endpoint stays for older app versions
+// and runs the RPC as the caller (it reads auth.uid(), which a service-role
+// client does not have).
 import { serve } from "https://deno.land/std@0.177.0/http/server.ts";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.0";
 import {
   HttpError,
   jsonResponse,
+  requireEnv,
   requireUser,
-  serviceRoleClient,
 } from "../_shared/attune_auth.ts";
-import { sendOneSignalPush } from "../_shared/onesignal_push.ts";
 
 serve(async (req) => {
   if (req.method === "OPTIONS") return jsonResponse({ ok: true });
   try {
-    const user = await requireUser(req);
+    await requireUser(req);
     const body = await req.json().catch(() => ({}));
     const relationshipId = typeof body.relationship_id === "string"
       ? body.relationship_id
@@ -20,51 +26,29 @@ serve(async (req) => {
       throw new HttpError("relationship_id is required", 400);
     }
 
-    const supabase = serviceRoleClient();
+    const asCaller = createClient(
+      requireEnv("SUPABASE_URL"),
+      requireEnv("SUPABASE_ANON_KEY"),
+      {
+        global: {
+          headers: { Authorization: req.headers.get("Authorization") ?? "" },
+        },
+        auth: { persistSession: false, autoRefreshToken: false },
+      },
+    );
 
-    // Fetch the other partner's id BEFORE ending it, since end_relationship
-    // doesn't return the row and RLS still applies to a plain SELECT here
-    // (service role bypasses RLS, but we still scope the WHERE clause to
-    // the caller's own relationship rather than trusting relationship_id
-    // blindly, matching this codebase's existing service-role caution).
-    const { data: relationship, error: fetchError } = await supabase
-      .from("relationships")
-      .select("user_a, user_b")
-      .eq("id", relationshipId)
-      .eq("status", "active")
-      .or(`user_a.eq.${user.id},user_b.eq.${user.id}`)
-      .maybeSingle();
-    if (fetchError) throw fetchError;
-    if (!relationship) {
-      throw new HttpError("Relationship not found or not active", 404);
-    }
-
-    const { error: rpcError } = await supabase.rpc("end_relationship", {
+    const { error: rpcError } = await asCaller.rpc("end_relationship", {
       p_relationship_id: relationshipId,
     });
-    if (rpcError) throw rpcError;
-
-    // Best-effort, same framing as accept-invite's push (Task 3) — a
-    // failed push must never make this endpoint appear to fail, since the
-    // RPC's effect already committed. See design spec
-    // docs/superpowers/specs/2026-08-02-relationship-lifecycle-sync-design.md §3.
-    const otherPartnerId = relationship.user_a === user.id
-      ? relationship.user_b
-      : relationship.user_a;
-    if (otherPartnerId) {
-      try {
-        await sendOneSignalPush({
-          userId: otherPartnerId,
-          title: "Your relationship has ended",
-          body: "Reach out if you have questions, or take some time — we're here when you're ready.",
-          data: { type: "relationship_ended", screen: "home" },
-        });
-      } catch (pushError) {
-        console.error(
-          "end-relationship: push notification failed (non-fatal):",
-          pushError instanceof Error ? pushError.message : "unknown",
-        );
+    if (rpcError) {
+      const message = rpcError.message ?? "";
+      if (message.includes("lifecycle:not_found")) {
+        throw new HttpError("Relationship not found", 404);
       }
+      if (message.includes("lifecycle:not_active")) {
+        throw new HttpError("Relationship not found or not active", 409);
+      }
+      throw rpcError;
     }
 
     return jsonResponse({ success: true });

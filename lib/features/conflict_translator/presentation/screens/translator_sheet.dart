@@ -1,7 +1,12 @@
 // lib/features/conflict_translator/presentation/screens/translator_sheet.dart
 
 import 'package:attune/core/utils/exports/export_screens.dart';
+import 'package:attune/features/ai_assistant/data/repositories/assistant_error.dart';
+import 'package:attune/features/ai_assistant/presentation/widgets/assistant_notice_card.dart';
+import 'package:attune/features/conflict_translator/data/models/translator_request.dart';
 import 'package:attune/features/conflict_translator/data/models/translator_response.dart';
+import 'package:attune/features/conflict_translator/domain/services/translator_pattern_service.dart';
+import 'package:attune/features/conflict_translator/presentation/providers/translator_register_preference.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../providers/translator_providers.dart';
@@ -12,12 +17,16 @@ class TranslatorSheet extends ConsumerWidget {
   final Function(String) onSendRewrite;
   final Function(String) onEditRewrite;
 
+  /// Spec 8 (M5): asks again in the newly chosen register.
+  final ValueChanged<TranslatorRegister>? onRegisterChanged;
+
   const TranslatorSheet({
     super.key,
     required this.originalMessage,
     required this.onSendOriginal,
     required this.onSendRewrite,
     required this.onEditRewrite,
+    this.onRegisterChanged,
   });
 
   @override
@@ -52,11 +61,58 @@ class TranslatorSheet extends ConsumerWidget {
           ),
           Gap(Spacing.md.h),
 
+          // NVC or plain words, remembered on this device only (M5).
+          SegmentedButton<TranslatorRegister>(
+            segments: const [
+              ButtonSegment(
+                value: TranslatorRegister.nvc,
+                label: Text('Gentle (NVC)'),
+              ),
+              ButtonSegment(
+                value: TranslatorRegister.plain,
+                label: Text('Plain words'),
+              ),
+            ],
+            selected: {ref.watch(translatorRegisterProvider)},
+            showSelectedIcon: false,
+            onSelectionChanged:
+                state.isLoading
+                    ? null
+                    : (picked) {
+                      final register = picked.first;
+                      ref
+                          .read(translatorRegisterProvider.notifier)
+                          .set(register);
+                      onRegisterChanged?.call(register);
+                    },
+          ),
+          Gap(Spacing.md.h),
+
           // Side-by-side content
           if (state.isLoading) ...[
             _buildLoadingState(colorScheme, textTheme),
+          ] else if (state.limitMessage != null) ...[
+            // The daily limit: its own words, and nothing to retry.
+            Text(state.limitMessage!, style: textTheme.titleMedium),
+            Gap(Spacing.md.h),
+            AppButton(
+              label: 'Close',
+              onPressed: () {
+                ref.read(translatorNotifierProvider.notifier).closeSheet();
+                Navigator.pop(context);
+              },
+              size: ButtonSize.medium,
+            ),
           ] else if (state.error != null) ...[
             _buildErrorState(context, textTheme),
+          ] else if (state.response?.writerResources == true) ...[
+            // F15 (2): the writer's own words disclosed harm; no rewrite.
+            KeyedSubtree(
+              key: const Key('translator-writer-card'),
+              child: const AssistantNoticeCard(
+                notice: AssistantNotice.writerResources,
+              ),
+            ),
           ] else if (state.response != null) ...[
             _buildTranslatorContent(
               context,
@@ -198,11 +254,25 @@ class TranslatorSheet extends ConsumerWidget {
               ),
               Gap(Spacing.sm.w),
               Expanded(
-                child: Text(
-                  'Underlying need: ${response.framingNote}',
-                  style: textTheme.bodySmall?.copyWith(
-                    color: colorScheme.primary,
-                  ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    if (response.coreNeedIdentified.isNotEmpty)
+                      Text(
+                        'Underlying need: '
+                        '${translatorNeedDisplay(response.coreNeedIdentified)}',
+                        style: textTheme.bodySmall?.copyWith(
+                          color: colorScheme.primary,
+                        ),
+                      ),
+                    if (response.framingNote.isNotEmpty)
+                      Text(
+                        response.framingNote,
+                        style: textTheme.bodySmall?.copyWith(
+                          color: colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                  ],
                 ),
               ),
             ],

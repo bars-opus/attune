@@ -1,6 +1,8 @@
 import 'package:attune/core/ui/motion/shimmer.dart';
 import 'package:attune/core/providers/shared_prefs_provider.dart';
 import 'package:attune/features/chat/presentation/screens/chat_screen.dart';
+import 'package:attune/features/quiet_states/data/quiet_state_service.dart';
+import 'package:attune/features/quiet_states/presentation/quiet_state_providers.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -62,6 +64,53 @@ void main() {
     // message_list_animation_test.dart — unmount the widget tree (which stops
     // the ticker and cancels pending timers) before disposing the container,
     // rather than disposing underneath a still-mounted, still-animating tree.
+    await tester.pump(const Duration(milliseconds: 100));
+    await tester.pumpWidget(const SizedBox());
+    await tester.pump(const Duration(milliseconds: 10));
+    container.dispose();
+  });
+
+  testWidgets('no shimmer while the person is quiet (Spec 7, A9)', (tester) async {
+    SharedPreferences.setMockInitialValues({});
+    final prefs = await SharedPreferences.getInstance();
+    final repo = FakeChatRepository(currentUserId: 'user-a');
+    final convo = activeConversation('rel-1');
+    repo.conversationOverride = convo;
+    final container = buildChatContainer(
+      repository: repo,
+      userId: 'user-a',
+      extraOverrides: [
+        sharedPreferencesProvider.overrideWithValue(prefs),
+        quietStateProvider.overrideWith(
+          (ref) async => QuietState(
+            kind: QuietKind.hardTime,
+            until: DateTime.now().add(const Duration(days: 3)),
+            lineOffered: true,
+          ),
+        ),
+      ],
+    );
+
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: withScreenUtil(MaterialApp(home: ChatScreen(conversation: convo))),
+      ),
+    );
+    await tester.pump(const Duration(milliseconds: 60));
+    repo.seedIncoming(
+      id: 'today',
+      relationshipId: 'rel-1',
+      senderId: 'partner',
+      content: 'today msg',
+      createdAt: DateTime.now().subtract(const Duration(minutes: 5)),
+    );
+    repo.emitRealtime();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    expect(find.text('today msg'), findsOneWidget);
+    expect(find.byType(Shimmer), findsNothing);
+
     await tester.pump(const Duration(milliseconds: 100));
     await tester.pumpWidget(const SizedBox());
     await tester.pump(const Duration(milliseconds: 10));

@@ -1,4 +1,11 @@
 import 'package:flutter/rendering.dart' show ScrollDirection;
+import 'package:attune/features/wins/domain/win_card.dart';
+import 'package:attune/features/wins/presentation/share_win_sheet.dart';
+import 'package:attune/features/wins/presentation/win_providers.dart';
+import 'package:attune/features/appreciation/data/appreciation_service.dart';
+import 'package:attune/features/appreciation/data/thankful_phrasing_preference.dart';
+import 'package:attune/features/appreciation/presentation/appreciation_jar_screen.dart';
+import 'package:attune/features/appreciation/presentation/appreciation_sheet.dart';
 import 'package:attune/features/reminders/presentation/screens/family_members_screen.dart';
 import 'package:attune/core/providers/couple_name_provider.dart';
 import 'package:attune/core/utils/date_formatter.dart';
@@ -150,6 +157,9 @@ class _TogetherScreenState extends ConsumerState<TogetherScreen> {
 
   /// Memory prompts I tapped "Not now" on this visit (Phase 4 R4).
   final Set<String> _dismissed = {};
+
+  /// Win cards asked about or put aside this visit (Spec 7, B2).
+  final Set<String> _winsAsked = {};
 
   Future<void> _reportZone(String relationshipId) async {
     try {
@@ -411,24 +421,32 @@ class _TogetherScreenState extends ConsumerState<TogetherScreen> {
   }
 
   /// Opens our chat with [draft] ready to send (or edit).
-  Future<void> _openChatWith(String draft, TogetherItem about) async {
+  /// True when the chat opened (a win card is put aside only then; Spec 7
+  /// final review M-10).
+  Future<bool> _openChatWith(String draft, [TogetherItem? about]) async {
     final relationshipId =
         ref.read(timeline_providers.currentRelationshipIdProvider).valueOrNull;
-    final conversations = await ref.read(conversationsProvider.future);
-    if (!mounted) return;
+    List<Conversation> conversations;
+    try {
+      conversations = await ref.read(conversationsProvider.future);
+    } catch (_) {
+      conversations = const [];
+    }
+    if (!mounted) return false;
     final chat =
         relationshipId == null
             ? null
             : togetherConversationFor(conversations, relationshipId);
     if (chat == null) {
       context.showErrorSnackbar('Chat isn’t available right now.');
-      return;
+      return false;
     }
     context.pushNamed(
       'chatScreen',
       extra: chat,
       queryParameters: {'draft': draft},
     );
+    return true;
   }
 
   /// A ritual on the Agenda: what, and when next (never how often missed).
@@ -459,8 +477,8 @@ class _TogetherScreenState extends ConsumerState<TogetherScreen> {
       backgroundColor: colorScheme.primary.withValues(alpha: 0.12),
       title: r.title,
       subtitle: subtitle,
-      titleMaxLines: 1,
-      subTitleMaxLines: 1,
+      titleMaxLines: togetherRowLines(context).title,
+      subTitleMaxLines: togetherRowLines(context).subtitle,
       showDivider: true,
       disableTrailing: true,
       onTap: switch (r.status) {
@@ -539,6 +557,88 @@ class _TogetherScreenState extends ConsumerState<TogetherScreen> {
     );
   }
 
+  /// Spec 7 (B1, B2): write an "I noticed…" note, open the jar, share a win.
+  Widget _goodThingsSection(
+    String relationshipId, {
+    required bool appreciation,
+    required bool wins,
+  }) => TogetherSection(
+    title: 'Good things',
+    children: [
+      if (appreciation) ...[
+        InfoRowWidget(
+          title: 'Notice something',
+          subtitle: 'Specific beats sweeping.',
+          icon: Icons.eco_outlined,
+          showAvatar: false,
+          showTrailingArrow: true,
+          onTap:
+              () => showAppreciationSheet(
+                context,
+                relationshipId: relationshipId,
+                offerThankful: ref.read(thankfulPhrasingProvider),
+              ),
+        ),
+        InfoRowWidget(
+          title: 'Your appreciation jar',
+          subtitle: '',
+          icon: Icons.inventory_2_outlined,
+          showAvatar: false,
+          showDivider: wins,
+          showTrailingArrow: true,
+          onTap: () => context.push(AppreciationJarScreen.routeName),
+        ),
+      ],
+      if (wins)
+        InfoRowWidget(
+          title: 'Share a win',
+          subtitle: 'Good news, big or small',
+          icon: Icons.emoji_events_outlined,
+          showAvatar: false,
+          showDivider: false,
+          showTrailingArrow: true,
+          onTap: () => showShareWinSheet(context, relationshipId: relationshipId),
+        ),
+    ],
+  );
+
+  /// My partner shared a win (Spec 7, B2): ask about it. Fixed copy and a
+  /// fixed draft; never a push. Tapping or "Not now" puts it aside.
+  Widget _winRow(WinCard w, String partnerName) {
+    final colorScheme = Theme.of(context).colorScheme;
+    Future<void> putAside() async {
+      setState(() => _winsAsked.add(w.eventId));
+      try {
+        await ref.read(togetherRepositoryProvider).dismissWinCard(w.eventId);
+      } catch (_) {
+        // Shown again next time; nothing else depends on it.
+      }
+    }
+
+    return InfoRowWidget(
+      padding: const EdgeInsets.symmetric(
+        horizontal: Spacing.md,
+        vertical: Spacing.xs,
+      ),
+      icon: Icons.emoji_events_outlined,
+      iconColor: colorScheme.primary,
+      backgroundColor: colorScheme.primary.withValues(alpha: 0.12),
+      title: '$partnerName shared a win: ${w.title}',
+      subtitle: 'Ask $partnerName about it — what was the best part?',
+      titleMaxLines: togetherRowLines(context).title,
+      subTitleMaxLines: togetherRowLines(context).subtitle,
+      showDivider: true,
+      trailing: IconButton(
+        tooltip: 'Not now',
+        icon: const Icon(Icons.close),
+        onPressed: putAside,
+      ),
+      onTap: () async {
+        if (await _openChatWith(winDraft(w.title))) putAside();
+      },
+    );
+  }
+
   Widget _agenda(String relationshipId) {
     final me = ref.watch(togetherMeProvider);
     final partnerName =
@@ -567,6 +667,16 @@ class _TogetherScreenState extends ConsumerState<TogetherScreen> {
     final strips =
         ref.watch(togetherBusyStripsProvider(relationshipId)).valueOrNull ??
         const <BusyStrip>[];
+    // Spec 7 (B1): "I noticed…" and the jar, while the feature is on.
+    final appreciationOn =
+        ref.watch(appreciationEnabledProvider).valueOrNull ?? false;
+    // Spec 7 (B2): the partner's wins to ask about, and sharing one.
+    final winsOn = ref.watch(winsEnabledProvider).valueOrNull ?? false;
+    final winCards =
+        (ref.watch(winCardsProvider(relationshipId)).valueOrNull ??
+                const <WinCard>[])
+            .where((w) => !_winsAsked.contains(w.eventId))
+            .toList();
     // The home-screen card (Phase 8a) and the lock-screen plan (8c):
     // refreshed from what the hub just loaded, only where they're on.
     ref.listen<AsyncValue<TogetherAgenda>>(
@@ -597,6 +707,35 @@ class _TogetherScreenState extends ConsumerState<TogetherScreen> {
         );
       }
     });
+    // Spec 1b: turning plan titles on or off re-sends what the card and the
+    // lock screen show, from what the hub already has.
+    ref.listen<AsyncValue<bool>>(
+      togetherSurfaceTitlesProvider(widgetTitlesKey),
+      (prev, next) {
+        if (prev?.valueOrNull != null &&
+            next.valueOrNull != prev?.valueOrNull) {
+          _publishWidget(
+            ref.read(togetherAgendaProvider(relationshipId)).valueOrNull,
+            windows,
+            me,
+            now,
+          );
+        }
+      },
+    );
+    ref.listen<AsyncValue<bool>>(
+      togetherSurfaceTitlesProvider(liveTitlesKey),
+      (prev, next) {
+        if (prev?.valueOrNull != null &&
+            next.valueOrNull != prev?.valueOrNull) {
+          _publishLive(
+            ref.read(togetherAgendaProvider(relationshipId)).valueOrNull,
+            me,
+            now,
+          );
+        }
+      },
+    );
     DateTime dayOf(DateTime d) => DateTime(d.year, d.month, d.day);
     final todayWindows =
         windows.where((w) => dayOf(w.start) == today).take(2).toList();
@@ -631,8 +770,9 @@ class _TogetherScreenState extends ConsumerState<TogetherScreen> {
                 onRefresh: () => _reload(relationshipId),
                 child: ListView(
                   padding: const EdgeInsets.only(bottom: Spacing.xxl * 2),
-                  children:
-                      agenda.isEmpty &&
+                  children: [
+                    ...(agenda.isEmpty &&
+                              winCards.isEmpty &&
                               needs.isEmpty &&
                               rituals.isEmpty &&
                               prompt == null &&
@@ -687,6 +827,8 @@ class _TogetherScreenState extends ConsumerState<TogetherScreen> {
                             TogetherSection(
                               title: 'Today',
                               children: [
+                                for (final w in winCards)
+                                  _winRow(w, partnerName),
                                 for (final c in agenda.careCards)
                                   _careRow(c, partnerName),
                                 if (prompt != null)
@@ -721,6 +863,7 @@ class _TogetherScreenState extends ConsumerState<TogetherScreen> {
                                     ),
                                   ),
                                 if (agenda.today.isEmpty &&
+                                    winCards.isEmpty &&
                                     agenda.careCards.isEmpty &&
                                     prompt == null &&
                                     todayWindows.isEmpty)
@@ -839,7 +982,16 @@ class _TogetherScreenState extends ConsumerState<TogetherScreen> {
                                   ),
                                 ],
                               ),
-                          ],
+                          ]),
+                    // Spec 7 (B1): shown whether or not there is anything
+                    // on the agenda yet.
+                    if (appreciationOn || winsOn)
+                      _goodThingsSection(
+                        relationshipId,
+                        appreciation: appreciationOn,
+                        wins: winsOn,
+                      ),
+                  ],
                 ),
               ),
         );
@@ -900,6 +1052,17 @@ class _TogetherScreenState extends ConsumerState<TogetherScreen> {
         _syncMirror(relationshipId);
       }
     });
+    // Spec 1b: titles on or off replaces every calendar entry.
+    ref.listen<AsyncValue<bool>>(
+      togetherSurfaceTitlesProvider(mirrorTitlesKey),
+      (prev, next) {
+        if (relationshipId != null &&
+            prev?.valueOrNull != null &&
+            next.valueOrNull != prev?.valueOrNull) {
+          _syncMirror(relationshipId);
+        }
+      },
+    );
     final toggle = Padding(
       padding: EdgeInsets.fromLTRB(Spacing.md.w, Spacing.sm, Spacing.xs.w, 0),
       child: Row(

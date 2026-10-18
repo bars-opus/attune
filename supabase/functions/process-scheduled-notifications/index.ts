@@ -26,10 +26,13 @@ serve(async (req) => {
         .update({ status: "processing", updated_at: new Date().toISOString() })
         .eq("id", candidate.id)
         .eq("status", "pending")
-        .select("id,user_id,retry_count,metadata,delivery_channel")
+        .select("id,user_id,retry_count,metadata,delivery_channel,status")
         .maybeSingle();
       if (claimError) throw claimError;
-      if (!job) continue;
+      // Spec 1b: the quiet-hours guard can bounce a claim back to 'pending'
+      // (it goes out at 08:00 local); only a row that became 'processing' is
+      // ours to send.
+      if (!job || job.status !== "processing") continue;
 
       try {
         if (job.delivery_channel !== "push") {

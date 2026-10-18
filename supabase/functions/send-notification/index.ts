@@ -1,8 +1,8 @@
 // supabase/functions/send-notification/index.ts
 
 import { serve } from "https://deno.land/std@0.177.0/http/server.ts";
-import { sendOneSignalPush } from "../_shared/onesignal_push.ts";
-import { requireServiceRole } from "../_shared/attune_auth.ts";
+import { enqueuePush } from "../_shared/push_queue.ts";
+import { requireServiceRole, serviceRoleClient } from "../_shared/attune_auth.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -38,7 +38,8 @@ serve(async (req) => {
     switch (type) {
       case "checkin_reminder":
         titleText = "Weekly check-in";
-        bodyText = `How was your week with ${partnerName}? Takes 60 seconds.`;
+        // Names nobody (Spec 5, plan review I8).
+        bodyText = "A minute to look back on your week.";
         notificationData = {
           type: "checkin_reminder",
           screen: "weekly_checkin",
@@ -92,11 +93,15 @@ serve(async (req) => {
         );
     }
 
-    await sendOneSignalPush({
+    // Spec 1b: queued like every push; quiet hours and the copy guard apply
+    // (the guard neutralises a moment_logged title in the body).
+    const { type: dataType, ...data } = notificationData as Record<string, unknown>;
+    await enqueuePush(serviceRoleClient(), {
       userId,
+      type: String(dataType ?? type),
       title: titleText,
       body: bodyText,
-      data: notificationData,
+      data,
     });
 
     return new Response(

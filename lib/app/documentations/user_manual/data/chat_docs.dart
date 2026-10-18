@@ -60,7 +60,7 @@ class ChatDocs implements DocumentationModule {
           id: 'chat_encryption_note',
           title: '',
           content:
-              'Chat is not end-to-end encrypted the way some messaging apps are. Attune\'s servers can access message content because that access is what lets features like the Verdict system, Pulse, and pattern insights work — always with your explicit awareness, never hidden. You can read exactly what Attune does and doesn\'t do with your messages in Settings → Privacy.',
+              'Chat is not end-to-end encrypted the way some messaging apps are. Attune\'s servers can access message content because that access is what lets features like the monthly readout, Pulse, and pattern insights work — always with your explicit awareness, never hidden. You can read exactly what Attune does and doesn\'t do with your messages in Settings → Privacy.',
           type: ManualContentType.important,
         ),
       ],
@@ -215,7 +215,7 @@ class ChatDocs implements DocumentationModule {
           type: ManualContentType.bulletList,
           bulletPoints: [
             '**Active:** Full chat — send and read freely.',
-            '**Paused or ended:** You can still read your history, but you can no longer send new messages.',
+            '**Paused or ended:** You can still read your history, but you can no longer send new messages. After an ending, this lasts 30 days.',
             '**Archived:** The chat becomes inaccessible, and anything cached on your device is cleared. This normally happens automatically if either of you later starts a new active relationship on Attune.',
           ],
         ),
@@ -237,7 +237,7 @@ class ChatDocs implements DocumentationModule {
         id: 'faq_chat_encrypted',
         question: 'Is my chat end-to-end encrypted?',
         answer:
-            'No — not the way some messaging apps are. Your messages are encrypted in transit and at rest, but Attune\'s servers can process message content, because that\'s what powers features like Pulse, pattern insights, and the Verdict system. This is disclosed openly, never hidden, and you can read the full detail in Settings → Privacy.',
+            'No — not the way some messaging apps are. Your messages are encrypted in transit and at rest, but Attune\'s servers can process message content, because that\'s what powers features like Pulse, pattern insights, and the monthly readout. This is disclosed openly, never hidden, and you can read the full detail in Settings → Privacy.',
         category: 'Chat',
         order: 1,
       ),
@@ -286,9 +286,33 @@ class ChatDocs implements DocumentationModule {
         question:
             'Can I still read old messages after my relationship ends?',
         answer:
-            'Yes — ending a relationship makes chat read-only, not deleted. You can still scroll back and read your history, you just can\'t send new messages. If you later start a new active relationship on Attune, the old chat becomes archived and fully inaccessible.',
+            'Yes, for a while. After either of you ends your shared space, the chat stays readable for both of you for 30 days, and neither of you can send. Then it closes, and it is deleted 12 months after it closes.',
         category: 'Chat',
         order: 7,
+      ),
+      FAQModel(
+        id: 'faq_chat_ending_notice',
+        question: 'Does my partner get told when I end our shared space?',
+        answer:
+            'Your partner isn\'t sent a notification, a text or an email. They see that it has ended the next time they open Attune.',
+        category: 'Chat',
+        order: 10,
+      ),
+      FAQModel(
+        id: 'faq_chat_seal',
+        question: 'Can I close the chat for myself before the 30 days are up?',
+        answer:
+            'Yes. Tap Seal my side now. The chat closes for you straight away and can\'t be opened again; your partner keeps their 30 days and isn\'t told.',
+        category: 'Chat',
+        order: 11,
+      ),
+      FAQModel(
+        id: 'faq_chat_pause',
+        question: 'Can we take a break without ending?',
+        answer:
+            'Yes. In Settings, tap Pause our shared space. The chat becomes read-only for both of you and nothing new is shared. Either of you can resume or end it within 30 days; after 30 days with no decision, it ends.',
+        category: 'Chat',
+        order: 12,
       ),
       FAQModel(
         id: 'faq_chat_reflections',
@@ -298,6 +322,14 @@ class ChatDocs implements DocumentationModule {
             'Never. Personal Reflections is a completely separate, private space. Nothing you write there is ever inserted into a conversation or made visible to your partner.',
         category: 'Chat',
         order: 8,
+      ),
+      FAQModel(
+        id: 'faq_chat_quiet_hours',
+        question: 'Why do some notifications arrive at 8 in the morning?',
+        answer:
+            'Attune holds notifications between 10 pm and 8 am in your time zone and sends them at 8 am instead — nothing is lost. Messages that arrive overnight become one notification per conversation, and none at all if you read them first. Safety resources, alarms set for shortly before a plan, and moves in a game you\'re playing right now are never held.',
+        category: 'Chat',
+        order: 9,
       ),
     ];
   }

@@ -137,12 +137,20 @@ END $$;
 -- were written to skip quietly when the settings were absent.
 CREATE SCHEMA IF NOT EXISTS vault;
 
-CREATE TABLE IF NOT EXISTS vault.decrypted_secrets (
+-- Shaped like Supabase Vault (sync audit K-3): a secrets table, a
+-- decrypted_secrets view over it, create_secret and update_secret. The
+-- "encryption" is the identity here.
+CREATE TABLE IF NOT EXISTS vault.secrets (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   name text UNIQUE,
-  decrypted_secret text,
+  description text NOT NULL DEFAULT '',
+  secret text,
   created_at timestamptz NOT NULL DEFAULT now()
 );
+
+CREATE OR REPLACE VIEW vault.decrypted_secrets AS
+SELECT id, name, description, secret AS decrypted_secret, created_at
+FROM vault.secrets;
 
 CREATE OR REPLACE FUNCTION vault.create_secret(
   new_secret text,
@@ -155,12 +163,28 @@ AS $$
 DECLARE
   v_id uuid;
 BEGIN
-  INSERT INTO vault.decrypted_secrets (name, decrypted_secret)
-  VALUES (new_name, new_secret)
-  ON CONFLICT (name) DO UPDATE SET decrypted_secret = EXCLUDED.decrypted_secret
+  INSERT INTO vault.secrets (name, secret, description)
+  VALUES (new_name, new_secret, coalesce(new_description, ''))
+  ON CONFLICT (name) DO UPDATE SET secret = EXCLUDED.secret
   RETURNING id INTO v_id;
   RETURN v_id;
 END;
+$$;
+
+CREATE OR REPLACE FUNCTION vault.update_secret(
+  secret_id uuid,
+  new_secret text DEFAULT NULL,
+  new_name text DEFAULT NULL,
+  new_description text DEFAULT NULL
+)
+RETURNS void
+LANGUAGE sql
+AS $$
+  UPDATE vault.secrets SET
+    secret = coalesce(new_secret, secret),
+    name = coalesce(new_name, name),
+    description = coalesce(new_description, description)
+  WHERE id = secret_id;
 $$;
 
 -- pg_cron and pg_net are unavailable in a stock Postgres. Stubbing them
@@ -316,3 +340,22 @@ ALTER DEFAULT PRIVILEGES IN SCHEMA public
   GRANT SELECT ON TABLES TO anon;
 ALTER DEFAULT PRIVILEGES IN SCHEMA public
   GRANT USAGE, SELECT ON SEQUENCES TO authenticated, anon;
+
+-- Spec 2: the slice of Supabase's auth.sessions that list_my_sessions reads,
+-- and auth.jwt(), which Supabase defines over the same GUC as auth.uid().
+CREATE TABLE IF NOT EXISTS auth.sessions (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id uuid NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  created_at timestamptz DEFAULT now(),
+  updated_at timestamptz DEFAULT now(),
+  not_after timestamptz,
+  refreshed_at timestamp without time zone,
+  user_agent text,
+  ip inet
+);
+CREATE OR REPLACE FUNCTION auth.jwt()
+RETURNS jsonb
+LANGUAGE sql STABLE
+AS $$
+  SELECT coalesce(NULLIF(current_setting('request.jwt.claims', true), '')::jsonb, '{}'::jsonb);
+$$;

@@ -206,6 +206,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('map for r1'), findsNothing);
     expect(find.text('Goals'), findsOneWidget, reason: 'back on the Planning tab, not a blank Map tab');
+    expect(find.text('Opening the map…'), findsNothing);
   });
 
   int tabIndex(WidgetTester tester) => tester.widget<TabBar>(find.byType(TabBar)).controller!.index;
@@ -239,6 +240,9 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('map for r1'), findsNothing);
     expect(tabIndex(tester), 1, reason: 'back where the swipe started, not on the Map page');
+    // The page itself, not just the underline (owner's device bug).
+    expect(find.text('Opening the map…'), findsNothing);
+    expect(find.byType(TogetherScreen), findsOneWidget);
   });
 
   testWidgets('the swipe reveals a peek, never a blank page', (tester) async {

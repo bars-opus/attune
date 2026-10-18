@@ -13,4 +13,7 @@
     <exclude domain="file" path="attune_chat_cache.sqlite-shm" />
     <exclude domain="sharedpref" path="HomeWidgetPreferences.xml" />
     <exclude domain="file" path="home_widget/" />
+    <exclude domain="sharedpref" path="FlutterSecureStorage.xml" />
+    <exclude domain="sharedpref" path="FlutterSecureKeyStorage.xml" />
+    <exclude domain="sharedpref" path="attune_safety.xml" />
 </full-backup-content>

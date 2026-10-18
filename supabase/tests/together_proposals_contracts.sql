@@ -147,15 +147,23 @@ END $$;
 
 -- 6. Needs you: unowned to-dos due this week and polls awaiting my vote; no counts.
 DO $$
-DECLARE v_entry uuid; v_block uuid; v_poll uuid; v_opt uuid; v_n int; v_result text;
+DECLARE v_cat uuid; v_entry uuid; v_block uuid; v_poll uuid; v_opt uuid; v_n int; v_result text;
 BEGIN
-  INSERT INTO public.planning_entries (relationship_id, title) VALUES ('7d000000-0000-0000-0000-000000000001', 'Summer') RETURNING id INTO v_entry;
-  INSERT INTO public.planning_blocks (entry_id, relationship_id, block_type) VALUES (v_entry, '7d000000-0000-0000-0000-000000000001', 'checklist') RETURNING id INTO v_block;
-  INSERT INTO public.planning_block_items (block_id, relationship_id, text, due_date) VALUES
-    (v_block, '7d000000-0000-0000-0000-000000000001', 'Book summer camp', current_date + 3),
-    (v_block, '7d000000-0000-0000-0000-000000000001', 'Far off', current_date + 30);
-  INSERT INTO public.planning_blocks (entry_id, relationship_id, block_type) VALUES (v_entry, '7d000000-0000-0000-0000-000000000001', 'date_poll') RETURNING id INTO v_poll;
-  INSERT INTO public.planning_block_items (block_id, relationship_id, text) VALUES (v_poll, '7d000000-0000-0000-0000-000000000001', 'Option') RETURNING id INTO v_opt;
+  -- Planning rows carry client-made ids, a category and sort keys
+  -- (20261012200000; sync audit K-8).
+  INSERT INTO public.planning_categories (id, relationship_id, name, icon, color, sort_key)
+  VALUES (gen_random_uuid(), '7d000000-0000-0000-0000-000000000001', 'Holidays', 'sun', '#996633', 'a') RETURNING id INTO v_cat;
+  INSERT INTO public.planning_entries (id, relationship_id, category_id, title)
+  VALUES (gen_random_uuid(), '7d000000-0000-0000-0000-000000000001', v_cat, 'Summer') RETURNING id INTO v_entry;
+  INSERT INTO public.planning_blocks (id, entry_id, relationship_id, block_type, sort_key)
+  VALUES (gen_random_uuid(), v_entry, '7d000000-0000-0000-0000-000000000001', 'checklist', 'a') RETURNING id INTO v_block;
+  INSERT INTO public.planning_block_items (id, block_id, relationship_id, sort_key, text, due_date) VALUES
+    (gen_random_uuid(), v_block, '7d000000-0000-0000-0000-000000000001', 'a', 'Book summer camp', current_date + 3),
+    (gen_random_uuid(), v_block, '7d000000-0000-0000-0000-000000000001', 'b', 'Far off', current_date + 30);
+  INSERT INTO public.planning_blocks (id, entry_id, relationship_id, block_type, sort_key)
+  VALUES (gen_random_uuid(), v_entry, '7d000000-0000-0000-0000-000000000001', 'date_poll', 'b') RETURNING id INTO v_poll;
+  INSERT INTO public.planning_block_items (id, block_id, relationship_id, sort_key, text)
+  VALUES (gen_random_uuid(), v_poll, '7d000000-0000-0000-0000-000000000001', 'a', 'Option') RETURNING id INTO v_opt;
 
   PERFORM pg_temp.as_user('7c000000-0000-0000-0000-0000000000b2');
   SELECT count(*) INTO v_n FROM public.list_together_needs_you('7d000000-0000-0000-0000-000000000001')
@@ -206,10 +214,14 @@ BEGIN
     '{"title":"Gallery","all_day":true,"participant_ids":["7c000000-0000-0000-0000-0000000000a1","7c000000-0000-0000-0000-0000000000b2"]}'::jsonb,
     '[{"start_date":"2026-11-22"}]'::jsonb);
   PERFORM pg_temp.as_user('7c000000-0000-0000-0000-0000000000b2');
+  -- Spec 1b (ruling R-D): the note reaches the asker only with previews on.
+  INSERT INTO public.notification_settings (user_id, chat_message_preview_enabled)
+  VALUES ('7c000000-0000-0000-0000-0000000000a1', true)
+  ON CONFLICT (user_id) DO UPDATE SET chat_message_preview_enabled = true;
   PERFORM public.decide_couple_event(v_id, NULL, false, 'Sunday instead?');
   SELECT metadata->>'body' INTO v_body FROM public.scheduled_notifications
   WHERE source_key = 'together_reply:' || v_id;
-  IF v_body NOT LIKE '%Sunday instead?%' THEN RAISE EXCEPTION 'CONTRACT VIOLATED: decline note missing from reply: %', v_body; END IF;
+  IF v_body IS DISTINCT FROM 'Sunday instead?' THEN RAISE EXCEPTION 'CONTRACT VIOLATED: decline note missing from reply: %', v_body; END IF;
 
   -- hand-off: no second push while pending; leaving clears it
   PERFORM pg_temp.as_user('7c000000-0000-0000-0000-0000000000a1');

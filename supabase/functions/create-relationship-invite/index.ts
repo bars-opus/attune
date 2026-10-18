@@ -44,7 +44,9 @@ Deno.serve(async (req) => {
       await supabase
         .from("relationships")
         .select("id")
-        .eq("status", "active")
+        // Sync audit I-8: a paused person cannot start a new chapter
+        // either; ending first is instant and silent.
+        .in("status", ["active", "paused"])
         .or(`user_a.eq.${user.id},user_b.eq.${user.id}`)
         .limit(1)
         .maybeSingle();

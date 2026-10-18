@@ -1,12 +1,55 @@
 -- Re-enables the AI cron jobs paused by 20260931150000 for flow testing.
+-- KEEP THIS FILE DISABLED until every gate below holds (Spec 8; research 06
+-- F15 (1), row 8; plan review I16, §6.3). Renaming it to .sql and pushing
+-- it is an owner step.
 --
--- Rename to .sql and push when the app is ready for AI testing. Schedules
--- are the originals from 20260907120000 and 20260830120000.
+-- Resume gates:
+--   [ ] Suppression: relationship_ai_suppressed is tested (any tier, 180-day
+--       window, either member's positive private check, expiry) and every
+--       job honours it: analyse-message, analyse-session, compute-pulse,
+--       refresh-love-map, request_verdict_generation, generate-verdict and
+--       the ai-sessions shared window (empty when suppressed). Understand
+--       and Assist deliberately do not refuse on suppression (a blanket
+--       refusal would itself be the tell); their pre-check handles the
+--       dangerous inputs.
+--   [ ] A failed suppression read defers: the code never sets messages aside or cancels a job on an unreadable answer
+--       (analyse-message returns 'deferred'; generate-verdict leaves the
+--       job queued).
+--   [ ] The co-framing line ships on the Verdict watch areas and on any
+--       pattern surface that is routed.
+--   [ ] The adversarial Verdict suite passes
+--       (supabase/functions/generate-verdict/adversarial.test.ts).
+--   [ ] Hostility signals stay off: chat_hostility_signals_enabled = false
+--       until clinical sign-off.
+--   [ ] The cost ledger is live: ai_provider_calls receives rows and
+--       ai_cost_per_relationship reads them; couple-scoped calls carry their
+--       relationship (this should return 0 for couple jobs):
+--         SELECT fn, count(*) FROM public.ai_provider_calls
+--         WHERE relationship_id IS NULL
+--           AND fn NOT IN ('analyse-journal-entry', 'generate-healing-portrait',
+--                          'generate-healing-post-mortem')
+--         GROUP BY fn;
+--   [ ] Flow-testing data is purged or verified empty (owner runs, in the
+--       production SQL editor, before renaming this file):
+--         SELECT count(*) FROM public.patterns;           -- expect 0
+--         SELECT count(*) FROM public.analysis_sessions;  -- expect 0
+--         SELECT count(*) FROM public.pulse_scores;
+--       pulse_scores records no chat weight, so any row computed while chat
+--       analysis ran during flow testing may carry chat signals: delete
+--       those (or all, if every row is test data) before resuming.
+--   [ ] Flags: none of private_safety_check, conflict_toolkit or
+--       chat_hostility_signals_enabled was flipped outside the migrations
+--       without its draft content being signed off (the launch test cannot
+--       see a flag flipped outside the migrations).
+--   [ ] GEMINI_API_KEY is set (supabase secrets list): without it
+--       callGeminiJson returns null and every job produces its boilerplate
+--       fallback silently.
+--   [ ] The Verdict cron stays off: generate-verdict-monthly is not
+--       scheduled here; a Verdict is generated only on request.
 --
--- Before enabling, confirm GEMINI_API_KEY is set (supabase secrets list):
--- without it callGeminiJson returns null and every job produces its
--- boilerplate fallback silently, which is the failure mode this whole
--- sequence has been about.
+-- refresh-love-map-weekly was never paused and calls no provider: it is
+-- already running. Schedules are the originals from 20260907120000 and
+-- 20260830120000. For local testing use supabase/sql/dev_resume_ai_jobs.sql.
 
 SELECT cron.schedule(
   'analyse-message-backlog', '* * * * *',
@@ -16,11 +59,6 @@ SELECT cron.schedule(
 SELECT cron.schedule(
   'analyse-session-sweep', '7,37 * * * *',
   $$ SELECT public.invoke_edge_function('analyse-session'); $$
-);
-
-SELECT cron.schedule(
-  'generate-verdict-monthly', '0 7 1 * *',
-  $$ SELECT public.invoke_edge_function('generate-verdict'); $$
 );
 
 SELECT cron.schedule(

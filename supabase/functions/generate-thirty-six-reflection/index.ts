@@ -1,6 +1,7 @@
 import { serve } from "https://deno.land/std@0.177.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { callGeminiJson } from "../_shared/gemini_json.ts";
+import { HttpError, requireUser } from "../_shared/attune_auth.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -29,6 +30,35 @@ serve(async (req) => {
 
     if (type === "chapter" && ![1, 2, 3].includes(chapter ?? 0)) {
       return json({ error: "Invalid chapter" }, 400);
+    }
+
+    // Spec 3b (R3b-6, review I3): only a member of an active shared space.
+    // The journey is read as the caller, so RLS (the chapter gate) proves
+    // membership before the service role is used.
+    try {
+      await requireUser(req);
+    } catch (error) {
+      if (error instanceof HttpError) return json({ error: error.message }, error.status);
+      throw error;
+    }
+    const asCaller = createClient(
+      Deno.env.get("SUPABASE_URL")!,
+      Deno.env.get("SUPABASE_ANON_KEY")!,
+      { global: { headers: { Authorization: req.headers.get("Authorization") ?? "" } } },
+    );
+    const { data: visible } = await asCaller
+      .from("thirty_six_question_journeys")
+      .select("id, relationship_id")
+      .eq("id", journey_id)
+      .maybeSingle();
+    if (!visible) return json({ error: "Journey not found" }, 404);
+    const { data: space } = await asCaller
+      .from("relationships")
+      .select("status")
+      .eq("id", visible.relationship_id)
+      .maybeSingle();
+    if (!space || space.status !== "active") {
+      return json({ error: "This shared space is not active" }, 409);
     }
 
     const supabase = createClient(
@@ -86,7 +116,7 @@ serve(async (req) => {
       usable.answers,
       usable.relationship,
     );
-    const result = await generateReflection(prompt, type);
+    const result = await generateReflection(prompt, type, visible.relationship_id);
 
     const sourceAnswerIds = usable.answers.map(
       (answer: { id: string }) => answer.id,
@@ -203,7 +233,11 @@ function buildPrompt(rounds: any[], answers: any[], relationship: any) {
   return prompt;
 }
 
-async function generateReflection(prompt: string, type: ReflectionType) {
+async function generateReflection(
+  prompt: string,
+  type: ReflectionType,
+  relationshipId: string,
+) {
   const systemPrompt = `
 ABSOLUTE CONSTRAINTS:
 1. Never use clinical language.
@@ -236,6 +270,7 @@ ${prompt}
   // inline version used.
   const parsed = await callGeminiJson({
     promptId: "thirty_six_reflection",
+    attribution: { fn: "generate-thirty-six-reflection", relationshipId },
     systemPrompt,
     userPrompt,
     maxOutputTokens: 220,

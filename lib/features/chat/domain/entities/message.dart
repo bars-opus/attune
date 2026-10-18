@@ -47,6 +47,15 @@ class Message {
   /// revealed. The distinction is the whole feature.
   bool get isPlace => mediaType == 'place';
 
+  /// An "I noticed…" note (Spec 7, research 06 B1): an ordinary message in a
+  /// fixed form, shown with a leaf; never edited.
+  bool get isAppreciation => mediaType == 'appreciation';
+
+  /// "Take a pause" (Spec 8, research 06 B3 (a)): one of three fixed
+  /// messages, and the partner's one fixed reply; never edited.
+  bool get isPause => mediaType == 'pause';
+  bool get isPauseReply => mediaType == 'pause_reply';
+
   /// The marker a game card leaves behind when it moves to the other
   /// side. Not a card: it carries no session and never opens a game.
   bool get isGameTrail => mediaType == 'game_trail';
@@ -186,7 +195,10 @@ class Message {
   }) {
     final senderId = row['sender_id'] as String;
     final deliveredAt = _parseDateTime(row['delivered_at']);
-    final readAt = _parseDateTime(row['read_at']);
+    // The receipt the viewer may see (Spec 1a): written by the server only
+    // while the couple shows seen-state. read_at itself is the recipient's
+    // private marker and is not selectable by clients.
+    final readAt = _parseDateTime(row['read_receipt_at']);
 
     return Message(
       id: row['id'] as String,
@@ -545,6 +557,10 @@ class Message {
   /// only [canEdit] does.
   bool canEdit({required String currentUserId, required DateTime now}) {
     if (isAttuneAssistOutput) return false;
+    // Spec 7 (plan review I4): never rewritten under its leaf.
+    if (isAppreciation) return false;
+    // Spec 8 (plan review I4): nor a pause or its reply.
+    if (isPause || isPauseReply) return false;
     return _withinEditDeleteWindow(currentUserId: currentUserId, now: now);
   }
 

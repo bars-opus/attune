@@ -12,6 +12,7 @@
 
 import { serve } from 'https://deno.land/std@0.177.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+import { relationshipAiSuppressed } from '../_shared/ai_suppression.ts'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -26,9 +27,10 @@ const PROMPTS_PER_RUN = 3
  *  answered. Mirrors kLoveMapReAskInterval on the client. */
 const RE_ASK_DAYS = 182
 
-/** root_need_detected is a fixed six-value enum written by analyse-session
- *  (respect | fairness | affection | security | autonomy | rest). An exact
- *  lookup is right for it. */
+/** root_need_detected is a fixed seven-value enum written by analyse-session
+ *  (respect | fairness | affection | security | autonomy | rest |
+ *  communal_obligation — Spec 8; the definition awaits clinician sign-off).
+ *  An exact lookup is right for it. */
 const ROOT_NEED_TO_DOMAIN: Record<string, string> = {
   respect: 'fears',
   fairness: 'stressors',
@@ -36,6 +38,8 @@ const ROOT_NEED_TO_DOMAIN: Record<string, string> = {
   security: 'fears',
   autonomy: 'dreams',
   rest: 'stressors',
+  // Family, roots and duty: the history domain (Spec 8, review M6).
+  communal_obligation: 'history',
 }
 
 /** dominant_topic is NOT an enum: analyse-session asks the model for a free
@@ -93,6 +97,44 @@ export function domainsFor(
   return out
 }
 
+/**
+ * Spec 7 (research 06 B9; plan review I3): while either partner is quiet
+ * ("having a hard time", "going through a loss"), no fears, dreams or
+ * children questions. Shared by both, so nothing says who is quiet.
+ */
+const QUIET_EXCLUDED_DOMAINS = new Set(['fears', 'dreams', 'children'])
+
+export function forQuiet<T extends { value_domain: string | null }>(
+  questions: T[],
+  quiet: boolean,
+): T[] {
+  if (!quiet) return questions
+  return questions.filter((q) => !QUIET_EXCLUDED_DOMAINS.has(q.value_domain ?? ''))
+}
+
+// What the AI detected lately for a couple, as Love map domains. Spec 8
+// (plan review I11): nothing for a suppressed couple, before any read; they
+// get the same unpersonalised rounds as a couple with no sessions.
+// deno-lint-ignore no-explicit-any
+export async function loveMapDomains(supabase: any, relationshipId: string): Promise<Set<string>> {
+  const domains = new Set<string>()
+  if (await relationshipAiSuppressed(supabase, relationshipId)) return domains
+  const since = new Date(Date.now() - 30 * 86400_000).toISOString()
+  const { data: sessions } = await supabase
+    .from('analysis_sessions')
+    .select('dominant_topic, root_need_detected')
+    .eq('relationship_id', relationshipId)
+    .gte('started_at', since)
+    .order('started_at', { ascending: false })
+    .limit(50)
+  for (const row of sessions ?? []) {
+    for (const d of domainsFor(row.dominant_topic, row.root_need_detected)) {
+      domains.add(d)
+    }
+  }
+  return domains
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders })
@@ -125,21 +167,7 @@ serve(async (req) => {
 
     for (const rel of relationships ?? []) {
       // 1. What has the AI detected lately for this couple?
-      const since = new Date(Date.now() - 30 * 86400_000).toISOString()
-      const { data: sessions } = await supabase
-        .from('analysis_sessions')
-        .select('dominant_topic, root_need_detected')
-        .eq('relationship_id', rel.id)
-        .gte('started_at', since)
-        .order('started_at', { ascending: false })
-        .limit(50)
-
-      const domains = new Set<string>()
-      for (const row of sessions ?? []) {
-        for (const d of domainsFor(row.dominant_topic, row.root_need_detected)) {
-          domains.add(d)
-        }
-      }
+      const domains = await loveMapDomains(supabase, rel.id)
 
       // 2. Which questions are eligible: never seen, or seen long enough ago.
       const { data: seen } = await supabase
@@ -153,7 +181,16 @@ serve(async (req) => {
           .filter((s) => s.seen_at && s.seen_at > cutoff)
           .map((s) => s.question_id),
       )
-      const eligible = (bank ?? []).filter((q) => !blocked.has(q.id))
+      const { data: quietRows, error: quietError } = await supabase
+        .from('quiet_states')
+        .select('user_id')
+        .in('user_id', [rel.user_a, rel.user_b])
+        .gt('until', new Date().toISOString())
+      const eligible = forQuiet(
+        (bank ?? []).filter((q) => !blocked.has(q.id)),
+        // Fail closed: if we cannot tell, no fears/dreams (review M-5).
+        quietError != null || (quietRows ?? []).length > 0,
+      )
       if (eligible.length === 0) continue
 
       // 3. Prefer detected domains, then everything else.

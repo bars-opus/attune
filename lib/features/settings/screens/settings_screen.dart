@@ -1,7 +1,11 @@
 // lib/features/settings/screens/settings_screen.dart
+import 'package:attune/features/appreciation/data/appreciation_service.dart';
+import 'package:attune/features/quiet_states/presentation/quiet_state_providers.dart';
+import 'package:attune/features/appreciation/data/thankful_phrasing_preference.dart';
 import 'package:attune/features/settings/data/chat_feel_preference.dart';
 import 'package:attune/features/settings/data/sound_preference.dart';
 import 'package:attune/features/settings/utility/settings_exports.dart';
+import 'package:attune/features/safety/presentation/outside_perspective_screen.dart';
 
 /// Main Settings screen displaying categorized user preferences and app configurations.
 ///
@@ -90,7 +94,7 @@ import 'package:attune/features/settings/utility/settings_exports.dart';
 ///   icon: Icon(Icons.save_alt),
 /// )
 /// ```
-class SettingsScreen extends StatelessWidget {
+class SettingsScreen extends ConsumerWidget {
   final String currentUserId;
 
   /// Creates the main Settings screen with dynamically loaded sections.
@@ -101,7 +105,7 @@ class SettingsScreen extends StatelessWidget {
   const SettingsScreen({super.key, required this.currentUserId});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     // Access theme for consistent styling
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
@@ -110,6 +114,10 @@ class SettingsScreen extends StatelessWidget {
     final sections = SettingsDataSource.getSettingsSections(
       context,
       currentUserId,
+      // Spec 7 (final review I-2): shown only once the feature is on.
+      quietStatesOn: ref.watch(quietStatesEnabledProvider).valueOrNull ?? false,
+      // Spec 8 (B10): placeholder content stays closed while its flag is off.
+      outsidePerspectiveOn: ref.watch(outsidePerspectiveEnabledProvider),
     );
 
     // Access localization for language prefence
@@ -293,6 +301,39 @@ class SettingsScreen extends StatelessWidget {
                                 ? ChatExpressiveness.expressive
                                 : ChatExpressiveness.calm,
                           ),
+                    ),
+                  );
+                },
+              ),
+            ),
+          ),
+          // Spec 7 (P2): the gentler "Thankful for you because…" phrasing,
+          // on this device only.
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: Spacing.horizontalMd,
+              child: Consumer(
+                builder: (context, ref, _) {
+                  // Only while "I noticed…" notes are on (final review I-2).
+                  if (!(ref.watch(appreciationEnabledProvider).valueOrNull ??
+                      false)) {
+                    return const SizedBox.shrink();
+                  }
+                  final on = ref.watch(thankfulPhrasingProvider);
+                  return CardInkWell(
+                    margin: EdgeInsets.zero,
+                    onTap: () =>
+                        ref.read(thankfulPhrasingProvider.notifier).set(!on),
+                    child: SwitchListTile(
+                      key: const ValueKey('thankful_phrasing_switch'),
+                      title: const Text('"Thankful for you" phrasing'),
+                      subtitle: const Text(
+                        'Also offer "Thankful for you because…" when you write an I noticed note.',
+                      ),
+                      secondary: const Icon(Icons.eco_outlined),
+                      value: on,
+                      onChanged: (v) =>
+                          ref.read(thankfulPhrasingProvider.notifier).set(v),
                     ),
                   );
                 },

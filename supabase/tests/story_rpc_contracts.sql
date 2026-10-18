@@ -883,6 +883,11 @@ BEGIN
   VALUES ('00000000-0000-0000-0000-00000000c401'::uuid,
           '00000000-0000-0000-0000-00000000c402'::uuid, 'active')
   RETURNING id INTO v_rel;
+  -- Spec 1a: this block's "seen" and "signal bumps once" contracts describe a
+  -- couple with "Show when we've seen things" ON. Turn it on for both.
+  INSERT INTO public.seen_receipt_prefs (relationship_id, user_id, seen_on)
+  VALUES (v_rel, '00000000-0000-0000-0000-00000000c401'::uuid, true),
+         (v_rel, '00000000-0000-0000-0000-00000000c402'::uuid, true);
 
   DELETE FROM public.story_media_upload_intents
    WHERE requester_id IN ('00000000-0000-0000-0000-00000000c401'::uuid,

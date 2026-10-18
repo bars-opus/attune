@@ -9,6 +9,24 @@ import 'package:attune/core/ui/motion/make_room.dart';
 import 'package:attune/core/ui/motion/payload_flight.dart';
 import 'package:attune/core/ui/motion/reaction_landing_effect.dart';
 import 'package:attune/core/ui/motion/reduce_motion.dart';
+import 'package:attune/features/conflict_translator/presentation/providers/translator_register_preference.dart';
+import 'package:attune/features/wins/presentation/share_win_sheet.dart';
+import 'package:attune/features/wins/presentation/support_chips_sheet.dart';
+import 'package:attune/features/wins/presentation/win_providers.dart';
+import 'package:attune/features/appreciation/data/thankful_phrasing_preference.dart';
+import 'package:attune/features/appreciation/presentation/appreciation_sheet.dart';
+import 'package:attune/features/appreciation/data/appreciation_service.dart';
+import 'package:attune/features/quiet_states/presentation/quiet_state_providers.dart';
+import 'package:attune/features/conflict_toolkit/data/pause_service.dart';
+import 'package:attune/features/conflict_toolkit/data/pause_timer_store.dart';
+import 'package:attune/features/conflict_toolkit/data/toolkit_texts.dart';
+import 'package:attune/features/conflict_toolkit/presentation/apology_sheet.dart';
+import 'package:attune/features/conflict_toolkit/presentation/hard_moment_sheet.dart';
+import 'package:attune/features/conflict_toolkit/presentation/pause_reply_chip.dart';
+import 'package:attune/features/conflict_toolkit/presentation/pause_sheet.dart';
+import 'package:attune/features/conflict_toolkit/presentation/pause_timer_card.dart';
+import 'package:attune/features/conflict_toolkit/presentation/repair_tray.dart';
+import 'package:attune/features/conflict_toolkit/presentation/start_conversation_sheet.dart';
 import 'package:attune/features/chat/presentation/widgets/chat_date_chip.dart';
 import 'package:attune/core/ui/motion/settle_in.dart';
 import 'package:attune/core/ui/motion/shimmer.dart';
@@ -33,7 +51,6 @@ import 'package:attune/features/chat/presentation/widgets/message_bubble.dart';
 import 'package:attune/features/chat/presentation/widgets/chat_media_group.dart';
 import 'package:attune/features/chat/presentation/widgets/message_arrival_tracker.dart';
 import 'package:attune/features/chat/presentation/widgets/reply_composer_preview.dart';
-import 'package:attune/features/conflict_translator/data/models/translator_request.dart';
 import 'package:attune/features/conflict_translator/presentation/providers/translator_providers.dart'
     as translator_providers;
 import 'package:attune/features/conflict_translator/presentation/screens/translator_sheet.dart';
@@ -215,6 +232,73 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
           typingControllerProvider(widget.conversation.relationshipId).notifier,
         )
         .onComposingChanged(_controller.text.trim().isNotEmpty);
+  }
+
+  // Spec 7 (B9 (b)): the chosen support line goes into the composer to
+  // edit or send; added below anything already written.
+  Future<void> _askForSupport() async {
+    final line = await showSupportChipsSheet(context);
+    if (line == null || !mounted) return;
+    final current = _controller.text.trimRight();
+    final text = current.isEmpty ? line : '$current\n$line';
+    _controller.value = TextEditingValue(
+      text: text,
+      selection: TextSelection.collapsed(offset: text.length),
+    );
+  }
+
+  // Spec 8 (B3; plan review M8): a toolkit line goes into the composer to
+  // edit or send, below anything already written; nothing sends by itself.
+  void _appendToComposer(String? line) {
+    if (line == null || !mounted) return;
+    final current = _controller.text.trimRight();
+    final text = current.isEmpty ? line : '$current\n$line';
+    _controller.value = TextEditingValue(
+      text: text,
+      selection: TextSelection.collapsed(offset: text.length),
+    );
+  }
+
+  Future<void> _openRepairTray() async =>
+      _appendToComposer(await showRepairTray(context));
+
+  Future<void> _openStartConversation() async =>
+      _appendToComposer(await showStartConversationSheet(context));
+
+  Future<void> _openHardMoment() async {
+    final action = await showHardMomentSheet(context);
+    if (action == null || !mounted) return;
+    switch (action) {
+      case HardMomentAction.pause:
+        await _takeAPause();
+      case HardMomentAction.repair:
+        await _openRepairTray();
+      case HardMomentAction.apology:
+        _appendToComposer(await showApologySheet(context));
+      case HardMomentAction.start:
+        await _openStartConversation();
+    }
+  }
+
+  // The fixed message goes as an ordinary message; the timer is this
+  // device's alone.
+  Future<void> _takeAPause() async {
+    final relationshipId = widget.conversation.relationshipId;
+    await showPauseSheet(
+      context,
+      onSend: (variant, clientMessageId) async {
+        await ref
+            .read(pauseServiceProvider)
+            .send(
+              relationshipId: relationshipId,
+              clientMessageId: clientMessageId,
+              variant: variant,
+            );
+        await ref
+            .read(pauseTimerProvider(relationshipId).notifier)
+            .start(kPauseMinutes[variant]!);
+      },
+    );
   }
 
   Future<void> _restoreDraft() async {
@@ -1081,14 +1165,15 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
     final message = _controller.text.trim();
     if (message.isEmpty) return;
 
-    final translatorContext = await _getTranslatorContext();
+    // Spec 8 (plan review I9): only the message goes, in the chosen
+    // register; no profile or tone summary.
     final notifier = ref.read(
       translator_providers.translatorNotifierProvider.notifier,
     );
     await notifier.translate(
       message: message,
       relationshipId: widget.conversation.relationshipId,
-      context: translatorContext,
+      register: ref.read(translatorRegisterProvider),
     );
 
     if (!mounted) return;
@@ -1100,6 +1185,12 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
       builder:
           (sheetContext) => TranslatorSheet(
             originalMessage: message,
+            onRegisterChanged:
+                (register) => notifier.translate(
+                  message: message,
+                  relationshipId: widget.conversation.relationshipId,
+                  register: register,
+                ),
             onSendOriginal: () {
               Navigator.pop(sheetContext, true);
               _sendDraftText(message);
@@ -1133,59 +1224,6 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
     }
 
     ref.read(translator_providers.translatorNotifierProvider.notifier).reset();
-  }
-
-  Future<TranslatorContext?> _getTranslatorContext() async {
-    final supabase = ref.read(supabaseClientProvider);
-    final userId = ref.read(currentUserProvider)?.id;
-    if (userId == null) return null;
-
-    try {
-      final profile =
-          await supabase
-              .from('psych_profiles')
-              .select('attachment_style, communication_style, conflict_style')
-              .eq('user_id', userId)
-              .maybeSingle();
-
-      if (profile == null) return null;
-
-      final communicationStyle =
-          profile['communication_style'] as Map<String, dynamic>?;
-      final attachmentStyle =
-          profile['attachment_style'] as Map<String, dynamic>?;
-      final conflictStyle = profile['conflict_style'] as Map<String, dynamic>?;
-
-      const conflictKeys = [
-        'collaborating',
-        'competing',
-        'avoiding',
-        'accommodating',
-        'compromising',
-      ];
-
-      final conflictTendencies =
-          conflictStyle == null
-              ? null
-              : <String, int>{
-                for (final key in conflictKeys)
-                  if (conflictStyle[key] is num)
-                    key: (conflictStyle[key] as num).round(),
-              };
-
-      return TranslatorContext(
-        attachmentStyle: attachmentStyle?['type'] as String?,
-        communicationStyle:
-            communicationStyle?['primary'] as String? ??
-            communicationStyle?['type'] as String?,
-        conflictTendencies:
-            conflictTendencies?.length == conflictKeys.length
-                ? conflictTendencies
-                : null,
-      );
-    } catch (_) {
-      return null;
-    }
   }
 
   void _scrollToLatest() {
@@ -1254,6 +1292,8 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
         ref.watch(gameComposerProvider(conversation.relationshipId)).gameType;
     final voiceMessagesEnabled = ref.watch(chatVoiceMessagesEnabledProvider);
     final translatorEnabled = ref.watch(chatTranslatorEntryEnabledProvider);
+    final toolkitOn =
+        ref.watch(conflictToolkitEnabledProvider).valueOrNull ?? false;
     // Spec §12's `ai_assist_enabled`, read through Task 5's RPC-backed
     // capability service and NEVER through `feature_flags` directly --
     // that table's SELECT policy hides every `ai_%` key from clients
@@ -1527,6 +1567,13 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
                                         )
                                         .cancel(),
                           ),
+                        // Spec 8 (B3 (a)): the sender's own pause card.
+                        if (conversation.canSend && toolkitOn)
+                          PauseTimerCard(
+                            relationshipId: conversation.relationshipId,
+                            onStartConversation:
+                                () => unawaited(_openStartConversation()),
+                          ),
                         if (conversation.canSend)
                           ChatTextField(
                             controller: _controller,
@@ -1566,6 +1613,43 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
                                     : null,
                             onAttachFile: _attachFile,
                             onSharePlace: _sharePlace,
+                            // Spec 7 (B1): only while the feature is on.
+                            onAppreciation:
+                                (ref.watch(appreciationEnabledProvider).valueOrNull ??
+                                        false)
+                                    ? () => showAppreciationSheet(
+                                      context,
+                                      relationshipId:
+                                          widget.conversation.relationshipId,
+                                      offerThankful: ref.read(thankfulPhrasingProvider),
+                                    )
+                                    : null,
+                            // Spec 7 (B2): only while the feature is on.
+                            onShareWin:
+                                (ref.watch(winsEnabledProvider).valueOrNull ??
+                                        false)
+                                    ? () => showShareWinSheet(
+                                      context,
+                                      relationshipId:
+                                          widget.conversation.relationshipId,
+                                    )
+                                    : null,
+                            // Spec 7 (B9 (b)): a fixed, editable line; never
+                            // sent by itself.
+                            onAskSupport:
+                                (ref.watch(quietStatesEnabledProvider).valueOrNull ??
+                                        false)
+                                    ? _askForSupport
+                                    : null,
+                            // Spec 8 (B3; plan review I5, M8): both flags.
+                            onHardMoment:
+                                toolkitOn
+                                    ? () => unawaited(_openHardMoment())
+                                    : null,
+                            onSendLongPress:
+                                toolkitOn
+                                    ? () => unawaited(_openRepairTray())
+                                    : null,
                             onOpenGames: _openGames,
                             // Null hides the entry point, and that IS
                             // the capability gate (ChatTextField's own
@@ -3048,6 +3132,27 @@ class _MessageListState extends ConsumerState<_MessageList>
     _timestampRevealOffset.value = value.abs() < 0.1 ? 0 : value;
   }
 
+  // Spec 7 (B1): keep a received "I noticed…" note, or let it go.
+  Future<void> _keepNote(BuildContext context, String messageId, bool keep) async {
+    final service = ref.read(appreciationServiceProvider);
+    try {
+      if (keep) {
+        await service.save(messageId);
+      } else {
+        await service.remove(messageId);
+      }
+      ref.invalidate(appreciationJarIdsProvider);
+      ref.invalidate(appreciationJarProvider);
+      if (context.mounted) {
+        context.showSuccessSnackbar(
+          keep ? 'Saved to your jar' : 'Removed from your jar',
+        );
+      }
+    } catch (_) {
+      if (context.mounted) context.showErrorSnackbar("Couldn't do that. Try again.");
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final conversation = widget.conversation;
@@ -3066,6 +3171,19 @@ class _MessageListState extends ConsumerState<_MessageList>
     // both a whisper-subtle. Content-blind — only the enum is read here.
     final expressive =
         ref.watch(chatExpressivenessProvider) == ChatExpressiveness.expressive;
+    // Spec 7 (A9): nothing sparkles while the person is quiet.
+    final quiet = ref.watch(isQuietProvider);
+    // Spec 7 (B1): which received notes this person kept.
+    final appreciationOn =
+        ref.watch(appreciationEnabledProvider).valueOrNull ?? false;
+    // Spec 8 (B3 (a)): the reply chip under a received pause.
+    final toolkitOn =
+        ref.watch(conflictToolkitEnabledProvider).valueOrNull ?? false;
+    final jarIds =
+        appreciationOn
+            ? ref.watch(appreciationJarIdsProvider).valueOrNull ??
+                const <String>{}
+            : const <String>{};
 
     // RULING 23: §12's `ai_assist_enabled`, which gates the long-press
     // "Ask Attune" entry point. Nothing gated it before — Task 5
@@ -3454,6 +3572,15 @@ class _MessageListState extends ConsumerState<_MessageList>
                           isPinned: state.pinnedMessages.any(
                             (p) => p.id == message.id,
                           ),
+                          isInJar: jarIds.contains(message.id),
+                          onSaveToJar:
+                              appreciationOn
+                                  ? () => _keepNote(context, message.id, true)
+                                  : null,
+                          onRemoveFromJar:
+                              appreciationOn
+                                  ? () => _keepNote(context, message.id, false)
+                                  : null,
                           parentDeleted: parentDeleted,
                           onCopy: () {
                             Clipboard.setData(
@@ -3607,7 +3734,19 @@ class _MessageListState extends ConsumerState<_MessageList>
                           ))) {
                     bubble = Opacity(opacity: 0, child: bubble);
                   }
-                  if (isFirstOfDay && shouldAnimate) {
+                  if (toolkitOn &&
+                      state.conversation.canSend &&
+                      mayOfferPauseReply(message, DateTime.now())) {
+                    bubble = Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        bubble,
+                        PauseReplyChip(pauseMessageId: message.id),
+                      ],
+                    );
+                  }
+                  if (isFirstOfDay && shouldAnimate && !quiet) {
                     bubble = Shimmer(
                       period:
                           expressive

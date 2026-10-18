@@ -72,8 +72,16 @@ class _PlanningHomeScreenState extends ConsumerState<PlanningHomeScreen> {
     }
     if (controller.length <= mapIndex || _openingMap) return;
     _openingMap = true;
+    final back = _lastPageIndex;
     final open = openCoupleMap(context, widget.relationshipId);
-    controller.index = _lastPageIndex;
+    // Next frame, once a swipe's scroll has finished: TabBarView ignores an
+    // instant index jump while its page is still settling (the underline
+    // moved but the page stayed on Map). A 1 ms animation it does follow,
+    // hidden under the map sliding in.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      controller.animateTo(back, duration: const Duration(milliseconds: 1));
+    });
     unawaited(open.whenComplete(() => _openingMap = false));
   }
 
@@ -413,12 +421,9 @@ class _CategoryTile extends StatelessWidget {
         icon: planningIcon(category.icon),
         iconColor: colorScheme.background,
         backgroundColor: planningCategoryFill(context, category.color),
+        // No Hero here (owner, 2026-10-16): with Recent at the top, the name
+        // flying into the category screen looked wrong.
         title: category.name,
-        titleBuilder:
-            (title) => PlanningCategoryHero(
-              categoryId: category.id,
-              title: title as Text,
-            ),
         subtitle: n == 1 ? '1 plan' : '$n plans',
         showDivider: false,
         onTap: onOpen,

@@ -1,5 +1,8 @@
 // lib/features/chat/presentation/screens/chat_couples_locked_screen.dart
 
+import 'package:attune/features/relationships/domain/relationship_lifecycle.dart';
+import 'package:attune/features/relationships/presentation/relationship_lifecycle_providers.dart';
+import 'package:attune/features/relationships/presentation/widgets/relationship_lifecycle_card.dart';
 import 'package:attune/app/documentations/user_manual/data/chat_docs.dart';
 import 'package:attune/app/documentations/user_manual/data/healing_docs.dart';
 import 'package:attune/core/intro/presentation/screens/feature_intro_flow_screen.dart';
@@ -7,6 +10,7 @@ import 'package:attune/core/utils/exports/export_screens.dart';
 import 'package:attune/core/utils/relationship_status_display.dart';
 import 'package:attune/core/widgets/animated_circle.dart';
 import 'package:attune/features/onboarding/presentation/widgets/invite_card.dart';
+import 'package:attune/features/onboarding/presentation/widgets/pending_invite_guide.dart';
 import 'package:attune/features/opinions/presentation/providers/opinion_providers.dart';
 import 'package:attune/features/relationships/data/relationship_invite_service.dart';
 import 'package:attune/features/healing/presentation/providers/healing_providers.dart';
@@ -64,6 +68,9 @@ class _ChatCouplesLockedScreenState
   bool _isCreatingInvite = false;
   String? _errorMessage;
 
+  /// How long they have waited, from the server (Spec 5, R5-9).
+  Duration? _inviteAge;
+
   @override
   void initState() {
     super.initState();
@@ -79,6 +86,73 @@ class _ChatCouplesLockedScreenState
     // new for the app shell to persist.
     if (widget.isPendingCouples) {
       _loadExistingInvite();
+      _loadInviteAge();
+    }
+  }
+
+  @override
+  void didUpdateWidget(covariant ChatCouplesLockedScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // The same State is reused when the mode sync flips this screen out of
+    // pending (Spec 5 final review I-2): a withdrawn invite must not linger
+    // as a card, and the personal-mode entries (Dating, Healing) come back.
+    if (oldWidget.isPendingCouples && !widget.isPendingCouples) {
+      // A rebuild follows didUpdateWidget, so no setState.
+      _invite = null;
+      _inviteAge = null;
+      _errorMessage = null;
+    }
+  }
+
+  Future<void> _loadInviteAge() async {
+    final age = await _inviteService.inviteAge();
+    if (mounted) setState(() => _inviteAge = age);
+  }
+
+  // Day 7 (Spec 5, R5-10): a new code alongside the open one.
+  Future<void> _inviteSomeoneElse() async {
+    setState(() {
+      _isCreatingInvite = true;
+      _errorMessage = null;
+    });
+    try {
+      final invite = await _inviteService.createInvite(forceNew: true);
+      if (mounted) setState(() => _invite = invite);
+    } catch (error) {
+      if (mounted) {
+        setState(() {
+          _errorMessage =
+              error is RelationshipInviteException
+                  ? error.message
+                  : 'Could not create invite.';
+        });
+      }
+    } finally {
+      if (mounted) setState(() => _isCreatingInvite = false);
+    }
+  }
+
+  // Day 7: withdraw the open invites; the mode sync then resolves to
+  // personal mode and swaps this screen.
+  Future<void> _useAttuneAlone() async {
+    setState(() {
+      _isCreatingInvite = true;
+      _errorMessage = null;
+    });
+    try {
+      await _inviteService.withdrawPendingInvites();
+      relationshipModeResyncSignal.value++;
+    } catch (error) {
+      if (mounted) {
+        setState(() {
+          _errorMessage =
+              error is RelationshipInviteException
+                  ? error.message
+                  : 'Could not update your invite.';
+        });
+      }
+    } finally {
+      if (mounted) setState(() => _isCreatingInvite = false);
     }
   }
 
@@ -178,6 +252,11 @@ class _ChatCouplesLockedScreenState
     final colorScheme = Theme.of(context).colorScheme;
     final textTheme = Theme.of(context).textTheme;
     final loc = AppLocalizations.of(context)!;
+    // Spec 3a (review I10): a paused space is not single -- no invite (whose
+    // acceptance would end the pause) and no Dating while it lasts.
+    final pausedSpace =
+        ref.watch(relationshipLifecycleProvider).valueOrNull?.status ==
+        LifecycleStatus.paused;
 
     return Scaffold(
       // No AppBar: TripleTapDetector's invisible quick-exit gesture zone is
@@ -208,6 +287,9 @@ class _ChatCouplesLockedScreenState
               ),
             ),
             Gap(Spacing.md.h),
+            // Spec 3a: paused, or ended within its 30-day window -- read the
+            // chat, resume, end or seal; nothing otherwise.
+            const RelationshipLifecycleCard(),
             // Real, functional — Personal mode's reflection journal is
             // explicitly AVAILABLE per §8.9, not locked.
             CardInkWell(
@@ -225,15 +307,26 @@ class _ChatCouplesLockedScreenState
                   Gap(Spacing.md.h),
 
                   // Gap(Spacing.xl.h),
-                  if (widget.isPendingCouples)
+                  if (widget.isPendingCouples) ...[
                     _PendingInviteSection(
                       invite: _invite,
                       isPendingCouples: widget.isPendingCouples,
                       isCreating: _isCreatingInvite,
                       errorMessage: _errorMessage,
                       onRetry: _loadExistingInvite,
-                    )
-                  else ...[
+                    ),
+                    // Spec 5 (R5-9, R5-10; plan review I4): the same 48-hour
+                    // and day-7 guidance as the onboarding waiting step.
+                    Gap(Spacing.md.h),
+                    PendingInviteGuide(
+                      age: _inviteAge,
+                      busy: _isCreatingInvite,
+                      onReflect: () => context.pushNamed('reflectionJournal'),
+                      onKeepWaiting: _loadExistingInvite,
+                      onUseAlone: _useAttuneAlone,
+                      onInviteSomeoneElse: _inviteSomeoneElse,
+                    ),
+                  ] else if (!pausedSpace) ...[
                     if (!_inviteService.isConfigured)
                       Text(
                         'Invites are unavailable right now. Please try again later.',

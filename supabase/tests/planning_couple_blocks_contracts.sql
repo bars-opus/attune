@@ -71,7 +71,7 @@ BEGIN
   SELECT metadata INTO v_r FROM public.scheduled_notifications WHERE source_key LIKE 'planning_poll:' || v_poll || ':%';
   IF (SELECT user_id FROM public.scheduled_notifications WHERE source_key LIKE 'planning_poll:' || v_poll || ':%') <> v_b
      OR v_r ->> 'type' <> 'planning_entry' OR v_r ->> 'entry_id' <> v_trip::text
-     OR v_r ->> 'body' <> 'Ama suggested dates for Bali' THEN
+     OR v_r ->> 'body' <> 'Ama suggested dates' THEN
     RAISE EXCEPTION 'EXPLOIT: poll push wrong: %', v_r;
   END IF;
 
@@ -132,6 +132,11 @@ BEGIN
   SELECT count(*) FILTER (WHERE user_id = v_a), count(*) FILTER (WHERE user_id = v_b) INTO v_n, v_i
   FROM public.scheduled_notifications WHERE source_key LIKE 'planning_countdown:' || v_cd || ':%';
   IF v_n <> 1 OR v_i <> 1 THEN RAISE EXCEPTION 'EXPLOIT: countdown pushes wrong later (Ama %, Kofi %)', v_n, v_i; END IF;
+  -- Spec 1b: a countdown push never carries the plan's title.
+  IF EXISTS (SELECT 1 FROM public.scheduled_notifications
+             WHERE source_key LIKE 'planning_countdown:' || v_cd || ':%' AND metadata::text LIKE '%Bali%') THEN
+    RAISE EXCEPTION 'EXPLOIT: countdown push carries the plan title';
+  END IF;
 
   -- Contract 7: numeric progress celebrates once in chat when a Goal reaches 100%.
   PERFORM public.add_planning_block(v_prog, v_goal, 'progress', '{"mode":"numeric","unit":"money"}', NULL, NULL, NULL);

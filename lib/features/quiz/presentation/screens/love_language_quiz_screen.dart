@@ -1,18 +1,30 @@
 // lib/features/quiz/presentation/screens/love_language_quiz_screen.dart
+//
+// Spec 5 (R5-5): "What feels loving to me right now". One screen, five
+// ratings and optional moments; it can be changed at any time, so there is
+// no quiz progress to resume.
 
-import 'dart:convert';
-
-import 'package:attune/features/quiz/data/love_language_questions.dart';
-import 'package:attune/features/quiz/domain/models/question_data.dart';
-import 'package:attune/features/quiz/domain/services/love_language_scoring_service.dart';
-import 'package:attune/features/quiz/presentation/widgets/question_screen.dart';
-import 'package:flutter/material.dart';
+import 'package:attune/core/utils/exports/export_screens.dart';
+import 'package:attune/features/quiz/domain/models/love_language_result.dart';
+import 'package:attune/features/quiz/presentation/providers/quiz_providers.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:go_router/go_router.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 
 class LoveLanguageQuizScreen extends ConsumerStatefulWidget {
-  const LoveLanguageQuizScreen({super.key});
+  const LoveLanguageQuizScreen({
+    super.key,
+    this.initial,
+    this.save,
+    this.onSaved,
+  });
+
+  /// The current answers, when changing them.
+  final LoveLanguageResult? initial;
+
+  /// Stores the answers; the default writes them for the signed-in person.
+  final Future<void> Function(LoveLanguageResult result)? save;
+
+  /// After a save; the default opens the result in place of this screen.
+  final void Function(LoveLanguageResult result)? onSaved;
 
   @override
   ConsumerState<LoveLanguageQuizScreen> createState() =>
@@ -21,263 +33,139 @@ class LoveLanguageQuizScreen extends ConsumerStatefulWidget {
 
 class _LoveLanguageQuizScreenState
     extends ConsumerState<LoveLanguageQuizScreen> {
-  late PageController _pageController;
-  Map<int, int?> _answers = {};
-  int _currentScreen = 0;
-  bool _isResuming = false;
+  late final Map<LovingWay, LovingRating> _ratings = {
+    ...?widget.initial?.ratings,
+  };
+  late final Set<LovingMoment> _moments = {...?widget.initial?.moments};
+  bool _saving = false;
 
-  final int _questionsPerScreen = 5;
-  late List<List<QuestionData>> _screens;
-
-  @override
-  void initState() {
-    super.initState();
-    _initializeQuestions();
-    _checkForSavedProgress();
-  }
-
-  @override
-  void dispose() {
-    _pageController.dispose();
-    super.dispose();
-  }
-
-  void _initializeQuestions() {
-    final allQuestions = LoveLanguageQuestions.getAllQuestions();
-    _screens = [];
-    for (var i = 0; i < allQuestions.length; i += _questionsPerScreen) {
-      _screens.add(
-        allQuestions.sublist(
-          i,
-          i + _questionsPerScreen > allQuestions.length
-              ? allQuestions.length
-              : i + _questionsPerScreen,
-        ),
-      );
-    }
-    _pageController = PageController();
-    _answers = {};
-  }
-
-  void _checkForSavedProgress() {
-    WidgetsBinding.instance.addPostFrameCallback((_) async {
-      final prefs = await SharedPreferences.getInstance();
-      final saved = prefs.getString('love_language_quiz_progress');
-      if (saved != null) {
-        try {
-          final data = jsonDecode(saved);
-          final savedAnswers = data['answers'] as Map<String, dynamic>;
-          final savedScreen = data['currentScreen'] as int;
-
-          // Restore answers
-          final restoredAnswers = <int, int?>{};
-          for (final entry in savedAnswers.entries) {
-            restoredAnswers[int.parse(entry.key)] = entry.value as int?;
-          }
-
-          // Check if any answers exist
-          if (restoredAnswers.values.any((v) => v != null)) {
-            _showResumeDialog(restoredAnswers, savedScreen);
-          }
-        } catch (_) {}
+  Future<void> _save() async {
+    final result = LoveLanguageResult(
+      ratings: Map.of(_ratings),
+      moments: Set.of(_moments),
+      updatedAt: DateTime.now().toUtc(),
+    );
+    setState(() => _saving = true);
+    try {
+      final save = widget.save;
+      if (save != null) {
+        await save(result);
+      } else {
+        await ref.read(saveLoveLanguageResultProvider(result).future);
+        ref.invalidate(userQuizzesStatusProvider);
       }
-    });
-  }
-
-  void _showResumeDialog(Map<int, int?> savedAnswers, int savedScreen) {
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder:
-          (context) => AlertDialog(
-            title: const Text('Continue where you left off?'),
-            content: const Text('You have a love language quiz in progress.'),
-            actions: [
-              TextButton(
-                onPressed: () {
-                  Navigator.pop(context);
-                  _startFresh();
-                },
-                child: const Text('Start over'),
-              ),
-              TextButton(
-                onPressed: () {
-                  Navigator.pop(context);
-                  _resumeQuiz(savedAnswers, savedScreen);
-                },
-                style: TextButton.styleFrom(
-                  foregroundColor: Theme.of(context).colorScheme.primary,
-                ),
-                child: const Text('Continue'),
-              ),
-            ],
-          ),
-    );
-  }
-
-  void _resumeQuiz(Map<int, int?> savedAnswers, int savedScreen) {
-    setState(() {
-      _answers = savedAnswers;
-      _currentScreen = savedScreen;
-      _isResuming = true;
-    });
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (_pageController.hasClients) {
-        _pageController.jumpToPage(savedScreen);
+      if (!mounted) return;
+      final onSaved = widget.onSaved;
+      if (onSaved != null) {
+        onSaved(result);
+      } else {
+        context.pushReplacementNamed('loveLanguageResult', extra: result);
       }
-      setState(() => _isResuming = false);
-    });
-  }
-
-  void _startFresh() async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.remove('love_language_quiz_progress');
-    setState(() {
-      _answers = {};
-      _currentScreen = 0;
-    });
-    _pageController.jumpToPage(0);
-  }
-
-  void _saveProgress() async {
-    if (_answers.isEmpty) return;
-    final prefs = await SharedPreferences.getInstance();
-    final data = {
-      'answers': _answers.map((k, v) => MapEntry(k.toString(), v)),
-      'currentScreen': _currentScreen,
-    };
-    await prefs.setString('love_language_quiz_progress', jsonEncode(data));
-  }
-
-  void _onAnswerChanged(int globalIndex, int value) {
-    setState(() {
-      _answers[globalIndex] = value;
-    });
-    _saveProgress();
-  }
-
-  void _nextScreen() {
-    if (_currentScreen < _screens.length - 1) {
-      _pageController.nextPage(
-        duration: const Duration(milliseconds: 250),
-        curve: Curves.easeInOut,
-      );
-      setState(() {
-        _currentScreen++;
-      });
-      _saveProgress();
-    } else if (_currentScreen == _screens.length - 1) {
-      _submitQuiz();
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text("Couldn't save. Try again.")),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _saving = false);
     }
-  }
-
-  void _previousScreen() {
-    if (_currentScreen > 0) {
-      _pageController.previousPage(
-        duration: const Duration(milliseconds: 250),
-        curve: Curves.easeInOut,
-      );
-      setState(() {
-        _currentScreen--;
-      });
-      _saveProgress();
-    } else {
-      _showExitConfirmation();
-    }
-  }
-
-  void _showExitConfirmation() {
-    showDialog(
-      context: context,
-      builder:
-          (context) => AlertDialog(
-            title: const Text('Exit quiz?'),
-            content: const Text(
-              'Your progress will be saved. You can continue later.',
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(context),
-                child: const Text('Cancel'),
-              ),
-              TextButton(
-                onPressed: () {
-                  _saveProgress();
-                  Navigator.pop(context);
-                  Navigator.pop(context);
-                },
-                child: const Text('Exit'),
-              ),
-            ],
-          ),
-    );
-  }
-
-  Future<void> _submitQuiz() async {
-    final totalQuestions = _screens.length * _questionsPerScreen;
-    if (_answers.length != totalQuestions) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Please answer all questions before submitting.'),
-        ),
-      );
-      return;
-    }
-
-    // Clear saved progress
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.remove('love_language_quiz_progress');
-
-    if (!mounted) return;
-
-    // Calculate result
-    final result = LoveLanguageScoringService.calculateScore(_answers);
-
-    // Navigate to loading screen
-    context.pushNamed(
-      'loveLanguageLoading',
-      extra: (
-        result: result,
-        answers: Map<int, int?>.from(_answers),
-        onComplete: () {
-          context.pushReplacementNamed('loveLanguageResult', extra: result);
-        },
-      ),
-    );
   }
 
   @override
   Widget build(BuildContext context) {
-    if (_screens.isEmpty) {
-      return const Scaffold(body: Center(child: CircularProgressIndicator()));
-    }
+    final colorScheme = Theme.of(context).colorScheme;
+    final textTheme = Theme.of(context).textTheme;
 
-    if (_isResuming) {
-      return const Scaffold(body: Center(child: CircularProgressIndicator()));
-    }
-
-    return PageView.builder(
-      controller: _pageController,
-      physics: const NeverScrollableScrollPhysics(),
-      itemCount: _screens.length,
-      onPageChanged: (index) {
-        setState(() => _currentScreen = index);
-      },
-      itemBuilder: (context, index) {
-        final questions = _screens[index];
-        return QuestionScreen(
-          title: 'Love languages',
-          screenIndex: index,
-          totalScreens: _screens.length,
-          questions: questions,
-          answers: _answers,
-          onAnswerChanged: _onAnswerChanged,
-          onNext: _nextScreen,
-          onPrevious: _previousScreen,
-          isFirstScreen: index == 0,
-          isLastScreen: index == _screens.length - 1,
-        );
-      },
+    return Scaffold(
+      appBar: AppBar(title: const Text('What feels loving')),
+      body: SafeArea(
+        child: ListView(
+          padding: EdgeInsets.all(Spacing.lg.w),
+          children: [
+            Text(
+              'What feels loving to you right now? Rate each one. You can '
+              'change it any time.',
+              style: textTheme.bodyLarge,
+            ),
+            Gap(Spacing.sm.h),
+            Text(
+              LoveLanguageResult.frameworkNote,
+              style: textTheme.bodySmall?.copyWith(
+                color: colorScheme.onSurfaceVariant,
+              ),
+            ),
+            Gap(Spacing.lg.h),
+            for (final way in LovingWay.values) ...[
+              Text(way.label, style: textTheme.titleMedium),
+              Gap(Spacing.sm.h),
+              SizedBox(
+                width: double.infinity,
+                child: SegmentedButton<LovingRating>(
+                  emptySelectionAllowed: true,
+                  showSelectedIcon: false,
+                  segments: [
+                    for (final rating in LovingRating.values)
+                      ButtonSegment(
+                        value: rating,
+                        label: Text(
+                          rating.label,
+                          key: ValueKey('loving-${way.key}-${rating.name}'),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                  ],
+                  selected:
+                      _ratings[way] == null
+                          ? const <LovingRating>{}
+                          : {_ratings[way]!},
+                  onSelectionChanged:
+                      (s) => setState(() {
+                        if (s.isEmpty) {
+                          _ratings.remove(way);
+                        } else {
+                          _ratings[way] = s.first;
+                        }
+                      }),
+                ),
+              ),
+              Gap(Spacing.lg.h),
+            ],
+            Text('Especially (optional)', style: textTheme.titleMedium),
+            Gap(Spacing.sm.h),
+            Wrap(
+              spacing: Spacing.sm.w,
+              runSpacing: Spacing.sm.h,
+              children: [
+                for (final m in LovingMoment.values)
+                  FilterChip(
+                    label: Text(m.label),
+                    selected: _moments.contains(m),
+                    onSelected:
+                        (on) => setState(
+                          () => on ? _moments.add(m) : _moments.remove(m),
+                        ),
+                  ),
+              ],
+            ),
+          ],
+        ),
+      ),
+      // Always in reach, whatever the text size.
+      bottomNavigationBar: SafeArea(
+        minimum: EdgeInsets.fromLTRB(
+          Spacing.lg.w,
+          Spacing.sm.h,
+          Spacing.lg.w,
+          Spacing.lg.h,
+        ),
+        child: AppButton(
+          label: 'Save',
+          onPressed: _saving || _ratings.isEmpty ? null : _save,
+          size: ButtonSize.medium,
+        ),
+      ),
     );
   }
 }

@@ -4,6 +4,8 @@
 -- psql -q -d attune_test -f supabase/tests/message_analysis_skipped_contracts.sql
 \set ON_ERROR_STOP on
 
+-- Sync audit M-14: one transaction, rolled back, so no fixture is left behind.
+BEGIN;
 DO $$
 DECLARE
   v_rel uuid := 'a5000000-0000-0000-0000-000000000001';
@@ -111,3 +113,4 @@ BEGIN
 
   RAISE NOTICE 'message_analysis_skipped contracts: all held';
 END $$;
+ROLLBACK;
