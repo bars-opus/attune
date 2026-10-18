@@ -32,7 +32,6 @@ export 'package:attune/core/utils/exports/export_screens.dart';
 export 'package:attune/core/widgets/app_tabs.dart';
 export 'package:attune/home/widgets/tabs_with_content.dart';
 export 'package:attune/app/documentations/user_manual/widgets/documentation_tab_view.dart';
-export 'package:attune/app/documentations/user_manual/data/manual_documentation_source.dart';
 export 'package:attune/home/widgets/semantic_container_widget.dart';
 export 'package:attune/app/documentations/user_manual/models/manual_content.dart';
 export 'package:attune/app/documentations/user_manual/models/manual_section.dart';

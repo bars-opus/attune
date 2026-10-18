@@ -63,17 +63,8 @@ class _PlanningCategoryScreenState
     group: 'closed',
   );
 
-  @override
-  void initState() {
-    super.initState();
-    // Fire-and-forget: a failed "seen" write only leaves the dot showing.
-    unawaited(
-      ref
-          .read(planningRepositoryProvider)
-          .markCategorySeen(_category.id)
-          .catchError((_) {}),
-    );
-  }
+  // No "seen" write here: the dots are per plan since 2026-10-18, and
+  // opening a plan (get_planning_entry) is what clears them.
 
   bool get _isNotes => _category.seedKey == 'notes';
 
@@ -583,8 +574,15 @@ class _EntryTile extends ConsumerWidget {
             titleMaxLines: 1,
             subTitleMaxLines: 1,
             showDivider: !last,
-            disableTrailing: true,
-            onTap: onTap,
+            // Only the "new from your partner" dot, never an arrow.
+            disableTrailing: !entry.hasNew,
+            trailing: entry.hasNew ? const PlanningNewDot() : null,
+            onTap: () {
+              if (entry.hasNew) {
+                ref.read(planningEntriesProvider(args).notifier).markSeen(entry.id);
+              }
+              onTap();
+            },
           ),
         ),
       ),
@@ -631,6 +629,7 @@ class _NewEntrySheetState extends State<_NewEntrySheet> {
         controller: _title,
         autofocus: true,
         label: 'Title',
+        hintText: 'Lisbon in May',
         labelColor: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6),
         errorText: _tried && _title.text.trim().isEmpty ? 'Give it a title' : null,
         textInputAction: TextInputAction.done,

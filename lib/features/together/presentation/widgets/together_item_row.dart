@@ -72,6 +72,7 @@ class TogetherItemRow extends StatelessWidget {
       case TogetherItemKind.planningDate:
         return Icons.checklist_rounded;
       case TogetherItemKind.planningItem:
+        if (_isBill) return Icons.payments_outlined;
         return item.sourceRef['is_complete'] == true
             ? Icons.check_box_outlined
             : Icons.check_box_outline_blank_rounded;
@@ -80,13 +81,16 @@ class TogetherItemRow extends StatelessWidget {
     }
   }
 
+  /// A dated line from a plan's Expenses block: a bill, paid or not.
+  bool get _isBill => item.sourceRef['block_type'] == 'expenses';
+
   String get _when {
     final s = item.startsAt;
     if (item.allDay || s == null) {
       return switch (item.kind) {
         TogetherItemKind.reminder => 'Reminder',
         TogetherItemKind.planningDate => 'Plan',
-        TogetherItemKind.planningItem => 'To-do',
+        TogetherItemKind.planningItem => _isBill ? 'Bill' : 'To-do',
         TogetherItemKind.moment => 'Moment',
         TogetherItemKind.event => 'All day',
       };

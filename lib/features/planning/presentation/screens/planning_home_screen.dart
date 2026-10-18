@@ -10,7 +10,7 @@ import 'package:attune/features/location/presentation/providers/presence_provide
 import 'package:attune/features/together/presentation/screens/together_screen.dart';
 import 'package:attune/home/widgets/tabs_with_content.dart';
 import 'package:flutter/material.dart';
-import 'package:attune/app/documentations/user_manual/data/reflection_journal_docs.dart';
+import 'package:attune/app/documentations/user_manual/data/couples_journal_docs.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:uuid/uuid.dart';
 import '../../data/planning_models.dart';
@@ -197,7 +197,8 @@ class _PlanningHomeScreenState extends ConsumerState<PlanningHomeScreen> {
     // bar of its own), and — behind couple_map_enabled — the couple map.
     final colorScheme = Theme.of(context).colorScheme;
     final textTheme = Theme.of(context).textTheme;
-    final docs = ReflectionJournalDocs();
+    // The journal's guide; Planning's own page is under its Related tab.
+    final docs = CouplesJournalDocs();
     final mapEnabled = ref.watch(coupleMapEnabledProvider).valueOrNull ?? false;
 
     return Scaffold(
@@ -219,7 +220,7 @@ class _PlanningHomeScreenState extends ConsumerState<PlanningHomeScreen> {
         actions: [
           AppIconButton(
             icon: Icons.notes_rounded,
-            tooltip: 'Tags',
+            tooltip: 'About the couples journal',
             onPressed: () {
               BottomSheetUtils.showDocumentationBottomSheet(
                 context: context,
@@ -368,14 +369,26 @@ class _PlanningHomeScreenState extends ConsumerState<PlanningHomeScreen> {
                   onTap: _create,
                 ),
                 const Gap(Spacing.xl),
+                // What both partners should know about a shared journal.
                 SemanticContainerWidget(
+                  title: 'Shared by both of you',
                   content:
-                      'Unlike your personal refelction jounral, this journal is shared between both couples, either can add contents, modify, and delete. Both couples can see and modify this journal.',
-                  icon: Icons.info,
-                  title: '',
+                      'Everything here is shared: either of you can add, edit or delete any plan, and you both see every change. For thoughts just for you, use your Reflection Journal — only you can see it.',
+                  icon: Icons.people_outline,
                   backgroundColor: colorScheme.primary.withValues(alpha: 0.1),
                   borderColor: colorScheme.primary,
                   iconColor: colorScheme.primary,
+                  textTheme: Theme.of(context).textTheme,
+                ),
+                const Gap(Spacing.md),
+                SemanticContainerWidget(
+                  title: 'Done with a plan?',
+                  content:
+                      'Mark it done, or choose "Put away gently" in its menu to archive it quietly — no one is notified, its reminders stop, and Reopen brings it back.',
+                  icon: Icons.lightbulb_outline,
+                  backgroundColor: colorScheme.success.withValues(alpha: 0.1),
+                  borderColor: colorScheme.success,
+                  iconColor: colorScheme.success,
                   textTheme: Theme.of(context).textTheme,
                 ),
                 const Gap(Spacing.xl),

@@ -31,7 +31,41 @@ Future<void> _pump(WidgetTester t, Widget w) => t.pumpWidget(
   ),
 );
 
+TogetherItem _planningItem(Map<String, dynamic> ref) => TogetherItem(
+  kind: TogetherItemKind.planningItem,
+  id: 'i1',
+  date: DateTime(2026, 11, 2),
+  startsAt: null,
+  endsAt: null,
+  allDay: true,
+  title: 'Rent',
+  participantIds: const ['ama', 'kofi'],
+  createdBy: null,
+  visibility: TogetherVisibility.shared,
+  sourceRef: ref,
+);
+
 void main() {
+  // A bill from an Expenses block is a payment, not a to-do.
+  testWidgets('a bill reads Bill with a payment icon; a to-do stays a To-do', (t) async {
+    await _pump(t, TogetherItemRow(item: _planningItem({'entry_id': 'e1', 'is_complete': false, 'block_type': 'expenses'}),
+        me: 'ama', partnerName: 'Kofi', onTap: () {}));
+    expect(find.textContaining('Bill'), findsOneWidget);
+    expect(find.textContaining('To-do'), findsNothing);
+    expect(find.byIcon(Icons.payments_outlined), findsOneWidget);
+
+    await _pump(t, TogetherItemRow(item: _planningItem({'entry_id': 'e1', 'is_complete': false, 'block_type': 'checklist'}),
+        me: 'ama', partnerName: 'Kofi', onTap: () {}));
+    expect(find.textContaining('To-do'), findsOneWidget);
+    expect(find.byIcon(Icons.payments_outlined), findsNothing);
+  });
+
+  testWidgets('a paid bill is struck through, like a done to-do', (t) async {
+    await _pump(t, TogetherItemRow(item: _planningItem({'entry_id': 'e1', 'is_complete': true, 'block_type': 'expenses'}),
+        me: 'ama', partnerName: 'Kofi', onTap: () {}));
+    expect(t.widget<Text>(find.text('Rent')).style?.decoration, TextDecoration.lineThrough);
+  });
+
   testWidgets('shows time and who, from my side', (t) async {
     var tapped = false;
     await _pump(

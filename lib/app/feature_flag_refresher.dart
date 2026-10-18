@@ -1,3 +1,4 @@
+import 'package:attune/app/documentations/user_manual/data/documentation_flags.dart';
 import 'package:attune/features/appreciation/data/appreciation_service.dart';
 import 'package:attune/features/auth/providers/auth_provider.dart';
 import 'package:attune/features/conflict_toolkit/data/pause_service.dart';
@@ -21,6 +22,7 @@ final List<ProviderOrFamily> refreshedFlagProviders = [
   quietStatesEnabledProvider,
   safetySelfCheckEnabledProvider,
   conflictToolkitEnabledProvider,
+  documentationFlagsProvider,
 ];
 
 class FeatureFlagRefresher extends ConsumerStatefulWidget {

@@ -131,6 +131,14 @@ class PulseDocs implements DocumentationModule {
           type: ManualContentType.text,
         ),
         ManualContent(
+          id: 'checkin_reminder',
+          title: 'A Sunday reminder',
+          content:
+              'If you haven\'t checked in that week, Attune sends one gentle reminder on Sunday evening, around 6pm your time: "A minute to look back on your week." It names nobody, and it stops while your space is paused or has ended.',
+          numberPrefix: '2',
+          type: ManualContentType.text,
+        ),
+        ManualContent(
           id: 'checkin_optional',
           title: '',
           content:

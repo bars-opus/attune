@@ -134,7 +134,7 @@ void main() {
     final scheme = Theme.of(tester.element(find.text('Hotel').first)).colorScheme;
     InfoRowWidget row(String title) =>
         tester.widgetList<InfoRowWidget>(find.byType(InfoRowWidget)).where((r) => r.title == title).single;
-    Color? amount(String title) => (row(title).trailing! as Text).style?.color;
+    Color? amount(String title) => infoRowTrailingText(tester, title)?.style?.color;
     expect(amount('Paid'), scheme.primary);
     expect(amount('Left to pay'), scheme.error);
     expect(amount('Total'), Theme.of(tester.element(find.text('Hotel').first)).textTheme.bodyLarge?.color,

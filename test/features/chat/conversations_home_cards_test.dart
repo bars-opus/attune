@@ -71,12 +71,28 @@ TogetherItem _item(String id, String title, DateTime day, {TogetherItemKind kind
       participantIds: const ['ama', 'kofi'],
     );
 
+PlanningCategory _category({bool hasNew = false, bool hidden = false}) =>
+    PlanningCategory(
+      id: 'c-$hasNew-$hidden',
+      seedKey: null,
+      name: 'Trips',
+      icon: 'flight',
+      color: 'blue',
+      sortKey: 'a',
+      hidden: hidden,
+      templateEntryId: null,
+      entryCount: 1,
+      hasNew: hasNew,
+    );
+
 Future<void> _pump(
   WidgetTester t,
   Widget child, {
   String? relationshipId = 'rel-1',
   List<JournalEntry> journal = const [],
   PlanningRecentPage? recent,
+  List<PlanningCategory> home = const [],
+  void Function()? onHomeRead,
   List<TogetherItem> together = const [],
 }) async {
   await t.pumpWidget(
@@ -87,6 +103,10 @@ Future<void> _pump(
         planningRecentProvider.overrideWith(
           (ref, id) async => recent ?? _recent(const [], DateTime.now()),
         ),
+        planningHomeProvider.overrideWith((ref, id) async {
+          onHomeRead?.call();
+          return home;
+        }),
         coupleNameProvider.overrideWith((ref, id) async => 'The Harolds'),
         togetherRangeProvider.overrideWith((ref, a) async => together),
         togetherMeProvider.overrideWithValue('ama'),
@@ -123,6 +143,48 @@ void main() {
       await _pump(t, const JournalsCard(), journal: [_entry]);
       expect(find.text('Start planning together'), findsOneWidget);
       expect(find.text("The Harolds' journal"), findsOneWidget);
+    });
+
+    // The same dot as Planning's category rows: something new from the
+    // partner in a plan this person hasn't opened since.
+    testWidgets('new from the partner: the couples journal row carries the dot', (t) async {
+      final now = DateTime.now();
+      await _pump(t, const JournalsCard(),
+          journal: [_entry], recent: _recent(['Lisbon'], now), home: [_category(), _category(hasNew: true)]);
+      expect(
+        find.descendant(of: find.widgetWithText(InfoRowWidget, 'Lisbon'), matching: find.byType(PlanningNewDot)),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(of: find.widgetWithText(InfoRowWidget, 'Lisbon'), matching: find.byIcon(Icons.chevron_right)),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('nothing new: no dot, just the arrow', (t) async {
+      final now = DateTime.now();
+      await _pump(t, const JournalsCard(), journal: [_entry], recent: _recent(['Lisbon'], now), home: [_category()]);
+      expect(find.byType(PlanningNewDot), findsNothing);
+      expect(
+        find.descendant(of: find.widgetWithText(InfoRowWidget, 'Lisbon'), matching: find.byIcon(Icons.chevron_right)),
+        findsOneWidget,
+      );
+    });
+
+    // The home RPC seeds the starter categories; with no plan yet, nothing
+    // can be new, so Conversations leaves that to Planning's first visit.
+    testWidgets('no plans yet: Planning\'s categories are not asked for', (t) async {
+      var reads = 0;
+      await _pump(t, const JournalsCard(), journal: [_entry], onHomeRead: () => reads++);
+      expect(find.text('Start planning together'), findsOneWidget);
+      expect(reads, 0);
+    });
+
+    testWidgets('a hidden category never lights the dot', (t) async {
+      final now = DateTime.now();
+      await _pump(t, const JournalsCard(),
+          journal: [_entry], recent: _recent(['Lisbon'], now), home: [_category(hasNew: true, hidden: true)]);
+      expect(find.byType(PlanningNewDot), findsNothing);
     });
 
     testWidgets('without a couple, just the reflection journal', (t) async {

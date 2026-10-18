@@ -1,7 +1,5 @@
-// lib/features/documentation/data/models/documentation_content.dart
-import 'package:flutter/material.dart';
-
-// models/manual_content.dart
+/// One block of a manual section. Blocks render in list order; `order` is
+/// metadata only. Text and bullet blocks accept `**bold**`.
 class ManualContent {
   final String id;
   final String title;
@@ -13,10 +11,10 @@ class ManualContent {
   final String? codeSnippet;
   final String? imageUrl;
   final int order;
-  // final Color? iconColor;
-  final Color? titleColor;
-  final Color? backgroundColor;
-  final Color? numberColor; // NEW: Color for number prefix
+
+  /// For [ManualContentType.link]: the related topic it opens. [content] is
+  /// the one line under the topic's title saying why to read it.
+  final String? linkedModuleId;
 
   const ManualContent({
     required this.id,
@@ -29,10 +27,7 @@ class ManualContent {
     this.codeSnippet,
     this.imageUrl,
     this.order = 0,
-    // this.iconColor,
-    this.titleColor,
-    this.backgroundColor,
-    this.numberColor, // NEW
+    this.linkedModuleId,
   });
 }
 
@@ -45,4 +40,5 @@ enum ManualContentType {
   warning, // Warning boxes
   tip, // Pro tip boxes
   important, // Important notice boxes
+  link, // Opens a related topic in place (shown only while it is listed)
 }

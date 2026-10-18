@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:attune/app/documentations/user_manual/data/games_docs.dart';
@@ -12,10 +13,12 @@ void main() {
   });
 
   Widget buildTestable(module) {
-    return ScreenUtilInit(
-      designSize: const Size(375, 812),
-      builder: (_, __) => MaterialApp(
-        home: Scaffold(body: DocumentationTabView(module: module)),
+    return ProviderScope(
+      child: ScreenUtilInit(
+        designSize: const Size(375, 812),
+        builder: (_, __) => MaterialApp(
+          home: Scaffold(body: DocumentationTabView(module: module)),
+        ),
       ),
     );
   }

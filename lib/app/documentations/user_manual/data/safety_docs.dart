@@ -160,6 +160,13 @@ class SafetyDocs implements DocumentationModule {
           type: ManualContentType.text,
         ),
         ManualContent(
+          id: 'safety_quick_exit_clears',
+          title: '',
+          content:
+              'Quick exit also empties Attune\'s home-screen and lock-screen cards and clears the map\'s saved images and your home area from this phone.',
+          type: ManualContentType.tip,
+        ),
+        ManualContent(
           id: 'safety_app_switcher',
           title: 'App switcher privacy',
           content:

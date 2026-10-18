@@ -8,12 +8,20 @@ class ManualWidget extends StatelessWidget {
   final double lineWidth;
   final double contentIndent;
 
+  /// Topics a [ManualContentType.link] may open, by id: the related topics
+  /// that are listed right now. A link to anything else is left out, so
+  /// nobody is sent to a feature that is switched off.
+  final Map<String, DocumentationModule> linkTargets;
+  final ValueChanged<DocumentationModule>? onOpenLink;
+
   const ManualWidget({
     super.key,
     required this.sections,
     this.showSectionDividers = true,
     this.useAppColors = true,
     this.lineWidth = 2.0,
+    this.linkTargets = const {},
+    this.onOpenLink,
 
     this.contentIndent = 32.0, // How much to indent content from line
   });
@@ -26,23 +34,31 @@ class ManualWidget extends StatelessWidget {
             : AppColors(Theme.of(context).brightness == Brightness.dark);
 
     final textTheme = Theme.of(context).textTheme;
-    final effectiveLineColor = appColors.divider.withOpacity(0.3);
+    final effectiveLineColor = appColors.divider.withValues(alpha: 0.3);
+    final shown = [
+      for (final s in sections)
+        if (s.contents.any(_isShown)) s,
+    ];
 
     return ListView.builder(
-      itemCount: sections.length,
+      itemCount: shown.length,
       itemBuilder: (context, sectionIndex) {
-        final section = sections[sectionIndex];
+        final section = shown[sectionIndex];
         return _buildSection(
           context,
           section,
           appColors,
           textTheme,
           effectiveLineColor,
-          isLast: sectionIndex == sections.length - 1,
+          isLast: sectionIndex == shown.length - 1,
         );
       },
     );
   }
+
+  bool _isShown(ManualContent c) =>
+      c.type != ManualContentType.link ||
+      linkTargets.containsKey(c.linkedModuleId);
 
   Widget _buildSection(
     BuildContext context,
@@ -52,6 +68,7 @@ class ManualWidget extends StatelessWidget {
     Color lineColor, {
     required bool isLast,
   }) {
+    final contents = section.contents.where(_isShown).toList();
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -112,16 +129,16 @@ class ManualWidget extends StatelessWidget {
             // Content Items
             Column(
               children:
-                  section.contents.asMap().entries.map((entry) {
+                  contents.asMap().entries.map((entry) {
                     final index = entry.key;
                     final content = entry.value;
-                    final isLastContent = index == section.contents.length - 1;
+                    final isLastContent = index == contents.length - 1;
 
                     return _buildTimelineContentItem(
                       context,
                       content,
                       index,
-                      section.contents.length,
+                      contents.length,
                       appColors,
                       textTheme,
                       lineColor,
@@ -191,10 +208,10 @@ class ManualWidget extends StatelessWidget {
                     width: 28.r,
                     height: 28.r,
                     decoration: BoxDecoration(
-                      color: appColors.primary.withOpacity(0.1),
+                      color: appColors.primary.withValues(alpha: 0.1),
                       borderRadius: BorderRadius.circular(14.r),
                       border: Border.all(
-                        color: appColors.primary.withOpacity(0.3),
+                        color: appColors.primary.withValues(alpha: 0.3),
                         width: 2.0,
                       ),
                     ),
@@ -202,7 +219,7 @@ class ManualWidget extends StatelessWidget {
                       child: Text(
                         content.numberPrefix!,
                         style: textTheme.labelLarge?.copyWith(
-                          color: content.numberColor ?? appColors.primary,
+                          color: appColors.primary,
                           fontWeight: FontWeight.w700,
                           fontSize: 12.sp,
                         ),
@@ -258,9 +275,9 @@ class ManualWidget extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         if (content.content.isNotEmpty) ...[
-          Text(
+          manualRichText(
             content.content,
-            style: textTheme.bodyMedium?.copyWith(
+            textTheme.bodyMedium?.copyWith(
               color: appColors.textPrimary,
               height: 1.6,
             ),
@@ -289,9 +306,9 @@ class ManualWidget extends StatelessWidget {
                     ),
                   ),
                   Expanded(
-                    child: Text(
+                    child: manualRichText(
                       point,
-                      style: textTheme.bodyMedium?.copyWith(
+                      textTheme.bodyMedium?.copyWith(
                         color: appColors.textPrimary,
                         height: 1.6,
                       ),
@@ -320,7 +337,7 @@ class ManualWidget extends StatelessWidget {
           content: content.content,
           icon: Icons.warning_amber,
           title: 'Warning',
-          backgroundColor: appColors.warning.withOpacity(0.1),
+          backgroundColor: appColors.warning.withValues(alpha: 0.1),
           borderColor: appColors.warning,
           iconColor: appColors.warning,
           textTheme: textTheme,
@@ -330,7 +347,7 @@ class ManualWidget extends StatelessWidget {
           content: content.content,
           icon: Icons.lightbulb_outline,
           title: 'Pro Tip',
-          backgroundColor: appColors.success.withOpacity(0.1),
+          backgroundColor: appColors.success.withValues(alpha: 0.1),
           borderColor: appColors.success,
           iconColor: appColors.success,
           textTheme: textTheme,
@@ -340,7 +357,7 @@ class ManualWidget extends StatelessWidget {
           content: content.content,
           icon: Icons.error_outline,
           title: 'Important',
-          backgroundColor: appColors.error.withOpacity(0.1),
+          backgroundColor: appColors.error.withValues(alpha: 0.1),
           borderColor: appColors.error,
           iconColor: appColors.error,
           textTheme: textTheme,
@@ -349,10 +366,20 @@ class ManualWidget extends StatelessWidget {
         return _buildCodeSnippet(content, appColors, textTheme);
       case ManualContentType.image:
         return _buildImage(content, appColors, textTheme);
+      case ManualContentType.link:
+        final target = linkTargets[content.linkedModuleId]!;
+        return InfoRowWidget(
+          title: target.getTitle(context),
+          subtitle: content.content,
+          icon: target.icon,
+          showDivider: false,
+          showTrailingArrow: true,
+          onTap: () => onOpenLink?.call(target),
+        );
       default: // text
-        return Text(
+        return manualRichText(
           content.content,
-          style: textTheme.bodyMedium?.copyWith(color: appColors.textPrimary),
+          textTheme.bodyMedium?.copyWith(color: appColors.textPrimary),
         );
     }
   }
@@ -426,4 +453,24 @@ class ManualWidget extends StatelessWidget {
       ],
     );
   }
+}
+
+/// Doc text with `**bold**` spans: the asterisks are markup, never shown.
+/// Anything unmatched (a lone `**`) stays as written.
+Widget manualRichText(String text, TextStyle? style) {
+  final bold = RegExp(r'\*\*(.+?)\*\*');
+  final spans = <TextSpan>[];
+  var last = 0;
+  for (final m in bold.allMatches(text)) {
+    if (m.start > last) spans.add(TextSpan(text: text.substring(last, m.start)));
+    spans.add(
+      TextSpan(
+        text: m.group(1),
+        style: const TextStyle(fontWeight: FontWeight.w700),
+      ),
+    );
+    last = m.end;
+  }
+  if (last < text.length) spans.add(TextSpan(text: text.substring(last)));
+  return Text.rich(TextSpan(style: style, children: spans));
 }

@@ -41,7 +41,7 @@ class PlanningRepository {
     'settle_planning_split', 'add_planning_photo', 'remove_planning_photo',
     'vote_planning_poll', 'lock_planning_poll', 'set_planning_timezone', 'list_planning_gallery',
     'create_planning_category_from_gallery', 'planning_timezone_offset_minutes',
-    'list_planning_recent',
+    'list_planning_recent', 'put_planning_entry_away',
   };
 
   Future<Map<String, dynamic>> _call(String fn, Map<String, dynamic> params) async {
@@ -193,6 +193,12 @@ class PlanningRepository {
   }
 
   Future<void> deleteEntry(String id) => _call('delete_planning_entry', {'p_id': id});
+
+  /// Spec 7 (research 06 B9 (c)): archives a plan without a sound — no
+  /// activity bump, its pending countdowns cancelled, out of Recent and the
+  /// shared calendar. Reopen brings it back.
+  Future<void> putEntryAway(String id) =>
+      _callValue('put_planning_entry_away', {'p_entry_id': id});
 
   /// Shared by both partners; at most 20 pinned plans per category.
   Future<PlanningEntry> pinEntry(String id, {required bool pinned}) async {

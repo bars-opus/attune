@@ -8,6 +8,7 @@ import 'package:attune/features/chat/presentation/providers/chat_experience_prov
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:attune/features/settings/data/streak_replay_preference.dart';
 import 'package:attune/features/location/presentation/providers/presence_providers.dart';
+import 'package:attune/features/relationships/presentation/widgets/end_relationship_action.dart';
 
 /// The three CardInkWell sections that used to sit in the (now deleted)
 /// ChatSettingsScreen below its avatar/name identity card, and that now
@@ -154,20 +155,23 @@ class ChatSettingsStaticRows extends ConsumerWidget {
                           },
                 ),
 
+                // The same confirmation and ending as Settings → End
+                // relationship (Spec 3a: no one is notified).
                 InfoRowWidget(
                   title: 'End relationship',
-                  subtitle: 'End this relationship if you have brocken up.',
+                  subtitle:
+                      'Your chat stays readable for 30 days, then closes',
                   icon: Icons.heart_broken_outlined,
                   iconColor: Colors.grey,
                   showAvatar: false,
                   showTrailingArrow: true,
                   showDivider: false,
                   onTap:
-                      conversation == null
+                      relationshipId == null
                           ? null
-                          : () => context.pushNamed(
-                            'starredMessages',
-                            extra: conversation,
+                          : () => EndRelationshipAction.confirmAndEnd(
+                            context,
+                            relationshipId: relationshipId,
                           ),
                 ),
               ],

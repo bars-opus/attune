@@ -2,6 +2,7 @@ import 'package:attune/core/widgets/app_text_form_field.dart';
 import 'package:attune/app/theme/design_tokens.dart';
 import 'package:gap/gap.dart';
 import 'package:attune/core/widgets/feedback/export_extensions.dart';
+import 'package:attune/core/widgets/info_row_widget.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -12,6 +13,8 @@ import '../../domain/code_point_limit.dart';
 import '../../domain/planning_money.dart';
 import '../planning_providers.dart';
 import '../planning_ui.dart';
+import 'planning_block_picker.dart';
+import 'planning_rolling_amount.dart';
 
 /// The couple's progress toward a goal: contributions toward a target
 /// (money or a count), or how much of a checklist is done.
@@ -28,7 +31,7 @@ class ProgressBlockView extends ConsumerWidget {
     final fields = await showDialog<Map<String, dynamic>>(
       context: context,
       builder: (_) => _AmountDialog(
-          title: 'Add to it', label: 'Amount', action: 'Add', withNote: true,
+          title: 'Add to it', label: 'Amount', action: 'Add', withNote: true, example: 50,
           currency: p.isMoney ? (p.currency ?? defaultCurrency) : null),
     );
     if (fields == null || !context.mounted) return;
@@ -43,7 +46,7 @@ class ProgressBlockView extends ConsumerWidget {
     final currency = p.isMoney ? (p.currency ?? defaultCurrency) : null;
     final fields = await showDialog<Map<String, dynamic>>(
       context: context,
-      builder: (_) => _AmountDialog(title: 'Set the target', label: 'Target', action: 'Save', currency: currency),
+      builder: (_) => _AmountDialog(title: 'Set the target', label: 'Target', action: 'Save', currency: currency, example: 1000),
     );
     if (fields == null || !context.mounted) return;
     try {
@@ -52,6 +55,37 @@ class ProgressBlockView extends ConsumerWidget {
       if (context.mounted) {
         context.showInfoSnackbar('Your partner just changed the target. Showing theirs.');
       }
+    } catch (e) {
+      if (context.mounted) showPlanningError(context, e);
+    }
+  }
+
+  /// Which checklist it tracks, from the app's sheet. The rest of the
+  /// payload (mode, title) is kept.
+  Future<void> _pickChecklist(BuildContext context, WidgetRef ref, List<PlanningBlock> lists) async {
+    final current = block.progress!.checklistBlockId;
+    final picked = await pickPlanningLink(
+      context,
+      title: 'Track',
+      current: current,
+      options: [
+        for (final l in lists)
+          PlanningLinkOption(
+            id: l.id,
+            title: l.title ?? 'Checklist',
+            subtitle: l.items.isEmpty ? 'No steps yet' : '${l.items.length} steps',
+            icon: Icons.checklist_rounded,
+          ),
+      ],
+    );
+    if (picked == null || picked == current || !context.mounted) return;
+    try {
+      await ref.read(planningEntryProvider(args).notifier).updateBlockPayload(block, {
+        ...block.payload,
+        'checklist_block_id': picked,
+      });
+    } on PlanningStaleVersion {
+      if (context.mounted) context.showInfoSnackbar('Your partner just changed the progress. Showing theirs.');
     } catch (e) {
       if (context.mounted) showPlanningError(context, e);
     }
@@ -76,6 +110,11 @@ class ProgressBlockView extends ConsumerWidget {
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
     final p = block.progress!;
+    final lists = [
+      for (final b in ref.watch(planningEntryProvider(args)).valueOrNull?.blocks ?? const <PlanningBlock>[])
+        if (b.type == PlanningBlockType.checklist) b,
+    ];
+    final tracked = lists.where((l) => l.id == p.checklistBlockId).firstOrNull;
     final summary = p.isChecklist
         ? (p.total == 0 ? 'Add steps to a checklist in this plan' : '${p.done} of ${p.total} done')
         : (p.target == null ? '${_amount(p, p.current)} so far' : '${_amount(p, p.current)} of ${_amount(p, p.target!)}');
@@ -97,7 +136,25 @@ class ProgressBlockView extends ConsumerWidget {
       ),
       const Gap(Spacing.xs),
       Row(children: [
-        Expanded(child: Text(summary)),
+        // The figure so far rolls up as the block shows; the rest of the line
+        // is its tail ("of GHS 1,000.00", "of 12 done").
+        Expanded(
+          child: Align(
+            alignment: Alignment.centerLeft,
+            child: p.isChecklist
+                ? (p.total == 0 ? Text(summary) : PlanningRollingCount(count: p.done, suffix: ' of ${p.total} done'))
+                : p.isMoney
+                    ? PlanningRollingMoney(
+                        minor: p.current,
+                        currency: p.currency ?? defaultCurrency,
+                        suffix: p.target == null ? ' so far' : ' of ${_amount(p, p.target!)}',
+                      )
+                    : PlanningRollingCount(
+                        count: p.current,
+                        suffix: p.target == null ? ' so far' : ' of ${_amount(p, p.target!)}',
+                      ),
+          ),
+        ),
         if (p.isComplete)
           Text('Reached 🎉', style: theme.textTheme.titleSmall?.copyWith(color: scheme.primary)),
       ]),
@@ -130,6 +187,23 @@ class ProgressBlockView extends ConsumerWidget {
               ]),
             ),
           ),
+      // What it tracks; with more than one checklist, tap to choose another.
+      if (p.isChecklist && tracked != null) ...[
+        const Gap(Spacing.sm),
+        InfoRowWidget(
+          icon: Icons.checklist_rounded,
+          showAvatar: false,
+          iconSize: 20,
+          iconColor: scheme.primary,
+          title: 'Tracks: ${tracked.title ?? 'Checklist'}',
+          subtitle: '',
+          padding: const EdgeInsets.symmetric(vertical: Spacing.xs),
+          showDivider: false,
+          showTrailingArrow: lists.length > 1,
+          disableTrailing: lists.length < 2,
+          onTap: lists.length > 1 ? () => _pickChecklist(context, ref, lists) : null,
+        ),
+      ],
       if (!p.isChecklist)
         Wrap(spacing: Spacing.sm, children: [
           TextButton.icon(
@@ -148,11 +222,15 @@ class _AmountDialog extends StatefulWidget {
     required this.action,
     required this.currency,
     this.withNote = false,
+    this.example = 0,
   });
   final String title;
   final String label;
   final String action;
   final String? currency; // null = a whole-number count
+
+  /// The figure the empty amount field suggests ("50.00", "1,000.00").
+  final int example;
   final bool withNote;
 
   @override
@@ -190,6 +268,9 @@ class _AmountDialogState extends State<_AmountDialog> {
           keyboardType: TextInputType.numberWithOptions(decimal: widget.currency != null),
           inputFormatters: [FilteringTextInputFormatter.allow(RegExp(widget.currency != null ? r'[0-9.,]' : r'[0-9]'))],
           label: widget.label,
+          hintText: widget.currency == null
+              ? '${widget.example}'
+              : planningMoneyHint(widget.currency!, widget.example),
           suffixText: widget.currency,
           onChanged: (_) => setState(() {}),
         ),
@@ -197,6 +278,7 @@ class _AmountDialogState extends State<_AmountDialog> {
           AppTextFormField(
             controller: _note,
             label: 'Note (optional)',
+            hintText: 'Birthday money',
             textInputAction: TextInputAction.done,
             inputFormatters: [CodePointLengthFormatter(120)],
           ),

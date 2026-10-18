@@ -1,3 +1,4 @@
+import 'package:attune/core/widgets/app_divider.dart';
 import 'package:attune/core/widgets/app_text_form_field.dart';
 import 'package:attune/app/theme/design_tokens.dart';
 import 'package:attune/core/widgets/feedback/export_extensions.dart';
@@ -217,14 +218,25 @@ class _ChecklistBlockViewState extends ConsumerState<ChecklistBlockView> {
     String? section;
     for (final item in open) {
       if (item.section != null && item.section != section) {
+        // Each section after the first is set apart by a divider and room.
+        final first = rows.isEmpty;
         rows.add(
-          Padding(
+          Column(
             key: ValueKey('section-${item.id}'), // keyed by its first item, for the list's motion
-            padding: const EdgeInsets.only(top: Spacing.sm, left: Spacing.xs),
-            child: Text(
-              item.section!,
-              style: Theme.of(context).textTheme.labelLarge,
-            ),
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              if (!first) ...[const Gap(Spacing.sm), const AppDivider()],
+              Padding(
+                padding: EdgeInsets.only(
+                  top: first ? Spacing.sm : Spacing.md,
+                  left: Spacing.xs,
+                ),
+                child: Text(
+                  item.section!,
+                  style: Theme.of(context).textTheme.labelLarge,
+                ),
+              ),
+            ],
           ),
         );
       }
@@ -359,6 +371,7 @@ class _ItemEditorState extends State<_ItemEditor> {
                     AppTextFormField(
                       controller: _text,
                       label: 'Item',
+                      hintText: 'Milk',
                       labelColor: labelColor,
                       errorText:
                           _tried && _text.text.trim().isEmpty
@@ -371,6 +384,7 @@ class _ItemEditorState extends State<_ItemEditor> {
                     AppTextFormField(
                       controller: _section,
                       label: 'Section (optional)',
+                      hintText: 'Produce, Dairy…',
                       labelColor: labelColor,
                       textInputAction: TextInputAction.done,
                       inputFormatters: [CodePointLengthFormatter(40)],

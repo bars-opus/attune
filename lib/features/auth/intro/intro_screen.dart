@@ -35,7 +35,8 @@ class _IntroScreenState extends ConsumerState<IntroScreen> {
     super.initState();
     _scrollController = ScrollController();
     DocumentationRegistry.initialize();
-    modules = DocumentationRegistry.getAllModules();
+    // Before sign-in no flag is known: only topics for always-on features.
+    modules = DocumentationRegistry.visibleModules(const {});
     // Schedule the scroll after the first frame
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (_scrollController.hasClients && modules.length > 1) {

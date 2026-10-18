@@ -174,4 +174,17 @@ void main() {
     expect(_toggle(t).toggleValue, isFalse);
     expect(s.calls, isEmpty);
   });
+
+  // The row ends the relationship through the same confirmation as
+  // Settings (it used to open Starred messages).
+  testWidgets('End relationship opens the end confirmation', (t) async {
+    t.view.physicalSize = const Size(1200, 4000);
+    t.view.devicePixelRatio = 1;
+    addTearDown(t.view.reset);
+    await _pump(t, _conversation());
+    expect(find.textContaining('brocken'), findsNothing);
+    await t.tap(find.text('End relationship'));
+    await t.pumpAndSettle();
+    expect(find.text('End your shared space?'), findsOneWidget);
+  });
 }

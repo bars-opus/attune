@@ -13,7 +13,7 @@ class PauseRelationshipAction {
     Future<void> Function()? clearSurfaces,
   }) {
     BottomSheetUtils.showDocumentationBottomSheet(
-      maxHeight: 400.h,
+      maxHeight: 460.h,
       context: context,
       widget: ConfirmationDialog(
         noIcon: true,
@@ -22,7 +22,11 @@ class PauseRelationshipAction {
         message:
             'Chat becomes read-only for both of you and nothing new is shared. '
             'Either of you can resume or end it within 30 days. '
-            'Any game in progress ends. '
+            // Paint Ball, Word Hunt and Snakes and Ladders are abandoned by
+            // their relationship-change triggers; every other game's writes
+            // are refused while paused and pick up again on resume.
+            'Paint Ball, Word Hunt and Snakes and Ladders end; other games '
+            'wait. '
             "Your partner won't get a notification.",
         confirmText: 'Pause',
         onConfirm: () async {

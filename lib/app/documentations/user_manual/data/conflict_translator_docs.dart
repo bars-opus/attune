@@ -83,11 +83,19 @@ class ConflictTranslatorDocs implements DocumentationModule {
           ],
         ),
         ManualContent(
+          id: 'ct_register',
+          title: 'Gentle or plain',
+          content:
+              'At the top of the sheet, choose "Gentle (NVC)" for a feelings-and-needs phrasing, or "Plain words" to keep your own way of speaking. Attune remembers your choice on this phone, and switching asks again.',
+          numberPrefix: '3',
+          type: ManualContentType.text,
+        ),
+        ManualContent(
           id: 'ct_low_confidence',
           title: 'When the rewrite isn\'t confident',
           content:
               'If the suggestion isn\'t especially confident, you\'ll see a note saying so — a reminder to trust your own instinct over the suggestion when it doesn\'t quite land.',
-          numberPrefix: '3',
+          numberPrefix: '4',
           type: ManualContentType.text,
         ),
       ],
@@ -107,6 +115,21 @@ class ConflictTranslatorDocs implements DocumentationModule {
               'Whichever message you end up sending — original, rewrite, or your own edit — it arrives as a completely ordinary message. There\'s no label, no indicator, no "polished with Attune" badge. Your partner has no way to tell the translator was ever involved.',
           numberPrefix: '1',
           type: ManualContentType.text,
+        ),
+        ManualContent(
+          id: 'ct_only_message',
+          title: 'Only your message is sent',
+          content:
+              'To suggest a rewrite, Attune sends only the message you\'re writing — not your profile, your quiz results or anything about your partner.',
+          numberPrefix: '2',
+          type: ManualContentType.text,
+        ),
+        ManualContent(
+          id: 'ct_support_instead',
+          title: '',
+          content:
+              'If what you wrote suggests you might be hurting or unsafe, you\'ll see support options instead of a rewrite. Your draft stays in your message box.',
+          type: ManualContentType.important,
         ),
         ManualContent(
           id: 'ct_no_record',
@@ -176,7 +199,7 @@ class ConflictTranslatorDocs implements DocumentationModule {
         id: 'faq_ct_limit',
         question: 'Is there a limit on how often I can use it?',
         answer:
-            'No — you can use "Help me say this" as often as you\'d like, whenever you\'re composing a message.',
+            'Yes — up to 30 rewrites a day. Switching between Gentle and Plain words counts as a new one. If you reach the limit, the sheet tells you and you can try again tomorrow; you can always send your own message.',
         category: 'Conflict Translator',
         order: 5,
       ),
@@ -184,7 +207,7 @@ class ConflictTranslatorDocs implements DocumentationModule {
         id: 'faq_ct_saved',
         question: 'Is my draft or the rewrite saved anywhere?',
         answer:
-            'No — once you\'ve made your choice and sent (or dismissed) the sheet, the draft and suggested rewrite aren\'t kept as a stored record.',
+            'No — once you\'ve made your choice and sent (or dismissed) the sheet, the draft and suggested rewrite aren\'t kept as a stored record. Attune only notes, without any words, that the tool was used and which need it picked up.',
         category: 'Conflict Translator',
         order: 6,
       ),

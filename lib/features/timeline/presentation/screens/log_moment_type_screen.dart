@@ -29,7 +29,8 @@ class LogMomentTypeScreen extends StatelessWidget {
             //   style: textTheme.headlineSmall,
             // ),
             SemanticContainerWidget(
-              content: 'What kind of moment is this?',
+              content:
+                  'Moments you log show on your shared timeline, so your partner sees them too. A conflict can be kept just for you.',
               icon: Icons.auto_awesome_outlined,
               isSkeleton: true,
               title: 'Log a moment',

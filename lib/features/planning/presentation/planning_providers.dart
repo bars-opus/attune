@@ -398,6 +398,14 @@ class PlanningEntriesController
     }
   }
 
+  /// Opening a plan marks it seen on the server (get_planning_entry), so its
+  /// dot goes here at once rather than on the next refetch.
+  void markSeen(String entryId) {
+    List<PlanningEntrySummary> seen(List<PlanningEntrySummary> list) =>
+        [for (final e in list) e.id == entryId ? e.copyWith(hasNew: false) : e];
+    _update((cur) => cur.copyWith(pinned: seen(cur.pinned), entries: seen(cur.entries)));
+  }
+
   /// Undo for [delete]: the server restores the plan; the list refetches so
   /// it reappears in its true place (pinned or by activity).
   Future<void> restore(String entryId) async {
@@ -599,7 +607,7 @@ class PlanningEntryController extends AutoDisposeFamilyAsyncNotifier<PlanningEnt
       _set(before);
       rethrow;
     }
-    if (_isExpenses(blockId)) await _refreshComputedQuietly();
+    if (_feedsBudget(blockId)) await _refreshComputedQuietly();
     _refreshProgress();
   }
 
@@ -610,7 +618,7 @@ class PlanningEntryController extends AutoDisposeFamilyAsyncNotifier<PlanningEnt
       list.insert(index.clamp(0, list.length), restored);
       return list;
     }));
-    if (_isExpenses(blockId)) await _refreshComputedQuietly();
+    if (_feedsBudget(blockId)) await _refreshComputedQuietly();
   }
 
   // ---- blocks ----
@@ -639,7 +647,7 @@ class PlanningEntryController extends AutoDisposeFamilyAsyncNotifier<PlanningEnt
       id: _uuid.v4(),
       entryId: arg.entryId,
       type: type,
-      payload: payload ?? _defaultPayload(type),
+      payload: _linkToOnly(type, payload ?? _defaultPayload(type), blocks),
       afterId: after,
     );
     if (_alive && state.hasValue) {
@@ -650,6 +658,29 @@ class PlanningEntryController extends AutoDisposeFamilyAsyncNotifier<PlanningEnt
     }
     if (type == PlanningBlockType.link) _askForPreview(block.id);
     return block;
+  }
+
+  /// A new budget, countdown or checklist progress follows the plan's only
+  /// candidate (Expenses block or money table / dated Date block /
+  /// checklist), so adding another later never moves it. With several, or
+  /// none, it is left for the couple to choose (or the server's default).
+  static Map<String, dynamic> _linkToOnly(
+      PlanningBlockType type, Map<String, dynamic> payload, List<PlanningBlock> blocks) {
+    String? only(bool Function(PlanningBlock) fits) {
+      final c = [for (final b in blocks) if (fits(b)) b];
+      return c.length == 1 ? c.single.id : null;
+    }
+
+    final (key, id) = switch (type) {
+      PlanningBlockType.budget => ('source_block_id', only(isBudgetSource)),
+      PlanningBlockType.countdown =>
+        ('date_block_id', only((b) => b.type == PlanningBlockType.date && b.dateStart != null)),
+      PlanningBlockType.progress when payload['mode'] == 'checklist' =>
+        ('checklist_block_id', only((b) => b.type == PlanningBlockType.checklist)),
+      _ => ('', null),
+    };
+    if (id == null || payload.containsKey(key)) return payload;
+    return {...payload, key: id};
   }
 
   /// Inserting into the middle of a paragraph, as a word processor does:
@@ -680,6 +711,10 @@ class PlanningEntryController extends AutoDisposeFamilyAsyncNotifier<PlanningEnt
       final saved = await _repo.updateBlock(
           id: block.id, version: block.version, payload: payload, dateStart: block.dateStart, dateEnd: block.dateEnd);
       if (_alive && state.hasValue) _set(_withBlock(_current, saved));
+      // A table's columns decide what a budget following it counts.
+      if (block.type == PlanningBlockType.table && _alive && state.hasValue && _hasBudget) {
+        await _refreshComputedQuietly();
+      }
       // A new address needs a preview; so does one whose preview never came
       // (a site that failed before can work now).
       if (block.type == PlanningBlockType.link &&
@@ -735,8 +770,18 @@ class PlanningEntryController extends AutoDisposeFamilyAsyncNotifier<PlanningEnt
     } catch (_) {}
   }
 
-  bool _isExpenses(String blockId) =>
-      _current.blocks.any((b) => b.id == blockId && b.type == PlanningBlockType.expenses);
+  /// Expense lines (budgets and split balances) always; table cells only
+  /// when a budget could be counting them.
+  bool _feedsBudget(String blockId) => _current.blocks.any((b) =>
+      b.id == blockId &&
+      (b.type == PlanningBlockType.expenses || (b.type == PlanningBlockType.table && _hasBudget)));
+
+  bool get _hasBudget => _current.blocks.any((b) => b.type == PlanningBlockType.budget);
+
+  /// What a budget can count: Expenses blocks, and tables with a money column.
+  static bool isBudgetSource(PlanningBlock b) =>
+      b.type == PlanningBlockType.expenses ||
+      (b.type == PlanningBlockType.table && b.columns.any((c) => c.type == PlanningColumnType.money));
 
   /// Table rows, expense lines, poll options, contributions. Creates when
   /// [existing] is null. Pass the same [id] when retrying a create so the
@@ -755,7 +800,9 @@ class PlanningEntryController extends AutoDisposeFamilyAsyncNotifier<PlanningEnt
       _set(existing == null && !block.items.any((i) => i.id == saved.id)
           ? _withBlockItems(_current, blockId, (items) => [...items, saved])
           : _withItem(_current, blockId, saved));
-      if (block.type == PlanningBlockType.expenses || block.type == PlanningBlockType.progress) {
+      if (block.type == PlanningBlockType.expenses ||
+          block.type == PlanningBlockType.progress ||
+          (block.type == PlanningBlockType.table && _hasBudget)) {
         await _refreshComputedQuietly();
       }
       return saved;
@@ -836,6 +883,9 @@ class PlanningEntryController extends AutoDisposeFamilyAsyncNotifier<PlanningEnt
       _set(before);
       rethrow;
     }
+    // A budget following it falls back to all expenses.
+    final gone = before.blocks.where((b) => b.id == blockId).firstOrNull;
+    if (gone != null && isBudgetSource(gone) && _hasBudget) await _refreshComputedQuietly();
   }
 
   Future<void> restoreBlock(String blockId, {required int index}) async {
@@ -843,6 +893,7 @@ class PlanningEntryController extends AutoDisposeFamilyAsyncNotifier<PlanningEnt
     final list = [for (final b in _current.blocks) if (b.id != blockId) b];
     list.insert(index.clamp(0, list.length), restored);
     _set(_withBlocks(_current, list));
+    if (isBudgetSource(restored) && _hasBudget) await _refreshComputedQuietly();
   }
 
   /// [newIndex] is the block's index after the move.
@@ -898,6 +949,13 @@ class PlanningEntryController extends AutoDisposeFamilyAsyncNotifier<PlanningEnt
   Future<void> setStatus(String status) async {
     final e = await _repo.updateEntry(id: arg.entryId, title: _current.entry.title, status: status);
     _set(_current.copyWith(entry: e));
+  }
+
+  /// Puts the plan away gently, then reads it back (the server returns
+  /// nothing).
+  Future<void> putAway() async {
+    await _repo.putEntryAway(arg.entryId);
+    _set(await _repo.getEntry(arg.entryId));
   }
 }
 

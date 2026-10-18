@@ -2,7 +2,8 @@
 import 'package:flutter/material.dart';
 import 'package:attune/app/documentations/user_manual/models/manual_content.dart';
 
-// models/manual_section.dart
+/// A titled group of [ManualContent] blocks. Sections render in the order
+/// a module lists them; `order` and `category` are metadata only.
 class ManualSection {
   final String id;
   final String title;
@@ -11,8 +12,6 @@ class ManualSection {
   final List<ManualContent> contents;
   final int order;
   final String category;
-  final Color? iconColor; // Use token reference
-  final Color? titleColor; // Use token reference
 
   const ManualSection({
     required this.id,
@@ -22,8 +21,6 @@ class ManualSection {
     required this.contents,
     this.order = 0,
     this.category = 'General',
-    this.iconColor,
-    this.titleColor,
   });
 }
 

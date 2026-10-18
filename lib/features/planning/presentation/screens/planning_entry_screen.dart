@@ -32,7 +32,7 @@ import '../widgets/planning_doc_scope.dart';
 import '../widgets/planning_ribbon.dart';
 import '../../domain/delta_sanitizer.dart';
 
-enum _EntryMenu { done, reopen, next, splitOn, splitOff }
+enum _EntryMenu { done, reopen, putAway, next, splitOn, splitOff }
 
 enum _BlockMenu { edit, up, down, delete }
 
@@ -63,6 +63,32 @@ class PlanningEntryScreen extends ConsumerStatefulWidget {
 
 class _PlanningEntryScreenState extends ConsumerState<PlanningEntryScreen> {
   final _doc = PlanningDocController();
+
+  @override
+  void initState() {
+    super.initState();
+    // Loading the plan marked it seen on the server, so the dots that
+    // pointed here (Recent, and the category on Planning's home and on
+    // Conversations) refetch once — after this frame, never mid-build. The
+    // container, not ref: this screen may close before the plan loads.
+    final container = ProviderScope.containerOf(context, listen: false);
+    final rel = widget.relationshipId;
+    var refreshed = false;
+    ref.listenManual(
+      planningEntryProvider((relationshipId: rel, entryId: widget.entryId)),
+      (_, next) {
+        if (refreshed || !next.hasValue) return;
+        refreshed = true;
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          container
+            ..invalidate(planningHomeProvider(rel))
+            ..invalidate(planningRecentProvider(rel))
+            ..invalidate(planningRecentListProvider(rel));
+        });
+      },
+      fireImmediately: true,
+    );
+  }
 
   @override
   void dispose() {
@@ -145,6 +171,15 @@ class _EntryBody extends ConsumerWidget {
         await _guard(context, () => ctl.setStatus('done'));
       case _EntryMenu.reopen:
         await _guard(context, () => ctl.setStatus('active'));
+      case _EntryMenu.putAway:
+        await _guard(context, () async {
+          await ctl.putAway();
+          if (!context.mounted) return;
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text("Put away. It's in Done & archived.")),
+          );
+          await Navigator.of(context).maybePop();
+        });
       case _EntryMenu.splitOn:
         await _guard(context, () => ctl.setSplit(true));
       case _EntryMenu.splitOff:
@@ -367,6 +402,9 @@ class _EntryBody extends ConsumerWidget {
                         const PopupMenuItem(value: _EntryMenu.done, child: Text('Mark done')),
                       if (!d.entry.isTemplate && d.entry.status != 'active')
                         const PopupMenuItem(value: _EntryMenu.reopen, child: Text('Reopen')),
+                      // Spec 7 (B9 (c)): archived quietly, no notice to anyone.
+                      if (!d.entry.isTemplate && d.entry.status != 'archived')
+                        const PopupMenuItem(value: _EntryMenu.putAway, child: Text('Put away gently')),
                       if (!d.entry.isTemplate)
                         const PopupMenuItem(value: _EntryMenu.next, child: Text('Start next one')),
                       if (!d.entry.isTemplate && d.entry.split == null)

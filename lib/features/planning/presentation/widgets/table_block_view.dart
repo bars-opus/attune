@@ -6,9 +6,12 @@ import 'package:attune/app/theme/design_tokens.dart';
 import 'package:gap/gap.dart';
 import 'package:attune/core/widgets/feedback/export_extensions.dart';
 import 'package:attune/core/ui/motion/animated_keyed_column.dart';
+import 'package:attune/core/widgets/app_divider.dart';
+import 'package:attune/core/widgets/info_row_widget.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:intl/intl.dart';
 
 import '../../data/planning_error.dart';
@@ -17,6 +20,7 @@ import '../../domain/code_point_limit.dart';
 import '../../domain/planning_money.dart';
 import '../planning_providers.dart';
 import '../planning_ui.dart';
+import 'planning_rolling_amount.dart';
 
 const _maxColumns = 12;
 
@@ -44,8 +48,28 @@ Object? _typed(PlanningColumnType type, Object? v) => switch (type) {
   PlanningColumnType.date =>
     v is String && DateTime.tryParse(v) != null ? v : null,
   PlanningColumnType.check => v is bool ? v : null,
-  PlanningColumnType.text => v is String ? v : null,
+  PlanningColumnType.text || PlanningColumnType.person => v is String ? v : null,
 };
+
+/// The columns as edited, each keeping its hint while it keeps its type (a
+/// rename keeps it; a text hint means nothing on a money column). A new
+/// column has none.
+List<PlanningTableColumn> planningColumnsKeepingHints(
+  List<PlanningTableColumn> before,
+  List<PlanningTableColumn> after,
+) => [
+  for (final c in after)
+    PlanningTableColumn(
+      key: c.key,
+      label: c.label,
+      type: c.type,
+      hint:
+          before
+              .where((b) => b.key == c.key && b.type == c.type)
+              .firstOrNull
+              ?.hint,
+    ),
+];
 
 /// A small typed table: up to 12 columns, 50 rows. A row opens an editor
 /// with one field per column; money cells use the plan's currency.
@@ -90,6 +114,10 @@ class TableBlockView extends ConsumerWidget {
               columns: block.columns,
               cells: row?.cells ?? const {},
               currency: currency,
+              members:
+                  ref.read(planningEntryProvider(args)).valueOrNull?.members ??
+                  const [],
+              me: ref.read(planningCurrentUserIdProvider),
             ),
           ),
     );
@@ -132,7 +160,10 @@ class TableBlockView extends ConsumerWidget {
         block,
         {
           if (block.title != null) 'title': block.title,
-          'columns': [for (final c in columns) c.toJson()],
+          'columns': [
+            for (final c in planningColumnsKeepingHints(block.columns, columns))
+              c.toJson(),
+          ],
         },
       );
     } catch (e) {
@@ -161,7 +192,12 @@ class TableBlockView extends ConsumerWidget {
     );
   }
 
-  Widget _cell(BuildContext context, PlanningTableColumn col, Object? raw) {
+  Widget _cell(
+    BuildContext context,
+    PlanningTableColumn col,
+    Object? raw,
+    List<PlanningMember> members,
+  ) {
     final scheme = Theme.of(context).colorScheme;
     if (raw == null) return Text('–', style: TextStyle(color: scheme.outline));
     final v = _typed(col.type, raw);
@@ -190,6 +226,11 @@ class TableBlockView extends ConsumerWidget {
         maxLines: 2,
         overflow: TextOverflow.ellipsis,
       ),
+      PlanningColumnType.person => Text(
+        planningMemberName(members, v as String),
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+      ),
     };
   }
 
@@ -202,6 +243,8 @@ class TableBlockView extends ConsumerWidget {
     final columns = block.columns;
     final line = BorderSide(color: scheme.outlineVariant);
     final width = (maxWidth / columns.length).clamp(120.0, double.infinity);
+    final members =
+        ref.watch(planningEntryProvider(args)).valueOrNull?.members ?? const [];
 
     Widget cell(int i, EdgeInsets padding, Widget child) => Container(
       key: ValueKey('planning-table-cell-${columns[i].key}'),
@@ -299,7 +342,7 @@ class TableBlockView extends ConsumerWidget {
                                 vertical: Spacing.sm,
                                 horizontal: Spacing.sm,
                               ),
-                              _cell(context, c, row.cells[c.key]),
+                              _cell(context, c, row.cells[c.key], members),
                             ),
                         ]),
                       ),
@@ -307,16 +350,57 @@ class TableBlockView extends ConsumerWidget {
                   ),
               ],
             ),
+            // What each money column adds up to, in the plan's currency; an
+            // empty cell counts as nothing.
+            if (block.items.isNotEmpty &&
+                columns.any((c) => c.type == PlanningColumnType.money))
+              Container(
+                key: const ValueKey('planning-table-total'),
+                decoration: BoxDecoration(
+                  color: scheme.surfaceContainerHighest,
+                  border: Border(top: line),
+                ),
+                child: cells(48, [
+                  for (final (i, c) in columns.indexed)
+                    cell(
+                      i,
+                      const EdgeInsets.symmetric(
+                        vertical: Spacing.sm,
+                        horizontal: Spacing.sm,
+                      ),
+                      c.type == PlanningColumnType.money
+                          ? PlanningRollingMoney(
+                            minor: _total(c),
+                            currency: currency,
+                            style: theme.textTheme.labelLarge?.copyWith(
+                              fontWeight: FontWeight.w600,
+                            ),
+                          )
+                          : i == 0
+                          ? Text('Total', style: theme.textTheme.labelLarge)
+                          : const SizedBox.shrink(),
+                    ),
+                ]),
+              ),
           ],
         ),
       ),
     );
   }
 
+  int _total(PlanningTableColumn c) => block.items.fold(0, (sum, row) {
+    final v = _typed(PlanningColumnType.money, row.cells[c.key]);
+    return v is num ? sum + v.toInt() : sum;
+  });
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
     final columns = block.columns;
+    final moneyColumns = [
+      for (final c in columns)
+        if (c.type == PlanningColumnType.money) c,
+    ];
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -342,6 +426,24 @@ class TableBlockView extends ConsumerWidget {
                 (context, constraints) =>
                     _grid(context, ref, constraints.maxWidth),
           ),
+        // With two or more money columns, everything added up; with one, its
+        // Total row already says it.
+        if (block.items.isNotEmpty && moneyColumns.length > 1)
+          Padding(
+            key: const ValueKey('planning-table-grand-total'),
+            padding: const EdgeInsets.only(top: Spacing.sm, right: Spacing.xs),
+            child: Align(
+              alignment: Alignment.centerRight,
+              child: PlanningRollingMoney(
+                minor: moneyColumns.fold(0, (sum, c) => sum + _total(c)),
+                currency: currency,
+                prefix: 'Total of all: ',
+                style: theme.textTheme.titleSmall?.copyWith(
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+          ),
         if (block.items.length < 50)
           Align(
             alignment: Alignment.centerLeft,
@@ -363,11 +465,15 @@ class _RowEditor extends StatefulWidget {
     required this.columns,
     required this.cells,
     required this.currency,
+    required this.members,
+    required this.me,
   });
   final String title;
   final List<PlanningTableColumn> columns;
   final Map<String, dynamic> cells;
   final String currency;
+  final List<PlanningMember> members;
+  final String? me;
 
   @override
   State<_RowEditor> createState() => _RowEditorState();
@@ -407,6 +513,12 @@ class _RowEditorState extends State<_RowEditor> {
     super.dispose();
   }
 
+  /// Shown as a row rather than a text field.
+  static bool _isRow(PlanningTableColumn c) =>
+      c.type == PlanningColumnType.date ||
+      c.type == PlanningColumnType.check ||
+      c.type == PlanningColumnType.person;
+
   /// Null when a field doesn't parse for its column type.
   Map<String, dynamic>? _collect() {
     final out = <String, dynamic>{};
@@ -431,7 +543,9 @@ class _RowEditorState extends State<_RowEditor> {
             if (m == null) return null;
             out[c.key] = m;
           }
-        case PlanningColumnType.date || PlanningColumnType.check:
+        case PlanningColumnType.date ||
+            PlanningColumnType.check ||
+            PlanningColumnType.person:
           out[c.key] = _values[c.key];
       }
     }
@@ -484,11 +598,17 @@ class _RowEditorState extends State<_RowEditor> {
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   for (final (i, c) in widget.columns.indexed) ...[
-                    if (i > 0) const Gap(Spacing.sm),
+                    // A divider between rows (date, yes/no, person) that sit
+                    // next to each other; fields just get room.
+                    if (i > 0)
+                      _isRow(widget.columns[i - 1]) && _isRow(c)
+                          ? const AppDivider()
+                          : const Gap(Spacing.sm),
                     switch (c.type) {
                       PlanningColumnType.text => AppTextFormField(
                         controller: _text[c.key],
                         label: c.label,
+                        hintText: c.hint,
                         labelPadding: const EdgeInsets.only(left: Spacing.lg),
                         labelColor: Theme.of(
                           context,
@@ -510,6 +630,11 @@ class _RowEditorState extends State<_RowEditor> {
                           ),
                         ],
                         label: c.label,
+                        hintText:
+                            c.hint ??
+                            (c.type == PlanningColumnType.money
+                                ? planningMoneyHint(widget.currency)
+                                : '0'),
                         labelPadding: const EdgeInsets.only(left: Spacing.lg),
                         labelColor: Theme.of(
                           context,
@@ -532,17 +657,40 @@ class _RowEditorState extends State<_RowEditor> {
                         value: _values[c.key] == true,
                         onChanged: (v) => setState(() => _values[c.key] = v),
                       ),
-                      PlanningColumnType.date => ListTile(
-                        contentPadding: EdgeInsets.zero,
-                        title: Text(c.label),
-                        subtitle: Text(
-                          _values[c.key] == null
-                              ? 'No date'
-                              : DateFormat.yMMMd().format(
-                                DateTime.parse(_values[c.key] as String),
-                              ),
+                      // The checklist's and Expenses' date row: the Cupertino
+                      // wheel, and a clear once there's a date.
+                      PlanningColumnType.date => InfoRowWidget(
+                        icon: Icons.event_rounded,
+                        showAvatar: false,
+                        iconSize: 20.h,
+                        iconColor: Theme.of(context).colorScheme.primary,
+                        title: c.label,
+                        subtitle:
+                            _values[c.key] == null
+                                ? 'No date'
+                                : formatPlanningRange(
+                                  DateTime.parse(_values[c.key] as String),
+                                  null,
+                                ),
+                        // A chosen date stands out; "No date" stays quiet.
+                        subTitleFontColor:
+                            _values[c.key] == null
+                                ? null
+                                : Theme.of(context).colorScheme.primary,
+                        padding: const EdgeInsets.symmetric(
+                          vertical: Spacing.xs,
                         ),
-                        trailing: const Icon(Icons.event_rounded),
+                        showDivider: false,
+                        showTrailingArrow: _values[c.key] == null,
+                        trailing:
+                            _values[c.key] == null
+                                ? null
+                                : IconButton(
+                                  tooltip: 'Clear ${c.label}',
+                                  icon: const Icon(Icons.close_rounded),
+                                  onPressed:
+                                      () => setState(() => _values[c.key] = null),
+                                ),
                         onTap: () async {
                           final d = await pickPlanningDate(
                             context,
@@ -558,6 +706,48 @@ class _RowEditorState extends State<_RowEditor> {
                           if (mounted)
                             setState(() => _values[c.key] = planningYmd(d));
                         },
+                      ),
+                      // The same rounded choice as Expenses' "Paid by", full
+                      // width; tapping the chosen one again leaves it empty.
+                      PlanningColumnType.person => Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          Text(
+                            c.label,
+                            style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                              color: Theme.of(
+                                context,
+                              ).colorScheme.onSurface.withValues(alpha: 0.6),
+                            ),
+                          ),
+                          const Gap(Spacing.xs),
+                          SegmentedButton<String>(
+                            segments: [
+                              for (final m in widget.members)
+                                ButtonSegment(
+                                  value: m.id,
+                                  label: Text(
+                                    m.id == widget.me
+                                        ? 'Me'
+                                        : (m.displayName.isEmpty
+                                            ? 'Partner'
+                                            : m.displayName),
+                                  ),
+                                ),
+                            ],
+                            selected: {
+                              if (_values[c.key] is String)
+                                _values[c.key] as String,
+                            },
+                            emptySelectionAllowed: true,
+                            showSelectedIcon: false,
+                            onSelectionChanged:
+                                (s) => setState(
+                                  () => _values[c.key] = s.firstOrNull,
+                                ),
+                          ),
+                          const Gap(Spacing.md),
+                        ],
                       ),
                     },
                   ],
@@ -606,6 +796,7 @@ class _ColumnsEditorState extends State<_ColumnsEditor> {
     PlanningColumnType.money: 'Money',
     PlanningColumnType.date: 'Date',
     PlanningColumnType.check: 'Yes / no',
+    PlanningColumnType.person: 'Person',
   };
 
   /// Set once Done is tapped with a column unnamed, so its field says so.

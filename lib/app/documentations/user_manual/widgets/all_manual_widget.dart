@@ -1,8 +1,10 @@
 // lib/features/documentation/documentation_screen.dart
 // import 'package:attune/core/utils/exports/export_screens.dart';
 
+import 'package:attune/app/documentations/user_manual/data/documentation_flags.dart';
 import 'package:attune/app/documentations/user_manual/data/manual_documentation_registry.dart';
 import 'package:attune/core/utils/exports/export_screens.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 /// Full-page version — pushed as its own route (has its own Scaffold/AppBar).
 /// For embedding inside a bottom sheet (BottomSheetUtils.showDocumentationBottomSheet's
@@ -29,14 +31,16 @@ class DocumentationScreen extends StatelessWidget {
 
 /// The bare list of documentation modules, with no Scaffold/AppBar of its
 /// own — safe to embed directly inside a bottom sheet or any other host.
-class DocumentationList extends StatelessWidget {
+class DocumentationList extends ConsumerWidget {
   const DocumentationList({super.key});
 
   @override
-  Widget build(BuildContext context) {
-    
+  Widget build(BuildContext context, WidgetRef ref) {
     DocumentationRegistry.initialize();
-    final modules = DocumentationRegistry.getAllModules();
+    // Topics for switched-off features stay hidden.
+    final modules = DocumentationRegistry.visibleModules(
+      ref.watch(documentationFlagsProvider).valueOrNull ?? const {},
+    );
 
     return ListView(
       children: [
@@ -51,7 +55,7 @@ class DocumentationList extends StatelessWidget {
               // trailing: Icon(
               //   Icons.expand_more,
               //   size: IconSizes.md.h,
-              //   color: colorScheme.onBackground.withOpacity(0.3),
+              //   color: colorScheme.onBackground.withValues(alpha: 0.3),
               // ),
               avatarRadius: 25.h,
               onTap: () {

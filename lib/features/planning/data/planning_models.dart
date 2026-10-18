@@ -32,22 +32,28 @@ String planningBlockTypeToWire(PlanningBlockType type) => switch (type) {
     };
 
 /// A table column's value type; cells are validated per type by the server.
-enum PlanningColumnType { text, number, money, date, check }
+/// [person]: one of the couple, by member id.
+enum PlanningColumnType { text, number, money, date, check, person }
 
 class PlanningTableColumn {
-  const PlanningTableColumn({required this.key, required this.label, required this.type});
+  const PlanningTableColumn({required this.key, required this.label, required this.type, this.hint});
 
   final String key;
   final String label;
   final PlanningColumnType type;
 
+  /// A short example for the column's empty field ("Shop or website"), set
+  /// by templates; null for most columns.
+  final String? hint;
+
   factory PlanningTableColumn.fromJson(Map<String, dynamic> j) => PlanningTableColumn(
         key: j['key'] as String,
         label: (j['label'] as String?) ?? '',
         type: PlanningColumnType.values.firstWhere((t) => t.name == j['type'], orElse: () => PlanningColumnType.text),
+        hint: j['hint'] as String?,
       );
 
-  Map<String, dynamic> toJson() => {'key': key, 'label': label, 'type': type.name};
+  Map<String, dynamic> toJson() => {'key': key, 'label': label, 'type': type.name, if (hint != null) 'hint': hint};
 }
 
 /// Written only by the planning-link-preview function.
@@ -90,13 +96,26 @@ class PlanningPlace {
       };
 }
 
-/// What a Budget block has spent, computed by the server from the plan's
-/// expense lines: in the budget's currency, plus any other currencies.
+/// What a Budget counts: every Expenses line in the plan, one Expenses
+/// block, or a table's money columns.
+enum PlanningBudgetSource { all, expenses, table }
+
+/// What a Budget block has spent, computed by the server from what it
+/// counts: in the budget's currency, plus any other currencies. [source] and
+/// [sourceBlockId] are what it really counted (a deleted or foreign link
+/// counts as [PlanningBudgetSource.all]).
 class PlanningBudgetComputed {
-  const PlanningBudgetComputed({required this.spentMinor, required this.otherCurrencies});
+  const PlanningBudgetComputed({
+    required this.spentMinor,
+    required this.otherCurrencies,
+    this.source = PlanningBudgetSource.all,
+    this.sourceBlockId,
+  });
 
   final int spentMinor;
   final List<(String, int)> otherCurrencies;
+  final PlanningBudgetSource source;
+  final String? sourceBlockId;
 
   factory PlanningBudgetComputed.fromJson(Map<String, dynamic> j) => PlanningBudgetComputed(
         spentMinor: (j['spent_minor'] as num?)?.toInt() ?? 0,
@@ -104,6 +123,12 @@ class PlanningBudgetComputed {
           for (final o in (j['other_currencies'] as List? ?? const []))
             ((o as Map)['currency'] as String, (o['minor'] as num).toInt())
         ],
+        source: switch (j['source']) {
+          'expenses' => PlanningBudgetSource.expenses,
+          'table' => PlanningBudgetSource.table,
+          _ => PlanningBudgetSource.all,
+        },
+        sourceBlockId: j['source_block_id'] as String?,
       );
 }
 
@@ -135,9 +160,13 @@ class PlanningProgress {
     required this.done,
     required this.total,
     required this.currency,
+    this.checklistBlockId,
   });
 
   final String mode;
+
+  /// In checklist mode, the checklist it tracks (null while there is none).
+  final String? checklistBlockId;
   final String unit;
   final int current;
   final int? target;
@@ -446,6 +475,9 @@ class PlanningBlock {
   /// The date a Countdown counts to, or null when the plan has none.
   DateTime? get countdownTarget => _date(computed['target_date']);
 
+  /// The Date block a Countdown counts to, or null while there is none.
+  String? get countdownDateBlockId => computed['date_block_id'] as String?;
+
   PlanningProgress? get progress => type == PlanningBlockType.progress
       ? PlanningProgress(
           mode: (payload['mode'] as String?) ?? 'numeric',
@@ -455,6 +487,7 @@ class PlanningBlock {
           done: (computed['done'] as num?)?.toInt() ?? 0,
           total: (computed['total'] as num?)?.toInt() ?? 0,
           currency: targetCurrency,
+          checklistBlockId: computed['checklist_block_id'] as String?,
         )
       : null;
 
@@ -584,6 +617,7 @@ class PlanningEntrySummary {
     required this.checklistDone,
     required this.checklistTotal,
     this.pinned = false,
+    this.hasNew = false,
   });
 
   final String id;
@@ -596,9 +630,13 @@ class PlanningEntrySummary {
   final int checklistTotal;
   final bool pinned;
 
-  PlanningEntrySummary copyWith({required bool pinned}) => PlanningEntrySummary(
+  /// The partner changed it after this person last opened it.
+  final bool hasNew;
+
+  PlanningEntrySummary copyWith({bool? pinned, bool? hasNew}) => PlanningEntrySummary(
         id: id, title: title, status: status, lastActivityAt: lastActivityAt, dateStart: dateStart,
-        dateEnd: dateEnd, checklistDone: checklistDone, checklistTotal: checklistTotal, pinned: pinned,
+        dateEnd: dateEnd, checklistDone: checklistDone, checklistTotal: checklistTotal,
+        pinned: pinned ?? this.pinned, hasNew: hasNew ?? this.hasNew,
       );
 
   factory PlanningEntrySummary.fromJson(Map<String, dynamic> j) => PlanningEntrySummary(
@@ -611,6 +649,7 @@ class PlanningEntrySummary {
         checklistDone: (j['checklist_done'] as num).toInt(),
         checklistTotal: (j['checklist_total'] as num).toInt(),
         pinned: (j['pinned'] as bool?) ?? false,
+        hasNew: (j['has_new'] as bool?) ?? false,
       );
 }
 

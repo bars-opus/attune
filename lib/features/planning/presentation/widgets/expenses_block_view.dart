@@ -7,7 +7,6 @@ import 'package:gap/gap.dart';
 import 'package:attune/core/widgets/feedback/export_extensions.dart';
 import 'package:attune/core/ui/motion/animated_keyed_column.dart';
 import 'package:attune/core/widgets/app_divider.dart';
-import 'package:attune/core/widgets/charts/app_pie_chart.dart';
 import 'package:attune/core/widgets/info_row_widget.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
@@ -23,6 +22,7 @@ import '../../domain/code_point_limit.dart';
 import '../../domain/planning_money.dart';
 import '../planning_providers.dart';
 import '../planning_ui.dart';
+import 'planning_rolling_amount.dart';
 
 /// Currencies offered first in the expense editor; the plan's own currency
 /// is always included.
@@ -48,15 +48,6 @@ final planningExpenseViewProvider =
     StateProvider.family<PlanningExpenseView, String>(
       (ref, blockId) => const PlanningExpenseView(),
     );
-
-/// Minor units in one whole unit of [currency] (100 for GHS, 1 for JPY).
-int _wholeUnit(String currency) {
-  var n = 1;
-  for (var d = planningCurrencyDigits(currency); d > 0; d--) {
-    n *= 10;
-  }
-  return n;
-}
 
 class ExpensesBlockView extends ConsumerWidget {
   const ExpensesBlockView({
@@ -154,27 +145,15 @@ class ExpensesBlockView extends ConsumerWidget {
     final view = ref.watch(planningExpenseViewProvider(block.id));
     final rows = planningExpenseRows(block.items, view);
     final totals = planningExpenseTotals(rows);
-    // What's left of the plan's budget, for the chart's last slice.
-    final budget =
-        detail.blocks
-            .where(
-              (b) =>
-                  b.type == PlanningBlockType.budget && b.targetMinor != null,
-            )
-            .firstOrNull;
-    final chart = planningExpenseChart(
-      rows,
-      budgetLeft:
-          budget == null
-              ? null
-              : (
-                minor: budget.targetMinor! - (budget.budget?.spentMinor ?? 0),
-                currency: budget.targetCurrency ?? detail.entry.currency,
-              ),
-    );
     String money(int Function(({int total, int paid}) t) pick) => totals.entries
         .map((e) => formatPlanningMoney(pick(e.value), e.key))
         .join(' · ');
+    // One currency: the totals roll up when the block shows. Several are
+    // shown side by side, as plain text.
+    ({int minor, String currency})? roll(int Function(({int total, int paid}) t) pick) =>
+        totals.length == 1
+            ? (minor: pick(totals.values.single), currency: totals.keys.single)
+            : null;
     final anyPaid = totals.values.any((t) => t.paid > 0);
     final allPaid =
         totals.isNotEmpty && totals.values.every((t) => t.paid == t.total);
@@ -183,78 +162,6 @@ class ExpensesBlockView extends ConsumerWidget {
       children: [
         Text(block.title ?? 'Expenses', style: theme.textTheme.titleMedium),
         const Gap(Spacing.lg),
-        if (chart != null) ...[
-          // What the money went on at a glance, one solid colour per wedge:
-          // paid, not yet paid, and what's left of the budget. Follows the sort
-          // and filter.
-          Center(
-            child: LayoutBuilder(
-              builder:
-                  (context, c) => AppPieChart(
-                    size: c.maxWidth.clamp(0, 260).toDouble(),
-                    semanticLabel: 'Spending by expense in ${chart.currency}',
-                    slices: [
-                      for (final s in chart.slices)
-                        PieSlice(
-                          label: s.label,
-                          value: s.value,
-                          valueLabel: formatPlanningMoneyCompact(
-                            (s.value * _wholeUnit(chart.currency)).round(),
-                            chart.currency,
-                          ),
-                          color: switch (s.kind) {
-                            PlanningChartSlice.paid => scheme.primary,
-                            PlanningChartSlice.unpaid => scheme.primary
-                                .withValues(alpha: 0.18),
-                            PlanningChartSlice.left =>
-                              scheme.outlineVariant, // visible on the card
-                          },
-                          textColor: switch (s.kind) {
-                            PlanningChartSlice.paid => scheme.onPrimary,
-                            PlanningChartSlice.unpaid => scheme.primary,
-                            PlanningChartSlice.left => scheme.onSurface,
-                          },
-                        ),
-                    ],
-                  ),
-            ),
-          ),
-          const Gap(Spacing.lg),
-          // Full width, so the key centres under the chart.
-          SizedBox(
-            width: double.infinity,
-            child: Wrap(
-            alignment: WrapAlignment.center,
-            spacing: Spacing.md,
-            runSpacing: Spacing.xs,
-            children: [
-              _LegendDot(color: scheme.primary, label: 'Paid'),
-              _LegendDot(
-                color: scheme.primary.withValues(alpha: 0.18),
-                label: 'Not yet paid',
-              ),
-              if (chart.slices.any((s) => s.kind == PlanningChartSlice.left))
-                _LegendDot(
-                  color: scheme.outlineVariant,
-                  label: 'Left in budget',
-                ),
-            ],
-          ),
-          ),
-          if (chart.otherCurrencies)
-            Center(
-              child: Text(
-                'In ${chart.currency}; other currencies aren\'t shown',
-                style: theme.textTheme.bodySmall?.copyWith(
-                  color: scheme.outline,
-                ),
-              ),
-            ),
-          // The chart's key, then the expenses.
-          const Gap(Spacing.xl),
-          const AppDivider(),
-          const Gap(Spacing.sm),
-        ],
         if (rows.isEmpty)
           Padding(
             padding: const EdgeInsets.symmetric(vertical: Spacing.xs),
@@ -387,7 +294,10 @@ class ExpensesBlockView extends ConsumerWidget {
                               fontSize: 14.sp,
                               fontWeight: FontWeight.normal,
                             ),
-                            subtitle: '',
+                            subtitle:
+                                item.dueDate == null
+                                    ? ''
+                                    : 'Due ${formatPlanningRange(item.dueDate, null)}',
 
                             titleMaxLines: 2,
                             showDivider: false,
@@ -398,7 +308,7 @@ class ExpensesBlockView extends ConsumerWidget {
                               excludeSemantics: true,
                               child: CircleAvatar(
                                 radius: 14,
-                                // Light primary until paid, then primary: the chart's colours.
+                                // Light primary until paid, then primary: the budget chart's colours.
                                 backgroundColor:
                                     item.isChecked
                                         ? scheme.primary
@@ -474,6 +384,7 @@ class ExpensesBlockView extends ConsumerWidget {
               title: 'Paid',
               emphasis: true,
               amount: money((t) => t.paid),
+              roll: roll((t) => t.paid),
               amountColor: scheme.primary,
             ),
             AppDivider(),
@@ -481,6 +392,7 @@ class ExpensesBlockView extends ConsumerWidget {
               icon: Icons.schedule_rounded,
               title: 'Left to pay',
               amount: money((t) => t.total - t.paid),
+              roll: roll((t) => t.total - t.paid),
               amountColor: scheme.error,
               emphasis: true,
             ),
@@ -491,6 +403,7 @@ class ExpensesBlockView extends ConsumerWidget {
             title: 'Total',
             subtitle: allPaid ? 'All paid' : '',
             amount: money((t) => t.total),
+            roll: roll((t) => t.total),
             emphasis: !anyPaid || allPaid,
             bold: true,
           ),
@@ -546,6 +459,9 @@ class _ExpenseEditorState extends State<ExpenseEditor> {
   late String _currency = widget.item?.currency ?? widget.defaultCurrency;
   late String? _paidBy = widget.item?.paidBy ?? widget.me;
   late bool _equal = widget.item?.splitShareMinor == null;
+
+  /// A bill's due date: optional, shown on the calendar.
+  late DateTime? _due = widget.item?.dueDate;
   late final String _id = widget.item?.id ?? const Uuid().v4();
   bool _saving = false;
   String? _error;
@@ -569,6 +485,7 @@ class _ExpenseEditorState extends State<ExpenseEditor> {
       'currency': _currency,
       'paid_by': _paidBy,
       'split_share_minor': _shareMinor,
+      'due_date': _due == null ? null : planningYmd(_due!),
     }, _id);
     if (!mounted) return;
     if (error == null) {
@@ -657,6 +574,7 @@ class _ExpenseEditorState extends State<ExpenseEditor> {
                   autofocus: widget.item == null,
                   textCapitalization: TextCapitalization.sentences,
                   label: 'What for',
+                  hintText: 'Dinner, taxi, tickets…',
                   labelColor: labelColor,
                   height: height(labelError),
                   errorText: labelError,
@@ -673,6 +591,7 @@ class _ExpenseEditorState extends State<ExpenseEditor> {
                     FilteringTextInputFormatter.allow(RegExp(r'[0-9.,]')),
                   ],
                   label: 'Amount',
+                  hintText: planningMoneyHint(_currency),
                   labelColor: labelColor,
                   // The suffix holds the box at 48, so the currency sits centred in it.
                   height: amountError == null ? kMinInteractiveDimension : null,
@@ -693,7 +612,38 @@ class _ExpenseEditorState extends State<ExpenseEditor> {
                     ),
                   ),
                 ),
-                const Gap(Spacing.md),
+                // The same row the checklist picks a to-do's due date from.
+                InfoRowWidget(
+                  icon: Icons.event_rounded,
+                  showAvatar: false,
+                  iconSize: 20.h,
+                  iconColor: scheme.primary,
+                  title:
+                      _due == null
+                          ? 'No due date'
+                          : 'Due ${formatPlanningRange(_due, null)}',
+                  subtitle: '',
+                  padding: const EdgeInsets.symmetric(vertical: Spacing.xs),
+                  showDivider: false,
+                  showTrailingArrow: _due == null,
+                  trailing:
+                      _due == null
+                          ? null
+                          : IconButton(
+                            tooltip: 'Clear due date',
+                            icon: const Icon(Icons.close_rounded),
+                            onPressed: () => setState(() => _due = null),
+                          ),
+                  onTap: () async {
+                    final d = await pickPlanningDate(
+                      context,
+                      initial: _due,
+                      onChanged: (d) => setState(() => _due = d),
+                    );
+                    if (mounted) setState(() => _due = d);
+                  },
+                ),
+                const Gap(Spacing.sm),
                 Text(
                   'Paid by',
                   style: Theme.of(
@@ -742,6 +692,7 @@ class _ExpenseEditorState extends State<ExpenseEditor> {
                         FilteringTextInputFormatter.allow(RegExp(r'[0-9.,]')),
                       ],
                       label: "The other person's share",
+                      hintText: planningMoneyHint(_currency),
                       labelColor: labelColor,
                       helperText:
                           shareError == null
@@ -765,26 +716,6 @@ class _ExpenseEditorState extends State<ExpenseEditor> {
   }
 }
 
-class _LegendDot extends StatelessWidget {
-  const _LegendDot({required this.color, required this.label});
-  final Color color;
-  final String label;
-
-  @override
-  Widget build(BuildContext context) => Row(
-    mainAxisSize: MainAxisSize.min,
-    children: [
-      Container(
-        width: 10,
-        height: 10,
-        decoration: BoxDecoration(color: color, shape: BoxShape.circle),
-      ),
-      const Gap(Spacing.xs),
-      Text(label, style: Theme.of(context).textTheme.labelSmall),
-    ],
-  );
-}
-
 /// A line of an Expenses block's totals: the app's InfoRowWidget, with the
 /// amount at the end, under Prices.
 class _TotalRow extends StatelessWidget {
@@ -792,6 +723,7 @@ class _TotalRow extends StatelessWidget {
     required this.icon,
     required this.title,
     required this.amount,
+    this.roll,
     this.subtitle = '',
     this.emphasis = false,
     this.amountColor,
@@ -802,6 +734,9 @@ class _TotalRow extends StatelessWidget {
   final String title;
   final String subtitle;
   final String amount;
+
+  /// The amount as a figure, so it rolls; null shows [amount] as it is.
+  final ({int minor, String currency})? roll;
 
   /// The figure that matters most: what's left to pay, or the total.
   final bool emphasis;
@@ -825,17 +760,20 @@ class _TotalRow extends StatelessWidget {
       subtitle: subtitle,
       showAvatar: false,
       showDivider: false,
-      trailing: Text(
-        amount,
-        style: (emphasis
+      trailing: () {
+        final style = (emphasis
                 ? theme.textTheme.titleSmall
                 : theme.textTheme.bodyLarge)
             ?.copyWith(
               fontFeatures: const [FontFeature.tabularFigures()],
               color: amountColor,
               fontWeight: bold ? FontWeight.bold : null,
-            ),
-      ),
+            );
+        final r = roll;
+        return r == null
+            ? Text(amount, style: style)
+            : PlanningRollingMoney(minor: r.minor, currency: r.currency, style: style);
+      }(),
     );
   }
 }

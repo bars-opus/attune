@@ -167,6 +167,18 @@ class _DataExportScreenState extends ConsumerState<DataExportScreen> {
         _intro,
         style: text.bodyMedium?.copyWith(color: scheme.onSurfaceVariant),
       ),
+      Gap(Spacing.md.h),
+      SemanticContainerWidget(
+        title: 'Keep it somewhere private',
+        content:
+            'The download holds your journal, check-ins and messages. Save it '
+            'where only you can open it, not on a shared device or folder.',
+        icon: Icons.lock_outline,
+        backgroundColor: scheme.warning.withValues(alpha: 0.1),
+        borderColor: scheme.warning,
+        iconColor: scheme.warning,
+        textTheme: text,
+      ),
       Gap(Spacing.lg.h),
     ];
     Widget prepare(String label) => FilledButton(

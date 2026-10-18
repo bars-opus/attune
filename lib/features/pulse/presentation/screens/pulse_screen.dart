@@ -398,13 +398,18 @@ class _PulseScreenState extends ConsumerState<PulseScreen>
 
     if (confidence == 'high') return const SizedBox.shrink();
 
+    // The shared score is built from moments, chat and games together; the
+    // private weekly check-in never feeds it (Spec 1a).
+    String title;
     String message;
     if (confidence == 'none') {
+      title = 'No score yet';
       message =
-          'Not enough data yet — complete a check-in to see your first pulse score.';
+          'Your first Pulse score appears once you have a little shared history — log moments, chat and play games together.';
     } else if (confidence == 'low') {
+      title = 'Early days';
       message =
-          'Based on early data. Your score gets more accurate as you log more moments and complete weekly check-ins.';
+          'Based on early data. It gets more accurate as you log more moments, keep chatting and play together.';
     } else {
       return const SizedBox.shrink();
     }
@@ -412,7 +417,7 @@ class _PulseScreenState extends ConsumerState<PulseScreen>
     return SemanticContainerWidget(
       content: message,
       icon: Icons.info_outline,
-      title: 'No internet connection',
+      title: title,
       backgroundColor: colorScheme.primary.withValues(alpha: 0.1),
       borderColor: colorScheme.primary,
       iconColor: colorScheme.primary,

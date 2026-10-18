@@ -240,7 +240,10 @@ void main() {
       find.text(
         'Chat becomes read-only for both of you and nothing new is shared. '
         'Either of you can resume or end it within 30 days. '
-        'Any game in progress ends. '
+        // Only the live games end on a pause (their relationship-change
+        // triggers); the rest wait until you resume.
+        'Paint Ball, Word Hunt and Snakes and Ladders end; other games '
+        'wait. '
         "Your partner won't get a notification.",
       ),
       findsOneWidget,

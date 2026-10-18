@@ -125,7 +125,9 @@ BEGIN
     RAISE EXCEPTION 'EXPLOIT: 51st category accepted';
   EXCEPTION WHEN raise_exception THEN IF SQLERRM <> 'planning:limit_reached' THEN RAISE; END IF; END;
 
-  -- Contract 11: "new" dot = partner activity after my last seen; never my own.
+  -- Contract 11: "new" dot = partner activity on a plan after I last opened
+  -- that plan; never my own. Since 2026-10-18 (planning_entry_seen) opening
+  -- the category alone no longer clears it — opening the plan does.
   UPDATE public.planning_entries SET last_activity_at = clock_timestamp(), last_activity_by = v_a
   WHERE category_id = v_goals AND is_template;  -- templates never count
   INSERT INTO public.planning_entries (id, relationship_id, category_id, title, created_by, last_activity_by)
@@ -136,6 +138,13 @@ BEGIN
     RAISE EXCEPTION 'EXPLOIT: partner activity not flagged new';
   END IF;
   PERFORM public.mark_planning_category_seen(v_goals);
+  v_home := public.get_planning_home(v_rel);
+  IF NOT (SELECT (c ->> 'has_new')::boolean FROM jsonb_array_elements(v_home -> 'categories') c
+          WHERE c ->> 'seed_key' = 'goals') THEN
+    RAISE EXCEPTION 'EXPLOIT: opening the category hid an unopened plan';
+  END IF;
+  PERFORM public.get_planning_entry(e.id) FROM public.planning_entries e
+  WHERE e.category_id = v_goals AND e.title = 'Save for a car';
   v_home := public.get_planning_home(v_rel);
   IF (SELECT (c ->> 'has_new')::boolean FROM jsonb_array_elements(v_home -> 'categories') c
       WHERE c ->> 'seed_key' = 'goals') THEN

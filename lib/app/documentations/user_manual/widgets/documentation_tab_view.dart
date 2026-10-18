@@ -1,10 +1,12 @@
 // lib/features/documentation/presentation/widgets/documentation_tab_view.dart
+import 'package:attune/app/documentations/user_manual/data/documentation_flags.dart';
 import 'package:attune/app/documentations/user_manual/data/manual_documentation_registry.dart';
 import 'package:attune/app/documentations/user_manual/widgets/faq_widget.dart';
 import 'package:attune/app/documentations/user_manual/widgets/manual_widget.dart';
 import 'package:attune/core/utils/exports/export_screens.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-class DocumentationTabView extends StatefulWidget {
+class DocumentationTabView extends ConsumerStatefulWidget {
   final DocumentationModule module;
   final bool showDocumentationFirst;
 
@@ -15,16 +17,17 @@ class DocumentationTabView extends StatefulWidget {
   });
 
   @override
-  State<DocumentationTabView> createState() => _DocumentationTabViewState();
+  ConsumerState<DocumentationTabView> createState() =>
+      _DocumentationTabViewState();
 }
 
-class _DocumentationTabViewState extends State<DocumentationTabView> {
+class _DocumentationTabViewState extends ConsumerState<DocumentationTabView> {
   late DocumentationModule _currentModule;
 
-  /// Single slot for the parent module, not a stack — sufficient for the
-  /// current one-level-only drill-down design. A future second nesting
-  /// level would require replacing this with a list/stack.
-  DocumentationModule? _parentModule;
+  /// The topics opened on the way here, newest last. A stack: a related
+  /// topic (or a link in its text) can open another, and back retraces each
+  /// step.
+  final List<DocumentationModule> _parents = [];
 
   @override
   void initState() {
@@ -34,16 +37,13 @@ class _DocumentationTabViewState extends State<DocumentationTabView> {
 
   void _openRelated(DocumentationModule related) {
     setState(() {
-      _parentModule = _currentModule;
+      _parents.add(_currentModule);
       _currentModule = related;
     });
   }
 
   void _backToParent() {
-    setState(() {
-      _currentModule = _parentModule!;
-      _parentModule = null;
-    });
+    setState(() => _currentModule = _parents.removeLast());
   }
 
   @override
@@ -51,17 +51,27 @@ class _DocumentationTabViewState extends State<DocumentationTabView> {
     final relatedIds = DocumentationRegistry.getRelatedModuleIds(
       _currentModule.id,
     );
+    // Related topics for switched-off features are left out.
+    final enabled = ref.watch(documentationFlagsProvider).valueOrNull ?? const {};
     final relatedModules =
         relatedIds
             .map((id) => DocumentationRegistry.getById(id))
             .whereType<DocumentationModule>()
+            .where(
+              (m) => DocumentationRegistry.requiredFlags(m.id).every(enabled.contains),
+            )
             .toList();
 
     final tabs = [
       AppTabItem(
         label: 'Documentation',
         icon: Icons.article,
-        content: ManualWidget(sections: _currentModule.getSections(context)),
+        // Links in the text open the same related topics the tab lists.
+        content: ManualWidget(
+          sections: _currentModule.getSections(context),
+          linkTargets: {for (final m in relatedModules) m.id: m},
+          onOpenLink: _openRelated,
+        ),
       ),
       AppTabItem(
         label: 'FAQs',
@@ -81,9 +91,9 @@ class _DocumentationTabViewState extends State<DocumentationTabView> {
 
     return Column(
       children: [
-        if (_parentModule != null)
+        if (_parents.isNotEmpty)
           _BackToParentRow(
-            parentTitle: _parentModule!.getTitle(context),
+            parentTitle: _parents.last.getTitle(context),
             onTap: _backToParent,
           ),
         Expanded(
@@ -123,7 +133,7 @@ class _RelatedModulesList extends StatelessWidget {
                 // trailing: Icon(
                 //   Icons.chevron_right_rounded,
                 //   size: IconSizes.md.h,
-                //   color: colorScheme.onBackground.withOpacity(0.3),
+                //   color: colorScheme.onBackground.withValues(alpha: 0.3),
                 // ),
                 avatarRadius: 25.h,
                 onTap: () => onTap(module),

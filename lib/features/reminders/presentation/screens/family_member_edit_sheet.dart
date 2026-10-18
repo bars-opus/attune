@@ -181,7 +181,7 @@ class _FamilyMemberEditSheetState extends ConsumerState<FamilyMemberEditSheet> {
             SemanticContainerWidget(
               title: '',
               content:
-                  'You can also add other special dates of loved ones, like anniversaries, graduations, etc.',
+                  'Their birthday appears on your calendar every year. For other dates, like anniversaries or graduations, add a reminder or an event in your calendar.',
               icon: Icons.info_outline,
               backgroundColor: colorScheme.onBackground.withValues(alpha: 0.1),
               borderColor: colorScheme.onBackground,

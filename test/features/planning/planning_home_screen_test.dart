@@ -51,6 +51,20 @@ void main() {
     semantics.dispose();
   });
 
+  testWidgets('the help button opens the Couples journal guide, with Planning under Related', (tester) async {
+    await tester.pumpWidget(planningTestApp(_gateway(), const PlanningHomeScreen(relationshipId: 'r1')));
+    await tester.pumpAndSettle();
+    expect(find.byTooltip('Tags'), findsNothing);
+    await tester.tap(find.byTooltip('About the couples journal'));
+    await tester.pumpAndSettle();
+    expect(find.text('Why a couples journal'), findsOneWidget);
+    await tester.tap(find.text('Related'));
+    await tester.pumpAndSettle();
+    expect(find.widgetWithText(InfoRowWidget, 'Planning'), findsOneWidget);
+  });
+
+  // Clearing the category dot by opening the plan: planning_plan_dot_test.
+
   testWidgets('category rows are the app\'s InfoRowWidget', (tester) async {
     await tester.pumpWidget(planningTestApp(_gateway(), const PlanningHomeScreen(relationshipId: 'r1')));
     await tester.pumpAndSettle();

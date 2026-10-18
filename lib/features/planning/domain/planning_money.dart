@@ -68,3 +68,13 @@ String formatPlanningMoneyCompact(int minor, String currency) {
   }
   return NumberFormat.compactSimpleCurrency(name: currency).format(minor / divisor);
 }
+
+/// An example amount for an empty money field: "0.00", "500.00",
+/// "1,000.00" — or without decimals for a currency that has none.
+String planningMoneyHint(String currency, [int whole = 0]) {
+  var unit = 1;
+  for (var d = planningCurrencyDigits(currency); d > 0; d--) {
+    unit *= 10;
+  }
+  return formatPlanningMoney(whole * unit, currency).replaceAll(RegExp(r'[^0-9.,]'), '');
+}

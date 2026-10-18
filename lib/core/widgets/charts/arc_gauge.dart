@@ -17,11 +17,16 @@ class ArcGauge extends StatefulWidget {
     required this.semanticLabel,
     this.over = false,
     this.size = 200,
+    this.headlineBuilder,
   });
 
   /// How full, 0..1 (clamped).
   final double fraction;
   final String headline;
+
+  /// Draws the headline in the gauge's headline style (a rolling amount);
+  /// [headline] is still what screen readers hear. Plain text when null.
+  final Widget Function(TextStyle? style)? headlineBuilder;
   final String caption;
   final String semanticLabel;
   final bool over;
@@ -99,14 +104,14 @@ class ArcGaugeState extends State<ArcGauge> with SingleTickerProviderStateMixin 
             padding: EdgeInsets.only(top: widget.size * 0.06),
             child: Center(
               child: Column(mainAxisSize: MainAxisSize.min, children: [
-                Text(
-                  widget.headline,
-                  textAlign: TextAlign.center,
-                  style: theme.textTheme.titleLarge?.copyWith(
+                () {
+                  final style = theme.textTheme.titleLarge?.copyWith(
                     fontWeight: FontWeight.w600,
                     color: widget.over ? scheme.error : null,
-                  ),
-                ),
+                  );
+                  return widget.headlineBuilder?.call(style) ??
+                      Text(widget.headline, textAlign: TextAlign.center, style: style);
+                }(),
                 Text(widget.caption,
                     textAlign: TextAlign.center,
                     style: theme.textTheme.bodySmall?.copyWith(color: scheme.onSurfaceVariant)),

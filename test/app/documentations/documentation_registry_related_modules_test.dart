@@ -12,8 +12,14 @@ void main() {
 
     test('returns empty for a module with no relations', () {
       expect(DocumentationRegistry.getRelatedModuleIds('healing'), isEmpty);
-      expect(DocumentationRegistry.getRelatedModuleIds('chat'), isEmpty);
       expect(DocumentationRegistry.getRelatedModuleIds('truthOrDare'), isEmpty);
+    });
+
+    test('chat links to the hard-moment tools, notes and privacy', () {
+      expect(
+        DocumentationRegistry.getRelatedModuleIds('chat'),
+        ['hardMoment', 'appreciation', 'privacyData'],
+      );
     });
 
     test('returns empty for an unknown id, not a throw', () {

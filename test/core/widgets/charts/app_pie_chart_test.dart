@@ -57,6 +57,41 @@ void main() {
     semantics.dispose();
   });
 
+  // Like the budget gauge: it sweeps in clockwise from the top over 700ms.
+  AppPieChartState state(WidgetTester tester) => tester.state<AppPieChartState>(find.byType(AppPieChart));
+
+  testWidgets('it sweeps in from the top when it first shows', (tester) async {
+    await tester.pumpWidget(app());
+    expect(state(tester).revealed, 0, reason: 'nothing drawn on the first frame');
+    await tester.pump(const Duration(milliseconds: 200));
+    expect(state(tester).revealed, inExclusiveRange(0, 1), reason: 'part way round');
+    await tester.pump(const Duration(milliseconds: 600));
+    expect(state(tester).revealed, 1, reason: 'the whole pie after 700ms');
+    expect(find.byKey(const ValueKey('app-pie-chart-sweep')), findsNothing, reason: 'no clip once it is all there');
+  });
+
+  testWidgets('with reduce motion it is all there at once', (tester) async {
+    await tester.pumpWidget(app(reduce: true));
+    expect(state(tester).revealed, 1);
+  });
+
+  testWidgets('new numbers do not sweep it in again', (tester) async {
+    Widget chart(List<PieSlice> s) => MaterialApp(
+          home: MediaQuery(
+            data: const MediaQueryData(),
+            child: Scaffold(body: Center(child: AppPieChart(semanticLabel: 'Spending', slices: s))),
+          ),
+        );
+    await tester.pumpWidget(chart(slices));
+    await tester.pumpAndSettle();
+    await tester.pumpWidget(chart([
+      ...slices,
+      const PieSlice(label: 'Hats', valueLabel: r'$90', value: 90, color: Colors.teal, textColor: Colors.white),
+    ]));
+    expect(state(tester).revealed, 1, reason: 'the slices change in place');
+    expect(pie(tester).data.sections, hasLength(4));
+  });
+
   testWidgets('changes animate, unless motion is reduced', (tester) async {
     await tester.pumpWidget(app());
     expect(pie(tester).duration, greaterThan(Duration.zero));

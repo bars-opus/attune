@@ -63,7 +63,9 @@ class PlanningRecentRow extends StatelessWidget {
       titleMaxLines: 1,
       subTitleMaxLines: 1,
       showDivider: !last,
-      disableTrailing: true,
+      // Only the "new from your partner" dot, never an arrow.
+      disableTrailing: !recent.entry.hasNew,
+      trailing: recent.entry.hasNew ? const PlanningNewDot() : null,
       onTap: onTap,
     );
   }

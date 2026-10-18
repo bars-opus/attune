@@ -1,5 +1,16 @@
 // lib/core/documentation/documentation_registry.dart
 import 'package:attune/app/documentations/user_manual/data/about_attune_docs.dart';
+import 'package:attune/app/documentations/user_manual/data/appreciation_docs.dart';
+import 'package:attune/app/documentations/user_manual/data/couple_map_docs.dart';
+import 'package:attune/app/documentations/user_manual/data/couples_journal_docs.dart';
+import 'package:attune/app/documentations/user_manual/data/hard_moment_docs.dart';
+import 'package:attune/app/documentations/user_manual/data/planning_docs.dart';
+import 'package:attune/app/documentations/user_manual/data/privacy_data_docs.dart';
+import 'package:attune/app/documentations/user_manual/data/quiet_states_docs.dart';
+import 'package:attune/app/documentations/user_manual/data/relationship_lifecycle_docs.dart';
+import 'package:attune/app/documentations/user_manual/data/safety_check_docs.dart';
+import 'package:attune/app/documentations/user_manual/data/share_a_win_docs.dart';
+import 'package:attune/app/documentations/user_manual/data/together_docs.dart';
 import 'package:attune/app/documentations/user_manual/data/attachment_style_quiz_docs.dart';
 import 'package:attune/app/documentations/user_manual/data/chat_docs.dart';
 import 'package:attune/app/documentations/user_manual/data/communication_style_quiz_docs.dart';
@@ -21,122 +32,146 @@ import 'package:attune/app/documentations/user_manual/data/this_or_that_docs.dar
 import 'package:attune/app/documentations/user_manual/data/truth_or_dare_docs.dart';
 import 'package:attune/app/documentations/user_manual/data/verdict_docs.dart';
 import 'package:attune/app/documentations/user_manual/models/documentation_model.dart';
+import 'package:attune/features/chat/domain/services/chat_feature_flags.dart';
 import 'package:attune/features/onboarding/presentation/data/anchors_docs.dart';
 import 'package:attune/features/onboarding/presentation/data/attachment_quiz_docs.dart';
 
-// lib/core/documentation/documentation_registry.dart
-// 4. Update DocumentationRegistry
-
+/// Every manual topic, registered once. A topic that explains a feature
+/// behind a feature flag declares it in [_requiredFlags] and is listed only
+/// while every one of its flags is on, so nobody reads about a feature they
+/// cannot find.
 class DocumentationRegistry {
-  // Store all modules by ID
   static final Map<String, DocumentationModule> _idMap = {};
 
+  /// Topic id -> the feature flags that must all be on to list it.
+  static const Map<String, List<String>> _requiredFlags = {
+    'hardMoment': [
+      ChatFeatureFlags.conflictToolkit,
+      ChatFeatureFlags.privateSafetyCheck,
+    ],
+    'safetyCheck': [ChatFeatureFlags.privateSafetyCheck],
+    'appreciation': [ChatFeatureFlags.appreciationNotes],
+    'shareAWin': [ChatFeatureFlags.shareAWin],
+    'quietStates': [ChatFeatureFlags.quietStates],
+    'coupleMap': [ChatFeatureFlags.coupleMap],
+    // These two reflections wait for clinical sign-off.
+    'communicationQuiz': [ChatFeatureFlags.quizClinicalSignoff],
+    'conflictStyleQuiz': [ChatFeatureFlags.quizClinicalSignoff],
+  };
+
+  static List<String> requiredFlags(String moduleId) =>
+      _requiredFlags[moduleId] ?? const [];
+
+  /// Every flag any topic depends on (read once by documentationFlagsProvider).
+  static Set<String> get allRequiredFlags =>
+      {for (final flags in _requiredFlags.values) ...flags};
+
   /// IDs of modules related to [moduleId], shown as a "Related" tab in
-  /// DocumentationTabView. Empty for every module except the ones
-  /// explicitly listed here. One level only: a related module's own
-  /// related ids are not consulted (no sibling-to-sibling or
-  /// multi-level nesting).
+  /// DocumentationTabView. One level only: a related module's own related
+  /// ids are not consulted. Gated topics are dropped by the tab view while
+  /// their flags are off.
   static List<String> getRelatedModuleIds(String moduleId) {
     switch (moduleId) {
       case 'games':
         return const ['truthOrDare', 'thisOrThat', 'thirtySixQuestions'];
+      case 'safety':
+        return const ['safetyCheck', 'privacyData', 'relationshipLifecycle'];
+      case 'chat':
+        return const ['hardMoment', 'appreciation', 'privacyData'];
+      case 'pulse':
+        return const ['safetyCheck', 'privacyData'];
+      case 'hardMoment':
+        return const ['conflictTranslator', 'safetyCheck'];
+      case 'quietStates':
+        return const ['appreciation', 'shareAWin'];
+      case 'privacyData':
+        return const ['relationshipLifecycle', 'safety'];
+      case 'conflictTranslator':
+        return const ['hardMoment'];
+      case 'couplesJournal':
+        return const [
+          'planning',
+          'together',
+          'coupleMap',
+          'reflectionJournal',
+          'relationshipLifecycle',
+        ];
+      case 'planning':
+        return const ['together', 'coupleMap'];
       default:
         return const [];
     }
   }
 
-  // Initialize with default modules
+  static bool _initialized = false;
+
+  /// Registers every topic, once; later calls do nothing. Lookups call it
+  /// too, so a help button opened before any screen set the registry up
+  /// still finds its topic and related topics.
   static void initialize() {
-    // Register all your modules here
-    registerModule(AboutAttuneDocs());
-
-    registerModule(ChatDocs());
-    registerModule(GamesDocs());
-    registerModule(TruthOrDareDocs());
-    registerModule(ThisOrThatDocs());
-    registerModule(ThirtySixQuestionsDocs());
-    registerModule(HealingDocs());
-
-    registerModule(ReflectionJournalDocs());
-    registerModule(PulseDocs());
-    registerModule(VerdictDocs());
-    registerModule(ConflictTranslatorDocs());
-    registerModule(SafetyDocs());
-    registerModule(AttachmentQuizDocs());
-    registerModule(AnchorsDocs());
-
-    registerModule(DatingModeDocs());
-    registerModule(OpinionsDocs());
-    registerModule(ForumDocs());
-    registerModule(CommunityQuestionsDocs());
-    registerModule(PaintBallDocs());
-    registerModule(AttachmentStyleQuizDocs());
-    registerModule(CommunicationStyleQuizDocs());
-    registerModule(ConflictStyleQuizDocs());
-    registerModule(LoveLanguageQuizDocs());
-
-    // Add more as needed
+    if (_initialized) return;
+    _initialized = true;
+    for (final module in <DocumentationModule>[
+      AboutAttuneDocs(),
+      ChatDocs(),
+      GamesDocs(),
+      TruthOrDareDocs(),
+      ThisOrThatDocs(),
+      ThirtySixQuestionsDocs(),
+      HealingDocs(),
+      ReflectionJournalDocs(),
+      PulseDocs(),
+      VerdictDocs(),
+      ConflictTranslatorDocs(),
+      SafetyDocs(),
+      AttachmentQuizDocs(),
+      AnchorsDocs(),
+      DatingModeDocs(),
+      OpinionsDocs(),
+      ForumDocs(),
+      CommunityQuestionsDocs(),
+      PaintBallDocs(),
+      AttachmentStyleQuizDocs(),
+      CommunicationStyleQuizDocs(),
+      ConflictStyleQuizDocs(),
+      LoveLanguageQuizDocs(),
+      PrivacyDataDocs(),
+      RelationshipLifecycleDocs(),
+      SafetyCheckDocs(),
+      HardMomentDocs(),
+      AppreciationDocs(),
+      ShareAWinDocs(),
+      QuietStatesDocs(),
+      CouplesJournalDocs(),
+      PlanningDocs(),
+      TogetherDocs(),
+      CoupleMapDocs(),
+    ]) {
+      registerModule(module);
+    }
   }
 
-  // ✅ 1. Get all modules (sorted by order)
+  /// All modules, sorted by order.
   static List<DocumentationModule> getAllModules() {
+    initialize();
     return _idMap.values.toList()..sort((a, b) => a.order.compareTo(b.order));
   }
 
-  // ✅ 2. Get module by ID
-  static DocumentationModule? getById(String id) => _idMap[id];
-
-  static AboutAttuneDocs get aboutAttune =>
-      getById('aboutAttune') as AboutAttuneDocs;
-  static ChatDocs get chat => getById('chat') as ChatDocs;
-  static GamesDocs get games => getById('games') as GamesDocs;
-  static TruthOrDareDocs get truthOrDare =>
-      getById('truthOrDare') as TruthOrDareDocs;
-  static ThisOrThatDocs get thisOrThat =>
-      getById('thisOrThat') as ThisOrThatDocs;
-  static ThirtySixQuestionsDocs get thirtySixQuestions =>
-      getById('thirtySixQuestions') as ThirtySixQuestionsDocs;
-  static HealingDocs get healing => getById('healing') as HealingDocs;
-
-  // ✅ 3. Get direct instances (for type-safe access)
-  static ReflectionJournalDocs get reflectionJournal =>
-      getById('reflectionJournal') as ReflectionJournalDocs;
-  static PulseDocs get pulse => getById('pulse') as PulseDocs;
-  static VerdictDocs get verdict => getById('verdict') as VerdictDocs;
-  static ConflictTranslatorDocs get conflictTranslator =>
-      getById('conflictTranslator') as ConflictTranslatorDocs;
-  static SafetyDocs get safety => getById('safety') as SafetyDocs;
-  static DatingModeDocs get datingMode =>
-      getById('datingMode') as DatingModeDocs;
-  static OpinionsDocs get opinions => getById('opinions') as OpinionsDocs;
-  static ForumDocs get forums => getById('forums') as ForumDocs;
-  static CommunityQuestionsDocs get communityQuestions =>
-      getById('communityQuestions') as CommunityQuestionsDocs;
-  static PaintBallDocs get paintBall =>
-      getById('paintBall') as PaintBallDocs;
-  static AttachmentStyleQuizDocs get attachmentStyleQuiz =>
-      getById('attachmentStyleQuiz') as AttachmentStyleQuizDocs;
-  static CommunicationStyleQuizDocs get communicationQuiz =>
-      getById('communicationQuiz') as CommunicationStyleQuizDocs;
-  static ConflictStyleQuizDocs get conflictStyleQuiz =>
-      getById('conflictStyleQuiz') as ConflictStyleQuizDocs;
-  static LoveLanguageQuizDocs get loveLanguageQuiz =>
-      getById('loveLanguageQuiz') as LoveLanguageQuizDocs;
-  // static AuthenticationDocs get authentication =>
-  // getById('authentication') as AuthenticationDocs;
-
-  // ✅ 4. Register new modules
-  static void registerModule(DocumentationModule module) {
-    _idMap[module.id] = module;
+  /// The modules to list for someone whose enabled flags are [enabledFlags]:
+  /// every ungated topic, and each gated one whose flags are all on. Before
+  /// sign-in pass an empty set.
+  static List<DocumentationModule> visibleModules(Set<String> enabledFlags) {
+    return getAllModules()
+        .where((m) => requiredFlags(m.id).every(enabledFlags.contains))
+        .toList();
   }
 
-  // ✅ 5. Get all topic IDs
-  static List<String> getAllTopicIds() => _idMap.keys.toList();
+  static DocumentationModule? getById(String id) {
+    initialize();
+    return _idMap[id];
+  }
 
-  // ✅ 6. Get modules by category
-  static Map<String, List<DocumentationModule>> getModulesByCategory() {
-    final map = <String, List<DocumentationModule>>{};
-
-    return map;
+  static void registerModule(DocumentationModule module) {
+    _idMap[module.id] = module;
   }
 }

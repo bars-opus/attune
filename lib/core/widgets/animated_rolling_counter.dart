@@ -1,5 +1,6 @@
 // lib/core/widgets/animated_rolling_counter.dart
 
+import 'package:attune/core/ui/motion/reduce_motion.dart';
 import 'package:attune/core/utils/exports/export_screens.dart';
 
 /// A number that animates between values the way YouTube's view count and
@@ -20,6 +21,14 @@ import 'package:attune/core/utils/exports/export_screens.dart';
 /// letter render as plain static Text, since sliding a "K" or "." through
 /// an odometer motion isn't meaningful and would look broken across a
 /// magnitude change (e.g. 999 -> 1K has no shared digit columns at all).
+///
+/// [format] renders the figure some other way (money: "GHS 1,500.00"); as
+/// with [compact], only its digits roll. [fromZero] rolls every digit up
+/// from 0 when it first shows (a headline amount arriving). [settleAsText]
+/// turns the rolled digits back into one plain Text once they stop, so the
+/// figure lays out, scales and reads like any other text. With reduce
+/// motion the figure is plain text from the start; screen readers always
+/// hear the whole figure, never digit by digit.
 class AnimatedRollingCounter extends StatefulWidget {
   const AnimatedRollingCounter({
     super.key,
@@ -30,6 +39,10 @@ class AnimatedRollingCounter extends StatefulWidget {
     this.prefix = '',
     this.suffix = '',
     this.compact = false,
+    this.format,
+    this.fromZero = false,
+    this.settleAsText = false,
+    this.textAlign = TextAlign.start,
   });
 
   final int count;
@@ -44,18 +57,45 @@ class AnimatedRollingCounter extends StatefulWidget {
   final String suffix;
 
   final bool compact;
+  final String Function(int count)? format;
+  final bool fromZero;
+  final bool settleAsText;
+
+  /// How a [settleAsText] figure lines up when it wraps (as a Text would).
+  final TextAlign textAlign;
 
   @override
   State<AnimatedRollingCounter> createState() => _AnimatedRollingCounterState();
 }
 
-class _AnimatedRollingCounterState extends State<AnimatedRollingCounter> {
+class _AnimatedRollingCounterState extends State<AnimatedRollingCounter>
+    with SingleTickerProviderStateMixin {
   late int _oldCount;
+
+  /// Every digit starts from 0: the first show of a [fromZero] figure.
+  late bool _fromZero = widget.fromZero && widget.count != 0;
+
+  /// Digits are on screen (rolling, or not yet settled back into text).
+  late bool _rolling = _fromZero;
+
+  /// Runs for one roll; when it ends a [settleAsText] figure settles.
+  /// Made in initState, never lazily (a first use in dispose would look up
+  /// the ticker's ancestors after the tree is gone).
+  late final AnimationController _settle;
+  late final CurvedAnimation _eased;
 
   @override
   void initState() {
     super.initState();
     _oldCount = widget.count;
+    _settle = AnimationController(vsync: this, duration: widget.duration)
+      ..addStatusListener((s) {
+        if (s == AnimationStatus.completed && mounted) {
+          setState(() => _rolling = false);
+        }
+      });
+    _eased = CurvedAnimation(parent: _settle, curve: widget.curve);
+    if (_rolling) _settle.forward();
   }
 
   @override
@@ -63,15 +103,102 @@ class _AnimatedRollingCounterState extends State<AnimatedRollingCounter> {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.count != widget.count) {
       _oldCount = oldWidget.count;
+      _fromZero = false;
+      _rolling = true;
+      _settle
+        ..duration = widget.duration
+        ..forward(from: 0);
     }
   }
 
+  @override
+  void dispose() {
+    _eased.dispose();
+    _settle.dispose();
+    super.dispose();
+  }
+
   String _render(int count) =>
-      widget.compact ? formatCompactCount(count.abs()) : '${count.abs()}';
+      widget.format?.call(count) ??
+      (widget.compact ? formatCompactCount(count.abs()) : '${count.abs()}');
+
+  /// The whole figure as it reads.
+  String get _whole =>
+      '${widget.prefix}${widget.format == null && widget.count < 0 ? '-' : ''}'
+      '${_render(widget.count)}${widget.suffix}';
 
   @override
   Widget build(BuildContext context) {
     final style = widget.style ?? DefaultTextStyle.of(context).style;
+    if (reduceMotionOf(context) || (widget.settleAsText && !_rolling)) {
+      return Text(_whole, style: style, textAlign: widget.textAlign);
+    }
+    if (widget.settleAsText) {
+      return Semantics(
+        label: _whole,
+        excludeSemantics: true,
+        child: _overlaid(context, style),
+      );
+    }
+    return Semantics(
+      label: _whole,
+      excludeSemantics: true,
+      child: _digits(style),
+    );
+  }
+
+  /// A [settleAsText] figure mid-roll: the settled text itself, laid out
+  /// exactly as it will rest (so nothing moves when the roll ends), with
+  /// each changing digit hidden and rolled over its own spot.
+  Widget _overlaid(BuildContext context, TextStyle style) {
+    bool isDigit(String c) => int.tryParse(c) != null;
+    final whole = _whole;
+    final body = _render(widget.count);
+    final oldBody = _render(_oldCount);
+    final bodyStart = whole.length - widget.suffix.length - body.length;
+    // Position in [whole] -> the digit it rolls from. Columns line up from
+    // the right, as in the digit row; a new column just appears.
+    final rolls = <int, String>{};
+    for (var k = 0; k < body.length; k++) {
+      final c = body[k];
+      if (!isDigit(c)) continue;
+      final o = oldBody.length - (body.length - k);
+      final from =
+          _fromZero ? '0' : (o >= 0 && isDigit(oldBody[o]) ? oldBody[o] : null);
+      if (from != null && from != c) rolls[bodyStart + k] = from;
+    }
+    final effective = DefaultTextStyle.of(context).style.merge(style);
+    final span = TextSpan(
+      style: effective,
+      children: [
+        for (var i = 0; i < whole.length; i++)
+          TextSpan(
+            text: whole[i],
+            style:
+                rolls.containsKey(i)
+                    ? const TextStyle(color: Color(0x00000000))
+                    : null,
+          ),
+      ],
+    );
+    final scaler = MediaQuery.textScalerOf(context);
+    return CustomPaint(
+      key: const ValueKey('animated-rolling-counter-rolling'),
+      foregroundPainter: _RollingDigitsPainter(
+        span: span,
+        whole: whole,
+        rolls: rolls,
+        style: effective,
+        textAlign: widget.textAlign,
+        textDirection: Directionality.of(context),
+        textScaler: scaler,
+        t: _eased,
+      ),
+      child: Text.rich(span, textAlign: widget.textAlign, textScaler: scaler),
+    );
+  }
+
+  Widget _digits(TextStyle style) {
     final oldChars = _render(_oldCount).split('');
     final newChars = _render(widget.count).split('');
 
@@ -88,7 +215,7 @@ class _AnimatedRollingCounterState extends State<AnimatedRollingCounter> {
     if (widget.prefix.isNotEmpty) {
       children.add(Text(widget.prefix, style: style));
     }
-    if (widget.count < 0) {
+    if (widget.format == null && widget.count < 0) {
       children.add(Text('-', style: style));
     }
     for (var i = width - 1; i >= 0; i--) {
@@ -102,7 +229,11 @@ class _AnimatedRollingCounterState extends State<AnimatedRollingCounter> {
       children.add(
         _RollingDigit(
           key: ValueKey('digit_$i'),
-          oldDigit: (oldChar != null && isDigit(oldChar)) ? oldChar : null,
+          // Arriving from zero, every digit rolls up from 0.
+          oldDigit:
+              _fromZero
+                  ? '0'
+                  : (oldChar != null && isDigit(oldChar)) ? oldChar : null,
           newDigit: newChar,
           style: style,
           duration: widget.duration,
@@ -245,4 +376,66 @@ class _RollingDigitState extends State<_RollingDigit>
       ),
     );
   }
+}
+
+/// Paints each rolling digit of a [AnimatedRollingCounter.settleAsText]
+/// figure over its hidden place in the text below: the old digit sliding up
+/// out of view, the new one up into it, clipped to that character.
+class _RollingDigitsPainter extends CustomPainter {
+  _RollingDigitsPainter({
+    required this.span,
+    required this.whole,
+    required this.rolls,
+    required this.style,
+    required this.textAlign,
+    required this.textDirection,
+    required this.textScaler,
+    required this.t,
+  }) : super(repaint: t);
+
+  final TextSpan span;
+  final String whole;
+  final Map<int, String> rolls;
+  final TextStyle style;
+  final TextAlign textAlign;
+  final TextDirection textDirection;
+  final TextScaler textScaler;
+  final Animation<double> t;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    // The same text at the width it was laid out at: the same lines and
+    // the same place for every character.
+    final layout = TextPainter(
+      text: span,
+      textAlign: textAlign,
+      textDirection: textDirection,
+      textScaler: textScaler,
+    )..layout(minWidth: size.width, maxWidth: size.width);
+    final v = t.value;
+    for (final MapEntry(key: i, value: from) in rolls.entries) {
+      final boxes = layout.getBoxesForSelection(
+        TextSelection(baseOffset: i, extentOffset: i + 1),
+      );
+      if (boxes.isEmpty) continue;
+      final box = boxes.first.toRect();
+      canvas.save();
+      canvas.clipRect(box);
+      for (final (d, dy) in [(from, -box.height * v), (whole[i], box.height * (1 - v))]) {
+        final glyph = TextPainter(
+          text: TextSpan(text: d, style: style),
+          textDirection: textDirection,
+          textScaler: textScaler,
+        )..layout();
+        glyph.paint(canvas, Offset(box.left, box.top + dy));
+        glyph.dispose();
+      }
+      canvas.restore();
+    }
+    layout.dispose();
+  }
+
+  @override
+  bool shouldRepaint(_RollingDigitsPainter old) =>
+      old.whole != whole || old.rolls != rolls || old.style != style;
 }

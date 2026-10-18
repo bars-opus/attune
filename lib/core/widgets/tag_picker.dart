@@ -152,14 +152,15 @@ class _TagPickerSheetState extends ConsumerState<_TagPickerSheet> {
           },
         ),
         Gap(Spacing.xl.h),
+        // Shared by the Opinion and Forum composers, so it names neither.
         SemanticContainerWidget(
           content:
-              'Opinions provide a space for you to discuss and express idealogies or concerns in a relationship',
-          icon: Icons.info_outline,
+              'Tags help people find posts about the same thing. Pick the ones that fit best.',
+          icon: Icons.sell_outlined,
           title: '',
-          backgroundColor: Colors.grey.withOpacity(0.1),
-          borderColor: Colors.grey,
-          iconColor: Colors.grey,
+          backgroundColor: Theme.of(context).colorScheme.primary.withValues(alpha: 0.1),
+          borderColor: Theme.of(context).colorScheme.primary,
+          iconColor: Theme.of(context).colorScheme.primary,
           textTheme: textTheme,
         ),
       ],

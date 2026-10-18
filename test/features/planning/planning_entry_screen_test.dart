@@ -233,4 +233,19 @@ void main() {
     final gap = tester.getTopLeft(find.text('Produce')).dy - tester.getBottomLeft(find.text('Shopping list')).dy;
     expect(gap, greaterThanOrEqualTo(Spacing.md));
   });
+
+  // Spec 7 (research 06 B9 (c)): a plan can be put away without a sound —
+  // archived, out of Recent and the calendar, its countdowns cancelled.
+  testWidgets('Put away gently archives the plan quietly', (tester) async {
+    final g = _gateway();
+    g.handlers['put_planning_entry_away'] = (_) => null;
+    await tester.pumpWidget(planningTestApp(g, _screen));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('Plan options'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Put away gently'));
+    await tester.pumpAndSettle();
+    expect(g.callsTo('put_planning_entry_away').single, {'p_entry_id': 'e1'});
+    expect(find.text('Put away. It\'s in Done & archived.'), findsOneWidget);
+  });
 }

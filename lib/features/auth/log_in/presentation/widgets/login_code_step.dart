@@ -48,7 +48,7 @@ class LoginCodeStep extends StatelessWidget {
             content:
                 phoneNumber.isEmpty
                     ? 'Request a verification code first.'
-                    : 'We sent a code to $phoneNumber. It expires in 60 seconds.',
+                    : 'We sent a code to $phoneNumber.',
             icon: Icons.sms_outlined,
             backgroundColor: colorScheme.onBackground.withValues(alpha: 0.1),
             borderColor: colorScheme.onBackground,

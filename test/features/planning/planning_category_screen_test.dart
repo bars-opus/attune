@@ -32,13 +32,14 @@ PlanningCategory _cat({String? seedKey = 'trips'}) => PlanningCategory.fromJson(
     fakeCategoryJson(id: 'c1', seedKey: seedKey, name: seedKey == null ? 'Wedding' : 'Trips', entryCount: 3));
 
 void main() {
-  testWidgets('lists open entries with date and checklist progress; marks the category seen', (tester) async {
+  testWidgets('lists open entries with date and checklist progress; opening it marks nothing seen', (tester) async {
     final g = _gateway();
     await tester.pumpWidget(planningTestApp(g, PlanningCategoryScreen(relationshipId: 'r1', category: _cat())));
     await tester.pumpAndSettle();
     expect(find.text('Trip 1'), findsOneWidget);
     expect(find.textContaining('Mar 3, 2026 - 2 of 5 done'), findsOneWidget);
-    expect(g.callsTo('mark_planning_category_seen'), hasLength(1));
+    expect(g.callsTo('mark_planning_category_seen'), isEmpty,
+        reason: 'dots are per plan: opening a plan clears its own (planning_plan_dot_test)');
     expect(find.text('Trip 9'), findsNothing, reason: 'closed entries load only when opened from the menu');
     await tester.tap(find.byTooltip('Category options'));
     await tester.pumpAndSettle();

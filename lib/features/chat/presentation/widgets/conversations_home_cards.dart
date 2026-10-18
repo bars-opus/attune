@@ -3,7 +3,7 @@ import 'package:attune/core/utils/date_formatter.dart';
 import 'package:attune/core/utils/exports/export_screens.dart';
 import 'package:attune/features/planning/presentation/planning_providers.dart';
 import 'package:attune/features/planning/presentation/planning_ui.dart'
-    show planningRowDate;
+    show PlanningNewDot, planningRowDate;
 import 'package:attune/features/quiz/presentation/providers/quiz_providers.dart'
     as quiz;
 import 'package:attune/features/reflection_journal/data/models/journal_entry.dart';
@@ -88,6 +88,17 @@ class _CouplesJournalRow extends ConsumerWidget {
             .valueOrNull
             ?.entries
             .firstOrNull;
+    // Planning's own dot: a plan the partner changed since this person last
+    // opened it. Hidden categories stay quiet, as they are on Planning.
+    // Asked for only once there is a plan: the home RPC seeds the starter
+    // categories, and with no plan nothing can be new.
+    final hasNew =
+        latest != null &&
+        (ref
+                .watch(planningHomeProvider(relationshipId))
+                .valueOrNull
+                ?.any((c) => c.hasNew && !c.hidden) ??
+            false);
     return InfoRowWidget(
       title: latest?.entry.title ?? 'Start planning together',
       subtitle: MyDateFormat.join([
@@ -103,7 +114,31 @@ class _CouplesJournalRow extends ConsumerWidget {
       showDivider: false,
       showAvatar: false,
       showTrailingArrow: true,
-      onTap: () => context.pushNamed('planning', extra: relationshipId),
+      trailing:
+          hasNew
+              ? Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const PlanningNewDot(),
+                  Gap(Spacing.sm.w),
+                  Icon(
+                    Icons.chevron_right,
+                    size: IconSizes.md.h,
+                    color: colorScheme.onSurface.withValues(alpha: 0.3),
+                  ),
+                ],
+              )
+              : null,
+      // Back from Planning, the dot reflects the categories just opened. The
+      // container, not ref: the row may be gone by the time Planning closes.
+      onTap: () {
+        final container = ProviderScope.containerOf(context, listen: false);
+        context
+            .pushNamed('planning', extra: relationshipId)
+            .whenComplete(
+              () => container.invalidate(planningHomeProvider(relationshipId)),
+            );
+      },
     );
   }
 }

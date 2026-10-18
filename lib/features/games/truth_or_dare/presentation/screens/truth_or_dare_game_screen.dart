@@ -21,7 +21,7 @@ class TruthOrDareGameScreen extends ConsumerWidget {
             SemanticContainerWidget(
               title: 'Truth or Dare',
               content:
-                  'This game uses alternating turns, random truth-or-dare selection, private skip handling, and a lightweight safety check for truth answers.',
+                  'You take turns, and the app picks Truth or Dare for you. Each of you can skip one Dare a game — your partner simply sees a Truth instead. Truth answers have the same quiet safety net as Chat.',
               icon: Icons.casino_outlined,
               backgroundColor: colorScheme.primary.withValues(alpha: 0.08),
               borderColor: colorScheme.primary,

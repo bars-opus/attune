@@ -204,3 +204,6 @@ GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public
 
 -- Cross-spec sync audit fixes.
 \i supabase/migrations/20261018160010_sync_fixes_grants.sql
+
+-- Per-plan "new from your partner" seen marks.
+\i supabase/migrations/20261018170010_planning_entry_seen_grants.sql

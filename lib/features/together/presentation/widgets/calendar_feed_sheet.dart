@@ -20,6 +20,7 @@ class _CalendarFeedLinkSheet extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final text = Theme.of(context).textTheme;
+    final colorScheme = Theme.of(context).colorScheme;
     return Scaffold(
       backgroundColor: Colors.transparent,
       body: ListView(
@@ -69,11 +70,24 @@ class _CalendarFeedLinkSheet extends StatelessWidget {
           ],
           Padding(
             padding: EdgeInsets.all(Spacing.md.w),
+            child: SemanticContainerWidget(
+              title: 'Keep this link to yourself',
+              content:
+                  'Anyone with this link can see your Together calendar. It is '
+                  'shown only this once, so add it to your calendar now. You '
+                  'can turn it off or get a new link in Together settings.',
+              icon: Icons.warning_amber_rounded,
+              backgroundColor: colorScheme.warning.withValues(alpha: 0.1),
+              borderColor: colorScheme.warning,
+              iconColor: colorScheme.warning,
+              textTheme: text,
+            ),
+          ),
+          Padding(
+            padding: EdgeInsets.symmetric(horizontal: Spacing.md.w),
             child: Text(
               'Google refreshes subscribed calendars every 12–24 hours; Apple '
-              'lets you choose how often. Anyone with this link can see your '
-              'Together calendar, so share it with no one. You can turn it off '
-              'or get a new link any time.',
+              'lets you choose how often.',
               style: text.bodySmall,
             ),
           ),

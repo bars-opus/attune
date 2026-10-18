@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:attune/core/ui/motion/reduce_motion.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
@@ -36,8 +38,10 @@ List<MapEntry<String, double>> topSlices(Map<String, double> values, {int limit 
 /// The app's pie chart (fl_chart): each slice its share of the whole, in its
 /// own colour, from the top, with thin separators. Slices of [labelShare]
 /// or more carry their amount and name; smaller ones stay unlabelled.
-/// Changes animate; with reduce motion they land at once.
-class AppPieChart extends StatelessWidget {
+/// It sweeps in clockwise from the top when it first shows, as ArcGauge
+/// fills; later changes animate in place. With reduce motion both land at
+/// once.
+class AppPieChart extends StatefulWidget {
   const AppPieChart({
     super.key,
     required this.slices,
@@ -55,7 +59,44 @@ class AppPieChart extends StatelessWidget {
   final double labelShare;
 
   @override
+  State<AppPieChart> createState() => AppPieChartState();
+}
+
+@visibleForTesting
+class AppPieChartState extends State<AppPieChart> with SingleTickerProviderStateMixin {
+  // ArcGauge's timing and curve, so the two read as one family.
+  late final AnimationController _c = AnimationController(vsync: this, duration: const Duration(milliseconds: 700));
+  late final CurvedAnimation _eased = CurvedAnimation(parent: _c, curve: const Cubic(0.05, 0.7, 0.1, 1.0));
+  bool _started = false;
+
+  /// How much of the pie is drawn, 0 to 1, clockwise from the top.
+  double get revealed => _eased.value;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_started) return;
+    _started = true;
+    if (reduceMotionOf(context)) {
+      _c.value = 1;
+    } else {
+      _c.forward();
+    }
+  }
+
+  @override
+  void dispose() {
+    _eased.dispose();
+    _c.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final slices = widget.slices;
+    final size = widget.size;
+    final labelShare = widget.labelShare;
+    final semanticLabel = widget.semanticLabel;
     final theme = Theme.of(context);
     final total = slices.fold<double>(0, (sum, s) => sum + (s.value > 0 ? s.value : 0));
     final described = [for (final s in slices) '${s.label} ${s.valueLabel}'].join(', ');
@@ -64,7 +105,18 @@ class AppPieChart extends StatelessWidget {
       excludeSemantics: true,
       child: SizedBox.square(
         dimension: size,
-        child: PieChart(
+        child: AnimatedBuilder(
+          animation: _c,
+          // A widening wedge from the top shows the pie as it sweeps round;
+          // once it is all there, no clip at all.
+          builder: (context, pie) => revealed >= 1
+              ? pie!
+              : ClipPath(
+                  key: const ValueKey('app-pie-chart-sweep'),
+                  clipper: _SweepClipper(revealed),
+                  child: pie,
+                ),
+          child: PieChart(
           PieChartData(
             startDegreeOffset: -90,
             centerSpaceRadius: 0,
@@ -89,8 +141,29 @@ class AppPieChart extends StatelessWidget {
           ),
           swapAnimationDuration: reduceMotionOf(context) ? Duration.zero : const Duration(milliseconds: 400),
           swapAnimationCurve: Curves.easeOutCubic,
+          ),
         ),
       ),
     );
   }
+}
+
+/// The part of a circle from twelve o'clock round to [fraction] of a turn.
+class _SweepClipper extends CustomClipper<Path> {
+  const _SweepClipper(this.fraction);
+  final double fraction;
+
+  @override
+  Path getClip(Size size) {
+    final centre = size.center(Offset.zero);
+    // Past the corners, so the slices' edges are never shaved.
+    final r = size.longestSide;
+    return Path()
+      ..moveTo(centre.dx, centre.dy)
+      ..arcTo(Rect.fromCircle(center: centre, radius: r), -math.pi / 2, 2 * math.pi * fraction, false)
+      ..close();
+  }
+
+  @override
+  bool shouldReclip(_SweepClipper old) => old.fraction != fraction;
 }
