@@ -23,12 +23,13 @@ void main() {
     final pin = src.indexOf("id: 'safety_pin'");
     expect(resources, greaterThan(-1));
     expect(pin, greaterThan(resources));
-    expect(src.indexOf("id: 'feedback'"), greaterThan(pin));
+    // Settings regrouped (2026-10-18): both in Safety, before Privacy.
+    expect(src.indexOf("id: 'privacy'"), greaterThan(pin));
     expect(src, contains("routeName: '/settings/safety-pin'"));
     expect(src, contains("subtitle: 'Asked for after you use quick exit'"));
     // Review M-5: a slot of its own in the section.
     final row = src.substring(pin, src.indexOf('),', pin));
-    expect(row, contains('order: 5,'));
+    expect(row, contains('order: 2,'));
   });
 
   test('Support resources mounts the one-time PIN offer', () {

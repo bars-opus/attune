@@ -267,14 +267,35 @@ void main() {
       expect(ChatVideoPreparer.debugSniffMime(bytes), 'video/mp4');
     });
 
-    test('unrecognized major brand returns null (caller rejects)', () {
-      final bytes = <int>[
-        0x00, 0x00, 0x00, 0x18,
-        0x66, 0x74, 0x79, 0x70, // 'ftyp'
-        0x78, 0x78, 0x78, 0x78, // unrecognized brand
-        0x00, 0x00, 0x02, 0x00,
-      ];
-      expect(ChatVideoPreparer.debugSniffMime(bytes), isNull);
+    List<int> ftyp(String brand) => <int>[
+      0x00, 0x00, 0x00, 0x18,
+      0x66, 0x74, 0x79, 0x70, // 'ftyp'
+      ...brand.codeUnits, // major brand
+      0x00, 0x00, 0x02, 0x00,
+    ];
+
+    test('common MP4 brands beyond the old allowlist are accepted', () {
+      // ffmpeg -movflags, HEVC exports, 3GPP phones, older encoders.
+      for (final brand in [
+        'isom', 'iso2', 'iso3', 'iso4', 'iso5', 'iso6', 'mp41', 'mp42',
+        'avc1', 'hev1', 'hvc1', 'M4V ', 'M4A ', 'f4v ', 'dash', '3gp4',
+        '3gp5', '3gp6', '3g2a', 'mmp4', 'NDXC',
+      ]) {
+        expect(ChatVideoPreparer.debugSniffMime(ftyp(brand)), 'video/mp4',
+            reason: 'brand "$brand"');
+      }
+    });
+
+    test('QuickTime keeps its own MIME', () {
+      expect(ChatVideoPreparer.debugSniffMime(ftyp('qt  ')), 'video/quicktime');
+    });
+
+    test('a non-printable brand is still refused (not an ISO-BMFF video)', () {
+      expect(ChatVideoPreparer.debugSniffMime(ftyp('\x00\x01\x02\x03')), isNull);
+    });
+
+    test('bytes with no ftyp box are refused', () {
+      expect(ChatVideoPreparer.debugSniffMime('RIFF....WEBPVP8 '.codeUnits), isNull);
     });
   });
 

@@ -1,3 +1,4 @@
+import 'package:attune/core/widgets/app_content_width.dart';
 import 'dart:async';
 
 import 'package:attune/core/providers/couple_name_provider.dart';
@@ -303,9 +304,12 @@ class _PlanningHomeScreenState extends ConsumerState<PlanningHomeScreen> {
                     ),
                   ),
             ),
-            padding: const EdgeInsets.symmetric(
-              vertical: Spacing.sm,
-              horizontal: Spacing.md,
+            padding: AppContentWidth.padded(
+              context,
+              const EdgeInsets.symmetric(
+                vertical: Spacing.sm,
+                horizontal: Spacing.md,
+              ),
             ),
             itemCount: visible.length,
             onReorder:

@@ -1,5 +1,7 @@
 // Spec 2 (research 06 §3 F7 (1), (2)): the sessions repository and the pure
 // new-session diff.
+import 'dart:async';
+
 import 'package:attune/features/account/data/account_sessions.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -84,10 +86,101 @@ void main() {
       expect(calls.single.$2!['p_label'], thisDeviceLabel());
     });
 
+    // Updated for chat review #18 (fix I2): the revoke is now followed by
+    // stopping the other devices' pushes (it used to make no RPC at all).
     test('signOutOtherDevices() calls the injected sign-out', () async {
       await repo.signOutOtherDevices();
       expect(signOuts, 1);
+      expect(calls.single.$1, 'deactivate_other_push_subscriptions');
+    });
+  });
+
+  group('signOutOtherDevices stops the other phones\' pushes (#18 I2)', () {
+    const keep = 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee';
+
+    test('after the revoke, keeping this phone\'s subscription', () async {
+      final events = <String>[];
+      final calls = <(String, Map<String, dynamic>?)>[];
+      final repo = AccountSessionsRepository(
+        (fn, [params]) async {
+          events.add(fn);
+          calls.add((fn, params));
+          return null;
+        },
+        () async => events.add('revoke'),
+        pushSubscriptionToKeep: () => keep,
+      );
+      await repo.signOutOtherDevices();
+      expect(events, ['revoke', 'deactivate_other_push_subscriptions']);
+      expect(calls.single.$2, {'p_keep_subscription_id': keep});
+    });
+
+    test('then this phone re-sends its own registration (round 2 #3)', () async {
+      final events = <String>[];
+      final repo = AccountSessionsRepository(
+        (fn, [params]) async => events.add(fn),
+        () async => events.add('revoke'),
+        refreshPushRegistration: () => events.add('refresh'),
+      );
+      await repo.signOutOtherDevices();
+      expect(events, ['revoke', 'deactivate_other_push_subscriptions', 'refresh']);
+    });
+
+    test('a failed push stop still re-sends this phone\'s registration', () async {
+      var refreshes = 0;
+      final repo = AccountSessionsRepository(
+        (fn, [params]) async => throw StateError('offline'),
+        () async {},
+        refreshPushRegistration: () => refreshes++,
+      );
+      await repo.signOutOtherDevices();
+      expect(refreshes, 1);
+    });
+
+    test('this phone has no push subscription: keeps none', () async {
+      final calls = <(String, Map<String, dynamic>?)>[];
+      final repo = AccountSessionsRepository((fn, [params]) async {
+        calls.add((fn, params));
+        return null;
+      }, () async {});
+      await repo.signOutOtherDevices();
+      expect(calls.single.$2, {'p_keep_subscription_id': null});
+    });
+
+    test('a failed revoke stops nothing and still reports the error', () async {
+      final calls = <String>[];
+      final repo = AccountSessionsRepository(
+        (fn, [params]) async => calls.add(fn),
+        () async => throw StateError('offline'),
+        pushSubscriptionToKeep: () => keep,
+      );
+      await expectLater(repo.signOutOtherDevices(), throwsStateError);
       expect(calls, isEmpty);
+    });
+
+    test('a failed push stop never fails the revoke', () async {
+      var revoked = 0;
+      final repo = AccountSessionsRepository(
+        (fn, [params]) async => throw StateError('offline'),
+        () async => revoked++,
+        pushSubscriptionToKeep: () => keep,
+      );
+      await repo.signOutOtherDevices();
+      expect(revoked, 1);
+    });
+
+    testWidgets('a hung push stop is bounded', (tester) async {
+      final repo = AccountSessionsRepository(
+        (fn, [params]) => Completer<dynamic>().future,
+        () async {},
+        pushSubscriptionToKeep: () => keep,
+      );
+      var done = false;
+      unawaited(repo.signOutOtherDevices().then((_) => done = true));
+      await tester.pump(const Duration(seconds: 2));
+      expect(done, isFalse);
+      await tester.pump(const Duration(seconds: 2));
+      expect(done, isTrue);
     });
   });
 

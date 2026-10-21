@@ -132,6 +132,24 @@ class Breakpoints {
   static const double xlarge = 1440; // Desktop monitors
 }
 
+/// How wide content may grow on a big screen (iPad), centred, with the
+/// background still filling the screen — the Health app's way. A phone is
+/// narrower than all of these, so nothing changes there. See AppContentWidth.
+class ContentWidth {
+  /// Lists and settings: with a screen's own 16pt padding inside, cards sit
+  /// about 52pt in from the edges of a 13" iPad in portrait.
+  static const double list = 960;
+
+  /// A conversation: messages and the message bar.
+  static const double chat = 840;
+
+  /// Forms, onboarding and short reading: a comfortable line length.
+  static const double form = 600;
+
+  /// A bottom sheet: Material's own default for sheets.
+  static const double sheet = 640;
+}
+
 // Opacity tokens (for consistent transparency)
 class OpacityTokens {
   static const double disabled = 0.38; // Disabled elements

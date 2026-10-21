@@ -141,7 +141,7 @@ class PlanningDocs implements DocumentationModule {
           id: 'planning_links',
           title: '',
           content:
-              'A countdown counts to one date and a checklist progress bar tracks one checklist. Each says which ("Counts to", "Tracks"); with more than one to choose from, tap it to pick another. Adding or moving blocks never changes it.',
+              'A countdown counts to one date and a progress bar tracks one checklist, due by one date. Each says which ("Counts to", "Tracks", "By"); with more than one to choose from, tap it to pick another. Adding or moving blocks never changes it.',
           type: ManualContentType.tip,
         ),
         ManualContent(

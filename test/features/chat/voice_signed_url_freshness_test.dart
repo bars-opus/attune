@@ -39,9 +39,13 @@ void main() {
           'a stored signed URL may already have expired; the media key must '
           'be re-signed instead',
     );
+    // Wave 2 #21: the playback controller signs through
+    // signedMediaUrlProvider, holding it listened so its retries apply
+    // (behaviour: voice_playback_controller_test.dart, "signing a voice
+    // note").
     expect(
       resolver,
-      contains('signedMediaUrlProvider'),
+      contains('.signedUrlFor(mediaKey)'),
       reason: 'playback resolves through the caching re-signer',
     );
   });
@@ -107,6 +111,9 @@ void main() {
         ),
       ),
     );
+    // Past the provider's in-place retry backoff (400 ms + 1200 ms) before
+    // it gives up and the stored-URL fallback applies (chat review #22).
+    await tester.pump(const Duration(seconds: 2));
     await tester.pumpAndSettle();
 
     expect(built, 'https://already-signed.test/media.jpg');

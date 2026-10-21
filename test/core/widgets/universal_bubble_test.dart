@@ -39,6 +39,51 @@ void main() {
     expect(align.alignment, Alignment.centerLeft);
   });
 
+  testWidgets('the highlight flash paints a ring without moving anything', (
+    tester,
+  ) async {
+    final fillKey = GlobalKey();
+    Widget bubble(bool highlighted) => Column(
+      children: [
+        UniversalBubble(
+          isMine: false,
+          bubbleColor: Colors.blue,
+          onBubbleColor: Colors.white,
+          content: const Text('jump target'),
+          footer: const SizedBox.shrink(),
+          bubbleFillKey: fillKey,
+          isHighlighted: highlighted,
+        ),
+        const Text('next row'),
+      ],
+    );
+    await _pump(tester, bubble(false));
+    final fill = tester.getRect(find.byKey(fillKey));
+    final next = tester.getTopLeft(find.text('next row'));
+    final size = tester.getSize(find.byType(UniversalBubble));
+
+    await _pump(tester, bubble(true));
+    for (var i = 0; i < 30; i++) {
+      await tester.pump(const Duration(milliseconds: 16));
+      expect(tester.getRect(find.byKey(fillKey)), fill);
+      expect(tester.getTopLeft(find.text('next row')), next);
+      expect(tester.getSize(find.byType(UniversalBubble)), size);
+    }
+    final ring = find.byKey(const ValueKey('universal_bubble_highlight_ring'));
+    expect(ring, findsOneWidget);
+    expect(
+      tester.widget<CustomPaint>(ring).foregroundPainter,
+      isNotNull,
+      reason: 'the ring is painted',
+    );
+
+    // And it fades back out, still without a layout change.
+    await _pump(tester, bubble(false));
+    await tester.pump(const Duration(milliseconds: 500));
+    expect(tester.getRect(find.byKey(fillKey)), fill);
+    expect(tester.getSize(find.byType(UniversalBubble)), size);
+  });
+
   testWidgets('renders content and footer', (tester) async {
     await _pump(
       tester,

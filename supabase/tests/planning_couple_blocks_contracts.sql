@@ -51,7 +51,8 @@ BEGIN
   SELECT array_to_string(array_agg(b.block_type ORDER BY b.sort_key), ',') INTO v_t
   FROM public.planning_blocks b JOIN public.planning_entries e ON e.id = b.entry_id
   WHERE e.category_id = v_goals AND e.is_template AND b.deleted_at IS NULL;
-  IF v_t <> 'progress,date,text,checklist' THEN RAISE EXCEPTION 'EXPLOIT: goals template is %', v_t; END IF;
+  -- Goals v3 (2026-10-18): a countdown to the Target date.
+  IF v_t <> 'progress,date,countdown,text,checklist' THEN RAISE EXCEPTION 'EXPLOIT: goals template is %', v_t; END IF;
 
   -- Blank plans to work in.
   PERFORM public.create_planning_entry(v_trip, v_trips, 'Bali', false, 'IDR');

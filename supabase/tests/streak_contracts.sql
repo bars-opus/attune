@@ -98,11 +98,11 @@ DO $$
 DECLARE v_msg uuid; v_left int;
 BEGIN
   INSERT INTO public.messages
-    (relationship_id, sender_id, client_message_id, content,
+    (relationship_id, sender_id, client_message_id, content, media_type,
      streak_views_remaining)
   VALUES ('5e000000-0000-0000-0000-000000000001',
           '5f000000-0000-0000-0000-0000000000a1',
-          gen_random_uuid(), 'streak parent', 3)
+          gen_random_uuid(), 'streak parent', 'streak', 3)
   RETURNING id INTO v_msg;
 
   INSERT INTO public.streak_clips (message_id, clip_index, media_url, duration_ms)
@@ -148,11 +148,11 @@ DO $$
 DECLARE v_msg uuid; v_left int;
 BEGIN
   INSERT INTO public.messages
-    (relationship_id, sender_id, client_message_id, content,
+    (relationship_id, sender_id, client_message_id, content, media_type,
      streak_views_remaining)
   VALUES ('5e000000-0000-0000-0000-000000000001',
           '5f000000-0000-0000-0000-0000000000a1',
-          gen_random_uuid(), 'streak parent', 2)
+          gen_random_uuid(), 'streak parent', 'streak', 2)
   RETURNING id INTO v_msg;
 
   PERFORM set_config('request.jwt.claims',
@@ -176,11 +176,11 @@ BEGIN
   ON CONFLICT (id) DO NOTHING;
 
   INSERT INTO public.messages
-    (relationship_id, sender_id, client_message_id, content,
+    (relationship_id, sender_id, client_message_id, content, media_type,
      streak_views_remaining)
   VALUES ('5e000000-0000-0000-0000-000000000001',
           '5f000000-0000-0000-0000-0000000000a1',
-          gen_random_uuid(), 'streak parent', 1)
+          gen_random_uuid(), 'streak parent', 'streak', 1)
   RETURNING id INTO v_msg;
 
   PERFORM set_config('request.jwt.claims',
@@ -266,10 +266,10 @@ DECLARE v_msg uuid;
         v_left int; v_ok boolean;
 BEGIN
   INSERT INTO public.messages
-    (relationship_id, sender_id, client_message_id, content,
+    (relationship_id, sender_id, client_message_id, content, media_type,
      streak_views_remaining)
   VALUES ('5e000000-0000-0000-0000-000000000001', v_sender,
-          gen_random_uuid(), 'streak parent', 1)
+          gen_random_uuid(), 'streak parent', 'streak', 1)
   RETURNING id INTO v_msg;
   INSERT INTO public.streak_clips (message_id, clip_index, media_url, duration_ms)
   VALUES (v_msg, 0, 'chat/s-0', 1000);
@@ -325,11 +325,11 @@ DECLARE v_msg uuid;
         v_left int;
 BEGIN
   INSERT INTO public.messages
-    (relationship_id, sender_id, client_message_id, content,
+    (relationship_id, sender_id, client_message_id, content, media_type,
      streak_views_remaining, viewed_at)
   VALUES ('5e000000-0000-0000-0000-000000000001',
           '5f000000-0000-0000-0000-0000000000a1',
-          gen_random_uuid(), 'streak parent', 3,
+          gen_random_uuid(), 'streak parent', 'streak', 3,
           now() - interval '31 minutes')
   RETURNING id INTO v_msg;
   INSERT INTO public.streak_clips (message_id, clip_index, media_url, duration_ms)
@@ -368,11 +368,11 @@ DECLARE
   v_queued int;
 BEGIN
   INSERT INTO public.messages
-    (relationship_id, sender_id, client_message_id, content,
+    (relationship_id, sender_id, client_message_id, content, media_type,
      streak_views_remaining)
   VALUES ('5e000000-0000-0000-0000-000000000001',
           '5f000000-0000-0000-0000-0000000000a1',
-          gen_random_uuid(), 'spend me', 1)
+          gen_random_uuid(), 'spend me', 'streak', 1)
   RETURNING id INTO v_msg;
 
   INSERT INTO public.streak_clips
@@ -442,9 +442,11 @@ END $$;
 DO $$
 DECLARE v_def text;
 BEGIN
-  SELECT pg_get_functiondef(p.oid) INTO v_def
+  -- Every overload (the 1-arg form and the open-id form, 20261019140100).
+  SELECT string_agg(pg_get_functiondef(p.oid), E'\n') INTO v_def
   FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
-  WHERE n.nspname = 'public' AND p.proname = 'mark_streak_viewed';
+  WHERE n.nspname = 'public'
+    AND p.proname IN ('mark_streak_viewed', 'expire_streak_clips');
   IF position('DELETE FROM storage.objects' in v_def) > 0 THEN
     RAISE EXCEPTION
       'CONTRACT VIOLATED: mark_streak_viewed deletes from storage.objects (42501)';

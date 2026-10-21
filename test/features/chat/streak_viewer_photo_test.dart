@@ -13,6 +13,7 @@
 // on is exactly what hid four other bugs on this branch (see report).
 
 import 'dart:async';
+import 'dart:typed_data';
 
 import 'package:attune/features/chat/data/repositories/streak_repository.dart';
 import 'package:attune/features/chat/presentation/screens/streak_viewer_screen.dart';
@@ -35,7 +36,7 @@ class _FakeStreakRepository implements StreakRepository {
   int viewsRemainingToReturn = 0;
 
   @override
-  Future<int> markViewed(String messageId) async {
+  Future<int> markViewed(String messageId, {required String openId}) async {
     markViewedCalls++;
     return viewsRemainingToReturn;
   }
@@ -57,6 +58,10 @@ class _FakeStreakRepository implements StreakRepository {
 class _FakeVideoPlayerPlatform extends VideoPlayerPlatform {
   int _nextPlayerId = 0;
   final Map<int, StreamController<VideoEvent>> _controllers = {};
+
+  /// Players told to play. Their position then reads past zero, which is
+  /// the viewer's "frames are moving" signal for a presented video (#41).
+  final Set<int> _playing = {};
 
   @override
   Future<void> init() async {}
@@ -97,10 +102,10 @@ class _FakeVideoPlayerPlatform extends VideoPlayerPlatform {
       _controllers[playerId]!.stream;
 
   @override
-  Future<void> play(int playerId) async {}
+  Future<void> play(int playerId) async => _playing.add(playerId);
 
   @override
-  Future<void> pause(int playerId) async {}
+  Future<void> pause(int playerId) async => _playing.remove(playerId);
 
   @override
   Future<void> setLooping(int playerId, bool looping) async {}
@@ -115,7 +120,10 @@ class _FakeVideoPlayerPlatform extends VideoPlayerPlatform {
   Future<void> seekTo(int playerId, Duration position) async {}
 
   @override
-  Future<Duration> getPosition(int playerId) async => Duration.zero;
+  Future<Duration> getPosition(int playerId) async =>
+      _playing.contains(playerId)
+          ? const Duration(milliseconds: 500)
+          : Duration.zero;
 
   @override
   Widget buildView(int playerId) => const SizedBox.shrink();
@@ -126,6 +134,19 @@ class _FakeVideoPlayerPlatform extends VideoPlayerPlatform {
         '${invocation.memberName} is not used by this photo-viewer suite',
       );
 }
+
+/// 1x1 transparent PNG. A photo now only counts as shown once a frame
+/// decodes (#41), and the test host answers every NetworkImage with HTTP
+/// 400 — so these cases hand the viewer a decodable image instead.
+final Uint8List _onePixelPng = Uint8List.fromList(const [
+  0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00, 0x00, 0x0D,
+  0x49, 0x48, 0x44, 0x52, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01,
+  0x08, 0x06, 0x00, 0x00, 0x00, 0x1F, 0x15, 0xC4, 0x89, 0x00, 0x00, 0x00,
+  0x0A, 0x49, 0x44, 0x41, 0x54, 0x78, 0x9C, 0x63, 0x00, 0x01, 0x00, 0x00,
+  0x05, 0x00, 0x01, 0x0D, 0x0A, 0x2D, 0xB4, 0x00, 0x00, 0x00, 0x00, 0x49,
+  0x45, 0x4E, 0x44, 0xAE, 0x42, 0x60, 0x82,
+]);
+final MemoryImage _photo = MemoryImage(_onePixelPng);
 
 void main() {
   const userId = 'user-a';
@@ -163,6 +184,7 @@ void main() {
                                 (_) => StreakViewerScreen(
                                   messageId: messageId,
                                   imageHoldDuration: imageHoldDuration,
+                                  imageProviderBuilder: (_) => _photo,
                                 ),
                           ),
                         ),
@@ -193,6 +215,11 @@ void main() {
     await tester.tap(find.text('open'));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 300));
+    // Let the engine decode the photo off the fake clock (fake time is
+    // untouched, so the hold timings below are unaffected).
+    await tester.runAsync(
+      () => Future<void>.delayed(const Duration(milliseconds: 100)),
+    );
   }
 
   ProviderContainer buildContainer({
@@ -332,10 +359,13 @@ void main() {
       await tester.pump();
 
       expect(find.byKey(const ValueKey('streak-photo-view')), findsOneWidget);
+      // Task 5b: the view is spent when the photo is first SHOWN (its
+      // first painted frame), not when the hold ends — an app killed
+      // mid-hold has still seen it.
       expect(
         streakRepo.markViewedCalls,
-        0,
-        reason: 'the view must not spend before the hold elapses',
+        1,
+        reason: 'the view is spent at the first painted frame',
       );
 
       // Just under the hold, measured from NOW (the photo is already
@@ -343,10 +373,10 @@ void main() {
       // construction: 4 of the remaining ~4.7s.
       await tester.pump(const Duration(seconds: 4));
       expect(find.byKey(const ValueKey('streak-photo-view')), findsOneWidget);
-      expect(streakRepo.markViewedCalls, 0);
+      expect(streakRepo.markViewedCalls, 1);
 
       // Crossing the hold advances past the only clip, which finishes:
-      // spends the view and pops.
+      // closes without spending a second time.
       await tester.pump(const Duration(seconds: 1));
       await tester.pumpAndSettle();
 
@@ -396,6 +426,8 @@ void main() {
     );
     await tester.pump();
     await tester.pump();
+    // A video counts as shown once its position polling reports progress.
+    await tester.pump(const Duration(milliseconds: 250));
 
     // finishForTest drives the same completion path a real end-of-clip
     // does for either kind, without depending on the photo timer or a

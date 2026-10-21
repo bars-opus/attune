@@ -895,7 +895,6 @@ class _UniversalBubbleState extends State<UniversalBubble>
   @override
   Widget build(BuildContext context) {
     final effectiveDragOffset = _effectiveDragOffset;
-    final highlightInset = widget.isHighlighted ? 2.0 : 0.0;
     return Align(
       alignment: widget.isMine ? Alignment.centerRight : Alignment.centerLeft,
       child: Padding(
@@ -1111,21 +1110,15 @@ class _UniversalBubbleState extends State<UniversalBubble>
                                       widget.isMine
                                           ? Alignment.centerLeft
                                           : Alignment.centerRight,
-                                  child: AnimatedContainer(
-                                    duration: const Duration(milliseconds: 400),
-                                    curve: Curves.easeOut,
-                                    decoration: BoxDecoration(
-                                      borderRadius: BorderRadius.circular(20),
-                                      border: Border.all(
-                                        color:
-                                            widget.isHighlighted
-                                                ? (widget.highlightColor ??
-                                                    widget.bubbleColor)
-                                                : Colors.transparent,
-                                        width: widget.isHighlighted ? 2 : 0,
-                                      ),
-                                    ),
-                                    padding: EdgeInsets.all(highlightInset),
+                                  // Paint-only: the ring draws outside
+                                  // the bubble and never changes its
+                                  // layout, so a flashed row neither grows
+                                  // nor shifts its neighbours.
+                                  child: _HighlightRing(
+                                    highlighted: widget.isHighlighted,
+                                    color:
+                                        widget.highlightColor ??
+                                        widget.bubbleColor,
                                     child: GestureDetector(
                                       onLongPress:
                                           widget.onLongPress == null
@@ -1370,4 +1363,66 @@ class _UniversalBubbleState extends State<UniversalBubble>
       ),
     );
   }
+}
+
+/// The jump-to flash: a 2 px ring 2 px outside the bubble, fading in and
+/// out over 400 ms. Painted in the foreground outside the child's bounds,
+/// so it takes no layout space (it used to pad the bubble by its own width
+/// while it showed, growing the row).
+class _HighlightRing extends StatelessWidget {
+  const _HighlightRing({
+    required this.highlighted,
+    required this.color,
+    required this.child,
+  });
+
+  final bool highlighted;
+  final Color color;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return TweenAnimationBuilder<double>(
+      tween: Tween<double>(end: highlighted ? 1 : 0),
+      duration: const Duration(milliseconds: 400),
+      curve: Curves.easeOut,
+      child: child,
+      builder:
+          (context, t, child) => CustomPaint(
+            key: const ValueKey('universal_bubble_highlight_ring'),
+            foregroundPainter: t <= 0 ? null : _HighlightRingPainter(color, t),
+            child: child,
+          ),
+    );
+  }
+}
+
+class _HighlightRingPainter extends CustomPainter {
+  const _HighlightRingPainter(this.color, this.t);
+
+  final Color color;
+  final double t;
+
+  static const _gap = 2.0;
+  static const _stroke = 2.0;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final width = _stroke * t;
+    // Stroke centred so its outer edge sits gap + stroke outside the
+    // bubble, with the 20 px corner the ring always had there.
+    final inflate = _gap + _stroke - width / 2;
+    final rect = (Offset.zero & size).inflate(inflate);
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(rect, Radius.circular(20 - width / 2)),
+      Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = width
+        ..color = color.withValues(alpha: color.a * t),
+    );
+  }
+
+  @override
+  bool shouldRepaint(_HighlightRingPainter old) =>
+      old.color != color || old.t != t;
 }

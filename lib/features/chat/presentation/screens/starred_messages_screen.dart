@@ -1,14 +1,8 @@
+import 'package:attune/core/utils/date_formatter.dart';
 import 'package:attune/core/utils/exports/export_screens.dart';
 import 'package:attune/features/chat/domain/entities/conversation.dart';
-import 'package:attune/features/chat/domain/entities/message.dart';
 import 'package:attune/features/chat/presentation/state/chat_state.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:intl/intl.dart';
-
-final starredMessagesProvider = FutureProvider<List<Message>>((ref) async {
-  final repository = ref.watch(chatRepositoryProvider);
-  return repository.getStarredMessages();
-});
 
 /// Private per-user list — never shows the partner's starred messages
 /// (message_stars RLS is owner-only; see
@@ -59,7 +53,10 @@ class StarredMessagesScreen extends ConsumerWidget {
                             ? 'You deleted this message'
                             : 'This message was deleted')
                         : message.content,
-                subtitle: DateFormat.yMMMd().add_jm().format(message.createdAt),
+                subtitle: MyDateFormat.join([
+                  MyDateFormat.toDate(message.createdAt),
+                  MyDateFormat.toTime(message.createdAt),
+                ]),
                 icon: Icons.star_border,
                 showAvatar: false,
 

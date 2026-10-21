@@ -78,17 +78,22 @@ class _MakeRoomState extends State<MakeRoom>
     //
     // alignment bottomCenter so the child is revealed from its bottom
     // edge, staying pinned to the composer as the space opens above it.
-    return ClipRect(
-      child: AnimatedBuilder(
-        animation: _factor,
-        builder:
-            (context, child) => Align(
+    //
+    // The clip is needed only while revealing. Once open it is off, so a
+    // child that paints past its box (the jump flash's ring) is not cut
+    // flat; the behaviour changes, never the widget, so nothing remounts.
+    return AnimatedBuilder(
+      animation: _factor,
+      builder:
+          (context, child) => ClipRect(
+            clipBehavior: _factor.value < 1 ? Clip.hardEdge : Clip.none,
+            child: Align(
               alignment: Alignment.bottomCenter,
               heightFactor: _factor.value.clamp(0.0, 1.0),
               child: child,
             ),
-        child: widget.child,
-      ),
+          ),
+      child: widget.child,
     );
   }
 }

@@ -53,7 +53,8 @@ void main() {
 
   testWidgets('flags on: both show', (t) async {
     await _pump(t, on: true);
-    expect(await _shows(t, find.text('Quiet for a while')), isTrue);
+    // Top to bottom: Chat feel (its switch) sits above Care & wellbeing.
     expect(await _shows(t, find.byKey(const ValueKey('thankful_phrasing_switch'))), isTrue);
+    expect(await _shows(t, find.text('Quiet for a while')), isTrue);
   });
 }

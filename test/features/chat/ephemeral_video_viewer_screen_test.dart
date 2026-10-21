@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:attune/features/chat/config/chat_config.dart';
 import 'package:attune/features/chat/presentation/screens/ephemeral_video_viewer_screen.dart';
 import 'package:attune/features/chat/presentation/state/chat_state.dart';
@@ -394,12 +396,12 @@ void main() {
       await simulateScreenshot(tester);
       await tester.pump();
 
-      expect(
-        repo.sendCallCount - sendsBefore,
-        1,
-        reason:
-            'only the first screenshot event should produce a system-notice send',
-      );
+      // Chat review #19: the notice is server-authored (send_screenshot_notice);
+      // the client never inserts is_system_notice itself.
+      expect(repo.sendCallCount - sendsBefore, 0,
+          reason: 'a screenshot notice is not a client-side message insert');
+      expect(repo.screenshotNoticeCalls, 1,
+          reason: 'only the first screenshot event should raise the notice');
       expect(
         repo.serverMessages.values.where((m) => m.isSystemNotice).length,
         1,
@@ -421,7 +423,7 @@ void main() {
         content: '',
         createdAt: DateTime.now(),
       );
-      repo.nextSendError = Exception('screenshot notice send failed');
+      repo.nextScreenshotNoticeError = Exception('screenshot notice send failed');
       final container = buildChatContainer(repository: repo, userId: userId);
       addTearDown(container.dispose);
       container.read(chatControllerProvider(conversation).notifier);
@@ -451,6 +453,81 @@ void main() {
 
       expect(repo.markVideoViewedCalls, ['m1']);
       expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
+    'a hung screenshot-notice request is bounded by networkTimeout and '
+    'logged, never left pending (plan 1a ledger: was unbounded)',
+    (tester) async {
+      final repo = FakeChatRepository(currentUserId: userId);
+      final conversation = activeConversation(relId);
+      repo.conversationOverride = conversation;
+      repo.seedIncoming(
+        id: 'm1',
+        relationshipId: relId,
+        senderId: 'partner',
+        content: '',
+        createdAt: DateTime.now(),
+      );
+      // Never completed: the RPC's response never arrives.
+      repo.screenshotNoticeGate = Completer<void>();
+      final container = buildChatContainer(
+        repository: repo,
+        userId: userId,
+        extraOverrides: [
+          chatConfigProvider.overrideWithValue(
+            const ChatConfig(networkTimeout: Duration(seconds: 2)),
+          ),
+        ],
+      );
+      addTearDown(container.dispose);
+      container.read(chatControllerProvider(conversation).notifier);
+
+      final logs = <String>[];
+      final originalDebugPrint = debugPrint;
+      debugPrint = (String? message, {int? wrapWidth}) {
+        if (message != null) logs.add(message);
+      };
+
+      await tester.pumpWidget(
+        buildHarness(
+          container,
+          EphemeralVideoViewerScreen(
+            messageId: 'm1',
+            videoUrl: '/tmp/local/clip.mp4',
+            conversation: conversation,
+          ),
+        ),
+      );
+      await tester.tap(find.text('open'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 350));
+
+      await simulateScreenshot(tester);
+      await tester.pump();
+      expect(repo.screenshotNoticeCalls, 1);
+      expect(
+        logs.where((l) => l.contains('screenshot notice send failed')),
+        isEmpty,
+      );
+
+      await tester.pump(const Duration(seconds: 3));
+
+      expect(
+        logs.where((l) => l.contains('screenshot notice send failed')),
+        hasLength(1),
+        reason: 'the timeout fires and the best-effort catch logs it',
+      );
+      expect(tester.takeException(), isNull);
+
+      // Restored inside the body: the binding asserts foundation debug
+      // variables are back to their defaults before teardown runs.
+      debugPrint = originalDebugPrint;
+
+      await tester.tap(find.byType(EphemeralVideoViewerScreen));
+      await tester.pump();
+      expect(repo.markVideoViewedCalls, ['m1']);
     },
   );
 }

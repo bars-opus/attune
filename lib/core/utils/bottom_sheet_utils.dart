@@ -44,7 +44,17 @@ class BottomSheetUtils {
       // recognisers and break the drag-to-dismiss on scrollable content.
       enableDrag: false,
       backgroundColor: Colors.transparent,
-      constraints: BoxConstraints(maxHeight: sheetMaxHeight),
+      // At most Material's sheet width on a tablet (shortest side over
+      // 600), centred, like every other sheet in the app. Phones, either
+      // way up, keep full-width sheets: fixed-height sheets are sized for
+      // that width.
+      constraints: BoxConstraints(
+        maxHeight: sheetMaxHeight,
+        maxWidth:
+            MediaQuery.sizeOf(context).shortestSide > Breakpoints.mobile
+                ? ContentWidth.sheet
+                : double.infinity,
+      ),
       builder: (sheetContext) {
         final colorScheme = Theme.of(sheetContext).colorScheme;
 

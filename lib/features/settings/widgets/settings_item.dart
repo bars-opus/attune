@@ -110,7 +110,8 @@ class SettingsItem extends StatelessWidget {
       size: IconSizes.md.h,
       color: colorScheme.onBackground.withOpacity(0.3),
     );
-    return InfoRowWidget(
+    final row = InfoRowWidget(
+      key: config.type == SettingsItemType.toggle ? null : config.rowKey,
       // Core content from configuration
       title: config.title,
       subtitle: config.subtitle,
@@ -123,13 +124,12 @@ class SettingsItem extends StatelessWidget {
       backgroundColor: Colors.transparent,
       iconColor: config.iconColor ?? Colors.grey,
 
-      // ✅ CRITICAL: No onTap for toggle items (handled by Switch widget)
+      // Switch rows: the switch handles itself (InfoRowWidget keeps them free
+      // of a row tap); the row-wide tap is added below. Others act on tap.
       onTap:
-          config.type == SettingsItemType.toggle
-              ? null // Toggles use Switch interaction, not InkWell
-              : (config.isEnabled
-                  ? () => _handleTap(context)
-                  : null), // Only enabled items are tappable
+          config.type == SettingsItemType.toggle || !config.isEnabled
+              ? null
+              : () => _handleTap(context),
       // Navigation items show chevron arrows, links show external icon
       showTrailingArrow: config.type != SettingsItemType.link,
 
@@ -152,6 +152,14 @@ class SettingsItem extends StatelessWidget {
           config.type == SettingsItemType.destructive
               ? TextStyle(color: config.iconColor, fontWeight: FontWeight.w500)
               : null,
+    );
+    // A switch row flips from anywhere on it, as in the phone's own settings;
+    // a tap on the switch itself is the switch's.
+    if (config.type != SettingsItemType.toggle) return row;
+    return InkWell(
+      key: config.rowKey,
+      onTap: config.isEnabled ? () => config.onToggle?.call(!(config.value ?? false)) : null,
+      child: row,
     );
   }
 

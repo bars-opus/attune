@@ -186,6 +186,15 @@ void main() {
     return _Booted(controller, container, convo);
   }
 
+  /// Waits (bounded, 5 s) for [done] instead of a fixed delay: the send and
+  /// its media settlement run real file IO, which a loaded full-suite run
+  /// slows past any fixed gate.
+  Future<void> until(bool Function() done) async {
+    for (var i = 0; i < 500 && !done(); i++) {
+      await Future<void>.delayed(const Duration(milliseconds: 10));
+    }
+  }
+
   Future<String> writeFile(String name, {int bytes = 128}) async {
     final path = p.join(tempDir.path, name);
     final file = File(path);
@@ -399,7 +408,11 @@ void main() {
         width: 1280,
         height: 720,
       );
-      await Future<void>.delayed(const Duration(milliseconds: 50));
+      await until(
+        () =>
+            b.state.messages.length == 1 &&
+            b.state.messages.single.status == MessageStatus.sent,
+      );
 
       // The send still completed: exactly one canonical message landed via
       // sendTextMessage, and no error was surfaced to state.
@@ -444,7 +457,8 @@ void main() {
           width: 1280,
           height: 720,
         );
-        await Future<void>.delayed(const Duration(milliseconds: 50));
+        // The settlement's last step: the staged poster is deleted.
+        await until(() => !File(thumbPath).existsSync());
 
         // The server has its own copy now, so the staged file is redundant.
         // Guards the retention above from becoming an unconditional leak that
@@ -493,7 +507,10 @@ void main() {
         expect(File(thumbPath).existsSync(), isTrue);
 
         promotionCache.release.complete();
-        await Future<void>.delayed(const Duration(milliseconds: 50));
+        // Poll for the settlement's last step (staging deleted) instead of
+        // a fixed delay: under a loaded full-suite run 50 ms was not
+        // always enough, and the container was disposed mid-settlement.
+        await until(() => !File(thumbPath).existsSync());
 
         final settled = b.state.messages.single;
         expect(settled.localMediaPath, isNot(videoPath));
@@ -502,6 +519,43 @@ void main() {
         expect(File(thumbPath).existsSync(), isFalse);
         expect(File(settled.localMediaPath!).existsSync(), isTrue);
         expect(File(settled.localThumbnailPath!).existsSync(), isTrue);
+      },
+    );
+
+    test(
+      'a chat closed mid-promotion settles nothing and throws nothing',
+      () async {
+        final repo = FakeChatRepository(currentUserId: userId);
+        final promotionCache = _BlockingPromotionCacheManager(tempDir);
+        addTearDown(() {
+          if (!promotionCache.release.isCompleted) {
+            promotionCache.release.complete();
+          }
+        });
+        final b = await boot(repo, posterCache: promotionCache);
+        final videoPath = await writeFile('closed.mp4');
+        final thumbPath = await writeFile('closed_poster.jpg');
+
+        await b.controller.sendVideoMessage(
+          localPath: videoPath,
+          durationMs: 4200,
+          thumbnailLocalPath: thumbPath,
+          width: 1280,
+          height: 720,
+        );
+        await promotionCache.started.future;
+
+        // The screen goes away while the video bytes are being promoted.
+        b.container.dispose();
+        promotionCache.release.complete();
+        // Long enough for the promotion and every step after it to run;
+        // any provider read after dispose is an uncaught error here.
+        for (var i = 0; i < 20; i++) {
+          await Future<void>.delayed(const Duration(milliseconds: 10));
+        }
+        // The poster's staging copy stays: the cached canonical row still
+        // points at it, and the next open's settlement owns it.
+        expect(File(thumbPath).existsSync(), isTrue);
       },
     );
 
@@ -526,7 +580,7 @@ void main() {
         width: 1280,
         height: 720,
       );
-      await Future<void>.delayed(const Duration(milliseconds: 50));
+      await until(() => b.state.error != null);
 
       // sendTextMessage (which increments sendCallCount) was never reached —
       // the whole send aborted at the first (video) intent failure, unlike

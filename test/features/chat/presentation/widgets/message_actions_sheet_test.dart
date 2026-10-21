@@ -462,4 +462,138 @@ void main() {
       },
     );
   });
+
+  testWidgets(
+    'omits Edit and Delete on a system notice attributed to me (chat review #19)',
+    (tester) async {
+      await tester.pumpWidget(
+        _wrap(
+          (context) => buildMessageActionItems(
+            context: context,
+            message: _ownMessage().copyWith(
+              content: 'Ama took a screenshot',
+              isSystemNotice: true,
+            ),
+            currentUserId: 'u1',
+            isStarred: false,
+            isPinned: false,
+            onReply: () {},
+            onCopy: () {},
+            onStar: () {},
+            onUnstar: () {},
+            onPin: () {},
+            onUnpin: () {},
+            onInfo: () {},
+            onAskAttune: () {},
+            onEdit: () {},
+            onDelete: () {},
+          ),
+        ),
+      );
+
+      expect(find.text('Edit'), findsNothing);
+      expect(find.text('Delete'), findsNothing);
+      expect(find.text('Info'), findsOneWidget);
+    },
+  );
+
+  testWidgets('offers Copy link only when the message has a link (#37)', (
+    tester,
+  ) async {
+    List<Widget> items(BuildContext context, VoidCallback? onCopyLink) =>
+        buildMessageActionItems(
+          context: context,
+          message: _ownMessage(),
+          currentUserId: 'u1',
+          isStarred: false,
+          isPinned: false,
+          onReply: () {},
+          onCopy: () {},
+          onCopyLink: onCopyLink,
+          onStar: () {},
+          onUnstar: () {},
+          onPin: () {},
+          onUnpin: () {},
+          onInfo: () {},
+          onAskAttune: () {},
+          onEdit: () {},
+          onDelete: () {},
+        );
+
+    await tester.pumpWidget(_wrap((context) => items(context, () {})));
+    expect(find.text('Copy link'), findsOneWidget);
+    expect(find.byIcon(Icons.link_rounded), findsOneWidget);
+    expect(find.text('Copy'), findsOneWidget, reason: 'whole-text copy stays');
+
+    await tester.pumpWidget(_wrap((context) => items(context, null)));
+    expect(find.text('Copy link'), findsNothing);
+    expect(find.text('Copy'), findsOneWidget);
+  });
+  group('Edit history (final wave round 2)', () {
+    Message row({String id = 'm9', bool edited = true, bool notice = false}) =>
+        Message(
+          id: id,
+          clientMessageId: 'c-$id',
+          relationshipId: 'r1',
+          senderId: 'u2',
+          content: 'home at 9',
+          createdAt: DateTime.now().subtract(const Duration(minutes: 3)),
+          editedAt:
+              edited ? DateTime.now().subtract(const Duration(minutes: 1)) : null,
+          status: MessageStatus.delivered,
+          isMine: false,
+          isSystemNotice: notice,
+        );
+
+    Future<void> pump(
+      WidgetTester tester,
+      Message message, {
+      VoidCallback? onShowEditHistory,
+    }) => tester.pumpWidget(
+      _wrap(
+        (context) => buildMessageActionItems(
+          context: context,
+          message: message,
+          currentUserId: 'u1',
+          isStarred: false,
+          isPinned: false,
+          onReply: () {},
+          onCopy: () {},
+          onStar: () {},
+          onUnstar: () {},
+          onPin: () {},
+          onUnpin: () {},
+          onInfo: () {},
+          onAskAttune: () {},
+          onEdit: () {},
+          onDelete: () {},
+          onShowEditHistory: onShowEditHistory,
+        ),
+      ),
+    );
+
+    testWidgets('an edited, server-backed row offers it and it opens', (
+      tester,
+    ) async {
+      var opened = 0;
+      await pump(tester, row(), onShowEditHistory: () => opened++);
+      expect(find.text('Edit history'), findsOneWidget);
+      await tester.tap(find.text('Edit history'));
+      await tester.pump();
+      expect(opened, 1);
+    });
+
+    testWidgets('never without an edit, a server copy, or a callback', (
+      tester,
+    ) async {
+      await pump(tester, row(edited: false), onShowEditHistory: () {});
+      expect(find.text('Edit history'), findsNothing);
+      await pump(tester, row(id: '_local_1'), onShowEditHistory: () {});
+      expect(find.text('Edit history'), findsNothing);
+      await pump(tester, row(notice: true), onShowEditHistory: () {});
+      expect(find.text('Edit history'), findsNothing);
+      await pump(tester, row());
+      expect(find.text('Edit history'), findsNothing);
+    });
+  });
 }

@@ -107,7 +107,9 @@ void main() {
     // as part of yesterday. The second message of the day looked correct,
     // because it is not first-of-day and draws no separator at all.
     // The whole Column, so both children are inside the slice.
-    final start = src.indexOf('if (!isFirstOfDay) return row;');
+    final start = src.indexOf(
+      'if (!isFirstOfDay && !showsUnreadDivider) {',
+    );
     final block = src.substring(start, src.indexOf('},', start));
 
     final separatorIndex = block.indexOf('ChatDateSeparator(');

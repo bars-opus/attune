@@ -1,3 +1,4 @@
+import 'package:attune/core/widgets/app_content_width.dart';
 import 'package:attune/core/notes/note_date_sections.dart';
 import 'package:attune/core/notes/note_section.dart';
 import 'package:attune/core/utils/exports/export_screens.dart';
@@ -63,7 +64,10 @@ class PlanningRecentScreen extends ConsumerWidget {
                   },
                   child: ListView(
                     physics: const AlwaysScrollableScrollPhysics(),
-                    padding: const EdgeInsets.only(bottom: Spacing.xl),
+                    padding: AppContentWidth.padded(
+                      context,
+                      const EdgeInsets.only(bottom: Spacing.xl),
+                    ),
                     children: [
                       for (final g in groups)
                         NoteSection(

@@ -14,14 +14,35 @@ export type QueuedPush = {
   data?: Record<string, unknown>;
   /** Idempotency: a second enqueue with the same key is a no-op. */
   sourceKey?: string;
+  /**
+   * The caller's `data` carries its own unique key (a unique index on the
+   * metadata, e.g. outbox_id -- 20261019110000): a duplicate means the
+   * push is already queued and is not an error. Unlike sourceKey this does
+   * not opt the push out of the overnight collapse (quiet guard).
+   * Requires `data.outbox_id` (the only such index) -- without it the flag
+   * would swallow an unrelated duplicate, so enqueuePush refuses it.
+   */
+  dedupedByData?: boolean;
 };
 
 // deno-lint-ignore no-explicit-any
 type Client = { from: (table: string) => any };
 
-export async function enqueuePush(supabase: Client, push: QueuedPush): Promise<void> {
+/**
+ * Queues the push. Resolves true when a queued row exists for it (written
+ * now, or already there: a duplicate key), false when the queue absorbed it
+ * -- the quiet guard folds an overnight chat push into the 08:00 one and
+ * writes no row (plan 1b final review M2), so there is nothing to send now.
+ */
+export async function enqueuePush(supabase: Client, push: QueuedPush): Promise<boolean> {
+  if (push.dedupedByData) {
+    const key = push.data?.outbox_id;
+    if (typeof key !== "string" || key.length === 0) {
+      throw new Error("enqueue_push_misuse:dedupedByData_requires_data.outbox_id");
+    }
+  }
   const now = new Date().toISOString();
-  const { error } = await supabase.from("scheduled_notifications").insert({
+  const { data, error } = await supabase.from("scheduled_notifications").insert({
     user_id: push.userId,
     notification_type: "immediate",
     scheduled_for: now,
@@ -30,8 +51,8 @@ export async function enqueuePush(supabase: Client, push: QueuedPush): Promise<v
     source_key: push.sourceKey ?? null,
     created_at: now,
     updated_at: now,
-  });
-  if (!error) return;
-  if (push.sourceKey && error.code === "23505") return;
+  }).select("id");
+  if (!error) return Array.isArray(data) && data.length > 0;
+  if ((push.sourceKey || push.dedupedByData) && error.code === "23505") return true;
   throw new Error(`enqueue_push_failed:${error.code ?? "unknown"}`);
 }

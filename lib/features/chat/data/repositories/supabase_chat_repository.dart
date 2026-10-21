@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:attune/features/auth/providers/auth_provider.dart';
+import 'package:attune/features/chat/data/repositories/chat_media_uploader.dart';
 import 'package:attune/features/chat/data/repositories/chat_repository.dart';
 import 'package:attune/features/chat/domain/entities/conversation.dart';
 import 'package:attune/features/chat/domain/entities/message.dart';
@@ -9,20 +10,112 @@ import 'package:attune/features/chat/domain/services/unread_count.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:attune/features/chat/utils/chat_log.dart';
+import 'package:flutter/foundation.dart' show visibleForTesting;
 
 final supabaseChatRepositoryProvider = Provider<ChatRepository>((ref) {
   final supabase = ref.watch(supabaseClientProvider);
   return SupabaseChatRepository(supabase);
 });
 
+/// Most ids one [SupabaseChatRepository.getMessagesByIds] request carries.
+/// An `in` filter travels in the URL; 100 uuids is about 3.7 KB, well under
+/// gateway URL limits.
+const maxMessageIdsPerRequest = 100;
+
+/// Splits [ids] into request-sized chunks, first occurrence order, each id
+/// once. No ids gives no chunks, so the caller makes no request.
+@visibleForTesting
+List<List<String>> chunkMessageIds(
+  List<String> ids, {
+  int size = maxMessageIdsPerRequest,
+}) {
+  final unique = ids.toSet().toList();
+  return [
+    for (var i = 0; i < unique.length; i += size)
+      unique.sublist(i, i + size > unique.length ? unique.length : i + size),
+  ];
+}
+
+/// The event a per-chat channel status emits: every `subscribed` is a
+/// resync (the listener refetches what the socket missed); only the
+/// channel's first one is marked initial (see [ChatRealtimeEvent.resync]).
+@visibleForTesting
+ChatRealtimeEvent? chatResyncEventFor(
+  RealtimeSubscribeStatus status, {
+  required bool joinedBefore,
+}) {
+  if (status != RealtimeSubscribeStatus.subscribed) return null;
+  return ChatRealtimeEvent.resync(initial: !joinedBefore);
+}
+
+/// Each internal page of a changed-since read is bounded on its own, so a
+/// slow link (every page slow, none hung) still completes a multi-page read.
+const changedSincePageTimeout = Duration(seconds: 20);
+
+/// Pages a changed-since read: up to [maxPages] pages of [limit] rows, each
+/// continuing strictly after the exact (updated_at, id) of the last row the
+/// previous page returned, stopping at a short page.
+///
+/// Every page is bounded by [pageTimeout]. A page that fails or times out
+/// AFTER at least one page arrived ends the read with what arrived: the
+/// result is then shorter than the cap, so the caller applies it and moves
+/// its cursor to the last row received, and the next read continues from
+/// there. Discarding those pages made a slow link fail every sync from the
+/// same cursor forever. A first page that fails throws.
+@visibleForTesting
+Future<List<Map<String, dynamic>>> collectChangedSincePages({
+  required Future<List<Map<String, dynamic>>> Function(
+    String? lastUpdatedAt,
+    String? lastId,
+  )
+  fetchPage,
+  required String? startUpdatedAt,
+  required String? startId,
+  required int limit,
+  required int maxPages,
+  required Duration pageTimeout,
+}) async {
+  final collected = <Map<String, dynamic>>[];
+  var lastUpdatedAt = startUpdatedAt;
+  var lastId = startId;
+  for (var page = 0; page < maxPages; page++) {
+    final List<Map<String, dynamic>> rows;
+    try {
+      rows = await fetchPage(lastUpdatedAt, lastId).timeout(pageTimeout);
+    } catch (error) {
+      if (collected.isEmpty) rethrow;
+      ChatLog.e(
+        'changed-since page ${page + 1} failed; keeping ${collected.length} '
+        'rows',
+        error,
+      );
+      break;
+    }
+    collected.addAll(rows);
+    if (rows.length < limit) break;
+    lastUpdatedAt = rows.last['updated_at'] as String;
+    lastId = rows.last['id'] as String;
+  }
+  return collected;
+}
+
 class SupabaseChatRepository implements ChatRepository {
-  SupabaseChatRepository(this._supabase);
+  SupabaseChatRepository(
+    this._supabase, {
+    ChatMediaUploader? uploader,
+    this.unreadCountTimeout = const Duration(seconds: 3),
+  }) : _uploader = uploader;
 
   final SupabaseClient _supabase;
+
+  /// Longest [getConversation] waits on the unread count before opening the
+  /// chat without it (0: no divider) — a badge must never hold an open.
+  final Duration unreadCountTimeout;
   final Map<String, RealtimeChannel> _channels = {};
 
   // Per-relationship invalidation + typing streams sharing one channel.
-  final Map<String, StreamController<void>> _eventControllers = {};
+  final Map<String, StreamController<ChatRealtimeEvent>> _eventControllers =
+      {};
   final Map<String, StreamController<TypingEvent>> _typingControllers = {};
 
   // Short-lived signed-URL cache keyed by object key. Signed URLs live for
@@ -33,14 +126,21 @@ class SupabaseChatRepository implements ChatRepository {
   static const _signedUrlSafetyMargin = Duration(seconds: 60);
   final Map<String, ({String url, DateTime expiresAt})> _signedUrlCache = {};
 
+  /// `updated_at` (migration 20261019100000, which must be live before a
+  /// build with this ships) rides every read, so a first page seeds the sync
+  /// cursor from the exact server change time (final-review M7).
   static const _messageColumns =
       'id,relationship_id,sender_id,client_message_id,content,created_at,'
-      'sort_at,game_session_id,'
+      'sort_at,updated_at,game_session_id,'
       'delivered_at,read_receipt_at,media_url,media_thumbnail_url,media_type,'
       'media_duration_ms,media_waveform,media_width,media_height,source,'
       'reply_to_message_id,quoted_text,deleted_at,edited_at,'
       'is_view_once,viewed_at,is_system_notice,streak_views_remaining,'
       'story_item_id,message_origin,assistant_payload';
+
+  /// Test-only: the columns every message read selects.
+  @visibleForTesting
+  static String get debugMessageColumns => _messageColumns;
 
   User get _currentUser {
     final user = _supabase.auth.currentUser;
@@ -55,10 +155,7 @@ class SupabaseChatRepository implements ChatRepository {
     final user = _currentUser;
     final relationships = await _supabase
         .from('relationships')
-        .select(
-          'id,user_a,user_b,status,chat_archived_at,created_at,ended_at,'
-          'chat_name,chat_avatar_url,chat_avatar_thumbnail_url',
-        )
+        .select(_relationshipColumns)
         .or('user_a.eq.${user.id},user_b.eq.${user.id}')
         .isFilter('chat_archived_at', null)
         .order('created_at', ascending: false);
@@ -84,57 +181,76 @@ class SupabaseChatRepository implements ChatRepository {
       final relationshipId = relationship['id'] as String;
       final partnerId = _partnerIdFor(relationship, user.id);
       if (partnerId == null) continue;
-
-      final partner = usersById[partnerId];
       final lastMessage = await _fetchLastMessage(relationshipId, user.id);
       final unreadCount = await _fetchUnreadCount(relationshipId, user.id);
-      final status = relationship['status'] as String;
-      final archivedAt = relationship['chat_archived_at'];
-      final availability =
-          archivedAt != null
-              ? ConversationAvailability.archived
-              : (status == 'active'
-                  ? ConversationAvailability.active
-                  : ConversationAvailability.readOnly);
-
-      // Couple-chosen identity wins once set (see spec's Read path /
-      // display section) — falls back to the partner's own profile until
-      // then, exactly matching pre-feature behavior. Prefer the thumbnail
-      // once the async job has produced one; the full-size key is still
-      // shown in the gap between "photo set" and "thumbnail ready" rather
-      // than nothing.
-      final chatAvatarKey =
-          (relationship['chat_avatar_thumbnail_url'] as String?) ??
-          (relationship['chat_avatar_url'] as String?);
-      final avatarUrl =
-          chatAvatarKey != null
-              ? await _createRelationshipAvatarSignedUrl(chatAvatarKey)
-              : partner?['avatar_url'] as String?;
-
       conversations.add(
-        Conversation(
-          id: relationshipId,
-          relationshipId: relationshipId,
+        await _conversationFromRow(
+          relationship,
+          partner: usersById[partnerId],
           partnerId: partnerId,
-          name:
-              (relationship['chat_name'] as String?) ??
-              (partner?['display_name'] as String?) ??
-              'Partner',
-          // The partner's OWN name, kept separate from the couple's
-          // chat_name: a typing indicator or reply preview naming the
-          // couple puts their shared name in one person's mouth.
-          partnerName: (partner?['display_name'] as String?) ?? 'Partner',
-          avatarUrl: avatarUrl,
           lastMessage: lastMessage,
           unreadCount: unreadCount,
-          updatedAt: lastMessage?.createdAt ?? DateTime.now(),
-          relationshipStatus: status,
-          availability: availability,
         ),
       );
     }
 
     return conversations;
+  }
+
+  static const _relationshipColumns =
+      'id,user_a,user_b,status,chat_archived_at,created_at,ended_at,'
+      'chat_name,chat_avatar_url,chat_avatar_thumbnail_url';
+
+  Future<Conversation> _conversationFromRow(
+    Map<String, dynamic> relationship, {
+    required Map<String, dynamic>? partner,
+    required String partnerId,
+    required Message? lastMessage,
+    required int unreadCount,
+  }) async {
+    final relationshipId = relationship['id'] as String;
+    final status = relationship['status'] as String;
+    final archivedAt = relationship['chat_archived_at'];
+    final availability =
+        archivedAt != null
+            ? ConversationAvailability.archived
+            : (status == 'active'
+                ? ConversationAvailability.active
+                : ConversationAvailability.readOnly);
+
+    // Couple-chosen identity wins once set (see spec's Read path /
+    // display section) — falls back to the partner's own profile until
+    // then, exactly matching pre-feature behavior. Prefer the thumbnail
+    // once the async job has produced one; the full-size key is still
+    // shown in the gap between "photo set" and "thumbnail ready" rather
+    // than nothing.
+    final chatAvatarKey =
+        (relationship['chat_avatar_thumbnail_url'] as String?) ??
+        (relationship['chat_avatar_url'] as String?);
+    final avatarUrl =
+        chatAvatarKey != null
+            ? await _createRelationshipAvatarSignedUrl(chatAvatarKey)
+            : partner?['avatar_url'] as String?;
+
+    return Conversation(
+      id: relationshipId,
+      relationshipId: relationshipId,
+      partnerId: partnerId,
+      name:
+          (relationship['chat_name'] as String?) ??
+          (partner?['display_name'] as String?) ??
+          'Partner',
+      // The partner's OWN name, kept separate from the couple's
+      // chat_name: a typing indicator or reply preview naming the
+      // couple puts their shared name in one person's mouth.
+      partnerName: (partner?['display_name'] as String?) ?? 'Partner',
+      avatarUrl: avatarUrl,
+      lastMessage: lastMessage,
+      unreadCount: unreadCount,
+      updatedAt: lastMessage?.createdAt ?? DateTime.now(),
+      relationshipStatus: status,
+      availability: availability,
+    );
   }
 
   @override
@@ -151,15 +267,41 @@ class SupabaseChatRepository implements ChatRepository {
     return conversations.first;
   }
 
+  /// One relationship read plus the partner row and its unread count.
+  /// Deliberately NOT the list fetch filtered to one id: the chat header
+  /// refresh runs on every relationship change and used to cost
+  /// relationships + users + last message + unread RPC + avatar for every
+  /// conversation the person has. No preview is fetched (null here; the
+  /// list keeps its own). The unread count IS fetched — alongside the
+  /// partner row, bounded, 0 on failure — because a chat opened from a push
+  /// or the notification inbox (ChatChannelLoader) takes its Conversation
+  /// from here, and the "N unread messages" divider is placed from it
+  /// before the open marks the chat read (#32b).
   @override
   Future<Conversation?> getConversation(String relationshipId) async {
-    final conversations = await getConversations();
-    for (final conversation in conversations) {
-      if (conversation.relationshipId == relationshipId) {
-        return conversation;
-      }
-    }
-    return null;
+    final user = _currentUser;
+    final relationship =
+        await _supabase
+            .from('relationships')
+            .select(_relationshipColumns)
+            .eq('id', relationshipId)
+            // RLS already limits relationships to members; filtering here
+            // too means a misconfigured policy still never hands a
+            // non-member a Conversation.
+            .or('user_a.eq.${user.id},user_b.eq.${user.id}')
+            .maybeSingle();
+    if (relationship == null) return null;
+    final partnerId = _partnerIdFor(relationship, user.id);
+    if (partnerId == null) return null;
+    final unreadCount = _boundedUnreadCount(relationshipId, user.id);
+    final usersById = await _loadUsersById([partnerId]);
+    return _conversationFromRow(
+      relationship,
+      partner: usersById[partnerId],
+      partnerId: partnerId,
+      lastMessage: null,
+      unreadCount: await unreadCount,
+    );
   }
 
   @override
@@ -214,6 +356,7 @@ class SupabaseChatRepository implements ChatRepository {
     String relationshipId, {
     ChatMessageCursor? after,
     int limit = 50,
+    int? maxPages,
   }) async {
     final user = _currentUser;
     final collected = <Map<String, dynamic>>[];
@@ -221,7 +364,9 @@ class SupabaseChatRepository implements ChatRepository {
 
     // Page forward until the gap is exhausted so a reconnect after many missed
     // messages restores every row, not just the first page (Spec 6.1, 16).
-    while (true) {
+    // With maxPages the read stops there; the caller continues from its last
+    // row (the realtime catch-up pages, and bounds, one page per call).
+    for (var page = 0; maxPages == null || page < maxPages; page++) {
       final rows =
           cursor == null
               ? await _supabase
@@ -257,6 +402,107 @@ class SupabaseChatRepository implements ChatRepository {
   }
 
   @override
+  Future<List<Message>> getMessagesByIds(
+    String relationshipId,
+    List<String> ids,
+  ) async {
+    final chunks = chunkMessageIds(ids);
+    if (chunks.isEmpty) return const [];
+    final user = _currentUser;
+    final rows = <Map<String, dynamic>>[];
+    for (final chunk in chunks) {
+      rows.addAll(
+        await _supabase
+            .from('messages')
+            .select(_messageColumns)
+            .eq('relationship_id', relationshipId)
+            .inFilter('id', chunk),
+      );
+    }
+    return _hydrateMessages(rows, user.id, resolveMediaUrls: false);
+  }
+
+  /// Keyset pages on (updated_at, id): the first page is `updated_at >= since`,
+  /// every later page continues strictly after the last row's (updated_at,
+  /// id). A bulk receipt (`mark_conversation_read` stamping 200 rows in one
+  /// transaction) gives hundreds of rows the SAME updated_at; paging on the
+  /// timestamp alone would stall or skip there. The merge dedupes by id.
+  /// Capped at [ChatRepository.changedSinceMaxPages] pages so a very old
+  /// cursor never turns a resume into a history download — the first-page
+  /// reconcile covers the rest.
+  @override
+  Future<List<Message>> getMessagesChangedSince(
+    String relationshipId, {
+    required DateTime since,
+    String? afterId,
+    int limit = 50,
+  }) async {
+    final user = _currentUser;
+    // The keyset needs updated_at on every row; _messageColumns carries it
+    // (Message.fromRow reads it into serverUpdatedAt).
+    const columns = _messageColumns;
+    final sinceIso = since.toUtc().toIso8601String();
+    // Between internal pages: the server's own ISO text, never a re-parsed
+    // DateTime, so the microseconds survive and the boundary row is neither
+    // re-served nor skipped. A caller's [afterId] continuation starts on the
+    // keyset branch from its (since, afterId); `since` came from a parsed
+    // server updated_at, and toUtc().toIso8601String() keeps its
+    // microseconds on the VM.
+    final collected = await collectChangedSincePages(
+      startUpdatedAt: afterId == null ? null : sinceIso,
+      startId: afterId,
+      limit: limit,
+      maxPages: ChatRepository.changedSinceMaxPages,
+      pageTimeout: changedSincePageTimeout,
+      fetchPage:
+          (lastUpdatedAt, lastId) async =>
+              lastUpdatedAt == null
+              ? await _supabase
+                  .from('messages')
+                  .select(columns)
+                  .eq('relationship_id', relationshipId)
+                  .gte('updated_at', sinceIso)
+                  .order('updated_at', ascending: true)
+                  .order('id', ascending: true)
+                  .limit(limit)
+              : await _supabase
+                  .from('messages')
+                  .select(columns)
+                  .eq('relationship_id', relationshipId)
+                  // Implied by the OR below, but PostgREST cannot send a row
+                  // comparison and Postgres cannot turn the OR into an index
+                  // range: without this bound a continuation page walks the
+                  // relationship's whole older history before the cursor.
+                  .gte('updated_at', lastUpdatedAt)
+                  .or(
+                    'updated_at.gt.$lastUpdatedAt,'
+                    'and(updated_at.eq.$lastUpdatedAt,id.gt.$lastId)',
+                  )
+                  .order('updated_at', ascending: true)
+                  .order('id', ascending: true)
+                  .limit(limit),
+    );
+    return _hydrateMessages(collected, user.id, resolveMediaUrls: false);
+  }
+
+  @override
+  Future<void> ensureRealtimeConnected() async {
+    try {
+      if (!_supabase.realtime.isConnected) {
+        // connect() is @internal in realtime_client 2.7.x, but it is the same
+        // call RealtimeChannel.subscribe makes when the socket is down, and
+        // there is no public "connect now". It returns early when a
+        // connection attempt already exists; failures are swallowed below.
+        // ignore: invalid_use_of_internal_member
+        await _supabase.realtime.connect();
+      }
+    } catch (error) {
+      // The socket's own reconnect loop keeps trying; this only hurries it.
+      ChatLog.d('[CHAT] realtime connect nudge failed: ${error.runtimeType}');
+    }
+  }
+
+  @override
   Future<Message> sendTextMessage({
     required String relationshipId,
     required String senderId,
@@ -273,7 +519,6 @@ class SupabaseChatRepository implements ChatRepository {
     String? quotedText,
     bool isViewOnce = false,
     int? streakViewsRemaining,
-    bool isSystemNotice = false,
     String? storyItemId,
   }) async {
     final user = _currentUser;
@@ -314,13 +559,23 @@ class SupabaseChatRepository implements ChatRepository {
               // and writing null would violate its NOT NULL.
               if (streakViewsRemaining != null)
                 'streak_views_remaining': streakViewsRemaining,
-              'is_system_notice': isSystemNotice,
               if (storyItemId != null) 'story_item_id': storyItemId,
             })
             .select(_messageColumns)
             .single();
 
     return _hydrateMessage(row, user.id);
+  }
+
+  @override
+  Future<void> sendScreenshotNotice({
+    required String relationshipId,
+    required String clientMessageId,
+  }) async {
+    await _supabase.rpc('send_screenshot_notice', params: {
+      'p_relationship_id': relationshipId,
+      'p_client_message_id': clientMessageId,
+    });
   }
 
   @override
@@ -368,19 +623,64 @@ class SupabaseChatRepository implements ChatRepository {
     );
   }
 
+  ChatMediaUploader? _uploader;
+  ChatMediaUploader get _mediaUploader =>
+      _uploader ??= ChatMediaUploader(
+        storageUrl: () => _supabase.storage.url,
+        headers: _uploadHeaders,
+      );
+
+  /// What the SDK's AuthHttpClient adds to every Storage request, done by
+  /// hand because the streaming uploader bypasses that client. In supabase
+  /// 2.12.1 storage.headers carries neither credential: AuthHttpClient puts
+  /// the `apikey` and the person's bearer on each request
+  /// (`_getAccessToken`, which also refreshes an expired session). Without
+  /// the apikey the gateway refuses the request; without the bearer Storage
+  /// RLS sees an anonymous upload (403, which ChatError counts toward the
+  /// cap). The apikey is read from the auth client's headers, where the SDK
+  /// sets it to the project key.
+  Future<Map<String, String>> _uploadHeaders() async {
+    final auth = _supabase.auth;
+    final apiKey = auth.headers['apikey'];
+    if (auth.currentSession?.isExpired ?? false) {
+      try {
+        await auth.refreshSession();
+      } catch (_) {
+        // A failed refresh surfaces as a 401 from Storage, which ChatError
+        // classifies transient: the row is retried after the SDK's own
+        // refresh lands.
+      }
+    }
+    final token = auth.currentSession?.accessToken;
+    return {
+      ..._supabase.storage.headers,
+      if (apiKey != null) 'apikey': apiKey,
+      if (token != null) 'Authorization': 'Bearer $token',
+    };
+  }
+
+  @visibleForTesting
+  Future<Map<String, String>> debugUploadHeaders() => _uploadHeaders();
+
   @override
   Future<void> uploadChatMedia({
     required ChatMediaUploadIntent intent,
     required String localPath,
     required String mimeType,
-  }) async {
-    await _supabase.storage
-        .from(intent.bucket)
-        .upload(
-          intent.storageKey,
-          File(localPath),
-          fileOptions: FileOptions(upsert: false, contentType: mimeType),
-        );
+    void Function(double fraction)? onProgress,
+    ChatUploadCancelToken? cancelToken,
+  }) {
+    return _mediaUploader.upload(
+      bucket: intent.bucket,
+      objectKey: intent.storageKey,
+      localPath: localPath,
+      mimeType: mimeType,
+      cancelToken: cancelToken,
+      onProgress:
+          onProgress == null
+              ? null
+              : (sent, total) => onProgress(total <= 0 ? 1.0 : sent / total),
+    );
   }
 
   @override
@@ -403,6 +703,18 @@ class SupabaseChatRepository implements ChatRepository {
     );
   }
 
+  @override
+  Future<SignedMediaGrant?> createSignedMediaGrant(
+    String mediaKey, {
+    bool forceRefresh = false,
+  }) async {
+    return _createSignedStorageGrant(
+      bucket: 'message-media',
+      storageKey: mediaKey,
+      forceRefresh: forceRefresh,
+    );
+  }
+
   /// Same cache/TTL as [createSignedMediaUrl]. Cache entries include the
   /// bucket name so avatar and message objects never collide.
   Future<String?> _createRelationshipAvatarSignedUrl(String storageKey) async {
@@ -417,30 +729,53 @@ class SupabaseChatRepository implements ChatRepository {
     required String storageKey,
     bool forceRefresh = false,
   }) async {
+    final grant = await _createSignedStorageGrant(
+      bucket: bucket,
+      storageKey: storageKey,
+      forceRefresh: forceRefresh,
+    );
+    return grant?.url;
+  }
+
+  /// The cache entry itself — URL plus the moment this cache stops reusing
+  /// it — so [createSignedMediaGrant] callers can refresh before expiry.
+  Future<SignedMediaGrant?> _createSignedStorageGrant({
+    required String bucket,
+    required String storageKey,
+    bool forceRefresh = false,
+  }) async {
     for (final candidate in _storageKeyCandidates(storageKey, bucket)) {
       final cacheKey = '$bucket::$candidate';
       final cached = _signedUrlCache[cacheKey];
       if (!forceRefresh &&
           cached != null &&
           cached.expiresAt.isAfter(DateTime.now())) {
-        return cached.url;
+        return cached;
       }
       try {
         final url = await _supabase.storage
             .from(bucket)
             .createSignedUrl(candidate, _signedUrlTtl.inSeconds);
-        _signedUrlCache[cacheKey] = (
+        final entry = (
           url: url,
           expiresAt: DateTime.now().add(_signedUrlTtl - _signedUrlSafetyMargin),
         );
-        return url;
+        _signedUrlCache[cacheKey] = entry;
+        return entry;
       } catch (_) {
         // Try the next normalized candidate. Older cached rows and a few
         // storage pipelines have used both bucket-prefixed and unprefixed
         // object names; the private bucket/RLS contract is unchanged.
       }
     }
-    return storageKey.startsWith('http') ? storageKey : null;
+    // A key that is already a URL passes through unsigned; its real expiry
+    // is unknown, so it is trusted for one ordinary signing window.
+    return storageKey.startsWith('http')
+        ? (
+          url: storageKey,
+          expiresAt: DateTime.now().add(_signedUrlTtl - _signedUrlSafetyMargin),
+        )
+        : null;
   }
 
   List<String> _storageKeyCandidates(String storageKey, String bucket) {
@@ -538,6 +873,26 @@ class SupabaseChatRepository implements ChatRepository {
     );
   }
 
+  /// Reduces a frame to a [ChatRealtimeEvent] and forwards it. Never throws:
+  /// a malformed frame must not take the subscription down.
+  void _forwardChange(
+    StreamController<ChatRealtimeEvent> events,
+    PostgresChangePayload payload,
+  ) {
+    if (events.isClosed) return;
+    try {
+      final event = ChatRealtimeEvent.fromPostgresChange(
+        table: payload.table,
+        eventType: payload.eventType.name,
+        newRecord: payload.newRecord,
+        oldRecord: payload.oldRecord,
+      );
+      if (event != null) events.add(event);
+    } catch (error) {
+      ChatLog.e('realtime frame ignored', error);
+    }
+  }
+
   /// Lazily creates and subscribes the single Realtime channel for
   /// [relationshipId], wiring both the postgres_changes handlers (message /
   /// relationship row invalidation) and the typing broadcast handler onto it.
@@ -551,13 +906,16 @@ class SupabaseChatRepository implements ChatRepository {
 
     final events = _eventControllers.putIfAbsent(
       relationshipId,
-      () => StreamController<void>.broadcast(),
+      () => StreamController<ChatRealtimeEvent>.broadcast(),
     );
     final typing = _typingControllers.putIfAbsent(
       relationshipId,
       () => StreamController<TypingEvent>.broadcast(),
     );
 
+    // The first `subscribed` of this channel answers the open that created
+    // it; every later one is a reconnect (see chatResyncEventFor).
+    var joinedBefore = false;
     final channel = _supabase
         .channel('chat:$relationshipId')
         .onPostgresChanges(
@@ -569,7 +927,7 @@ class SupabaseChatRepository implements ChatRepository {
             column: 'relationship_id',
             value: relationshipId,
           ),
-          callback: (_) => events.add(null),
+          callback: (payload) => _forwardChange(events, payload),
         )
         .onPostgresChanges(
           event: PostgresChangeEvent.update,
@@ -580,7 +938,7 @@ class SupabaseChatRepository implements ChatRepository {
             column: 'id',
             value: relationshipId,
           ),
-          callback: (_) => events.add(null),
+          callback: (payload) => _forwardChange(events, payload),
         )
         .onPostgresChanges(
           event: PostgresChangeEvent.all,
@@ -591,7 +949,7 @@ class SupabaseChatRepository implements ChatRepository {
             column: 'relationship_id',
             value: relationshipId,
           ),
-          callback: (_) => events.add(null),
+          callback: (payload) => _forwardChange(events, payload),
         )
         .onPostgresChanges(
           event: PostgresChangeEvent.all,
@@ -602,7 +960,7 @@ class SupabaseChatRepository implements ChatRepository {
             column: 'relationship_id',
             value: relationshipId,
           ),
-          callback: (_) => events.add(null),
+          callback: (payload) => _forwardChange(events, payload),
         )
         .onBroadcast(
           event: 'typing',
@@ -635,9 +993,16 @@ class SupabaseChatRepository implements ChatRepository {
           // tell the app it missed events in the meantime.
           switch (status) {
             case RealtimeSubscribeStatus.subscribed:
-              // Includes the FIRST subscribe, so the initial refetch is
-              // harmless, and every resubscribe after a reconnect.
-              if (!events.isClosed) events.add(null);
+              // The FIRST subscribe is marked initial: the chat that opened
+              // the channel has just read everything itself, so it skips
+              // those reads (M2). Every resubscribe after a reconnect is a
+              // full resync.
+              final event = chatResyncEventFor(
+                status,
+                joinedBefore: joinedBefore,
+              );
+              joinedBefore = true;
+              if (event != null && !events.isClosed) events.add(event);
             case RealtimeSubscribeStatus.channelError:
             case RealtimeSubscribeStatus.timedOut:
             case RealtimeSubscribeStatus.closed:
@@ -722,7 +1087,7 @@ class SupabaseChatRepository implements ChatRepository {
   }
 
   @override
-  Stream<void> watchConversationEvents(String relationshipId) {
+  Stream<ChatRealtimeEvent> watchConversationEvents(String relationshipId) {
     _channelFor(relationshipId);
     return _eventControllers[relationshipId]!.stream;
   }
@@ -820,15 +1185,20 @@ class SupabaseChatRepository implements ChatRepository {
 
   @override
   Future<void> releaseChannel(String relationshipId) async {
+    // All three leave the maps before the first await: a chat subscribing
+    // again while the old channel is still being removed (a controller
+    // rebuilt for another account, M6) must get a new channel AND new
+    // streams — it used to pick up the old stream controller, which this
+    // then closed under it, leaving the new chat deaf.
     final channel = _channels.remove(relationshipId);
+    final events = _eventControllers.remove(relationshipId);
+    final typing = _typingControllers.remove(relationshipId);
     if (channel != null) {
       await _supabase.removeChannel(channel);
     }
-    final events = _eventControllers.remove(relationshipId);
     if (events != null) {
       await events.close();
     }
-    final typing = _typingControllers.remove(relationshipId);
     if (typing != null) {
       await typing.close();
     }
@@ -878,6 +1248,23 @@ class SupabaseChatRepository implements ChatRepository {
         .limit(1);
     if (rows.isEmpty) return null;
     return _hydrateMessage(rows.first, currentUserId);
+  }
+
+  /// [_fetchUnreadCount] for an open: never throws, never waits past
+  /// [unreadCountTimeout]. A missing count only costs the unread divider.
+  Future<int> _boundedUnreadCount(
+    String relationshipId,
+    String currentUserId,
+  ) async {
+    try {
+      return await _fetchUnreadCount(
+        relationshipId,
+        currentUserId,
+      ).timeout(unreadCountTimeout);
+    } catch (error) {
+      ChatLog.e('unread count for open failed; opening without it', error);
+      return 0;
+    }
   }
 
   Future<int> _fetchUnreadCount(
@@ -1108,6 +1495,10 @@ class SupabaseChatRepository implements ChatRepository {
         .select(_messageColumns)
         .eq('relationship_id', relationshipId)
         .ilike('content', '%$escaped%')
+        // Trails repeat the game's name at every move; only the card should
+        // match. `.or` with `is.null` keeps plain-text rows (NULL media_type),
+        // which a bare `.neq` would silently drop.
+        .or('media_type.is.null,media_type.neq.game_trail')
         // A deleted message's content is gone (delete_message RPC clears
         // it) — excluded here since there is nothing to show/highlight in
         // a search result for a tombstoned message.

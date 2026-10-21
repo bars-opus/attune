@@ -1,6 +1,7 @@
 import 'package:attune/app/theme/app_theme.dart' show ColorSchemeExtension;
 import 'package:gap/gap.dart';
 import 'package:attune/app/theme/design_tokens.dart';
+import 'package:attune/core/widgets/feedback/export_extensions.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_quill/flutter_quill.dart';
 
@@ -94,6 +95,7 @@ class _PlanningRibbonState extends State<PlanningRibbon> {
     required String title,
     required List<(String, Attribute, TextStyle?)> options,
     required Object? current,
+    void Function(Attribute picked)? apply,
   }) async {
     final picked = await showModalBottomSheet<Attribute>(
       context: context,
@@ -114,7 +116,7 @@ class _PlanningRibbonState extends State<PlanningRibbon> {
         ]),
       ),
     );
-    if (picked != null) controller.formatSelection(picked);
+    if (picked != null) (apply ?? controller.formatSelection)(picked);
   }
 
   Future<void> _pickHeading(QuillController controller) {
@@ -122,6 +124,8 @@ class _PlanningRibbonState extends State<PlanningRibbon> {
     return _pickOption(controller,
         title: 'Paragraph style',
         current: controller.getSelectionStyle().attributes[Attribute.header.key]?.value,
+        // A heading clears the text sizes in its line (they'd only shrink it).
+        apply: (picked) => planningApplyHeading(controller, picked),
         options: [
           ('Normal text', Attribute.clone(Attribute.header, null), text.bodyLarge),
           ('Heading 1', Attribute.h1, text.headlineSmall),
@@ -130,17 +134,24 @@ class _PlanningRibbonState extends State<PlanningRibbon> {
         ]);
   }
 
-  Future<void> _pickSize(QuillController controller) {
+  Future<void> _pickSize(QuillController controller) async {
+    // A heading has its own size; sizes are for normal text.
+    if (!planningSizeAllowed(controller)) {
+      context.showInfoSnackbar('Headings have their own size. Choose Normal text in Heading to size it.');
+      return;
+    }
     final body = Theme.of(context).textTheme.bodyLarge;
+    TextStyle? at(String size) => body?.copyWith(fontSize: planningTextSizes[size]);
     return _pickOption(controller,
         title: 'Text size',
         current: controller.getSelectionStyle().attributes[Attribute.size.key]?.value,
         options: [
-          // Named sizes the server accepts; Normal clears the size.
-          ('Small', const SizeAttribute('small'), body?.copyWith(fontSize: 12)),
-          ('Normal', Attribute.clone(Attribute.size, null), body),
-          ('Large', const SizeAttribute('large'), body?.copyWith(fontSize: 20)),
-          ('Huge', const SizeAttribute('huge'), body?.copyWith(fontSize: 26)),
+          // Named sizes the server accepts; Normal clears the size. Each
+          // previews the size a note really uses.
+          ('Small', const SizeAttribute('small'), at('small')),
+          ('Normal', Attribute.clone(Attribute.size, null), at('normal')),
+          ('Large', const SizeAttribute('large'), at('large')),
+          ('Huge', const SizeAttribute('huge'), at('huge')),
         ]);
   }
 

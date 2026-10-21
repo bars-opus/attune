@@ -27,4 +27,65 @@ void main() {
       );
     }
   });
+
+  test('backups never carry staged chat photos or their upload files', () {
+    // Chat stages picks and prepared uploads in Application Support
+    // (filesDir on Android) so a queued photo survives a cache purge; that
+    // folder is backed up unless excluded. Same rule as the chat cache.
+    for (final path in [
+      'android/app/src/main/res/xml/backup_rules.xml',
+      'android/app/src/main/res/xml/data_extraction_rules.xml',
+    ]) {
+      final xml = File(path).readAsStringSync();
+      final sections =
+          path.contains('extraction')
+              ? [
+                xml.substring(
+                  xml.indexOf('<cloud-backup>'),
+                  xml.indexOf('</cloud-backup>'),
+                ),
+                xml.substring(
+                  xml.indexOf('<device-transfer>'),
+                  xml.indexOf('</device-transfer>'),
+                ),
+              ]
+              : [xml];
+      for (final section in sections) {
+        for (final folder in ['chat_picks/', 'chat_prepared/']) {
+          expect(
+            section,
+            contains('<exclude domain="file" path="$folder" />'),
+            reason: '$path must exclude $folder',
+          );
+        }
+      }
+    }
+  });
+
+  test('backups never carry cached voice/video bytes', () {
+    // ChatMediaCache needs no exclusion only because everything it writes
+    // (files, its database, its ownership index) sits in the OS cache
+    // directory, which iOS and Android never back up. The database would
+    // default to Application Support (backed up), so it is placed
+    // explicitly. Behaviour: chat_media_cache_test.dart, "everything lives
+    // in the OS cache directory".
+    final source = File(
+      'lib/features/chat/domain/services/chat_media_cache.dart',
+    ).readAsStringSync();
+    expect(source, contains('getTemporaryDirectory()'));
+    expect(source, contains('path: at.database'));
+    for (final backedUp in [
+      'getApplicationSupportDirectory',
+      'getApplicationDocumentsDirectory',
+      'getLibraryDirectory',
+    ]) {
+      expect(
+        source.contains(backedUp),
+        isFalse,
+        reason: 'ChatMediaCache must not write to $backedUp (backed up); '
+            'if it must, exclude it in backup_rules.xml, '
+            'data_extraction_rules.xml (both sections) and BackupExclusion',
+      );
+    }
+  });
 }

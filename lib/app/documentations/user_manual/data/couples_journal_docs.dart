@@ -140,7 +140,7 @@ class CouplesJournalDocs implements DocumentationModule {
           title: 'Working toward something',
           numberPrefix: '5',
           content:
-              'In Goals, each goal comes with a target date, a place to say why it matters to you, its steps, and a progress bar that fills as you tick them off.',
+              'In Goals, each goal comes with a target date and a countdown to it, a place to say why it matters to you, and its steps. Its progress bar fills a segment for each step you tick off, and says whether you\'re on track for the date — and what a week would take if you\'re a little behind.',
         ),
         ManualContent(
           id: 'couples_journal_tense',

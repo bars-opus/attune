@@ -10,7 +10,7 @@ class _FakeStreakRepository implements StreakRepository {
   int markViewedCalls = 0;
 
   @override
-  Future<int> markViewed(String messageId) async {
+  Future<int> markViewed(String messageId, {required String openId}) async {
     markViewedCalls++;
     return 0;
   }

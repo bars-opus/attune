@@ -1,3 +1,4 @@
+import 'package:attune/core/widgets/app_content_width.dart';
 import 'package:attune/app/theme/design_tokens.dart';
 import 'package:gap/gap.dart';
 import 'package:attune/core/widgets/feedback/export_extensions.dart';
@@ -35,6 +36,18 @@ import '../../domain/delta_sanitizer.dart';
 enum _EntryMenu { done, reopen, putAway, next, splitOn, splitOff }
 
 enum _BlockMenu { edit, up, down, delete }
+
+/// Shown as part of the note rather than in a card: text always, and a
+/// content block once it holds something.
+bool _readsAsNote(PlanningBlock b) => switch (b.type) {
+  PlanningBlockType.text => true,
+  PlanningBlockType.date => b.dateStart != null,
+  PlanningBlockType.table => b.items.isNotEmpty,
+  PlanningBlockType.photo => b.photoPaths.isNotEmpty,
+  PlanningBlockType.link => (b.linkUrl ?? '').trim().isNotEmpty,
+  PlanningBlockType.place => b.place != null,
+  _ => false,
+};
 
 /// One plan, laid out as a document: its title, then its blocks, with a
 /// Home | Insert ribbon above the keyboard. Text is edited in place.
@@ -347,6 +360,15 @@ class _EntryBody extends ConsumerWidget {
   /// Whether [b] places its own options menu, so its body takes the full width.
   static bool _menuInBlock(PlanningBlock b) => _menuInHeading.contains(b.type);
 
+  /// A goal's pace line sits just above its card; every other card as it is.
+  Widget _withPaceAbove(PlanningEntryDetail d, PlanningBlock b, Widget card) =>
+      b.type == PlanningBlockType.progress
+          ? Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [PlanningGoalPaceLine(block: b, defaultCurrency: d.entry.currency), card],
+            )
+          : card;
+
   Widget _blockBody(PlanningEntryDetail d, PlanningBlock b, {Widget? menu}) => switch (b.type) {
     PlanningBlockType.text => InlineTextBlock(
       args: _args,
@@ -388,6 +410,8 @@ class _EntryBody extends ConsumerWidget {
       child: Scaffold(
         appBar: AppBar(
           centerTitle: false,
+          // Transparent, like the category's screen.
+          backgroundColor: Colors.transparent,
           title:
               titleId == null || titleName == null ? null : PlanningCategoryTitle(categoryId: titleId, name: titleName),
           actions: [
@@ -431,7 +455,7 @@ class _EntryBody extends ConsumerWidget {
                       keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.manual,
                       scrollController: doc.scroll,
                       buildDefaultDragHandles: false,
-                      padding: Spacing.horizontalMd,
+                      padding: AppContentWidth.padded(context, Spacing.horizontalMd),
                       header: _Hero(detail: d, args: _args),
                       footer: const SizedBox(height: Spacing.xxl * 2),
                       itemCount: d.blocks.length,
@@ -499,16 +523,14 @@ class _EntryBody extends ConsumerWidget {
                         );
                         // Text is part of the page, not a card: no drag (long-press
                         // selects words) and no swipe (it would fight text selection).
-                        // Its menu still moves and deletes it. A Date block with its
-                        // date set reads the same way: a line in the note. So does a
-                        // table: its grid is its own frame, and its rows own the swipe. Photos
-                        // too: the stack is its own frame, and the swipe browses it. And a link:
-                        // its preview reads as part of the note.
-                        if (b.type == PlanningBlockType.text ||
-                            b.type == PlanningBlockType.table ||
-                            b.type == PlanningBlockType.photo ||
-                            b.type == PlanningBlockType.link ||
-                            (b.type == PlanningBlockType.date && b.dateStart != null)) {
+                        // Its menu still moves and deletes it. Content blocks read
+                        // the same way once they hold something — a set date, a table
+                        // with rows (its grid is its own frame, its rows own the
+                        // swipe), photos (the stack is its own frame, the swipe
+                        // browses it), a link's preview, a chosen place — and sit in
+                        // a card only while empty, so there is something to tap.
+                        // Tools (expenses, budget, countdown, checklist…) always do.
+                        if (_readsAsNote(b)) {
                           final body = Padding(
                             padding: const EdgeInsets.only(bottom: Spacing.sm),
                             child: Row(
@@ -552,7 +574,7 @@ class _EntryBody extends ConsumerWidget {
                               child: Listener(
                                 // Insert goes after the block last tapped.
                                 onPointerDown: (_) => doc.select(b.id),
-                                child: CardInkWell(
+                                child: _withPaceAbove(d, b, CardInkWell(
                                   margin: const EdgeInsets.only(bottom: Spacing.smMd),
                                   child: Padding(
                                     padding: const EdgeInsets.fromLTRB(Spacing.md, Spacing.sm, 0, Spacing.sm),
@@ -563,7 +585,7 @@ class _EntryBody extends ConsumerWidget {
                                           : [Expanded(child: _blockBody(d, b)), menu],
                                     ),
                                   ),
-                                ),
+                                )),
                               ),
                             ),
                           ),

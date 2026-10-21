@@ -12,7 +12,6 @@ import 'package:attune/core/notifications/domain/usecases/get_user_notifications
 import 'package:attune/core/notifications/domain/usecases/mark_all_notifications_as_read.dart';
 import 'package:attune/core/notifications/domain/usecases/mark_notification_as_read.dart';
 import 'package:attune/core/notifications/domain/usecases/notify_new_shop_nearby.dart';
-import 'package:attune/core/notifications/domain/usecases/register_push_token.dart';
 import 'package:attune/core/notifications/domain/usecases/schedule_booking_reminders.dart';
 import 'package:attune/core/notifications/domain/usecases/send_immediate_notification.dart';
 import 'package:attune/core/notifications/presentation/providers/notification_notifier.dart';
@@ -46,11 +45,6 @@ final sendImmediateNotificationUseCaseProvider = Provider((ref) {
 final cancelBookingNotificationsUseCaseProvider = Provider((ref) {
   final repository = ref.read(notificationRepositoryProvider);
   return CancelBookingNotificationsUseCase(repository);
-});
-
-final registerPushTokenUseCaseProvider = Provider((ref) {
-  final repository = ref.read(notificationRepositoryProvider);
-  return RegisterPushTokenUseCase(repository);
 });
 
 final notifyNewShopNearbyUseCaseProvider = Provider((ref) {
@@ -92,7 +86,6 @@ final deleteNotificationUseCaseProvider = Provider((ref) {
 //     scheduleRemindersUseCase: ref.read(scheduleBookingRemindersUseCaseProvider),
 //     sendImmediateUseCase: ref.read(sendImmediateNotificationUseCaseProvider),
 //     cancelBookingUseCase: ref.read(cancelBookingNotificationsUseCaseProvider),
-//     registerPushTokenUseCase: ref.read(registerPushTokenUseCaseProvider),
 //     notifyNewShopNearbyUseCase: ref.read(notifyNewShopNearbyUseCaseProvider),
 //     getUserNotificationsUseCase: ref.read(getUserNotificationsUseCaseProvider),
 //     markAsReadUseCase: ref.read(markNotificationAsReadUseCaseProvider),

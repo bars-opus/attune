@@ -9,6 +9,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import '../chat/support/chat_test_harness.dart' show withScreenUtil;
+import 'package:attune/core/widgets/app_days_count.dart';
+import 'package:attune/features/planning/presentation/widgets/countdown_block_view.dart';
 import 'support/fake_planning_gateway.dart';
 import 'support/planning_test_app.dart';
 
@@ -71,11 +73,16 @@ void main() {
     });
     await tester.pumpWidget(_app(g, _screen));
     await tester.pumpAndSettle();
-    expect(find.text('12 days'), findsWidgets, reason: 'the block, and the plan\'s key facts');
-    for (final label in ['Tomorrow', 'Today']) {
-      await tester.scrollUntilVisible(find.text(label), 200, scrollable: _list);
-      expect(find.text(label), findsOneWidget);
-    }
+    // The plan's key facts keep the short label; each block reads like the
+    // couple's days-together count: the number, "days" over "to go".
+    expect(find.text('12 days'), findsOneWidget, reason: 'the plan\'s key facts');
+    AppDaysCount count(int n) => tester.widgetList<AppDaysCount>(find.byType(AppDaysCount)).firstWhere((c) => c.count == n);
+    expect((count(12).top, count(12).bottom), ('days', 'to go'));
+    await tester.scrollUntilVisible(find.text('day'), 200, scrollable: _list);
+    expect((count(1).top, count(1).bottom), ('day', 'to go'), reason: 'tomorrow');
+    await tester.scrollUntilVisible(
+        find.descendant(of: find.byType(CountdownBlockView), matching: find.text('Today')), 200, scrollable: _list);
+    expect(find.descendant(of: find.byType(CountdownBlockView), matching: find.text('Today')), findsOneWidget);
     await tester.scrollUntilVisible(find.text('Pick a date'), 200, scrollable: _list);
     await tester.ensureVisible(find.text('Pick a date'));
     await tester.pumpAndSettle();

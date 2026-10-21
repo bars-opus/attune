@@ -168,7 +168,7 @@
   "authPasswordResetSentNote": "Appuyez sur le lien dans l'e-mail pour définir un nouveau mot de passe. Le lien expire dans 1 heure.",
 
   "authGuestHello": "Bonjour !",
-  "authGuestOverview": "Vous naviguez {appName} en tant qu'invité. Connectez-vous ou créez un compte pour commencer à gérer votre boutique – cela prend moins de 5 secondes. Nous avons une variété d'outils pour vous aider à développer votre entreprise, tous gratuits.",
+  "authGuestOverview": "Vous naviguez sur {appName} en tant qu'invité. Connectez-vous avec votre numéro de téléphone pour commencer votre espace partagé avec votre partenaire – cela ne prend que quelques secondes.",
   "@authGuestOverview": {
     "description": "Texte de bienvenue pour les utilisateurs invités sur l'écran de profil de connexion",
     "placeholders": {

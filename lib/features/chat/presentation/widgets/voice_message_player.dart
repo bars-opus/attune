@@ -1,23 +1,37 @@
 import 'dart:async';
 
-import 'package:attune/features/chat/presentation/providers/voice_playback_provider.dart';
-import 'package:attune/features/chat/utils/chat_log.dart';
+import 'package:attune/core/ui/feedback/haptics.dart';
+import 'package:attune/core/ui/motion/reduce_motion.dart';
 import 'package:attune/core/widgets/rolling_duration.dart';
-import 'package:audioplayers/audioplayers.dart';
+import 'package:attune/features/chat/presentation/state/voice_playback_controller.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+/// What one bubble needs from the controller: null unless it is the
+/// current note. A record compares by value, so a position frame for
+/// ANOTHER note leaves this bubble's projection null == null — no rebuild.
+typedef _BubbleView = ({
+  bool playing,
+  bool busy,
+  Duration position,
+  double rate,
+});
+
 /// Playback UI for a voice message bubble: play/pause, a tap-to-seek
-/// waveform, and elapsed/total duration. Enforces one-at-a-time playback
-/// app-wide via [currentlyPlayingVoiceMessageIdProvider] — starting
-/// playback here stops whatever the provider currently points to.
-class VoiceMessagePlayer extends ConsumerStatefulWidget {
+/// waveform, elapsed/total duration and a speed chip. A VIEW of
+/// [voicePlaybackControllerProvider]: the controller owns the engine, so
+/// this widget can be recycled by the list while its note keeps playing
+/// (chat review #21).
+class VoiceMessagePlayer extends ConsumerWidget {
   const VoiceMessagePlayer({
     super.key,
     required this.messageId,
     required this.resolveAudioUrl,
     required this.durationMs,
     required this.waveform,
+    this.mediaKey,
+    this.ownerId,
+    this.serverMessageId,
     this.foregroundColor,
     this.metadataColor,
     this.accentColor,
@@ -25,17 +39,21 @@ class VoiceMessagePlayer extends ConsumerStatefulWidget {
 
   final String messageId;
 
-  /// Resolved on PLAY, not on build.
-  ///
-  /// durationMs and waveform both come off the message row, so the bubble
-  /// can draw itself with no network at all. Taking a resolved URL meant
-  /// the whole player sat behind a shimmer while a signed URL was fetched
-  /// — on every cold open, and again whenever the 10-minute signed-URL
-  /// TTL lapsed. Nothing but playback needs it.
-  ///
-  /// Returns null when the media cannot be resolved, which surfaces as the
-  /// same "could not play" message as any other playback failure.
+  /// Resolved on PLAY, not on build. durationMs and waveform both come off
+  /// the message row, so the bubble draws itself with no network at all.
+  /// Returns null when the media cannot be resolved.
   final Future<String?> Function() resolveAudioUrl;
+
+  /// Storage key: the controller plays the bytes from ChatMediaCache when
+  /// they are on disk, and downloads them there once otherwise (#28).
+  final String? mediaKey;
+
+  /// The conversation (relationship id) this note belongs to, so leaving a
+  /// different chat does not stop it.
+  final String? ownerId;
+
+  /// The message's server row id: a realtime hard delete names only that.
+  final String? serverMessageId;
 
   final int durationMs;
   final List<int> waveform;
@@ -43,151 +61,93 @@ class VoiceMessagePlayer extends ConsumerStatefulWidget {
   final Color? metadataColor;
   final Color? accentColor;
 
-  @override
-  ConsumerState<VoiceMessagePlayer> createState() => _VoiceMessagePlayerState();
-}
+  static const double _waveformWidth = 172;
 
-class _VoiceMessagePlayerState extends ConsumerState<VoiceMessagePlayer> {
-  final _player = AudioPlayer();
-  Duration _position = Duration.zero;
-  bool _isPlaying = false;
+  /// Minimum tap target (Material): the play button's size, and the speed
+  /// chip's tap area.
+  static const double _minTapSize = 48;
 
-  @override
-  void initState() {
-    super.initState();
-    _player.onPositionChanged.listen((position) {
-      if (mounted) setState(() => _position = position);
-    });
-    _player.onPlayerComplete.listen((_) {
-      if (!mounted) return;
-      setState(() {
-        _isPlaying = false;
-        _position = Duration.zero;
-      });
-      if (ref.read(currentlyPlayingVoiceMessageIdProvider) ==
-          widget.messageId) {
-        ref.read(currentlyPlayingVoiceMessageIdProvider.notifier).state = null;
-      }
-    });
-  }
+  /// One screen-reader step on the waveform slider.
+  static const Duration _seekStep = Duration(seconds: 5);
 
   @override
-  void dispose() {
-    // Ensures leaving the message list (this widget leaving the tree) stops
-    // playback — no background/lock-screen playback, per the design spec's
-    // explicit out-of-scope list.
-    _player.dispose();
-    super.dispose();
-  }
-
-  Future<void> _togglePlayback() async {
-    if (_isPlaying) {
-      await _player.pause();
-      setState(() => _isPlaying = false);
-      return;
-    }
-
-    final currentlyPlaying = ref.read(currentlyPlayingVoiceMessageIdProvider);
-    if (currentlyPlaying != null && currentlyPlaying != widget.messageId) {
-      // Enforced via the provider only — this widget doesn't hold a
-      // reference to the other bubble's AudioPlayer. Each VoiceMessagePlayer
-      // instance listens for the provider changing away from its own
-      // messageId and pauses itself in response (see the ref.listen wiring
-      // in build() below), so setting the provider here is sufficient to
-      // stop the other bubble.
-    }
-    // Cross-media pause: stop any currently-playing video message before
-    // this voice message starts. The reverse (video stopping a playing
-    // voice message) is wired symmetrically in VideoMessagePlayer's own
-    // _togglePlayback.
-    if (ref.read(currentlyPlayingVideoMessageIdProvider) != null) {
-      ref.read(currentlyPlayingVideoMessageIdProvider.notifier).state = null;
-    }
-    ref.read(currentlyPlayingVoiceMessageIdProvider.notifier).state =
-        widget.messageId;
-
-    // Resolved here rather than at build time: this is the first moment
-    // the URL is actually needed.
-    final audioUrl = await widget.resolveAudioUrl();
-    if (!mounted) return;
-    if (audioUrl == null) {
-      ref.read(currentlyPlayingVoiceMessageIdProvider.notifier).state = null;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('That voice message could not play')),
-      );
-      return;
-    }
-
-    // audioplayers' UrlSource only works for real HTTP(S) URLs. A voice
-    // message just recorded by the current user is initially playable only
-    // from message.localMediaPath (a local file path) before the upload
-    // completes and signedMediaUrl becomes available — UrlSource would fail
-    // on a raw file path, so branch on the source shape instead.
-    final source =
-        audioUrl.startsWith('http')
-            ? UrlSource(audioUrl)
-            : DeviceFileSource(audioUrl);
-
-    // Per-player, because SoundService sets a PROCESS-WIDE context with
-    // respectSilence:true for UI chirps — on iOS that is the ambient
-    // category, muted by the Ring/Silent switch. Without this the voice
-    // note inherits it and plays silently.
-    //
-    // A UI blip should respect the silent switch; a voice message the user
-    // deliberately tapped should not, the same way it plays in every other
-    // messaging app.
-    try {
-      await _player.setAudioContext(
-        AudioContextConfig(respectSilence: false).build(),
-      );
-      await _player.play(source);
-    } catch (error, stack) {
-      // diagnostic, not e: a playback failure carries no message content,
-      // and e would shape the cause to `<len=N>` — which is exactly as
-      // useless as the silence it is trying to explain.
-      ChatLog.diagnostic('voice playback failed', error);
-      debugPrintStack(stackTrace: stack);
-      if (!mounted) return;
-      ref.read(currentlyPlayingVoiceMessageIdProvider.notifier).state = null;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('That voice message could not play')),
-      );
-      return;
-    }
-    if (!mounted) return;
-    setState(() => _isPlaying = true);
-  }
-
-  Future<void> _seekToFraction(double fraction) async {
-    final target = Duration(
-      milliseconds: (widget.durationMs * fraction.clamp(0.0, 1.0)).round(),
+  Widget build(BuildContext context, WidgetRef ref) {
+    final view = ref.watch(
+      voicePlaybackControllerProvider.select<_BubbleView?>(
+        (s) =>
+            s.isCurrent(messageId)
+                ? (
+                  playing: s.isPlaying,
+                  busy: s.isLoading || s.isBuffering,
+                  position: s.position,
+                  rate: s.rate,
+                )
+                : null,
+      ),
     );
-    await _player.seek(target);
-  }
+    final controller = ref.read(voicePlaybackControllerProvider.notifier);
+    final isCurrent = view != null;
+    final isPlaying = view?.playing ?? false;
+    final isBusy = view?.busy ?? false;
+    final position = view?.position ?? Duration.zero;
 
-  @override
-  Widget build(BuildContext context) {
-    // Another bubble became the currently-playing one — pause this one.
-    ref.listen<String?>(currentlyPlayingVoiceMessageIdProvider, (
-      previous,
-      next,
-    ) {
-      if (next != widget.messageId && _isPlaying) {
-        _player.pause();
-        setState(() => _isPlaying = false);
-      }
-    });
+    ref.listen<int>(
+      voicePlaybackControllerProvider.select((s) => s.failureCount),
+      (previous, next) {
+        if (ref.read(voicePlaybackControllerProvider).failedMessageId !=
+            messageId) {
+          return;
+        }
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('That voice message could not play')),
+        );
+      },
+    );
 
-    final total = Duration(milliseconds: widget.durationMs);
+    final total = Duration(milliseconds: durationMs);
     final progressFraction =
         total.inMilliseconds == 0
             ? 0.0
-            : _position.inMilliseconds / total.inMilliseconds;
+            : (position.inMilliseconds / total.inMilliseconds).clamp(0.0, 1.0);
 
     final colorScheme = Theme.of(context).colorScheme;
-    final foreground = widget.foregroundColor ?? colorScheme.onSurface;
-    final metadata = widget.metadataColor ?? colorScheme.onSurfaceVariant;
-    final accent = widget.accentColor ?? colorScheme.primary;
+    final foreground = foregroundColor ?? colorScheme.onSurface;
+    final metadata = metadataColor ?? colorScheme.onSurfaceVariant;
+    final accent = accentColor ?? colorScheme.primary;
+    final reduceMotion = reduceMotionOf(context);
+
+    void seekTo(Duration target) {
+      final clamped =
+          target < Duration.zero
+              ? Duration.zero
+              : (target > total ? total : target);
+      unawaited(controller.seek(messageId, clamped));
+    }
+
+    void seekFromLocalX(double localX) {
+      final fraction = (localX / _waveformWidth).clamp(0.0, 1.0);
+      seekTo(Duration(milliseconds: (durationMs * fraction).round()));
+    }
+
+    void seekFromTap(TapUpDetails d) => seekFromLocalX(d.localPosition.dx);
+    void seekFromDragStart(DragStartDetails d) =>
+        seekFromLocalX(d.localPosition.dx);
+    void seekFromDragUpdate(DragUpdateDetails d) =>
+        seekFromLocalX(d.localPosition.dx);
+
+    // What the waveform slider says, now and one [_seekStep] either way.
+    String spokenAt(Duration at) =>
+        '${_spoken(_clampTo(at, total))} of ${_spoken(total)}';
+    final durationStyle = Theme.of(context).textTheme.bodySmall?.copyWith(
+      color: metadata,
+      fontWeight: FontWeight.w500,
+      fontFeatures: const [FontFeature.tabularFigures()],
+    );
+
+    // Shown only for the current note (playing or paused mid-way), but its
+    // slot is always laid out, so the bubble never changes size when it
+    // appears.
+    final showSpeedChip = isCurrent && (isPlaying || position > Duration.zero);
 
     return Row(
       mainAxisSize: MainAxisSize.min,
@@ -195,9 +155,23 @@ class _VoiceMessagePlayerState extends ConsumerState<VoiceMessagePlayer> {
       children: [
         Semantics(
           button: true,
-          label: _isPlaying ? 'Pause voice message' : 'Play voice message',
+          label:
+              isBusy && !isPlaying
+                  ? 'Loading voice message'
+                  : isPlaying
+                  ? 'Pause voice message'
+                  : 'Play voice message',
           child: InkWell(
-            onTap: _togglePlayback,
+            onTap:
+                () => unawaited(
+                  controller.toggle(
+                    messageId,
+                    resolveAudioUrl,
+                    ownerId: ownerId,
+                    serverMessageId: serverMessageId,
+                    mediaKey: mediaKey,
+                  ),
+                ),
             customBorder: const CircleBorder(),
             child: Container(
               width: 48,
@@ -213,11 +187,30 @@ class _VoiceMessagePlayerState extends ConsumerState<VoiceMessagePlayer> {
                   ),
                 ],
               ),
-              child: Icon(
-                _isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded,
-                size: 32,
-                // ignore: deprecated_member_use
-                color: colorScheme.background,
+              child: Stack(
+                alignment: Alignment.center,
+                children: [
+                  Icon(
+                    isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded,
+                    size: 32,
+                    // ignore: deprecated_member_use
+                    color: colorScheme.background,
+                  ),
+                  if (isBusy)
+                    SizedBox(
+                      key: const ValueKey('voice_loading_ring'),
+                      width: 44,
+                      height: 44,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        // Reduce motion: a still arc says "working" without
+                        // spinning.
+                        value: reduceMotion ? 0.75 : null,
+                        // ignore: deprecated_member_use
+                        color: colorScheme.background,
+                      ),
+                    ),
+                ],
               ),
             ),
           ),
@@ -225,66 +218,191 @@ class _VoiceMessagePlayerState extends ConsumerState<VoiceMessagePlayer> {
         const SizedBox(width: 10),
         SizedBox(
           width: _waveformWidth,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // Scrub by dragging as well as tapping: the waveform remains
-              // the full gesture target even though the duration now sits
-              // beneath it.
-              GestureDetector(
-                key: const ValueKey('voice_message_waveform'),
-                behavior: HitTestBehavior.opaque,
-                onTapUp: (details) => _seekFromLocalX(details.localPosition.dx),
-                onHorizontalDragStart:
-                    (details) => _seekFromLocalX(details.localPosition.dx),
-                onHorizontalDragUpdate:
-                    (details) => _seekFromLocalX(details.localPosition.dx),
-                child: SizedBox(
-                  width: _waveformWidth,
-                  height: 30,
-                  child: CustomPaint(
-                    painter: _WaveformPainter(
-                      waveform: widget.waveform,
-                      progressFraction: progressFraction,
-                      color: accent,
-                      trackColor: foreground,
+          // As tall as the play button (the row is already that tall, so
+          // nothing grows), which gives the speed chip a full 48×48 tap area
+          // over the bottom-right corner.
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(minHeight: _minTapSize),
+            child: Stack(
+              alignment: Alignment.center,
+              children: [
+                Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // A slider for screen readers: increase/decrease seek
+                    // by [_seekStep]. Only the current note can seek, so
+                    // only it offers the actions.
+                    Semantics(
+                      slider: true,
+                      label: 'Voice message position',
+                      value: spokenAt(position),
+                      increasedValue:
+                          isCurrent ? spokenAt(position + _seekStep) : null,
+                      decreasedValue:
+                          isCurrent ? spokenAt(position - _seekStep) : null,
+                      onIncrease:
+                          isCurrent ? () => seekTo(position + _seekStep) : null,
+                      onDecrease:
+                          isCurrent ? () => seekTo(position - _seekStep) : null,
+                      child: GestureDetector(
+                        key: const ValueKey('voice_message_waveform'),
+                        behavior: HitTestBehavior.opaque,
+                        excludeFromSemantics: true,
+                        onTapUp: seekFromTap,
+                        onHorizontalDragStart: seekFromDragStart,
+                        onHorizontalDragUpdate: seekFromDragUpdate,
+                        child: SizedBox(
+                          width: _waveformWidth,
+                          height: 30,
+                          child: CustomPaint(
+                            painter: _WaveformPainter(
+                              waveform: waveform,
+                              progressFraction: progressFraction,
+                              color: accent,
+                              trackColor: foreground,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 1),
+                    Row(
+                      children: [
+                        RollingDuration(
+                          keyPrefix: 'voice-playback-duration',
+                          value:
+                              isPlaying || position > Duration.zero
+                                  ? position
+                                  : total,
+                          alwaysShowMinutes: true,
+                          style: durationStyle,
+                        ),
+                        const Spacer(),
+                        // Slot reserved even when hidden (maintainSize): no
+                        // jump when the chip appears. Only the pill is drawn
+                        // here; its tap area is the 48×48 overlay below.
+                        Visibility(
+                          visible: showSpeedChip,
+                          maintainSize: true,
+                          maintainAnimation: true,
+                          maintainState: true,
+                          child: _SpeedPill(
+                            rate: view?.rate ?? 1.0,
+                            color: metadata,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+                if (showSpeedChip)
+                  Positioned(
+                    right: 0,
+                    bottom: 0,
+                    width: _minTapSize,
+                    height: _minTapSize,
+                    child: _SpeedChipTapArea(
+                      rate: view.rate,
+                      onTap: () {
+                        ref.read(hapticsProvider).selection();
+                        unawaited(controller.cycleRate());
+                      },
                     ),
                   ),
-                ),
-              ),
-              const SizedBox(height: 1),
-              RollingDuration(
-                keyPrefix: 'voice-playback-duration',
-                value:
-                    _isPlaying || _position > Duration.zero ? _position : total,
-                alwaysShowMinutes: true,
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: metadata,
-                  fontWeight: FontWeight.w500,
-                  fontFeatures: const [FontFeature.tabularFigures()],
-                ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ],
     );
   }
 
-  /// Maps an x offset within the waveform to a seek position.
-  ///
-  /// Divides by the waveform's own fixed width rather than the enclosing
-  /// render box's: the gesture's localPosition is already relative to the
-  /// waveform (the GestureDetector wraps only that SizedBox), while the
-  /// State's context covers the whole row including the play button and
-  /// duration label. Using the box width here would compress the mapping
-  /// and seek short on every tap.
-  void _seekFromLocalX(double localX) {
-    unawaited(_seekToFraction((localX / _waveformWidth).clamp(0.0, 1.0)));
-  }
+  static Duration _clampTo(Duration value, Duration total) =>
+      value < Duration.zero ? Duration.zero : (value > total ? total : value);
 
-  static const double _waveformWidth = 172;
+  /// "1 minute 5 seconds": what a screen reader should say, rather than
+  /// "zero colon zero five".
+  static String _spoken(Duration value) {
+    final minutes = value.inMinutes;
+    final seconds = value.inSeconds % 60;
+    String unit(int n, String word) => '$n $word${n == 1 ? '' : 's'}';
+    if (minutes == 0) return unit(seconds, 'second');
+    if (seconds == 0) return unit(minutes, 'minute');
+    return '${unit(minutes, 'minute')} ${unit(seconds, 'second')}';
+  }
+}
+
+String _speedLabel(double rate) =>
+    '${rate == rate.roundToDouble() ? rate.toInt() : rate}×';
+
+/// The speed chip as drawn: a narrow pill centred in a 48 dp wide slot.
+/// Visual only: the tap target is [_SpeedChipTapArea].
+class _SpeedPill extends StatelessWidget {
+  const _SpeedPill({required this.rate, required this.color});
+  final double rate;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return ExcludeSemantics(
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(
+          minWidth: VoiceMessagePlayer._minTapSize,
+        ),
+        child: Center(
+          widthFactor: 1,
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(10),
+              color: color.withValues(alpha: 0.14),
+            ),
+            child: Text(
+              _speedLabel(rate),
+              style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                color: color,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// The speed chip's 48×48 tap area over the player's bottom-right corner:
+/// the pill's slot plus the tail of the waveform above it (the player is
+/// only as tall as its play button, so a full-size target cannot avoid
+/// that overlap without growing the bubble).
+///
+/// Translucent and drawn over the waveform, so a pointer there reaches
+/// BOTH detectors: a tap cycles the speed (this one joins the gesture arena
+/// first and wins the tap), while a horizontal drag is won by the
+/// waveform's drag recognizer, so scrubbing works across the whole
+/// waveform. Outside this corner the waveform's taps seek as before.
+class _SpeedChipTapArea extends StatelessWidget {
+  const _SpeedChipTapArea({required this.rate, required this.onTap});
+  final double rate;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      button: true,
+      label: 'Playback speed ${_speedLabel(rate)}',
+      // One announcement: this label, not the pill's text again.
+      excludeSemantics: true,
+      onTap: onTap,
+      child: GestureDetector(
+        key: const ValueKey('voice_speed_chip'),
+        behavior: HitTestBehavior.translucent,
+        excludeFromSemantics: true,
+        onTap: onTap,
+      ),
+    );
+  }
 }
 
 /// The bar heights (0..1) the playback waveform draws for [waveform] at

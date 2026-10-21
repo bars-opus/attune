@@ -51,6 +51,35 @@ void main() {
     );
   });
 
+  testWidgets('clips only while revealing, never once open', (tester) async {
+    // A child that paints past its box (the jump flash's ring) must not be
+    // cut flat once the slot is fully open.
+    Clip clip() =>
+        tester
+            .widget<ClipRect>(
+              find.descendant(
+                of: find.byType(MakeRoom),
+                matching: find.byType(ClipRect),
+              ),
+            )
+            .clipBehavior;
+    await tester.pumpWidget(_wrap());
+    await tester.pump(const Duration(milliseconds: 120));
+    expect(clip(), Clip.hardEdge, reason: 'mid grow-in');
+    final child = tester.element(find.byKey(const ValueKey('room-child')));
+    await tester.pumpAndSettle();
+    expect(clip(), Clip.none, reason: 'fully open');
+    expect(
+      tester.element(find.byKey(const ValueKey('room-child'))),
+      same(child),
+      reason: 'the behaviour changes, the element is kept',
+    );
+
+    await tester.pumpWidget(const SizedBox());
+    await tester.pumpWidget(_wrap(animate: false));
+    expect(clip(), Clip.none, reason: 'open from the start');
+  });
+
   testWidgets('animate:false occupies full height immediately', (tester) async {
     // Cached history and scroll-back must not replay the opening.
     await tester.pumpWidget(_wrap(animate: false));

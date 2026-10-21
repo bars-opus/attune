@@ -291,7 +291,7 @@ class AppLocalizationsEs extends AppLocalizations {
 
   @override
   String authGuestOverview(String appName) {
-    return 'Estás navegando $appName como invitado. Inicia sesión o crea una cuenta para comenzar a gestionar tu tienda – te tomará menos de 5 segundos. Tenemos una variedad de herramientas para ayudarte a hacer crecer tu negocio, todo de forma gratuita.';
+    return 'Estás navegando $appName como invitado. Inicia sesión con tu número de teléfono para comenzar tu espacio compartido con tu pareja – solo toma unos segundos.';
   }
 
   @override

@@ -156,9 +156,13 @@ for example in a top-level `ConsumerWidget` `initState`:
 ref.read(oneSignalServiceProvider).initialize();
 ```
 
-The service automatically calls `OneSignal.login(userId)` when the user logs in and
-`OneSignal.logout()` when they log out, so push tokens are always bound to the
-correct Supabase user ID.
+The service calls `OneSignal.login(userId)` / `OneSignal.logout()` on sign-in and
+sign-out, but the server does not trust that `external_id` alias (anyone can call
+`login` with a partner's id). Pushes go only to the OneSignal subscription ids in
+`push_tokens`, written by `register_push_subscription` from a live signed-in
+session and released on sign-out (`unregister_push_subscription`, or
+`release_push_subscription` on the next start after an offline sign-out). See
+CHAT_SYSTEM_SPEC.md §9.1.
 
 ### 4c. Add the notification bell to your app bar
 

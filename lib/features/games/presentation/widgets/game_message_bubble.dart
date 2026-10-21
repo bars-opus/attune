@@ -141,7 +141,13 @@ class GameMessageBubble extends ConsumerWidget {
             : gameTypeDisplayName(gameType);
 
     final label =
-        state == null
+        session.hasError && state == null
+            // Offline / stream error with nothing loaded: the card is still
+            // a record of a game, not a mystery. (Opening it needs the game
+            // type, which only the session carries - a follow-up.) An error
+            // that still carries the previous value keeps showing it.
+            ? "Couldn't load right now"
+            : state == null
             ? '…'
             : gameCardLabel(
               state: state,

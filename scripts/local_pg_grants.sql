@@ -207,3 +207,30 @@ GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public
 
 -- Per-plan "new from your partner" seen marks.
 \i supabase/migrations/20261018170010_planning_entry_seen_grants.sql
+
+-- Chat review #7/#8: sync cursor column grant (messages.updated_at).
+\i supabase/migrations/20261019100010_chat_sync_cursor_grants.sql
+
+-- Chat review #9: per-message counter table, read-only to members.
+\i supabase/migrations/20261019100110_chat_message_counters_grants.sql
+
+-- Chat review #18: push subscriptions are written through RPCs only.
+\i supabase/migrations/20261019110210_push_subscriptions_grants.sql
+
+-- Chat review #18 (fix I2): "sign out other devices" stops their pushes.
+\i supabase/migrations/20261019110225_deactivate_other_push_subscriptions_grants.sql
+
+-- Chat review #19: system notices are server-only; the screenshot notice RPC.
+\i supabase/migrations/20261019110310_system_notice_server_only_grants.sql
+
+-- Plan 1b final review I1: an offline sign-out's owed push release (anon).
+\i supabase/migrations/20261019110335_release_push_subscription_grants.sql
+
+-- Chat review: push-once-per-job RPC grants.
+\i supabase/migrations/20261019120115_chat_push_once_per_job_grants.sql
+
+-- Chat W4 (#40/M-8): streak replay window read gate.
+\i supabase/migrations/20261019140010_streak_replay_window_read_gate_grants.sql
+
+-- Chat W4 Task 5b: view-once streak hardening (spend ledger is server-only).
+\i supabase/migrations/20261019140110_streak_view_once_hardening_grants.sql

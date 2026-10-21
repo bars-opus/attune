@@ -1,3 +1,4 @@
+import 'package:attune/core/widgets/app_content_width.dart';
 import 'package:attune/features/settings/utility/settings_exports.dart';
 import 'package:flutter/foundation.dart';
 import 'package:share_plus/share_plus.dart';
@@ -76,7 +77,10 @@ class _LoginProfileState extends State<LoginProfile> {
         slivers: [
           SliverToBoxAdapter(
             child: SafeArea(
-              child: Padding(
+              // On an iPad: a centred column, buttons included.
+              child: AppContentWidth(
+                maxWidth: ContentWidth.form,
+                child: Padding(
                 padding: EdgeInsets.symmetric(horizontal: Spacing.md.w),
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.start,
@@ -229,6 +233,7 @@ class _LoginProfileState extends State<LoginProfile> {
                     Gap(Spacing.xxl.h * 3),
                   ],
                 ),
+              ),
               ),
             ),
           ),

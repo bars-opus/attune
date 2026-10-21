@@ -91,6 +91,10 @@
 		<string>Attune uses your location so you and your partner can optionally share where you are with each other.</string>
 		<key>NSSupportsLiveActivities</key>
 		<true/>
+		<key>UIBackgroundModes</key>
+		<array>
+			<string>remote-notification</string>
+		</array>
 		<key>NSCalendarsUsageDescription</key>
 		<string>Attune adds a Together event to your calendar when you ask; with Free time together on, reads only when you're busy (never titles) to find time you're both free; and with Copy our plans on, keeps a calendar called Plans with the plans you're in.</string>
 		<key>NSCalendarsWriteOnlyAccessUsageDescription</key>

@@ -1,5 +1,6 @@
 import 'package:attune/app/theme/design_tokens.dart';
 import 'package:flutter/material.dart';
+import 'package:attune/core/ui/motion/reduce_motion.dart';
 import 'package:attune/core/ui/feedback/haptics.dart';
 
 /// The streak capture control.
@@ -91,6 +92,11 @@ class StreakRecordButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final primary = Theme.of(context).colorScheme.primary;
+    // No spring/scale under Reduce Motion: the disc and arc just appear.
+    final entrance =
+        reduceMotionOf(context)
+            ? Duration.zero
+            : const Duration(milliseconds: 260);
 
     return Listener(
       onPointerDown: (_) {
@@ -156,7 +162,7 @@ class StreakRecordButton extends StatelessWidget {
               TweenAnimationBuilder<double>(
                 key: const ValueKey('streak-record-fill-entrance'),
                 tween: Tween(begin: _discFrom, end: discDiameter),
-                duration: const Duration(milliseconds: 260),
+                duration: entrance,
                 curve: Curves.easeOutBack,
                 builder:
                     (context, size, _) => Container(
@@ -185,7 +191,7 @@ class StreakRecordButton extends StatelessWidget {
               TweenAnimationBuilder<double>(
                 key: const ValueKey('streak-record-arc-entrance'),
                 tween: Tween(begin: 0.7, end: 1),
-                duration: const Duration(milliseconds: 260),
+                duration: entrance,
                 curve: Curves.easeOutBack,
                 builder:
                     (context, scale, child) => Opacity(

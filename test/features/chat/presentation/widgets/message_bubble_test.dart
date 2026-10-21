@@ -249,7 +249,7 @@ void main() {
     expect(find.byIcon(Icons.star), findsNothing);
   });
 
-  testWidgets('does not render edited as a default footer label', (
+  testWidgets('renders the edited label in the footer', (
     tester,
   ) async {
     final edited = Message.fromRow({
@@ -268,10 +268,11 @@ void main() {
       ),
     );
 
-    expect(find.textContaining('edited'), findsNothing);
+    // f29007b6 asserted the label was absent; that WAS the regression.
+    expect(find.text('edited'), findsOneWidget);
   });
 
-  testWidgets('edited messages do not expose a default footer tap target', (
+  testWidgets('tapping the edited label calls onShowEditHistory', (
     tester,
   ) async {
     Message? tapped;
@@ -298,8 +299,9 @@ void main() {
       ),
     );
 
-    expect(find.text('edited'), findsNothing);
-    expect(tapped, isNull);
+    await tester.tap(find.text('edited'));
+    await tester.pump();
+    expect(tapped, edited);
   });
 
   testWidgets('long-press opens the actions sheet for a non-deleted message', (
@@ -927,20 +929,28 @@ void main() {
         matching: find.byIcon(Icons.play_arrow_rounded),
       );
       // _isPlaying never actually flips true in this harness (play() never
-      // resolves), so the icon is still play_arrow — tapping it re-enters
-      // the "start playback" branch of _togglePlayback, which is exactly
-      // the write we want to observe.
+      // resolves), so the note is still LOADING. Since the Wave 2 final
+      // review (M2) a second tap on the same loading note cancels it: the
+      // controller only recognises it as the same note when the bubble
+      // passes the same, stable id. With the unstable message.id the tap
+      // would instead start a fresh note under the canonical id and
+      // publish that.
       await tester.tap(firstBubblePlayButtons);
       await tester.pump();
 
       expect(
         container.read(currentlyPlayingVoiceMessageIdProvider),
-        messageIdWhilePlaying,
+        isNull,
         reason:
-            'the messageId this bubble writes into the provider must stay '
-            'stable across the optimistic-to-canonical swap — if this fails, '
-            'VoiceMessagePlayer is being identified by the unstable '
+            'the messageId this bubble passes must stay stable across the '
+            'optimistic-to-canonical swap, so the tap is recognised as the '
+            'same (loading) note and cancels it — if this is the canonical '
+            'id, VoiceMessagePlayer is being identified by the unstable '
             'message.id instead of the stable message.clientMessageId',
+      );
+      expect(
+        container.read(currentlyPlayingVoiceMessageIdProvider),
+        isNot(canonical.id),
       );
     },
   );

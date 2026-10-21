@@ -161,6 +161,35 @@ void main() {
       expect(indicator.value, isNull);
     });
 
+    testWidgets('busy ring carries no glyph when there is nothing to cancel',
+        (tester) async {
+      await tester.pumpWidget(const MaterialApp(home: Scaffold(
+        body: VideoMessageThumbnail(
+          thumbnailUrl: null, durationMs: 5000, width: 720, height: 1280,
+          showBusyOverlay: true, uploadProgress: 0.3,
+        ),
+      )));
+      expect(find.byIcon(Icons.stop_rounded), findsNothing,
+          reason: 'a stop glyph that does nothing is a lie');
+      expect(find.byIcon(Icons.close_rounded), findsNothing);
+    });
+
+    testWidgets('busy ring shows a cancel glyph that calls onCancel',
+        (tester) async {
+      var cancelled = 0;
+      await tester.pumpWidget(MaterialApp(home: Scaffold(
+        body: VideoMessageThumbnail(
+          thumbnailUrl: null, durationMs: 5000, width: 720, height: 1280,
+          showBusyOverlay: true, uploadProgress: 0.3,
+          onCancel: () => cancelled++,
+        ),
+      )));
+      expect(find.byIcon(Icons.close_rounded), findsOneWidget);
+      expect(find.bySemanticsLabel('Stop sending'), findsOneWidget);
+      await tester.tap(find.byIcon(Icons.close_rounded));
+      expect(cancelled, 1);
+    });
+
     testWidgets('restores the play glyph and drops the ring once sent', (
       tester,
     ) async {

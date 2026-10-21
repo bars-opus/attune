@@ -1,3 +1,4 @@
+import 'package:attune/core/widgets/app_content_width.dart';
 import 'package:attune/core/utils/date_formatter.dart';
 import 'package:attune/core/notes/note_section.dart';
 import 'package:attune/core/widgets/bottom_sheet_header.dart';
@@ -216,6 +217,8 @@ class _PlanningCategoryScreenState
         title: PlanningCategoryTitle(
           categoryId: _category.id,
           name: _category.name,
+          icon: _category.icon,
+          color: _category.color,
         ),
 
         actions: [
@@ -293,7 +296,10 @@ class _PlanningCategoryScreenState
                   return false;
                 },
                 child: ListView(
-                  padding: const EdgeInsets.only(bottom: Spacing.xxl * 2),
+                  padding: AppContentWidth.padded(
+                    context,
+                    const EdgeInsets.only(bottom: Spacing.xxl * 2),
+                  ),
                   children: [
                     if (s.entries.isEmpty && s.pinned.isEmpty)
                       // The app's empty state, centred in the screen.
@@ -360,7 +366,10 @@ class _ClosedEntriesScreen extends ConsumerWidget {
               ),
           data:
               (s) => ListView(
-                padding: const EdgeInsets.only(bottom: Spacing.xxl),
+                padding: AppContentWidth.padded(
+                  context,
+                  const EdgeInsets.only(bottom: Spacing.xxl),
+                ),
                 children: [
                   if (s.entries.isEmpty && s.pinned.isEmpty)
                     const Padding(

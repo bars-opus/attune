@@ -27,6 +27,9 @@ class SettingsConfig {
   final String? url; // For link type
   final WidgetBuilder? modalBuilder; // For modal type
 
+  /// A key for the row (tests find a switch row by it).
+  final Key? rowKey;
+
   const SettingsConfig({
     required this.id,
     required this.title,
@@ -43,6 +46,7 @@ class SettingsConfig {
     this.url,
     this.modalBuilder,
     this.order = 0,
+    this.rowKey,
   });
 }
 

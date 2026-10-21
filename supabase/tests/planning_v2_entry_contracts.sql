@@ -130,7 +130,8 @@ BEGIN
 
   -- Contract 9: reset restores the starter version.
   v_d := public.reset_planning_template(v_goals);
-  IF jsonb_array_length(v_d -> 'blocks') <> 4 OR v_d -> 'entry' ->> 'title' <> 'New goal' THEN
+  -- Goals v3 (2026-10-18): five blocks, a countdown among them.
+  IF jsonb_array_length(v_d -> 'blocks') <> 5 OR v_d -> 'entry' ->> 'title' <> 'New goal' THEN
     RAISE EXCEPTION 'EXPLOIT: reset wrong: %', v_d -> 'entry';
   END IF;
   IF (SELECT seed_version FROM public.planning_entries WHERE id = v_tpl) IS NULL THEN

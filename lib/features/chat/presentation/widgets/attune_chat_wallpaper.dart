@@ -3,7 +3,7 @@ import 'dart:ui';
 import 'package:attune/app/theme/chat_color_scheme.dart';
 import 'package:flutter/material.dart';
 
-class AttuneChatWallpaper extends StatelessWidget {
+class AttuneChatWallpaper extends StatefulWidget {
   const AttuneChatWallpaper({
     super.key,
     required this.child,
@@ -20,25 +20,85 @@ class AttuneChatWallpaper extends StatelessWidget {
   final ScrollController? scrollController;
 
   @override
-  Widget build(BuildContext context) {
-    final controller = scrollController;
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    if (controller == null || !isDark || !_showDarkGradient) {
-      return _buildWallpaper(context, 0);
-    }
+  State<AttuneChatWallpaper> createState() => _AttuneChatWallpaperState();
+}
 
-    return AnimatedBuilder(
-      animation: controller,
-      builder:
-          (context, child) =>
-              _buildWallpaper(context, _scrollGradientProgress(controller)),
-    );
+class _AttuneChatWallpaperState extends State<AttuneChatWallpaper> {
+  /// Quantised progress (1/64 steps). Rebuilding on every pixel of scroll
+  /// repainted the whole screen for changes nobody can see.
+  double _progress = 0;
+  static const _steps = 64;
+
+  /// Whether the last build painted [_progress] (the dark gradient). Light
+  /// mode never reads it, so scrolling there must not rebuild anything.
+  bool _tracksScroll = false;
+
+  @override
+  void initState() {
+    super.initState();
+    widget.scrollController?.addListener(_onScroll);
+    _syncProgress();
+  }
+
+  @override
+  void didUpdateWidget(covariant AttuneChatWallpaper oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.scrollController != widget.scrollController) {
+      oldWidget.scrollController?.removeListener(_onScroll);
+      widget.scrollController?.addListener(_onScroll);
+      // Attached to a list already scrolled: show its place now, not at
+      // its next scroll.
+      _syncProgress();
+    }
+  }
+
+  double _quantisedProgress(ScrollController controller) =>
+      (_scrollGradientProgress(controller) * _steps).round() / _steps;
+
+  /// Reads the attached list's current place (no setState: called where a
+  /// build follows anyway).
+  void _syncProgress() {
+    final controller = widget.scrollController;
+    _progress =
+        controller == null || !controller.hasClients
+            ? 0
+            : _quantisedProgress(controller);
+  }
+
+  @override
+  void dispose() {
+    widget.scrollController?.removeListener(_onScroll);
+    super.dispose();
+  }
+
+  void _onScroll() {
+    if (!_tracksScroll) return;
+    final controller = widget.scrollController;
+    if (controller == null || !controller.hasClients) return;
+    final quantised = _quantisedProgress(controller);
+    if (quantised == _progress) return;
+    setState(() => _progress = quantised);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final usesScroll =
+        widget.scrollController != null &&
+        isDark &&
+        AttuneChatWallpaper._showDarkGradient;
+    // Switched to dark while scrolled: _progress went stale while light
+    // mode ignored the scroll.
+    if (usesScroll && !_tracksScroll) _syncProgress();
+    _tracksScroll = usesScroll;
+    return _buildWallpaper(context, usesScroll ? _progress : 0);
   }
 
   Widget _buildWallpaper(BuildContext context, double scrollProgress) {
     final isDark =
-        Theme.of(context).brightness == Brightness.dark && _showDarkGradient;
-    final showPatternGlow = isDark && _showPatternGlow;
+        Theme.of(context).brightness == Brightness.dark &&
+        AttuneChatWallpaper._showDarkGradient;
+    final showPatternGlow = isDark && AttuneChatWallpaper._showPatternGlow;
     final chatColors = Theme.of(context).chatColors;
     final topLeftAccentOpacity = scrollProgress;
     final bottomRightAccentOpacity = 1 - scrollProgress;
@@ -54,22 +114,13 @@ class AttuneChatWallpaper extends StatelessWidget {
     return Stack(
       fit: StackFit.expand,
       children: [
-        if (isDark) ...[
+        if (isDark)
           _WallpaperGradientLayer(
             background: chatColors.background,
             accent: backgroundAccent,
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            opacity: 1,
-          ),
-          _WallpaperGradientLayer(
-            background: chatColors.background,
-            accent: backgroundAccent,
-            begin: Alignment.bottomRight,
-            end: Alignment.topLeft,
-            opacity: topLeftAccentOpacity,
-          ),
-        ] else
+            progress: scrollProgress,
+          )
+        else
           ExcludeSemantics(child: ColoredBox(color: chatColors.background)),
         if (showPatternGlow)
           ExcludeSemantics(
@@ -259,7 +310,7 @@ class AttuneChatWallpaper extends StatelessWidget {
               ),
             ),
           ),
-        child,
+        widget.child,
       ],
     );
   }
@@ -276,35 +327,37 @@ class AttuneChatWallpaper extends StatelessWidget {
   }
 }
 
+/// The two former layers (a fixed topLeft->bottomRight gradient under a
+/// bottomRight->topLeft one faded in by scroll) composited exactly into a
+/// single gradient: no Opacity, no saveLayer. Both ran on stops [0, 0.5, 1],
+/// so their alpha blend is piecewise-linear on the same stops:
+/// t=0 -> lerp(bg, accent, p); t=0.5 -> the shared mid colour;
+/// t=1 -> lerp(accent, bg, p).
 class _WallpaperGradientLayer extends StatelessWidget {
   const _WallpaperGradientLayer({
     required this.background,
     required this.accent,
-    required this.begin,
-    required this.end,
-    required this.opacity,
+    required this.progress,
   });
 
   final Color background;
   final Color accent;
-  final AlignmentGeometry begin;
-  final AlignmentGeometry end;
-  final double opacity;
+  final double progress;
 
   @override
   Widget build(BuildContext context) {
+    final mid = Color.lerp(background, accent, 0.2)!;
     return ExcludeSemantics(
-      child: Opacity(
-        opacity: opacity,
+      child: RepaintBoundary(
         child: DecoratedBox(
           decoration: BoxDecoration(
             gradient: LinearGradient(
-              begin: begin,
-              end: end,
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
               colors: [
-                background,
-                Color.lerp(background, accent, 0.2)!,
-                accent,
+                Color.lerp(background, accent, progress)!,
+                mid,
+                Color.lerp(accent, background, progress)!,
               ],
               stops: const [0, 0.5, 1],
             ),

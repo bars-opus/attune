@@ -24,6 +24,11 @@ String conversationPreviewText(Conversation conversation) {
     'video': 'Video',
     'audio': 'Voice message',
     'streak': 'Streak',
+    // content holds the game's display name (post_game_message), so the
+    // caption rule below yields "Game: Snakes and Ladders".
+    'game': 'Game',
+    'game_trail': 'Game',
+    'place': 'Place',
   };
 
   final label = labels[message.mediaType];

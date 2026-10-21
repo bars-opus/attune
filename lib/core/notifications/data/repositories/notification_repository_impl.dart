@@ -1,5 +1,4 @@
 // lib/features/notifications/data/repositories/notification_repository_impl.dart
-import 'package:attune/core/notifications/data/models/push_token_model.dart';
 import 'package:attune/core/notifications/data/models/scheduled_notification_model.dart';
 import 'package:attune/core/notifications/data/repositories/notification_repository_interface.dart';
 import 'package:attune/core/notifications/domain/entities/app_notification.dart';
@@ -89,70 +88,6 @@ class NotificationRepositoryImpl implements NotificationRepositoryInterface {
     } catch (e) {
       throw PushNotificationException(
         'Failed to queue notification: $e',
-        code: e is PostgrestException ? e.code : null,
-      );
-    }
-  }
-
-  @override
-  Future<void> savePushToken({
-    required String userId,
-    required String token,
-    required String platform,
-  }) async {
-    try {
-      // Check if token already exists
-      final existing =
-          await _supabase
-              .from('push_tokens')
-              .select()
-              .eq('token', token)
-              .maybeSingle();
-
-      final now = DateTime.now();
-
-      if (existing != null) {
-        // Update existing token
-        await _supabase
-            .from('push_tokens')
-            .update({
-              'user_id': userId,
-              'platform': platform,
-              'is_active': true,
-              'updated_at': now.toIso8601String(),
-            })
-            .eq('token', token);
-      } else {
-        // Insert new token
-        final model = PushTokenModel(
-          userId: userId,
-          token: token,
-          platform: platform,
-          isActive: true,
-          createdAt: now,
-          updatedAt: now,
-        );
-
-        await _supabase.from('push_tokens').insert(model.toJson());
-      }
-    } catch (e) {
-      throw PushNotificationException(
-        'Failed to save push token: $e',
-        code: e is PostgrestException ? e.code : null,
-      );
-    }
-  }
-
-  @override
-  Future<void> removePushToken(String token) async {
-    try {
-      await _supabase
-          .from('push_tokens')
-          .update({'is_active': false})
-          .eq('token', token);
-    } catch (e) {
-      throw PushNotificationException(
-        'Failed to remove push token: $e',
         code: e is PostgrestException ? e.code : null,
       );
     }

@@ -87,4 +87,33 @@ void main() {
       'This message was deleted',
     );
   });
+
+  test('a game card previews as a game, with its name', () {
+    expect(
+      conversationPreviewText(
+        _withLast(_message(mediaType: 'game', content: 'Snakes and Ladders')),
+      ),
+      'Game: Snakes and Ladders',
+    );
+  });
+
+  test('a trail previews the same way, never as bare text', () {
+    expect(
+      conversationPreviewText(
+        _withLast(
+          _message(mediaType: 'game_trail', content: 'Snakes and Ladders'),
+        ),
+      ),
+      'Game: Snakes and Ladders',
+    );
+  });
+
+  test('a place previews as a place', () {
+    expect(
+      conversationPreviewText(
+        _withLast(_message(mediaType: 'place', content: 'Checked in at Osu')),
+      ),
+      'Place: Checked in at Osu',
+    );
+  });
 }

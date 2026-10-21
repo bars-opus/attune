@@ -126,7 +126,7 @@ is noise, which is the one thing a safety system cannot afford.
 ### 2.3 The structural argument
 
 `enqueue_message_downstream_work` fires on every `messages` insert and does
-three couples-specific things: increments `relationships.message_count`,
+three couples-specific things: counts the message in `public.relationship_message_counters`,
 enqueues safety analysis against the couples config, and enqueues the
 relationship-health notification. `analyse-session` — the AI relationship
 analysis — references relationships throughout.
@@ -407,7 +407,7 @@ Before the §12 blockers can be checked:
 - a test proving a blocked or unmatched pair cannot message through stale
   client state;
 - a test proving dating messages never enter `public.messages`, never
-  increment `relationships.message_count`, and never enqueue to the couples
+  count in `public.relationship_message_counters`, and never enqueue to the couples
   safety outbox;
 - a test proving no client role can read another user's safety events;
 - a test proving push payloads and log lines carry no message content;

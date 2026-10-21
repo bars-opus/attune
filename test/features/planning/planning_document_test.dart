@@ -294,6 +294,23 @@ void main() {
       expect(_controller(tester).document.toDelta().toJson().first['attributes'], {'size': 'large'});
     });
 
+    testWidgets('in a heading, the size menu explains instead of shrinking it', (tester) async {
+      final g = _gateway();
+      g.handlers['update_planning_block'] = (p) => _textBlock(version: 2);
+      await _open(tester, g);
+      await tester.tap(find.byType(QuillEditor));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byTooltip('Heading'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Heading 2'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byTooltip('Text size'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 500));
+      expect(find.byType(BottomSheet), findsNothing);
+      expect(find.textContaining('Headings have their own size'), findsOneWidget);
+    });
+
     testWidgets('choices open in a sheet above the keyboard, not a dropdown under it: headings', (tester) async {
       await _open(tester, _gateway());
       await tester.tap(find.byType(QuillEditor));

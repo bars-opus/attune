@@ -1,9 +1,9 @@
 import 'dart:async';
 import 'dart:io';
 
-import 'package:attune/core/providers/profile_providers/profile_provider.dart';
 import 'package:attune/core/services/media/screenshot_detection_service.dart';
 import 'package:attune/features/auth/providers/auth_provider.dart';
+import 'package:attune/features/chat/config/chat_config.dart';
 import 'package:attune/features/chat/domain/entities/conversation.dart';
 import 'package:attune/features/chat/presentation/state/chat_state.dart';
 import 'package:attune/features/chat/utils/chat_log.dart';
@@ -104,9 +104,15 @@ class _EphemeralVideoViewerScreenState
   Future<void> _notifyScreenshot() async {
     // Best-effort instrumentation only (see ScreenshotDetectionService's own
     // doc comment) — a screenshot notice is authored as if from the viewer
-    // (the person who screenshotted), riding the ordinary sender_id/insert
-    // path unchanged (see 20260816140000_chat_screenshot_notice.sql), so no
+    // (the person who screenshotted), sent through send_screenshot_notice
+    // (20261019110300), which names the caller server-side, so no
     // separate "system author" concept is needed.
+    //
+    // Bounded by ChatConfig.networkTimeout (it runs outside the outbox, so
+    // nothing else would ever time a hung request out) and never retried:
+    // the one attempt carries a fresh client message id and the RPC is
+    // idempotent per that id, so even a retry of a request that timed out
+    // but landed could never produce a second notice.
     //
     // Latched to at most one attempt per screen instance (Important finding
     // I4): set BEFORE the await, same "claim intent first" shape as
@@ -117,24 +123,25 @@ class _EphemeralVideoViewerScreenState
     _screenshotNotified = true;
     final user = ref.read(currentUserProvider);
     if (user == null) return;
-    final profile = ref.read(currentUserProfileProvider).valueOrNull;
-    final name = profile?.displayName ?? profile?.username ?? 'Someone';
+    final timeout = ref.read(chatConfigProvider).networkTimeout;
     try {
+      // Chat review #19: the server names the viewer and writes the notice;
+      // the client cannot author a system notice.
       await ref
           .read(chatRepositoryProvider)
-          .sendTextMessage(
+          .sendScreenshotNotice(
             relationshipId: widget.conversation.relationshipId,
-            senderId: user.id,
             clientMessageId: const Uuid().v4(),
-            content: '$name took a screenshot',
-            isSystemNotice: true,
-          );
+          )
+          .timeout(timeout);
     } catch (error) {
       // Best-effort: a failed screenshot notice must never propagate
       // uncaught into the onScreenshotDetected stream listener (which
       // would otherwise crash the isolate's error zone), and must never
       // block or affect video playback/dismissal. Logged so it's at least
-      // diagnosable, not silently swallowed.
+      // diagnosable, not silently swallowed. That covers the RPC's own
+      // refusal too (screenshot_notice:not_allowed — the relationship is
+      // no longer active or the chat is archived) and a timeout.
       ChatLog.e('screenshot notice send failed', error);
     }
   }

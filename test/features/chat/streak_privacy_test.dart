@@ -71,20 +71,47 @@ void main() {
   });
 
   test('a view is spent once per viewing, not once per clip', () {
-    // A three-clip streak must not burn a three-view budget in one watch.
-    // The guard is a flag, not a count, so completion and an explicit
-    // dismissal cannot both charge it either.
+    // A three-clip streak must not burn a three-view budget in one watch,
+    // and completion and an explicit dismissal cannot both charge it
+    // either. Task 5b: the spend fires at presentation, memoised per open,
+    // and every attempt (the first and any retry) carries the SAME open id,
+    // which the server charges once (mark_streak_viewed(p_message_id,
+    // p_open_id)). Behaviour is pinned by streak_viewer_presented_gate_test;
+    // this pins the shape that makes it hold.
     final src =
         File(
           'lib/features/chat/presentation/screens/streak_viewer_screen.dart',
         ).readAsStringSync();
 
-    expect(src, contains('if (_viewSpent) return;'));
-    expect(src, contains('_viewSpent = true;'));
+    // One first spend per open: memoised, never replaced.
+    expect(src, contains('_spend ??= _attemptSpend();'));
+    expect(
+      RegExp(r'_spend = ').allMatches(src).length,
+      0,
+      reason: 'a reassigned spend future is a second first spend',
+    );
 
-    // markViewed must be reachable from exactly one place.
-    final calls = RegExp(r'markViewed\(').allMatches(src).length;
-    expect(calls, 1, reason: 'more than one call site can double-charge');
+    // markViewed must be reachable from exactly one place, with the open id.
+    final calls = RegExp(r'markViewed\(').allMatches(src).toList();
+    expect(
+      calls,
+      hasLength(1),
+      reason: 'more than one call site can double-charge',
+    );
+    expect(src, contains('markViewed(_messageId, openId: _openId)'));
+
+    // One open id per viewer, minted once: a retry with a fresh id would be
+    // a second view server-side.
+    expect(src, contains('final String _openId = const Uuid().v4();'));
+    expect(RegExp(r'Uuid\(\)').allMatches(src).length, 1);
+    expect(RegExp(r'openId:').allMatches(src).length, 1);
+
+    // Fired at presentation (video and photo), not on exit.
+    expect(
+      RegExp(r'_spendNow\(\);').allMatches(src).length,
+      3,
+      reason: 'video presented, photo first frame, and the settle',
+    );
   });
 
   test('streaks carry no caption at all', () {

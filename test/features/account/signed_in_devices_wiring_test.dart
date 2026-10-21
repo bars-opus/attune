@@ -19,15 +19,17 @@ void main() {
     expect(src, contains('const SignedInDevicesScreen()'));
   });
 
-  test('Settings → Account lists it right after Muted', () {
+  // Settings regrouped (2026-10-18): it leads Privacy & your data
+  // (settings_layout_test checks the sections against the real data).
+  test('Settings → Privacy & your data lists it first', () {
     final src = _read('lib/features/settings/data/settings_data.dart');
-    final muted = src.indexOf("id: 'muted'");
+    final privacy = src.indexOf("id: 'privacy'");
     final devices = src.indexOf("id: 'signed_in_devices'");
-    expect(muted, greaterThan(-1));
-    expect(devices, greaterThan(muted));
-    expect(src.indexOf("id: 'qr_code'"), greaterThan(devices));
+    expect(privacy, greaterThan(-1));
+    expect(devices, greaterThan(privacy));
+    expect(src.indexOf("id: 'care'"), greaterThan(devices));
     expect(src, contains("routeName: '/settings/signed-in-devices'"));
     final row = src.substring(devices, src.indexOf('),', devices));
-    expect(row, contains('order: 8,'), reason: 'review M-5: its own slot');
+    expect(row, contains('order: 1,'), reason: 'review M-5: its own slot');
   });
 }

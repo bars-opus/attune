@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 
@@ -29,12 +31,38 @@ class ScreenUtilConfig {
     return fontSize.toDouble();
   }
   
+  /// The most .w/.h/.r may scale the phone design. Phones (up to about
+  /// 469 x 1015) are under it, so they look exactly as designed; on an iPad
+  /// spacing and icons grow a little instead of 2.75x, while text keeps its
+  /// size either way.
+  static const double maxScale = 1.25;
+
+  /// The design size for [screen]: [designSize], or larger on a big screen
+  /// so the scale stops at [maxScale]. The height follows ScreenUtil's own
+  /// split-screen rule (at least 700).
+  static Size designSizeFor(Size screen) {
+    final height = screen.height < 700 ? 700.0 : screen.height;
+    return Size(
+      math.max(designSize.width, screen.width / maxScale),
+      math.max(designSize.height, height / maxScale),
+    );
+  }
+
   /// Initialize ScreenUtil with proper configuration
   /// Call this in your main app widget builder
   static Widget builder({
     required WidgetBuilder builder,
     Widget? child,
   }) {
+    // Re-read on rotation and window resizes (iPad split view).
+    return Builder(
+      builder:
+          (context) =>
+              _init(designSizeFor(MediaQuery.sizeOf(context)), builder, child),
+    );
+  }
+
+  static Widget _init(Size designSize, WidgetBuilder builder, Widget? child) {
     return ScreenUtilInit(
       designSize: designSize,
       minTextAdapt: minTextAdapt,

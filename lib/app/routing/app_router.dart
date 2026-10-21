@@ -4,6 +4,7 @@ import 'package:attune/app/documentations/user_manual/data/dating_mode_docs.dart
 import 'package:attune/app/documentations/user_manual/data/healing_docs.dart';
 import 'package:attune/app/licenses_screen.dart';
 import 'package:attune/core/intro/presentation/widgets/feature_intro_flow_gate.dart';
+import 'package:attune/app/routing/app_route_observer.dart';
 import 'package:attune/app/routing/routing_notifier.dart';
 import 'package:attune/features/safety/presentation/outside_perspective_screen.dart';
 import 'package:attune/features/appreciation/presentation/appreciation_jar_screen.dart';
@@ -406,6 +407,7 @@ Future<BuildContext?> waitForRouterSettled() async {
 GoRouter createAppRouter(RoutingNotifier routingNotifier) {
   return GoRouter(
     navigatorKey: appNavigatorKey,
+    observers: [appRouteObserver],
     debugLogDiagnostics: kDebugMode,
     initialLocation: '/_invisible',
     refreshListenable: routingNotifier,

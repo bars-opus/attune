@@ -24,6 +24,11 @@ Future<void> safetySignOut(Ref ref) async {
     // clears the local session first.
   }
   if (ref.read(currentUserProvider) != null) {
+    // Chat review #18: this fallback skips AuthOperations, so release the
+    // device here too (bounded by its owner; a repeat is a no-op).
+    try {
+      await ref.read(signOutHooksProvider).beforeSignOut?.call();
+    } catch (_) {}
     try {
       await Supabase.instance.client.auth.signOut();
     } catch (_) {}

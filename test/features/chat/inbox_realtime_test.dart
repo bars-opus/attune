@@ -54,7 +54,7 @@ void main() {
     // The partner sends a message: the server row now reads 1 unread.
     repo.conversations = [_convo('rel-1', unread: 1)];
     repo.inboxEvents.add(null);
-    await Future<void>.delayed(const Duration(milliseconds: 20));
+    await Future<void>.delayed(const Duration(milliseconds: 400));
 
     final refreshed = container.read(conversationsProvider).value;
     expect(
@@ -82,7 +82,7 @@ void main() {
 
     repo.conversations = [_convo('rel-1', unread: 3)];
     repo.inboxEvents.add(null);
-    await Future<void>.delayed(const Duration(milliseconds: 20));
+    await Future<void>.delayed(const Duration(milliseconds: 400));
 
     expect(
       states.contains(true), isFalse,

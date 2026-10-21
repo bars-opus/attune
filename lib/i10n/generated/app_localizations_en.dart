@@ -291,7 +291,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String authGuestOverview(String appName) {
-    return 'You are browsing $appName as a guest. Log in or create an account to start managing your shop — it takes less than 5 seconds. We have a variety of tools to help grow your business, all free of charge.';
+    return 'You\'re browsing $appName as a guest. Sign in with your phone number to start your shared space with your partner — it takes a few seconds.';
   }
 
   @override

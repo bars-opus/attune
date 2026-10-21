@@ -16,6 +16,7 @@ import UIKit
   private var screenshotChannel: FlutterMethodChannel?
   private var screenshotObserver: NSObjectProtocol?
   private var recordingHapticsChannel: FlutterMethodChannel?
+  private var backupExclusionChannel: FlutterMethodChannel?
   private var switcherCover: UIView?
 
   override func application(
@@ -92,6 +93,43 @@ import UIKit
         result(FlutterError(
           code: "AUDIO_SESSION_ERROR",
           message: "Could not configure recording haptics",
+          details: error.localizedDescription
+        ))
+      }
+    }
+
+    // Keeps local-only chat files (staged photo picks and uploads, the
+    // encrypted cache store) out of device and iCloud backups. See
+    // lib/core/services/storage/backup_exclusion.dart; Android excludes the
+    // same paths in res/xml/backup_rules.xml + data_extraction_rules.xml.
+    let backupChannel = FlutterMethodChannel(
+      name: "attune/backup_exclusion",
+      binaryMessenger: controller.binaryMessenger
+    )
+    backupExclusionChannel = backupChannel
+    backupChannel.setMethodCallHandler { call, result in
+      guard call.method == "excludeFromBackup" else {
+        result(FlutterMethodNotImplemented)
+        return
+      }
+      guard let path = call.arguments as? String, !path.isEmpty else {
+        result(FlutterError(
+          code: "INVALID_ARGUMENT",
+          message: "excludeFromBackup expects a file path",
+          details: nil
+        ))
+        return
+      }
+      var url = URL(fileURLWithPath: path)
+      var values = URLResourceValues()
+      values.isExcludedFromBackup = true
+      do {
+        try url.setResourceValues(values)
+        result(nil)
+      } catch {
+        result(FlutterError(
+          code: "EXCLUDE_FAILED",
+          message: "Could not exclude the item from backup",
           details: error.localizedDescription
         ))
       }

@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:attune/core/ui/motion/icon_crossfade.dart';
 
 import 'support/chat_test_harness.dart';
@@ -5,6 +7,7 @@ import 'package:attune/features/chat/domain/entities/message.dart';
 import 'package:attune/features/chat/presentation/widgets/message_bubble.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:image/image.dart' as img;
 
 Message _mine({
   required MessageStatus status,
@@ -276,9 +279,12 @@ void main() {
     );
 
     final timestampRect = tester.getRect(find.textContaining('3:04').first);
-    final statusRect = tester.getRect(
-      find.bySemanticsLabel(RegExp('Message status: Read')),
-    );
+    // Two chips now: the reveal column's (beside the time) and the footer's.
+    // The footer one is the lower of the two.
+    final statusRect = tester
+        .widgetList(find.bySemanticsLabel(RegExp('Message status: Read')))
+        .map((w) => tester.getRect(find.byWidget(w)))
+        .reduce((a, b) => a.center.dy > b.center.dy ? a : b);
     expect(timestampRect.center.dy, lessThan(statusRect.center.dy));
   });
 
@@ -678,5 +684,153 @@ void main() {
       MessageBubble(message: _mine(status: MessageStatus.delivered)),
     );
     expect(find.byType(IconCrossfade), findsWidgets);
+  });
+
+  testWidgets('an image on its way out shows a determinate ring and cancel',
+      (tester) async {
+    // Sync IO: real async file futures never complete inside the widget
+    // tester's fake-async zone (the test would hang, not fail).
+    final dir = Directory.systemTemp.createTempSync('bubble_img');
+    addTearDown(() => dir.deleteSync(recursive: true));
+    final file = File('${dir.path}/p.png')
+      ..writeAsBytesSync(img.encodePng(img.Image(width: 8, height: 8)));
+    Message? cancelled;
+    final message = Message(
+      id: '_local_c9',
+      clientMessageId: 'c9',
+      relationshipId: 'rel',
+      senderId: 'me',
+      content: '',
+      createdAt: DateTime(2026, 10, 18),
+      status: MessageStatus.sending,
+      isMine: true,
+      mediaType: 'image',
+      localMediaPath: file.path,
+      uploadProgress: 0.4,
+    );
+    await _pump(tester, MessageBubble(message: message, onCancelSend: (m) => cancelled = m));
+    await tester.pump();
+    final ring = tester.widget<CircularProgressIndicator>(
+        find.byType(CircularProgressIndicator));
+    expect(ring.value, closeTo(0.4, 0.001));
+    await tester.tap(find.byIcon(Icons.close_rounded));
+    expect(cancelled?.clientMessageId, 'c9');
+  });
+
+  testWidgets('no cancel before the upload starts or once the bytes are up',
+      (tester) async {
+    final dir = Directory.systemTemp.createTempSync('bubble_img_gate');
+    addTearDown(() => dir.deleteSync(recursive: true));
+    final file = File('${dir.path}/p.png')
+      ..writeAsBytesSync(img.encodePng(img.Image(width: 8, height: 8)));
+    Message sending(double? progress) => Message(
+      id: '_local_c10',
+      clientMessageId: 'c10',
+      relationshipId: 'rel',
+      senderId: 'me',
+      content: '',
+      createdAt: DateTime(2026, 10, 18),
+      status: MessageStatus.sending,
+      isMine: true,
+      mediaType: 'image',
+      localMediaPath: file.path,
+      uploadProgress: progress,
+    );
+    for (final progress in [null, 1.0]) {
+      await _pump(
+        tester,
+        MessageBubble(message: sending(progress), onCancelSend: (_) {}),
+      );
+      await tester.pump();
+      expect(find.byType(CircularProgressIndicator), findsOneWidget);
+      expect(find.byIcon(Icons.close_rounded), findsNothing,
+          reason: 'nothing can be stopped at progress $progress');
+    }
+  });
+
+  testWidgets(
+    'the swipe-reveal column shows the tick beside the time for own rows',
+    (tester) async {
+      await _pump(
+        tester,
+        MessageBubble(
+          message: _mine(status: MessageStatus.read),
+          showStatus: false,
+          timestampRevealOffset: 40,
+        ),
+      );
+      expect(find.bySemanticsLabel('Message status: Read'), findsOneWidget);
+    },
+  );
+
+  testWidgets('a failed streak row shows Not sent, not a spinner', (
+    tester,
+  ) async {
+    var retried = false;
+    final failedStreak = Message(
+      id: '_local_streak-1',
+      clientMessageId: 'streak-1',
+      relationshipId: 'r1',
+      senderId: 'me',
+      content: '',
+      createdAt: DateTime(2026, 7, 1, 15, 4),
+      status: MessageStatus.failed,
+      isMine: true,
+      mediaType: 'streak',
+      streakViewsRemaining: 1,
+    );
+    await _pump(
+      tester,
+      MessageBubble(message: failedStreak, onRetry: () => retried = true),
+    );
+
+    expect(find.text('Sending…'), findsNothing);
+    expect(find.byType(CircularProgressIndicator), findsNothing);
+    // One retry affordance (final review M-1): the footer's Retry/Remove,
+    // as for a failed photo or video. The body only states what happened.
+    expect(find.text('Not sent'), findsOneWidget);
+    expect(find.text('Not sent. Tap to retry'), findsNothing);
+    expect(find.text('Retry'), findsOneWidget);
+    expect(find.text('Remove'), findsNothing, reason: 'no onRemove given');
+
+    await tester.tap(find.text('Not sent'));
+    await tester.pump();
+    expect(retried, isFalse, reason: 'the body label is not a button');
+
+    await tester.tap(find.text('Retry'));
+    await tester.pump();
+    expect(retried, isTrue);
+  });
+
+  testWidgets('a failed streak announces one retry action, not two', (
+    tester,
+  ) async {
+    final handle = tester.ensureSemantics();
+    final failedStreak = Message(
+      id: '_local_streak-1',
+      clientMessageId: 'streak-1',
+      relationshipId: 'r1',
+      senderId: 'me',
+      content: '',
+      createdAt: DateTime(2026, 7, 1, 15, 4),
+      status: MessageStatus.failed,
+      isMine: true,
+      mediaType: 'streak',
+      streakViewsRemaining: 1,
+    );
+    await _pump(
+      tester,
+      MessageBubble(message: failedStreak, onRetry: () {}, onRemove: () {}),
+    );
+
+    // The body is a plain statement...
+    expect(
+      tester.getSemantics(find.bySemanticsLabel('Streak not sent')),
+      matchesSemantics(label: 'Streak not sent', hasTapAction: false),
+    );
+    // ...and the footer owns both actions, once each.
+    expect(find.bySemanticsLabel('Retry'), findsOneWidget);
+    expect(find.bySemanticsLabel('Remove'), findsOneWidget);
+    handle.dispose();
   });
 }

@@ -58,6 +58,12 @@ List<Widget> buildMessageActionItems({
   bool isInJar = false,
   VoidCallback? onSaveToJar,
   VoidCallback? onRemoveFromJar,
+  // #37: copies the message's first web link; null hides the item.
+  VoidCallback? onCopyLink,
+  // Opens an edited message's history (the full-size path to what the
+  // small "edited" label opens); shown only for an edited, server-backed
+  // row that is not a system notice. Null hides the item.
+  VoidCallback? onShowEditHistory,
 }) {
   final windowNow = DateTime.now();
   final canEdit = message.canEdit(
@@ -89,6 +95,12 @@ List<Widget> buildMessageActionItems({
   // caller that passes nothing — every existing test, and any future
   // non-chat reuse — gets the menu it gets today.
   final canAskAttune = assistEnabled && message.isEligibleForAskAttune;
+  final hasEditHistory =
+      onShowEditHistory != null &&
+      message.editedAt != null &&
+      !message.isDeleted &&
+      !message.id.startsWith('_local_') &&
+      !message.isSystemNotice;
   final errorColor = Theme.of(context).colorScheme.error;
 
   /// Pops the menu using [tileContext] — the tile's own, always-live
@@ -179,6 +191,12 @@ List<Widget> buildMessageActionItems({
       title: 'Copy',
       onSelected: onCopy,
     ),
+    if (onCopyLink != null)
+      item(
+        leading: const Icon(Icons.link_rounded),
+        title: 'Copy link',
+        onSelected: onCopyLink,
+      ),
     item(
       leading: const Icon(Icons.star_border),
       title: isStarred ? 'Unstar' : 'Star',
@@ -194,6 +212,12 @@ List<Widget> buildMessageActionItems({
       title: 'Info',
       onSelected: onInfo,
     ),
+    if (hasEditHistory)
+      item(
+        leading: const Icon(Icons.history_rounded),
+        title: 'Edit history',
+        onSelected: onShowEditHistory,
+      ),
     if (canAskAttune)
       item(
         leading: const Icon(Icons.auto_awesome_outlined),

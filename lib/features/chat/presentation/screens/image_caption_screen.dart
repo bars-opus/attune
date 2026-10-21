@@ -70,6 +70,12 @@ class _ImageCaptionScreenState extends State<ImageCaptionScreen> {
                   child: Image.file(
                     File(widget.imagePath),
                     fit: BoxFit.contain,
+                    // The pick is the full-resolution original (#20):
+                    // decode it at most screen-wide, not at 12 MP.
+                    cacheWidth:
+                        (MediaQuery.sizeOf(context).width *
+                                MediaQuery.devicePixelRatioOf(context))
+                            .round(),
                   ),
                 ),
               ),

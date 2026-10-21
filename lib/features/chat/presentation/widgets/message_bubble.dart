@@ -3,13 +3,14 @@ import 'live_message_motion.dart';
 import 'emoji_message_content.dart';
 import 'package:attune/app/theme/chat_color_scheme.dart';
 import 'package:attune/app/theme/design_tokens.dart';
+import 'package:attune/core/ui/feedback/haptics.dart';
 import 'package:attune/core/ui/motion/icon_crossfade.dart';
 import 'package:attune/core/ui/motion/shimmer.dart';
 import 'package:attune/core/utils/animations/animated_scale_fade.dart';
 import 'package:attune/core/widgets/focused_action_menu.dart';
 import 'package:attune/core/widgets/search_text_field.dart';
 import 'package:attune/core/widgets/universal_bubble.dart';
-import 'package:attune/features/chat/presentation/state/chat_state.dart';
+import 'package:attune/features/chat/presentation/state/voice_playback_controller.dart';
 import 'package:attune/features/stories/data/story_read_repository.dart';
 import 'package:attune/features/stories/presentation/providers/story_providers.dart';
 import 'package:attune/features/stories/presentation/screens/story_reel_screen.dart';
@@ -17,15 +18,20 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:attune/features/chat/domain/entities/conversation.dart';
 import 'package:attune/features/chat/domain/entities/message.dart';
+import 'package:attune/features/chat/domain/utils/streak_replay_window.dart';
 import 'package:attune/features/chat/presentation/widgets/message_actions_sheet.dart';
+import 'package:attune/features/chat/presentation/widgets/linkified_message_text.dart';
 import 'package:attune/features/chat/presentation/widgets/chat_media_group.dart';
+import 'package:attune/features/chat/presentation/widgets/message_status_rule.dart';
 import 'package:attune/features/chat/presentation/widgets/resolved_media_url.dart';
 import 'package:attune/features/chat/presentation/screens/message_info_screen.dart';
 import 'package:attune/features/ai_assistant/presentation/screens/ask_attune_mode_sheet.dart';
 import 'package:attune/features/chat/presentation/widgets/video_message_thumbnail.dart';
 import 'package:attune/features/chat/presentation/widgets/voice_message_player.dart';
 import 'package:emoji_picker_flutter/emoji_picker_flutter.dart';
+import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart' show BoxHitTestEntry, BoxHitTestResult, RenderProxyBox;
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 import 'dart:async';
@@ -36,6 +42,7 @@ import 'package:attune/features/games/presentation/widgets/game_message_bubble.d
 import 'package:attune/features/location/presentation/widgets/place_update_bubble.dart';
 import 'package:attune/features/games/presentation/widgets/game_trail_line.dart';
 import 'package:attune/features/ai_assistant/presentation/widgets/attune_assist_bubble.dart';
+import 'package:attune/features/chat/utils/chat_log.dart';
 
 /// A local media path only if the file is still there.
 ///
@@ -128,6 +135,7 @@ class MessageBubble extends StatelessWidget {
     this.showLatestTimestamp = false,
     this.showTimestamp = true,
     this.timestampRevealOffset = 0,
+    this.timestampRevealListenable,
     this.onTimestampRevealChanged,
     this.onReply,
     this.onJumpToParent,
@@ -135,12 +143,14 @@ class MessageBubble extends StatelessWidget {
     this.parentDeleted = false,
     this.parentIsMine,
     this.currentUserId,
+    this.viewerUserId,
     this.isStarred = false,
     this.isPinned = false,
     this.isInJar = false,
     this.onSaveToJar,
     this.onRemoveFromJar,
     this.onCopy,
+    this.onCopyLink,
     this.onStar,
     this.onUnstar,
     this.onPin,
@@ -153,6 +163,7 @@ class MessageBubble extends StatelessWidget {
     this.onRemoveReaction,
     this.onImageTap,
     this.onVideoTap,
+    this.onCancelSend,
     this.onStreakViewSpent,
     this.isGrouped = false,
     this.isGroupedWithPrevious = false,
@@ -235,6 +246,12 @@ class MessageBubble extends StatelessWidget {
   final bool showLatestTimestamp;
   final bool showTimestamp;
   final double timestampRevealOffset;
+
+  /// Live reveal offset for the iMessage-style left swipe. When set, it
+  /// replaces [timestampRevealOffset] and only the bubble SHELL rebuilds on
+  /// each tick — content, footer and adornments are built once per list
+  /// build (05 M-6).
+  final ValueListenable<double>? timestampRevealListenable;
   final ValueChanged<double>? onTimestampRevealChanged;
 
   /// Swipe-to-reply target. Null (the default) disables the swipe gesture
@@ -273,6 +290,11 @@ class MessageBubble extends StatelessWidget {
   /// archived conversation has nothing sensible to act on) — matches the
   /// existing null-disables-gesture convention onReply already uses.
   final String? currentUserId;
+
+  /// Who is reading. Unlike [currentUserId] it is NOT nulled for read-only
+  /// conversations or optimistic rows: those gate actions, not perspective
+  /// (a game card must still say "You won" in Previous Relationships).
+  final String? viewerUserId;
   final bool isStarred;
   final bool isPinned;
 
@@ -282,6 +304,9 @@ class MessageBubble extends StatelessWidget {
   final VoidCallback? onSaveToJar;
   final VoidCallback? onRemoveFromJar;
   final VoidCallback? onCopy;
+
+  /// Copies the first web link in the message; null when the text has none.
+  final VoidCallback? onCopyLink;
   final VoidCallback? onStar;
   final VoidCallback? onUnstar;
   final VoidCallback? onPin;
@@ -326,6 +351,9 @@ class MessageBubble extends StatelessWidget {
   /// wired independently in _BubbleBody's isEphemeralVideoAvailable
   /// branch — this callback is never consulted there).
   final void Function(Message message)? onVideoTap;
+
+  /// Stops an in-flight upload of one of my media messages.
+  final void Function(Message message)? onCancelSend;
 
   /// Reports the budget the server returned after a streak view, so the
   /// list can apply it. Without this the bubble keeps the count it was
@@ -385,9 +413,19 @@ class MessageBubble extends StatelessWidget {
     final replyBubbleTextColor = onBubbleColor;
     final canOpenActions =
         currentUserId != null && !message.isDeleted && !message.isPreparing;
+    // Spec "Edited label + history view": an edited message always carries
+    // its label, whatever else the footer would have shown. Deleted rows
+    // are tombstones and never say "edited"; neither does a row that is not
+    // on the server yet (no history to show) or a system notice.
+    final isEdited =
+        message.editedAt != null &&
+        !message.isDeleted &&
+        !message.id.startsWith('_local_') &&
+        !message.isSystemNotice;
     final hasVisibleFooter =
         showLatestTimestamp ||
         (showStatus && isMine) ||
+        isEdited ||
         (message.isFailed && (onRetry != null || onRemove != null));
 
     final reactionAdornments = _buildReactionAdornments(
@@ -402,16 +440,73 @@ class MessageBubble extends StatelessWidget {
     // 70 logical pixels.
     const timestampRevealColumnWidth = 70.0;
     final timestampRevealBottomInset = hasVisibleFooter ? 24.0 : 0.0;
-    final timestampRevealProgress = ((timestampRevealOffset - 12) / 60).clamp(
-      0.0,
-      1.0,
+
+    // Built once per MessageBubble.build, outside the reveal listener: a
+    // drag tick hands UniversalBubble these SAME instances, so the framework
+    // skips their subtrees (_BubbleBody, images, voice players) and only the
+    // shell below follows the finger (05 M-6).
+    final content = Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        if (message.isImported)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 2),
+            child: Text(
+              'Imported from WhatsApp',
+              style: Theme.of(context).textTheme.labelSmall,
+            ),
+          ),
+        if (isEmojiOnly)
+          EmojiMessageContent(
+            key: ValueKey(
+              'emoji-message-${message.clientMessageId}',
+            ),
+            glyphs: emojiGlyphs,
+            animate: animateEmojiArrival,
+            playbackEnabled: emojiPlaybackEnabled,
+          )
+        else
+          _BubbleBody(
+            message: message,
+            mediaGroup: mediaGroup,
+            isMine: isMine,
+            bubbleColor: bubbleColor,
+            conversation: conversation,
+            onImageTap: onImageTap,
+            onVideoTap: onVideoTap,
+            onCancelSend: onCancelSend,
+            onStreakViewSpent: onStreakViewSpent,
+            onGameTap: onGameTap,
+            viewerId: viewerUserId ?? currentUserId,
+            onRetry: onRetry,
+            onBubbleColor: onBubbleColor,
+          ),
+      ],
     );
+    final footer =
+        hasVisibleFooter
+            ? _MessageMeta(
+              message: message,
+              isMine: isMine,
+              isStarred: false,
+              showStatus: showStatus,
+              showTime: showLatestTimestamp || isEdited,
+              showEdited: isEdited,
+              onBubbleColor: metadataColor,
+              onRetry: onRetry,
+              onRemove: onRemove,
+              onShowEditHistory: onShowEditHistory,
+              colorScheme: colorScheme,
+              inline: false,
+            )
+            : const SizedBox.shrink();
 
     // The timestamp reveal belongs to the full message row, not the bubble's
     // shrink-wrapped width. Keeping it row-level gives every visible message
     // the same right-side timestamp column during an iMessage-style left
     // swipe, including short incoming bubbles.
-    return SizedBox(
+    Widget shell(double revealOffset) => SizedBox(
       width: double.infinity,
       child: Padding(
         padding: const EdgeInsets.only(top: 0, bottom: 0),
@@ -421,7 +516,7 @@ class MessageBubble extends StatelessWidget {
             // This sits in the same visual plane as the wallpaper. As every
             // bubble translates left, the clock is progressively uncovered
             // rather than painted on an opaque panel above the conversation.
-            if (showTimestamp && timestampRevealOffset > 0)
+            if (showTimestamp && revealOffset > 0)
               Positioned(
                 right: 0,
                 top: 0,
@@ -429,12 +524,18 @@ class MessageBubble extends StatelessWidget {
                 width: timestampRevealColumnWidth,
                 child: IgnorePointer(
                   child: Opacity(
-                    opacity: timestampRevealProgress,
+                    opacity: _revealProgress(revealOffset),
                     child: Transform.translate(
-                      offset: Offset(10 * (1 - timestampRevealProgress), 0),
+                      offset: Offset(
+                        10 * (1 - _revealProgress(revealOffset)),
+                        0,
+                      ),
                       child: Align(
                         alignment: Alignment.centerRight,
-                        child: _RevealTimestamp(message: message),
+                        child: _RevealTimestamp(
+                          message: message,
+                          footerShowsStatus: showStatus,
+                        ),
                       ),
                     ),
                   ),
@@ -491,9 +592,7 @@ class MessageBubble extends StatelessWidget {
                         // disagreement between the two treatments.
                         footerInsideBubble: false,
                         dragOffsetOverride:
-                            timestampRevealOffset > 0
-                                ? -timestampRevealOffset
-                                : null,
+                            revealOffset > 0 ? -revealOffset : null,
                         startReveal: null,
                         replyIconColor: colorScheme.primary,
                         onEndRevealDragChanged: onTimestampRevealChanged,
@@ -626,6 +725,13 @@ class MessageBubble extends StatelessWidget {
                                     isPinned: isPinned,
                                     onReply: onReply ?? () {},
                                     onCopy: onCopy ?? () {},
+                                    onCopyLink: onCopyLink,
+                                    onShowEditHistory:
+                                        onShowEditHistory == null
+                                            ? null
+                                            : () => onShowEditHistory!(
+                                              message,
+                                            ),
                                     onStar: onStar ?? () {},
                                     onUnstar: onUnstar ?? () {},
                                     onPin: onPin ?? () {},
@@ -648,60 +754,8 @@ class MessageBubble extends StatelessWidget {
                                 )
                                 : null,
                         onReply: onReply,
-                        content: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            if (message.isImported)
-                              Padding(
-                                padding: const EdgeInsets.only(bottom: 2),
-                                child: Text(
-                                  'Imported from WhatsApp',
-                                  style: Theme.of(context).textTheme.labelSmall,
-                                ),
-                              ),
-                            if (isEmojiOnly)
-                              EmojiMessageContent(
-                                key: ValueKey(
-                                  'emoji-message-${message.clientMessageId}',
-                                ),
-                                glyphs: emojiGlyphs,
-                                animate: animateEmojiArrival,
-                                playbackEnabled: emojiPlaybackEnabled,
-                              )
-                            else
-                              _BubbleBody(
-                                message: message,
-                                mediaGroup: mediaGroup,
-                                isMine: isMine,
-                                bubbleColor: bubbleColor,
-                                conversation: conversation,
-                                onImageTap: onImageTap,
-                                onVideoTap: onVideoTap,
-                                onStreakViewSpent: onStreakViewSpent,
-                                onGameTap: onGameTap,
-                                viewerId: currentUserId,
-                                onBubbleColor: onBubbleColor,
-                              ),
-                          ],
-                        ),
-                        footer:
-                            hasVisibleFooter
-                                ? _MessageMeta(
-                                  message: message,
-                                  isMine: isMine,
-                                  isStarred: false,
-                                  showStatus: showStatus,
-                                  showTime: showLatestTimestamp,
-                                  showEdited: false,
-                                  onBubbleColor: metadataColor,
-                                  onRetry: onRetry,
-                                  onRemove: onRemove,
-                                  onShowEditHistory: onShowEditHistory,
-                                  colorScheme: colorScheme,
-                                  inline: false,
-                                )
-                                : const SizedBox.shrink(),
+                        content: content,
+                        footer: footer,
                       ),
                       if (reactionAdornments != null)
                         Positioned(
@@ -730,7 +784,18 @@ class MessageBubble extends StatelessWidget {
         ),
       ),
     );
+
+    final listenable = timestampRevealListenable;
+    if (listenable == null) return shell(timestampRevealOffset);
+    return ValueListenableBuilder<double>(
+      valueListenable: listenable,
+      builder: (context, offset, _) => shell(offset),
+    );
   }
+
+  /// How far the reveal column has faded/slid in for a drag [offset].
+  static double _revealProgress(double offset) =>
+      ((offset - 12) / 60).clamp(0.0, 1.0);
 
   static BorderRadius _groupedBubbleRadius({
     required bool isMine,
@@ -773,31 +838,55 @@ class MessageBubble extends StatelessWidget {
 }
 
 class _RevealTimestamp extends StatelessWidget {
-  const _RevealTimestamp({required this.message});
+  const _RevealTimestamp({
+    required this.message,
+    required this.footerShowsStatus,
+  });
 
   final Message message;
 
+  /// The footer already announces the status (a group end): the revealed
+  /// chip is then visual only, so a swipe adds no second status node.
+  final bool footerShowsStatus;
+
   @override
   Widget build(BuildContext context) {
+    final primary = Theme.of(context).colorScheme.primary;
     return FittedBox(
       fit: BoxFit.scaleDown,
       alignment: Alignment.centerRight,
-      child: Semantics(
-        label: MessageBubble._absoluteTimeLabel(context, message.createdAt),
-        excludeSemantics: true,
-        child: Text(
-          MessageBubble._timeLabel(context, message.createdAt),
-          maxLines: 1,
-          softWrap: false,
-          overflow: TextOverflow.visible,
-          style: Theme.of(context).textTheme.bodySmall?.copyWith(
-            color: Theme.of(context).colorScheme.primary,
-            fontWeight:
-                Theme.of(context).brightness == Brightness.light
-                    ? FontWeight.w600
-                    : FontWeight.w500,
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Semantics(
+            label: MessageBubble._absoluteTimeLabel(context, message.createdAt),
+            excludeSemantics: true,
+            child: Text(
+              MessageBubble._timeLabel(context, message.createdAt),
+              maxLines: 1,
+              softWrap: false,
+              overflow: TextOverflow.visible,
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: primary,
+                fontWeight:
+                    Theme.of(context).brightness == Brightness.light
+                        ? FontWeight.w600
+                        : FontWeight.w500,
+              ),
+            ),
           ),
-        ),
+          if (message.isMine) ...[
+            const SizedBox(width: 4),
+            ExcludeSemantics(
+              excluding: footerShowsStatus,
+              child: _StatusChip(
+                message: message,
+                iconColor: primary,
+                readColor: primary,
+              ),
+            ),
+          ],
+        ],
       ),
     );
   }
@@ -1009,7 +1098,18 @@ VoidCallback _buildFullPickerOpener(
   void Function(String emoji, Rect sourceRect)? onReactionFlight,
 ) {
   final navigator = Navigator.of(context, rootNavigator: true);
-  return () => _openFullEmojiPicker(navigator, onReact, onReactionFlight);
+  // Resolved eagerly for the same reason as the navigator. Null when no
+  // ProviderScope is above (bare widget tests): the pick is then silent.
+  Haptics? haptics;
+  try {
+    haptics = ProviderScope.containerOf(context, listen: false).read(
+      hapticsProvider,
+    );
+  } catch (error) {
+    ChatLog.diagnostic('reaction picker haptics unavailable', error);
+  }
+  return () =>
+      _openFullEmojiPicker(navigator, onReact, onReactionFlight, haptics);
 }
 
 /// Same reasoning as [_buildFullPickerOpener]: resolved at long-press
@@ -1065,8 +1165,9 @@ void _openAskAttuneModeSheet(NavigatorState navigator, Message message) {
 void _openFullEmojiPicker(
   NavigatorState navigator,
   void Function(String emoji)? onReact,
-  void Function(String emoji, Rect sourceRect)? onReactionFlight,
-) {
+  void Function(String emoji, Rect sourceRect)? onReactionFlight, [
+  Haptics? haptics,
+]) {
   if (!navigator.mounted) return;
   showModalBottomSheet<void>(
     context: navigator.context,
@@ -1079,6 +1180,7 @@ void _openFullEmojiPicker(
           onSelected: (emoji, sourceRect) {
             // Start before dismissing so the emoji visibly lifts out of the
             // picker instead of appearing only after the sheet has vanished.
+            haptics?.selection();
             onReactionFlight?.call(emoji, sourceRect);
             onReact?.call(emoji);
             Navigator.of(sheetContext).pop();
@@ -1367,6 +1469,17 @@ class _ReactionSearchViewState extends SearchViewState<_ReactionSearchView> {
   }
 }
 
+/// Streak rows whose viewer is opening or open, by message id, each with
+/// the token of the open that holds it (see _BubbleBody's streak onTap): a
+/// second activation of the same row is ignored until that viewer returns
+/// or is torn down.
+final Map<String, Object> _streakViewersOpen = <String, Object>{};
+
+/// Frees every streak row's one-viewer guard. The chat screen calls it on
+/// dispose: whatever a lost route left behind, leaving the chat never keeps
+/// a row locked until the app restarts.
+void releaseStreakViewerGuards() => _streakViewersOpen.clear();
+
 class _BubbleBody extends StatelessWidget {
   const _BubbleBody({
     required this.message,
@@ -1377,9 +1490,11 @@ class _BubbleBody extends StatelessWidget {
     this.mediaGroup = const [],
     this.onImageTap,
     this.onVideoTap,
+    this.onCancelSend,
     this.onStreakViewSpent,
     this.onGameTap,
     this.viewerId,
+    this.onRetry,
   });
 
   final Message message;
@@ -1389,6 +1504,9 @@ class _BubbleBody extends StatelessWidget {
   final Conversation? conversation;
   final void Function(Message message)? onImageTap;
   final void Function(Message message)? onVideoTap;
+
+  /// Stops an in-flight upload of one of my media messages.
+  final void Function(Message message)? onCancelSend;
 
   /// Reports the budget the server returned after a streak view, so the
   /// list can apply it. Without this the bubble keeps the count it was
@@ -1403,7 +1521,29 @@ class _BubbleBody extends StatelessWidget {
   /// move". Nullable so an unauthenticated preview still renders.
   final String? viewerId;
 
+  /// Retries a failed send. Not offered by the streak body: the footer
+  /// owns Retry/Remove for every failed row, so one row announces one
+  /// retry action.
+  final VoidCallback? onRetry;
+
   final Color onBubbleColor;
+
+  /// The ring centre stops the send only while it can be stopped: an upload
+  /// under way (the controller marks its start with progress 0). Not while
+  /// compressing, and not once the bytes are up (only the insert is left,
+  /// which a cancel no longer stops) — a button that does nothing is a lie.
+  VoidCallback? _cancelFor(Message message) {
+    final onCancel = onCancelSend;
+    final progress = message.uploadProgress;
+    if (onCancel == null ||
+        !message.isSending ||
+        message.isPreparing ||
+        progress == null ||
+        progress >= 1.0) {
+      return null;
+    }
+    return () => onCancel(message);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -1466,6 +1606,11 @@ class _BubbleBody extends StatelessWidget {
     final children = <Widget>[];
     if (message.hasImage) {
       final localImagePath = _playableLocalPath(message.localMediaPath);
+      final decode = thumbnailDecodeSize(
+        displayPx: (220 * MediaQuery.devicePixelRatioOf(context)).round(),
+        mediaWidth: message.mediaWidth,
+        mediaHeight: message.mediaHeight,
+      );
       final thumbnail = ClipRRect(
         borderRadius: BorderRadius.circular(12),
         // Keyed on clientMessageId — ImageViewerScreen's own _ZoomableImage
@@ -1479,7 +1624,17 @@ class _BubbleBody extends StatelessWidget {
           child:
               localImagePath != null
                   ? Image(
-                    image: FileImage(File(localImagePath)),
+                    // A local file can be the full-resolution pick (#20)
+                    // until preparation swaps in the 1600 px upload: cap
+                    // the decode. Unknown dimensions (optimistic rows) get
+                    // twice the width so a 2:1 landscape still covers the
+                    // square; known ones decode the constrained side only.
+                    // ResizeImage never upscales.
+                    image: ResizeImage(
+                      FileImage(File(localImagePath)),
+                      width: decode.width,
+                      height: decode.height,
+                    ),
                     width: 220,
                     height: 220,
                     fit: BoxFit.cover,
@@ -1494,6 +1649,7 @@ class _BubbleBody extends StatelessWidget {
                       child: _ImagePlaceholder(),
                     ),
                     error: const _ImageLoadError(),
+                    retryLabel: "Photo didn't load. Tap to retry",
                     builder:
                         (context, url) => CachedNetworkImage(
                           imageUrl: url,
@@ -1506,6 +1662,10 @@ class _BubbleBody extends StatelessWidget {
                           // key survives across signed-URL refreshes and
                           // actually serves from disk on repeat opens.
                           cacheKey: message.mediaKey,
+                          // In-memory decode only: never the disk-cache caps,
+                          // the full-screen viewer shares this entry.
+                          memCacheWidth: decode.width,
+                          memCacheHeight: decode.height,
                           width: 220,
                           height: 220,
                           fit: BoxFit.cover,
@@ -1523,13 +1683,20 @@ class _BubbleBody extends StatelessWidget {
       );
       // Busy overlay while the image is still on its way out, matching the
       // video tile and WhatsApp: the picture is fully visible from the
-      // moment you hit send, with a spinner drawn over it until it lands.
-      // Indeterminate — the upload reports no byte-level progress.
+      // moment you hit send, with a ring drawn over it until it lands.
+      // Determinate once the uploader reports bytes; the ring centre
+      // cancels.
       final imageTile =
           message.isSending
               ? Stack(
                 alignment: Alignment.center,
-                children: [thumbnail, const _MediaBusyOverlay()],
+                children: [
+                  thumbnail,
+                  _MediaBusyOverlay(
+                    progress: message.uploadProgress,
+                    onCancel: _cancelFor(message),
+                  ),
+                ],
               )
               : thumbnail;
       children.add(
@@ -1568,6 +1735,12 @@ class _BubbleBody extends StatelessWidget {
                 // single most common case: listening to what you just sent.
                 key: ValueKey(message.clientMessageId),
                 messageId: message.clientMessageId,
+                // Leaving a DIFFERENT chat must not stop this note.
+                ownerId: message.relationshipId,
+                serverMessageId: message.id,
+                // Cached on disk under the key after the first play, so a
+                // replay needs no network (#28).
+                mediaKey: mediaKey,
                 durationMs: message.mediaDurationMs ?? 0,
                 waveform: message.waveform ?? const [],
                 foregroundColor: onBubbleColor,
@@ -1594,9 +1767,14 @@ class _BubbleBody extends StatelessWidget {
                   // The stored URL stays as the fallback for a row that
                   // somehow carries one without a key.
                   if (mediaKey != null) {
-                    final resolved = await ref.read(
-                      signedMediaUrlProvider(mediaKey).future,
-                    );
+                    // Through signedMediaUrlProvider, kept listened by the
+                    // playback controller for the read so its retries apply
+                    // (an unlistened `.future` read got one attempt). Null
+                    // when it cannot sign: the stored URL remains the
+                    // fallback for a row that carries one.
+                    final resolved = await ref
+                        .read(voicePlaybackControllerProvider.notifier)
+                        .signedUrlFor(mediaKey);
                     return resolved ?? signedUrl;
                   }
                   return signedUrl;
@@ -1654,15 +1832,31 @@ class _BubbleBody extends StatelessWidget {
         ),
       );
     } else if (message.isStreak) {
-      final remaining = message.streakViewsRemaining ?? 0;
+      // Past the 30-minute replay window the row reads Opened on its own;
+      // the server refuses the read anyway, this just stops offering it.
+      final remaining = streakViewsAvailable(message, DateTime.now());
+      // Swept before anyone saw it (read, never presented, window closed):
+      // the budget is gone but viewed_at — the presentation receipt — was
+      // never set. The same for both parties; an optimistic row has no
+      // server budget yet. Only a known zero counts: the column is NOT NULL
+      // DEFAULT 1, so a null budget means "not loaded yet", never "swept".
+      final expiredUnseen =
+          message.streakViewsRemaining == 0 &&
+          message.viewedAt == null &&
+          !message.id.startsWith('_local_');
       children.add(
         StreakBubble(
           viewsRemaining: remaining,
           hasBeenPlayed: !message.isMine && message.viewedAt != null,
           isMine: message.isMine,
           // An optimistic row has no server id yet; the upload is still
-          // in flight behind this bubble.
-          isSending: message.id.startsWith('_local_'),
+          // in flight behind this bubble — unless it has given up.
+          isSending: message.id.startsWith('_local_') && !message.isFailed,
+          isFailed: message.isFailed,
+          isExpired: expiredUnseen,
+          // No onRetry: a failed streak retries from the footer's
+          // Retry/Remove, like a failed photo or video. Offering it here
+          // too gave one row two retry buttons (final review M-1).
           // viewed_at is set only by a RECIPIENT view — a sender replay
           // deliberately leaves it null — so this is exactly "has the
           // recipient opened it".
@@ -1674,16 +1868,46 @@ class _BubbleBody extends StatelessWidget {
                   ? Theme.of(context).chatColors.senderMetadata
                   : Theme.of(context).chatColors.receiverMetadata,
           onTap: () async {
+            if (expiredUnseen) return;
             if (message.isMine && message.viewedAt != null) return;
             if (!message.isMine && remaining <= 0) return;
+            // One viewer per row at a time: each viewer is its own open
+            // (own open id), so a second one pushed by a double activation
+            // would present and spend a second view. Keyed by message id,
+            // not held in this (stateless, rebuilt) widget.
+            if (_streakViewersOpen.containsKey(message.id)) return;
+            final open = Object();
+            _streakViewersOpen[message.id] = open;
+            // Released by whichever comes first, the pop or the viewer's
+            // dispose; only this open's own entry, never a later one's.
+            void release() {
+              if (identical(_streakViewersOpen[message.id], open)) {
+                _streakViewersOpen.remove(message.id);
+              }
+            }
             // The viewer returns the budget the server reported after
             // spending a view; null means the decrement failed and the
             // local count should stay as it is rather than guess.
-            final left = await Navigator.of(context).push<int>(
-              MaterialPageRoute<int>(
-                builder: (_) => StreakViewerScreen(messageId: message.id),
-              ),
+            final route = MaterialPageRoute<int>(
+              builder:
+                  (_) => StreakViewerScreen(
+                    messageId: message.id,
+                    // A torn-down route may never complete the push.
+                    onDisposed: release,
+                  ),
             );
+            // And when the route itself goes: `completed` resolves on its
+            // disposal too, so a Navigator torn down before the viewer was
+            // ever built (no State, no onDisposed, a push future that never
+            // completes) still frees the row.
+            unawaited(route.popped.whenComplete(release));
+            unawaited(route.completed.whenComplete(release));
+            final int? left;
+            try {
+              left = await Navigator.of(context).push<int>(route);
+            } finally {
+              release();
+            }
             if (left != null) onStreakViewSpent?.call(message.id, left);
           },
         ),
@@ -1802,8 +2026,16 @@ class _BubbleBody extends StatelessWidget {
         // uploading — WhatsApp shows one continuous busy state across
         // both, not two different-looking phases. Null once the send
         // completes, which removes the ring and restores the play glyph.
-        uploadProgress: isBusy ? message.compressProgress : null,
+        uploadProgress:
+            isBusy
+                ? (message.isPreparing
+                    ? message.compressProgress
+                    : message.uploadProgress)
+                : null,
         showBusyOverlay: isBusy,
+        onCancel: _cancelFor(message),
+        // The 220 pt tile below, in memory only.
+        decodeWidthPx: (220 * MediaQuery.devicePixelRatioOf(context)).round(),
         // Not tappable until there's something to play.
         onTap:
             (message.isPreparing || onVideoTap == null)
@@ -1831,6 +2063,9 @@ class _BubbleBody extends StatelessWidget {
                     // bubble jump once the poster lands.
                     loading: buildTile(null),
                     error: buildTile(null),
+                    // The broken-poster tile still plays the video on tap;
+                    // the poster heals on reconnect or remount instead.
+                    retryOnTap: false,
                     builder: (context, url) => buildTile(url),
                   ),
         ),
@@ -1853,8 +2088,8 @@ class _BubbleBody extends StatelessWidget {
         children.add(const SizedBox(height: 8));
       }
       children.add(
-        Text(
-          message.content,
+        LinkifiedMessageText(
+          text: message.content,
           // Was an unstyled Text (no fontSize at all), which fell back to
           // Flutter's raw default rather than this app's own type scale —
           // bodyLarge (17px) matches how WhatsApp/iMessage actually size
@@ -1866,6 +2101,10 @@ class _BubbleBody extends StatelessWidget {
             fontWeight: FontWeight.w400,
             height: 1.2,
           ),
+          // The link keeps the bubble's text colour and is underlined —
+          // legible on both the sender gradient and the receiver surface,
+          // which a fixed blue is not.
+          linkColor: color,
         ),
       );
     }
@@ -1953,27 +2192,17 @@ class _MessageMeta extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final showEditedLabel =
+        showEdited && message.editedAt != null && !message.isDeleted;
+    final opensHistory = onShowEditHistory != null;
+    final editedLabel =
+        showEditedLabel ? _editedLabel(context, opensHistory) : null;
     final items = <Widget>[
       if (isStarred)
         Semantics(
           label: 'Starred',
           excludeSemantics: true,
           child: Icon(Icons.star, size: 12, color: onBubbleColor),
-        ),
-      if (showEdited && message.editedAt != null && !message.isDeleted)
-        GestureDetector(
-          onTap:
-              onShowEditHistory == null
-                  ? null
-                  : () => onShowEditHistory!(message),
-          child: Text(
-            'edited',
-            style: Theme.of(context).textTheme.bodySmall?.copyWith(
-              fontStyle: FontStyle.italic,
-              color: onBubbleColor,
-              decoration: TextDecoration.underline,
-            ),
-          ),
         ),
       if (showTime)
         Semantics(
@@ -1986,6 +2215,7 @@ class _MessageMeta extends StatelessWidget {
             ).textTheme.bodySmall?.copyWith(color: onBubbleColor),
           ),
         ),
+      if (editedLabel != null) editedLabel,
       if (showStatus && isMine)
         _StatusChip(
           message: message,
@@ -2021,6 +2251,39 @@ class _MessageMeta extends StatelessWidget {
       children: items,
     );
   }
+  Widget _editedLabel(BuildContext context, bool opensHistory) {
+    // The tap reaches past the glyphs with no layout at all (the label is
+    // exactly as tall as the time beside it, so an edited row is as tall
+    // as any other); the full-size target is "Edit history" in the
+    // long-press menu. Outermost: every box below it checks its own size.
+    return _WiderHitTarget(
+      horizontalSlop: 6,
+      verticalSlop: 4,
+      child: Semantics(
+        button: opensHistory,
+        label: opensHistory ? 'Edited. Shows edit history' : 'Edited',
+        excludeSemantics: true,
+        child: GestureDetector(
+          key: const ValueKey('message_edited_label'),
+          behavior: HitTestBehavior.opaque,
+          onTap: opensHistory ? () => onShowEditHistory!(message) : null,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 2),
+            child: Text(
+              'edited',
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                fontStyle: FontStyle.italic,
+                color: onBubbleColor,
+                decoration: TextDecoration.underline,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+
 }
 
 /// WhatsApp-style status indicator: icon + color only, no "Sent"/
@@ -2109,7 +2372,11 @@ class _StatusChip extends StatelessWidget {
 /// layers a progress affordance on top, rather than hiding it behind a
 /// placeholder until the upload finishes.
 class _MediaBusyOverlay extends StatelessWidget {
-  const _MediaBusyOverlay();
+  const _MediaBusyOverlay({this.progress, this.onCancel});
+
+  /// 0..1 upload progress; null = indeterminate.
+  final double? progress;
+  final VoidCallback? onCancel;
 
   @override
   Widget build(BuildContext context) {
@@ -2120,10 +2387,38 @@ class _MediaBusyOverlay extends StatelessWidget {
         height: 220,
         color: Colors.black.withValues(alpha: 0.25),
         alignment: Alignment.center,
-        child: const SizedBox(
-          width: 40,
-          height: 40,
-          child: CircularProgressIndicator(strokeWidth: 3, color: Colors.white),
+        child: SizedBox(
+          width: 56,
+          height: 56,
+          child: Stack(
+            alignment: Alignment.center,
+            children: [
+              SizedBox.expand(
+                child: CircularProgressIndicator(
+                  value: progress,
+                  strokeWidth: 3,
+                  color: Colors.white,
+                  backgroundColor: Colors.white.withValues(alpha: 0.25),
+                ),
+              ),
+              if (onCancel != null)
+                Semantics(
+                  button: true,
+                  label: 'Stop sending',
+                  child: GestureDetector(
+                    behavior: HitTestBehavior.opaque,
+                    onTap: onCancel,
+                    child: SizedBox.expand(
+                      child: Icon(
+                        Icons.close_rounded,
+                        size: 22,
+                        color: Colors.white.withValues(alpha: 0.95),
+                      ),
+                    ),
+                  ),
+                ),
+            ],
+          ),
         ),
       ),
     );
@@ -2157,5 +2452,64 @@ class _ImageLoadError extends StatelessWidget {
         color: Theme.of(context).colorScheme.onErrorContainer,
       ),
     );
+  }
+}
+
+/// Accepts taps up to [horizontalSlop] / [verticalSlop] beyond its edges
+/// with no layout change (the `_RenderInputPadding` technique without
+/// growing the size): the position is clamped into the child, so the
+/// child's own handlers fire. Reach is bounded by the ancestors' boxes — in
+/// the footer `Wrap`, its item spacing sideways and the run's height.
+class _WiderHitTarget extends SingleChildRenderObjectWidget {
+  const _WiderHitTarget({
+    required this.horizontalSlop,
+    required this.verticalSlop,
+    required super.child,
+  });
+
+  final double horizontalSlop;
+  final double verticalSlop;
+
+  @override
+  RenderObject createRenderObject(BuildContext context) =>
+      _RenderWiderHitTarget(horizontalSlop, verticalSlop);
+
+  @override
+  void updateRenderObject(
+    BuildContext context,
+    _RenderWiderHitTarget renderObject,
+  ) {
+    renderObject
+      ..horizontalSlop = horizontalSlop
+      ..verticalSlop = verticalSlop;
+  }
+}
+
+class _RenderWiderHitTarget extends RenderProxyBox {
+  _RenderWiderHitTarget(this.horizontalSlop, this.verticalSlop);
+
+  double horizontalSlop;
+  double verticalSlop;
+
+  @override
+  bool hitTest(BoxHitTestResult result, {required Offset position}) {
+    final box = child;
+    if (box == null) return super.hitTest(result, position: position);
+    final reach = Rect.fromLTRB(
+      -horizontalSlop,
+      -verticalSlop,
+      size.width + horizontalSlop,
+      size.height + verticalSlop,
+    );
+    if (!reach.contains(position)) return false;
+    double inside(double v, double extent) =>
+        v.clamp(0.0, extent > 0.01 ? extent - 0.01 : 0.0);
+    final clamped = Offset(
+      inside(position.dx, size.width),
+      inside(position.dy, size.height),
+    );
+    final hit = box.hitTest(result, position: clamped);
+    if (hit) result.add(BoxHitTestEntry(this, position));
+    return hit;
   }
 }

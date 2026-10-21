@@ -580,6 +580,17 @@ never choose another user's push destination.
 Notification work is idempotent per `(recipient_id, message_id, type)`. Do not
 send delivery/read push notifications at launch. In-app ticks are sufficient.
 
+Push destinations (chat review #18/#19, plan 1b): the sender addresses only the
+OneSignal subscription ids in `push_tokens` (never the `external_id` alias).
+Clients cannot read or write that table; `register_push_subscription` adds this
+device as `auth.uid()` only while the token's session still exists in
+`auth.sessions`; `unregister_push_subscription` releases it on sign-out;
+`release_push_subscription` (anon-callable, by device id) pays an offline
+sign-out's owed release on the next start; `deactivate_other_push_subscriptions`
+backs "sign out other devices". System notices are server-authored:
+`send_screenshot_notice` writes the screenshot line, and notices cannot be
+inserted, edited or deleted by clients.
+
 ### 9.2 Privacy
 
 Default lock-screen copy is generic, for example `New message in Attune`.

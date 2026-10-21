@@ -34,6 +34,8 @@ class VideoMessageThumbnail extends StatefulWidget {
     this.onTap,
     this.uploadProgress,
     this.showBusyOverlay = false,
+    this.onCancel,
+    this.decodeWidthPx,
     @visibleForTesting this.cacheManager,
   });
 
@@ -69,11 +71,21 @@ class VideoMessageThumbnail extends StatefulWidget {
   final int width;
   final int height;
 
+  /// The tile's width in physical pixels, when fixed: the poster is decoded
+  /// at that size (in memory only), not at its full resolution. The tile
+  /// takes the poster's own ratio, so the width is the side BoxFit.cover is
+  /// bound by — except past the widest ratio the tile allows, where it is
+  /// the height. Null decodes at full size.
+  final int? decodeWidthPx;
+
   final VoidCallback? onTap;
 
-  /// 0.0-1.0 while this video is still being prepared/sent, drawn as a ring
-  /// over the poster. Null renders an indeterminate spinner instead (the
-  /// upload phase, where there's no byte-level progress to report) — only
+  /// Stops the send; null while nothing can be stopped (compressing).
+  final VoidCallback? onCancel;
+
+  /// 0.0-1.0 while this video is still being prepared/sent (compression,
+  /// then upload bytes), drawn as a ring over the poster. Null renders an
+  /// indeterminate spinner instead (no progress reported yet) — only
   /// meaningful when [showBusyOverlay] is true.
   final double? uploadProgress;
 
@@ -179,6 +191,21 @@ class _VideoMessageThumbnailState extends State<VideoMessageThumbnail> {
   }
 
   ImageProvider? get _provider {
+    final source = _sourceProvider;
+    final decodeWidth = widget.decodeWidthPx;
+    if (source == null || decodeWidth == null) return source;
+    // Wider than the tile can be (stored dimensions; the decode itself is
+    // what measures the poster): the clamped tile is height-bound.
+    final wider =
+        widget.width > 0 &&
+        widget.height > 0 &&
+        widget.width / widget.height > _maxRatio;
+    return wider
+        ? ResizeImage(source, height: (decodeWidth / _maxRatio).round())
+        : ResizeImage(source, width: decodeWidth);
+  }
+
+  ImageProvider? get _sourceProvider {
     final url = widget.thumbnailUrl;
     // A local file already on disk always wins, even once a URL arrives.
     // Both are the same frame, and swapping a painting FileImage for a
@@ -380,9 +407,9 @@ class _VideoMessageThumbnailState extends State<VideoMessageThumbnail> {
                 ColoredBox(color: Colors.black.withValues(alpha: 0.25)),
 
               if (widget.showBusyOverlay)
-                // Progress ring around a stop-style centre — the poster is
-                // already visible behind it, matching WhatsApp's
-                // send-in-progress treatment.
+                // Progress ring over the poster; the centre is a cancel
+                // button only while the upload can actually be stopped
+                // (chat review #25).
                 Center(
                   child: SizedBox(
                     width: 56,
@@ -392,9 +419,9 @@ class _VideoMessageThumbnailState extends State<VideoMessageThumbnail> {
                       children: [
                         SizedBox.expand(
                           child: CircularProgressIndicator(
-                            // Determinate during compression (real
-                            // percentages), indeterminate during upload
-                            // where there is no byte-level signal.
+                            // Determinate whenever there is a real signal
+                            // (compression percentages, upload bytes);
+                            // indeterminate until the first one arrives.
                             value: widget.uploadProgress,
                             strokeWidth: 3,
                             color: Colors.white,
@@ -403,11 +430,22 @@ class _VideoMessageThumbnailState extends State<VideoMessageThumbnail> {
                             ),
                           ),
                         ),
-                        Icon(
-                          Icons.stop_rounded,
-                          size: 20,
-                          color: Colors.white.withValues(alpha: 0.9),
-                        ),
+                        if (widget.onCancel != null)
+                          Semantics(
+                            button: true,
+                            label: 'Stop sending',
+                            child: GestureDetector(
+                              behavior: HitTestBehavior.opaque,
+                              onTap: widget.onCancel,
+                              child: SizedBox.expand(
+                                child: Icon(
+                                  Icons.close_rounded,
+                                  size: 22,
+                                  color: Colors.white.withValues(alpha: 0.95),
+                                ),
+                              ),
+                            ),
+                          ),
                       ],
                     ),
                   ),

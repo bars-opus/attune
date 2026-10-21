@@ -168,7 +168,7 @@
   "authPasswordResetSentNote": "Tocca il collegamento nell'email per impostare una nuova password. Il collegamento scade in 1 ora.",
 
   "authGuestHello": "Ciao!",
-  "authGuestOverview": "Stai navigando {appName} come ospite. Accedi o crea un account per iniziare a gestire il tuo negozio – ci vogliono meno di 5 secondi. Abbiamo una varietà di strumenti per aiutare la crescita della tua attività, il tutto gratuitamente.",
+  "authGuestOverview": "Stai navigando {appName} come ospite. Accedi con il tuo numero di telefono per iniziare il vostro spazio condiviso con il tuo partner – bastano pochi secondi.",
   "@authGuestOverview": {
     "description": "Testo di benvenuto per gli utenti ospiti sulla schermata del profilo di accesso",
     "placeholders": {

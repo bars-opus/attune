@@ -81,10 +81,15 @@ class StreakRepository {
   /// client write any value to streak_views_remaining, including
   /// refilling its own budget. The RPC also owns destroying the clips at
   /// zero, which a client must never be able to trigger early or skip.
-  Future<int> markViewed(String messageId) async {
+  ///
+  /// [openId] names ONE opening of the viewer. The server charges each
+  /// (message, viewer, open) once and answers a repeat with the count it
+  /// stored, so a lost response can be retried with the same id without
+  /// spending a second view.
+  Future<int> markViewed(String messageId, {required String openId}) async {
     final result = await _safeClient.rpc(
       'mark_streak_viewed',
-      params: {'p_message_id': messageId},
+      params: {'p_message_id': messageId, 'p_open_id': openId},
     );
     // Logged with the RAW shape: the difference between "the RPC said 2
     // views remain" and "the RPC returned null and this defaulted to 0"
@@ -97,20 +102,25 @@ class StreakRepository {
     return (result as num?)?.toInt() ?? 0;
   }
 
-  /// The clips of one streak, in playback order.
+  /// The clips of one streak, in playback order — through the gated RPC.
   ///
-  /// Named columns only. The caption is view-time state held by the
-  /// viewer, and the budget is server-owned — selecting either here
-  /// invites rendering it somewhere the spec forbids.
+  /// `streak_clips_for_viewing` returns rows only while the streak is
+  /// viewable for THIS caller (recipient: budget left and inside the
+  /// 30-minute replay window; sender: not yet opened) and destroys an
+  /// expired one before answering. A direct table read handed out an
+  /// expired replay and only the finish-time RPC said no — after it had
+  /// played. The RPC returns named columns only: the caption is view-time
+  /// state held by the viewer, and the budget is server-owned.
   Future<List<StreakClip>> fetchClips(String messageId) async {
-    final rows = await _safeClient
-        .from('streak_clips')
-        .select('clip_index, media_url, duration_ms, media_kind')
-        .eq('message_id', messageId)
-        .order('clip_index');
-
+    final result = await _safeClient.rpc(
+      'streak_clips_for_viewing',
+      params: {'p_message_id': messageId},
+    );
+    final rows = (result as List?) ?? const [];
     return rows
-        .map((row) => StreakClip.fromRow(Map<String, dynamic>.from(row)))
+        .map(
+          (row) => StreakClip.fromRow(Map<String, dynamic>.from(row as Map)),
+        )
         .toList();
   }
 }

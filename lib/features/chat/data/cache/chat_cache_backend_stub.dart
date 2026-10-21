@@ -6,9 +6,31 @@ class _MemoryChatCacheBackend implements ChatCacheBackend {
   final Map<String, ({String payload, int createdAtMillis})> _outbox =
       <String, ({String payload, int createdAtMillis})>{};
   final Map<String, String> _drafts = <String, String>{};
+  final Map<String, ({int micros, String? id})> _syncCursors =
+      <String, ({int micros, String? id})>{};
+
+  bool _wipeOnOpen = false;
 
   @override
-  Future<void> init() async {}
+  Future<void> init() async {
+    if (!_wipeOnOpen) return;
+    await reset();
+    _wipeOnOpen = false;
+  }
+
+  @override
+  Future<void> requestWipeOnNextOpen() async {
+    _wipeOnOpen = true;
+  }
+
+  @override
+  Future<void> reset() async {
+    _messages.clear();
+    _conversations.clear();
+    _outbox.clear();
+    _drafts.clear();
+    _syncCursors.clear();
+  }
 
   @override
   Future<String?> readMessages(String userId, String relationshipId) async {
@@ -126,11 +148,38 @@ class _MemoryChatCacheBackend implements ChatCacheBackend {
   }
 
   @override
+  Future<({int micros, String? id})?> readSyncCursor(
+    String userId,
+    String relationshipId,
+  ) async {
+    return _syncCursors[_messageKey(userId, relationshipId)];
+  }
+
+  @override
+  Future<void> writeSyncCursor(
+    String userId,
+    String relationshipId,
+    int micros,
+    String? id,
+  ) async {
+    _syncCursors[_messageKey(userId, relationshipId)] = (
+      micros: micros,
+      id: id,
+    );
+  }
+
+  @override
+  Future<void> clearSyncCursor(String userId, String relationshipId) async {
+    _syncCursors.remove(_messageKey(userId, relationshipId));
+  }
+
+  @override
   Future<void> clearAll() async {
     _messages.clear();
     _conversations.clear();
     _outbox.clear();
     _drafts.clear();
+    _syncCursors.clear();
   }
 
   String _messageKey(String userId, String relationshipId) =>

@@ -214,11 +214,11 @@ DO $$
 DECLARE v_msg uuid; v_left int; v_queued int;
 BEGIN
   INSERT INTO public.messages
-    (relationship_id, sender_id, client_message_id, content,
+    (relationship_id, sender_id, client_message_id, content, media_type,
      streak_views_remaining)
   VALUES ('5e100000-0000-0000-0000-000000000001',
           '5f100000-0000-0000-0000-0000000000a1',
-          gen_random_uuid(), 'photo streak', 1)
+          gen_random_uuid(), 'photo streak', 'streak', 1)
   RETURNING id INTO v_msg;
 
   INSERT INTO public.streak_clips

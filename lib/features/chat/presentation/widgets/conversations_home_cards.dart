@@ -1,6 +1,7 @@
 import 'package:attune/core/providers/couple_name_provider.dart';
 import 'package:attune/core/utils/date_formatter.dart';
 import 'package:attune/core/utils/exports/export_screens.dart';
+import 'package:attune/core/widgets/app_days_count.dart';
 import 'package:attune/features/planning/presentation/planning_providers.dart';
 import 'package:attune/features/planning/presentation/planning_ui.dart'
     show PlanningNewDot, planningRowDate;
@@ -172,7 +173,6 @@ class TogetherCard extends ConsumerWidget {
     final relationshipId =
         ref.watch(timeline.currentRelationshipIdProvider).valueOrNull;
     if (relationshipId == null) return const SizedBox.shrink();
-    final theme = Theme.of(context);
     final now = DateTime.now();
     final range = togetherUpcomingRange(now);
     final items = upcomingTogetherItems(
@@ -216,41 +216,15 @@ class TogetherCard extends ConsumerWidget {
             ),
             child: Row(
               children: [
+                // The couple's count; Planning's countdowns share its look.
                 Expanded(
-                  child: Row(
-                    children: [
-                      Text(
-                        '$days',
-                        style: theme.textTheme.headlineMedium?.copyWith(
-                          fontWeight: FontWeight.w700,
-                          color: theme.colorScheme.primary,
-                          height: 1.1,
-                        ),
-                      ),
-                      const Gap(Spacing.sm),
-                      // "days" over "together", small and tight, left-aligned
-                      // against the number.
-                      Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Text(
-                            'days',
-                            style: theme.textTheme.labelMedium?.copyWith(
-                              color: theme.colorScheme.primary,
-                              height: 1.0,
-                            ),
-                          ),
-                          Text(
-                            'together',
-                            style: theme.textTheme.labelMedium?.copyWith(
-                              color: theme.colorScheme.primary,
-                              height: 1.0,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ],
+                  child: Align(
+                    alignment: Alignment.centerLeft,
+                    child: AppDaysCount(
+                      count: days,
+                      top: 'days',
+                      bottom: 'together',
+                    ),
                   ),
                 ),
                 TextButton(

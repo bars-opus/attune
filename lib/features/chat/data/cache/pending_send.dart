@@ -43,6 +43,12 @@ class PendingSend {
   final int? streakViewsRemaining;
   final DateTime createdAt;
   final int attempts;
+
+  /// Fresh uploads made after the server refused this row's stored keys at
+  /// insert (an expired upload intent, a missing object). Bounded by
+  /// ChatController.maxMediaReuploads; separate from [attempts], which
+  /// network failures raise without limit. Retry resets it.
+  final int mediaReuploads;
   final DateTime? nextAttemptAt;
   final String? lastErrorCategory;
   final PendingSendState state;
@@ -72,6 +78,7 @@ class PendingSend {
     this.streakViewsRemaining,
     required this.createdAt,
     this.attempts = 0,
+    this.mediaReuploads = 0,
     this.nextAttemptAt,
     this.lastErrorCategory,
     this.state = PendingSendState.queued,
@@ -86,12 +93,15 @@ class PendingSend {
     List<int>? waveform,
     String? localThumbnailPath,
     String? thumbnailMimeType,
-    String? uploadedMediaKey,
-    String? uploadedThumbnailKey,
+    // Object? so a refused key can be cleared: pass null to clear, omit to
+    // keep (the same sentinel as [nextAttemptAt]).
+    Object? uploadedMediaKey = _notProvided,
+    Object? uploadedThumbnailKey = _notProvided,
     int? mediaWidth,
     int? mediaHeight,
     bool? requiresPreparation,
     int? attempts,
+    int? mediaReuploads,
     Object? nextAttemptAt = _notProvided,
     Object? lastErrorCategory = _notProvided,
     PendingSendState? state,
@@ -108,8 +118,14 @@ class PendingSend {
       waveform: waveform ?? this.waveform,
       localThumbnailPath: localThumbnailPath ?? this.localThumbnailPath,
       thumbnailMimeType: thumbnailMimeType ?? this.thumbnailMimeType,
-      uploadedMediaKey: uploadedMediaKey ?? this.uploadedMediaKey,
-      uploadedThumbnailKey: uploadedThumbnailKey ?? this.uploadedThumbnailKey,
+      uploadedMediaKey:
+          identical(uploadedMediaKey, _notProvided)
+              ? this.uploadedMediaKey
+              : uploadedMediaKey as String?,
+      uploadedThumbnailKey:
+          identical(uploadedThumbnailKey, _notProvided)
+              ? this.uploadedThumbnailKey
+              : uploadedThumbnailKey as String?,
       mediaWidth: mediaWidth ?? this.mediaWidth,
       mediaHeight: mediaHeight ?? this.mediaHeight,
       isViewOnce: isViewOnce,
@@ -119,6 +135,7 @@ class PendingSend {
       streakViewsRemaining: streakViewsRemaining,
       createdAt: createdAt,
       attempts: attempts ?? this.attempts,
+      mediaReuploads: mediaReuploads ?? this.mediaReuploads,
       nextAttemptAt:
           identical(nextAttemptAt, _notProvided)
               ? this.nextAttemptAt
@@ -157,6 +174,7 @@ class PendingSend {
       'streakViewsRemaining': streakViewsRemaining,
       'createdAt': createdAt.toIso8601String(),
       'attempts': attempts,
+      'mediaReuploads': mediaReuploads,
       'nextAttemptAt': nextAttemptAt?.toIso8601String(),
       'lastErrorCategory': lastErrorCategory,
       'state': state.name,
@@ -192,6 +210,7 @@ class PendingSend {
       streakViewsRemaining: (json['streakViewsRemaining'] as num?)?.toInt(),
       createdAt: DateTime.parse(json['createdAt'] as String),
       attempts: (json['attempts'] as num?)?.toInt() ?? 0,
+      mediaReuploads: (json['mediaReuploads'] as num?)?.toInt() ?? 0,
       nextAttemptAt:
           json['nextAttemptAt'] == null
               ? null

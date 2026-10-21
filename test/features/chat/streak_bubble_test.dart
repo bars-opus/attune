@@ -452,4 +452,132 @@ void main() {
     expect(find.text('Sending…'), findsNothing);
     expect(find.byIcon(Icons.play_arrow_rounded), findsOneWidget);
   });
+
+  testWidgets('a failed upload reads "Not sent" with no spinner', (
+    tester,
+  ) async {
+    // After the automatic attempts ran out the body still spun "Sending…"
+    // forever under a footer that said Failed — Retry.
+    var retried = false;
+    await tester.pumpWidget(
+      _wrap(
+        StreakBubble(
+          viewsRemaining: 1,
+          hasBeenPlayed: false,
+          isMine: true,
+          isSending: true, // the row still has its _local_ id
+          isFailed: true,
+          onRetry: () => retried = true,
+          onTap: () {},
+        ),
+      ),
+    );
+
+    expect(find.text('Sending…'), findsNothing);
+    expect(find.byType(CircularProgressIndicator), findsNothing);
+    expect(find.text('Not sent. Tap to retry'), findsOneWidget);
+    expect(find.byIcon(Icons.error_outline_rounded), findsOneWidget);
+
+    await tester.tap(find.text('Not sent. Tap to retry'));
+    await tester.pump();
+    expect(retried, isTrue);
+  });
+
+  testWidgets('the failed glyph uses the theme error colour', (tester) async {
+    await tester.pumpWidget(
+      _wrap(
+        StreakBubble(
+          viewsRemaining: 1,
+          hasBeenPlayed: false,
+          isMine: true,
+          isFailed: true,
+          onTap: () {},
+        ),
+      ),
+    );
+    final icon = tester.widget<Icon>(find.byIcon(Icons.error_outline_rounded));
+    final context = tester.element(find.byType(StreakBubble));
+    expect(icon.color, Theme.of(context).colorScheme.error);
+  });
+
+  testWidgets('the failed state is announced as one retry button', (
+    tester,
+  ) async {
+    final handle = tester.ensureSemantics();
+    await tester.pumpWidget(
+      _wrap(
+        StreakBubble(
+          viewsRemaining: 1,
+          hasBeenPlayed: false,
+          isMine: true,
+          isFailed: true,
+          onRetry: () {},
+          onTap: () {},
+        ),
+      ),
+    );
+    expect(
+      find.bySemanticsLabel('Streak not sent'),
+      findsOneWidget,
+    );
+    expect(
+      tester.getSemantics(find.bySemanticsLabel('Streak not sent')),
+      matchesSemantics(
+        label: 'Streak not sent',
+        isButton: true,
+        hasTapAction: true,
+        onTapHint: 'Retry',
+      ),
+    );
+    handle.dispose();
+  });
+
+  testWidgets('without a retry handler the failed row says only Not sent', (
+    tester,
+  ) async {
+    final handle = tester.ensureSemantics();
+    await tester.pumpWidget(
+      _wrap(
+        StreakBubble(
+          viewsRemaining: 1,
+          hasBeenPlayed: false,
+          isMine: true,
+          isFailed: true,
+          onTap: () {},
+        ),
+      ),
+    );
+    expect(find.text('Not sent'), findsOneWidget);
+    expect(find.textContaining('retry'), findsNothing);
+    expect(
+      tester.getSemantics(find.bySemanticsLabel('Streak not sent')),
+      matchesSemantics(label: 'Streak not sent', hasTapAction: false),
+    );
+    handle.dispose();
+  });
+
+  testWidgets('the failed row is tappable across a 44px-high target', (
+    tester,
+  ) async {
+    var retried = 0;
+    await tester.pumpWidget(
+      _wrap(
+        StreakBubble(
+          viewsRemaining: 1,
+          hasBeenPlayed: false,
+          isMine: true,
+          isFailed: true,
+          onRetry: () => retried++,
+          onTap: () {},
+        ),
+      ),
+    );
+    final rect = tester.getRect(find.text('Not sent. Tap to retry'));
+    // The row is ~22px tall; 18px below the text's centre is still inside 44.
+    await tester.tapAt(rect.center + const Offset(0, 18));
+    await tester.pump();
+    expect(retried, 1);
+    // And the layout did not grow to make room for the target.
+    expect(tester.getSize(find.byType(StreakBubble)).height, lessThan(30));
+  });
 }

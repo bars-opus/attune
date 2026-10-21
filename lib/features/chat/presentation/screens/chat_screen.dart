@@ -1,9 +1,11 @@
 import 'dart:async';
 import 'dart:math' as math;
 
+import 'package:attune/app/routing/app_route_observer.dart';
 import 'package:attune/app/theme/chat_color_scheme.dart';
 import 'package:attune/core/ui/feedback/haptics.dart';
 import 'package:attune/core/ui/feedback/sound_service.dart';
+import 'package:attune/core/ui/layout/measure_size.dart';
 import 'package:attune/core/ui/motion/motion_tokens.dart';
 import 'package:attune/core/ui/motion/make_room.dart';
 import 'package:attune/core/ui/motion/payload_flight.dart';
@@ -41,15 +43,22 @@ import 'package:attune/features/auth/providers/auth_provider.dart';
 import 'package:attune/features/chat/data/cache/chat_cache_service.dart';
 import 'package:attune/features/chat/domain/entities/conversation.dart';
 import 'package:attune/features/chat/domain/entities/message.dart';
+import 'package:attune/features/chat/domain/services/chat_image_picker.dart';
 import 'package:attune/features/chat/presentation/providers/chat_experience_providers.dart';
 import 'package:attune/features/chat/presentation/state/chat_state.dart';
 import 'package:attune/features/chat/presentation/state/typing_controller.dart';
+import 'package:attune/features/chat/presentation/state/voice_playback_controller.dart';
+import 'package:attune/core/widgets/app_content_width.dart';
 import 'package:attune/features/chat/presentation/widgets/attune_chat_wallpaper.dart';
 import 'package:attune/features/chat/presentation/widgets/chat_text_field.dart';
+import 'package:attune/features/chat/presentation/widgets/rune_length_limiting_formatter.dart';
 import 'package:attune/features/chat/presentation/widgets/emoji_message_content.dart';
 import 'package:attune/features/chat/presentation/widgets/message_bubble.dart';
+import 'package:attune/features/chat/presentation/widgets/message_status_rule.dart';
 import 'package:attune/features/chat/presentation/widgets/chat_media_group.dart';
 import 'package:attune/features/chat/presentation/widgets/message_arrival_tracker.dart';
+import 'package:attune/features/chat/presentation/widgets/game_move_ledger.dart';
+import 'package:attune/features/chat/presentation/widgets/pending_arrivals.dart';
 import 'package:attune/features/chat/presentation/widgets/reply_composer_preview.dart';
 import 'package:attune/features/conflict_translator/presentation/providers/translator_providers.dart'
     as translator_providers;
@@ -71,12 +80,19 @@ import 'package:attune/core/services/media/voice_recorder_service.dart';
 import 'package:attune/core/ui/motion/glow_pulse.dart';
 import 'package:attune/core/widgets/profile_avatar.dart';
 import 'package:attune/features/chat/data/repositories/chat_repository.dart';
+import 'package:clock/clock.dart';
+import 'package:flutter/rendering.dart' show RenderAbstractViewport;
+import 'package:flutter/scheduler.dart' show SchedulerPhase;
 import 'package:flutter/services.dart' show Clipboard, ClipboardData;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:intl/intl.dart';
+import 'package:attune/core/utils/date_formatter.dart';
 import 'package:video_compress/video_compress.dart';
 import 'package:attune/features/chat/presentation/providers/partner_presence_provider.dart';
 import 'package:attune/features/location/presentation/widgets/share_place_sheet.dart';
+import 'package:attune/features/chat/presentation/widgets/linkified_message_text.dart';
+import 'package:attune/features/chat/presentation/widgets/chat_list_scroll_controller.dart';
+import 'package:attune/features/chat/presentation/widgets/scroll_to_latest_pill.dart';
+import 'package:attune/features/chat/presentation/widgets/unread_divider.dart';
 
 class ChatScreen extends ConsumerStatefulWidget {
   const ChatScreen({
@@ -90,8 +106,9 @@ class ChatScreen extends ConsumerStatefulWidget {
 
   /// Set when arriving from a screen that points at one specific message
   /// (e.g. Starred messages) — scrolled to and flashed once the message
-  /// list has loaded, paging further back via loadMoreMessages if the
-  /// message isn't in the initially-loaded page. Null means no jump, the
+  /// list has loaded, paging further back (ChatController
+  /// .ensureMessageLoaded) if the message isn't in the initially-loaded
+  /// page. Null means no jump, the
   /// normal "open at the latest message" behavior.
   final String? initialJumpToMessageId;
 
@@ -104,13 +121,13 @@ class ChatScreen extends ConsumerStatefulWidget {
 }
 
 class _ChatScreenState extends ConsumerState<ChatScreen>
-    with WidgetsBindingObserver {
+    with WidgetsBindingObserver, RouteAware {
   final _controller = TextEditingController();
   final _composerFocusNode = FocusNode();
   final _composerTextKey = GlobalKey();
   final _replyPreviewSurfaceKey = GlobalKey();
   final _gameComposerPayloadKey = GlobalKey();
-  final _scrollController = ScrollController();
+  final _scrollController = ChatListScrollController();
   final _imagePicker = ImagePickerService();
   // Once-per-message animation ledger: ListView.builder recycles item State
   // when a bubble scrolls out of cacheExtent. IDs recorded here animate
@@ -120,6 +137,15 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
   bool _headerOverlayMounted = false;
   Timer? _headerOverlayRemovalTimer;
   bool _isForeground = true;
+
+  /// True while another route (a game, a viewer, a sheet) sits on top of this
+  /// one. Set by RouteAware; State.deactivate does not fire for a push.
+  bool _coveredByRoute = false;
+  ModalRoute<Object?>? _observedRoute;
+
+  /// App-scoped (one voice engine app-wide), so this screen says when it is
+  /// left; captured in initState because ref is unusable in dispose.
+  late final VoicePlaybackController _voicePlayback;
 
   /// Reply target set by swiping a message — mirrors
   /// DebateRoomScreen._replyToPostId/_replyToQuotedText exactly. Null means
@@ -136,6 +162,12 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
   bool _replyPreviewHidden = false;
   bool _replyFlightInProgress = false;
   int _replyFlightEpoch = 0;
+
+  /// Measured height of the bottom overlay (typing indicator, reply strip,
+  /// staged game, pause card, composer and the home-indicator inset). The
+  /// message list pads itself by this much so the newest bubble is never
+  /// covered (#33). Null until the first frame has measured it.
+  double? _bottomOverlayHeight;
 
   /// Maps every loaded message id to its currently rendered row. Media-group
   /// members may share the representative row's key. Used by _jumpToMessage
@@ -163,13 +195,95 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
   @override
   void initState() {
     super.initState();
+    _voicePlayback = ref.read(voicePlaybackControllerProvider.notifier);
+    // This chat taking the screen stops a note from ANOTHER conversation
+    // (chat B pushed over A by a notification): one conversation audible at
+    // a time, as in WhatsApp — the person has left A's conversation even
+    // though its route survives underneath. Deferred: initState runs inside
+    // a build, where changing a provider throws.
+    final ownerId = widget.conversation.relationshipId;
+    final playback = _voicePlayback;
+    scheduleMicrotask(
+      () => unawaited(playback.stopIfOwnedByAnother(ownerId)),
+    );
     WidgetsBinding.instance.addObserver(this);
     _controller.addListener(_onDraftChanged);
-    _composerFocusNode.addListener(_onComposerFocusChanged);
     Future.microtask(_restoreDraft);
     // Mark the view active once the first frame has rendered so read receipts
     // are only sent when the conversation is visible, foregrounded, and the
     // message list has drawn (Spec 6.4).
+    WidgetsBinding.instance.addPostFrameCallback((_) => _syncViewActive());
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final route = ModalRoute.of(context);
+    if (route != null && !identical(route, _observedRoute)) {
+      if (_observedRoute != null) appRouteObserver.unsubscribe(this);
+      _observedRoute = route;
+      appRouteObserver.subscribe(this, route);
+    }
+    // RouteObserver reports pops but not removals: a page taken off the
+    // stack without a pop (removeRoute, a declarative stack change) never
+    // calls didPopNext. ModalRoute.of depends on isCurrent, so this runs
+    // when the chat is back on top however the cover left.
+    if (_coveredByRoute && route != null && route.isCurrent) {
+      _coveredByRoute = false;
+      WidgetsBinding.instance.addPostFrameCallback((_) => _syncViewActive());
+    }
+  }
+
+  @override
+  void didPushNext() {
+    // A sheet, dialog or menu (PopupRoute) leaves the chat visible and the
+    // person in it: presence and read receipts carry on. Anything else — a
+    // game, a viewer, settings, a camera — covers it.
+    if (appRouteObserver.lastPushedRoute is PopupRoute) return;
+    _coveredByRoute = true;
+    _syncViewActive();
+  }
+
+  /// This chat's own route was popped: leaving the chat stops voice playback.
+  /// A sheet or a page pushed OVER the chat (viewer, game) does not — the
+  /// chat is still there underneath (didPushNext leaves playback alone).
+  @override
+  void didPop() => _stopVoicePlayback();
+
+  /// Spec: leaving the chat screen stops voice playback (no background
+  /// playback). Deferred a microtask: a pop or dispose can land while the
+  /// tree is building or locked, where changing a provider throws. stop()
+  /// is idempotent, so the pop and the dispose that follows are both safe.
+  /// Owner-scoped: chat A going away under chat B leaves B's note playing.
+  void _stopVoicePlayback() {
+    final playback = _voicePlayback;
+    final ownerId = widget.conversation.relationshipId;
+    scheduleMicrotask(() => unawaited(playback.stop(ifOwnedBy: ownerId)));
+  }
+
+  /// A note whose message went away (deleted, purged, hidden) has lost its
+  /// bubble, the only control that could pause it: stop it. Only a note that
+  /// WAS a live voice message in this list counts, so a note this list
+  /// never held (an older one played from Media) is left alone.
+  void _stopVoiceWhoseMessageWentAway(
+    List<Message>? previous,
+    List<Message> next,
+  ) {
+    final current = ref.read(voicePlaybackControllerProvider).messageId;
+    if (current == null || previous == null) return;
+    bool live(Message m) =>
+        m.clientMessageId == current && m.hasAudio && !m.isDeleted;
+    if (!previous.any(live) || next.any(live)) return;
+    final playback = _voicePlayback;
+    // Deferred like the other stops: the list can change mid-build.
+    scheduleMicrotask(() => unawaited(playback.stopMessage(current)));
+  }
+
+  @override
+  void didPopNext() {
+    _coveredByRoute = false;
+    _syncViewActive();
+    // ModalRoute.isCurrent can lag the pop by a frame; settle once more.
     WidgetsBinding.instance.addPostFrameCallback((_) => _syncViewActive());
   }
 
@@ -183,8 +297,9 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
     // cleared itself on the conversation list, and the sender's receipt
     // jumped past delivered straight to read.
     //
-    // deactivate() rather than dispose(): ref is still usable here, and
-    // this fires on both a pop and a push of another route over this one.
+    // deactivate() rather than dispose(): ref is still usable here. It
+    // fires on a pop; a push over this route is handled by RouteAware
+    // (didPushNext), which deactivate() does not see.
     ref
         .read(chatControllerProvider(widget.conversation).notifier)
         .setViewActive(false);
@@ -193,33 +308,64 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
 
   @override
   void dispose() {
+    // Also here, not only in didPop: a route removed without a pop (a
+    // declarative stack change) never calls didPop.
+    _stopVoicePlayback();
+    appRouteObserver.unsubscribe(this);
     WidgetsBinding.instance.removeObserver(this);
     _controller.removeListener(_onDraftChanged);
-    _composerFocusNode.removeListener(_onComposerFocusChanged);
     _controller.dispose();
     _composerFocusNode.dispose();
     _scrollController.dispose();
     _highlightTimer?.cancel();
     _headerOverlayRemovalTimer?.cancel();
+    // The controller outlives the screen (keep-alive): a jump still paging
+    // must stop with it. cancelJump writes no state.
+    _jumpPager?.cancelJump();
+    // No streak row stays locked behind a viewer route that was lost.
+    releaseStreakViewerGuards();
     super.dispose();
   }
 
-  void _onComposerFocusChanged() {
-    if (mounted) setState(() {});
+  /// MeasureSize reports post-frame, so setState here never runs during
+  /// layout. Whole logical pixels, rounded up, so an animating composer
+  /// (AnimatedSize) only rebuilds the screen when the reserve really moves
+  /// and the newest bubble is never short by a sub-pixel.
+  void _onBottomOverlayMeasured(Size size) {
+    if (!mounted) return;
+    final height = size.height.ceilToDouble();
+    if (height == _bottomOverlayHeight) return;
+    setState(() => _bottomOverlayHeight = height);
   }
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
+    final wasForeground = _isForeground;
     _isForeground = state == AppLifecycleState.resumed;
     _syncViewActive();
+    // Back in the foreground: resync and send what waited now, not when the
+    // socket's heartbeat notices (W1a #1).
+    if (_isForeground && !wasForeground) {
+      ref
+          .read(chatControllerProvider(widget.conversation).notifier)
+          .onAppResumed();
+    }
   }
 
   /// Reports current view visibility to the controller. The conversation is
-  /// "active" for read purposes only while this route is the top of the
-  /// navigator (ModalRoute.isCurrent) and the app is foregrounded.
+  /// "active" for read purposes only while nothing but a popup (sheet,
+  /// dialog, menu) sits over this route — a page pushed on top covers it —
+  /// and the app is foregrounded (resumed — inactive/paused/hidden all count
+  /// as away, which covers the lock screen).
   void _syncViewActive() {
     if (!mounted) return;
-    final isCurrentRoute = ModalRoute.of(context)?.isCurrent ?? true;
+    final route = ModalRoute.of(context);
+    final isCurrentRoute =
+        !_coveredByRoute &&
+        (route == null ||
+            route.isCurrent ||
+            // Not current only because a popup is open on top of it.
+            appRouteObserver.lastPushedRoute is PopupRoute);
     ref
         .read(chatControllerProvider(widget.conversation).notifier)
         .setViewActive(_isForeground && isCurrentRoute);
@@ -323,10 +469,15 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
       return;
     }
     if (draft.isEmpty) return;
+    // Restoring is not typing. Set the text without the draft listener,
+    // exactly like the initialDraft branch above: no typing broadcast to the
+    // partner, and the identical draft is not re-encrypted and re-written.
+    _controller.removeListener(_onDraftChanged);
     _controller.value = TextEditingValue(
       text: draft,
       selection: TextSelection.collapsed(offset: draft.length),
     );
+    _controller.addListener(_onDraftChanged);
   }
 
   Future<void> _persistDraft() async {
@@ -349,6 +500,15 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
         .clearDraft(user.id, widget.conversation.relationshipId);
   }
 
+  /// RC-16: sendMessage silently drops an over-limit draft, and the
+  /// composer used to be cleared first — so 10,001 characters vanished
+  /// without a word. True when [text] was refused (and the person told).
+  bool _refuseOverLimitDraft(String text) {
+    if (Message.isValidContent(text)) return false;
+    context.showErrorSnackbar(tooLongMessageNotice());
+    return true;
+  }
+
   Future<void> _send() async {
     final text = _controller.text.trim();
 
@@ -363,6 +523,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
     }
 
     if (text.isEmpty) return;
+    if (_refuseOverLimitDraft(text)) return;
     ref.read(hapticsProvider).light(); // instant tactile confirm (Spec §3.1)
     if (ref.read(messageSoundsEnabledProvider)) {
       ref.read(soundServiceProvider).play(ChatSound.send);
@@ -597,95 +758,246 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
     });
   }
 
-  /// Scrolls to and flashes [messageId] if it's currently built (mounted
-  /// GlobalKey). Returns whether it found something to scroll to — the
-  /// caller falls back to an index-based estimate when this returns false.
-  /// Mirrors DebateRoomScreen._tryEnsureVisible exactly.
+  /// Scrolls to [messageId] if it's currently built (mounted GlobalKey),
+  /// then re-checks where it landed, nudges it into view if a correction
+  /// left it off, and flashes it. Returns whether it found something to
+  /// scroll to — the caller pages/scrolls further when this returns false.
+  /// Under reduce motion the scroll is a jump, not an animation.
   bool _tryEnsureMessageVisible(String messageId) {
     final targetContext = _messageKeys[messageId]?.currentContext;
     if (targetContext == null) return false;
 
-    Scrollable.ensureVisible(
+    final epoch = _jumpEpoch;
+    final reduceMotion = reduceMotionOf(context);
+    final scrolled = Scrollable.ensureVisible(
       targetContext,
-      duration: const Duration(milliseconds: 400),
+      duration:
+          reduceMotion ? Duration.zero : const Duration(milliseconds: 400),
       curve: Curves.easeInOut,
       alignment: 0.5,
     );
-
-    _highlightTimer?.cancel();
-    setState(() => _highlightedMessageId = messageId);
-    _highlightTimer = Timer(const Duration(milliseconds: 1200), () {
-      if (mounted) setState(() => _highlightedMessageId = null);
-    });
+    unawaited(
+      scrolled.then((_) async {
+        if (!mounted || epoch != _jumpEpoch) return;
+        await _settleOnTarget(messageId, epoch);
+        if (!mounted || epoch != _jumpEpoch) return;
+        _highlightTimer?.cancel();
+        setState(() => _highlightedMessageId = messageId);
+        _highlightTimer = Timer(const Duration(milliseconds: 1200), () {
+          if (mounted) setState(() => _highlightedMessageId = null);
+        });
+      }),
+    );
     return true;
   }
 
-  /// Jump to a reply's parent message — mirrors
-  /// DebateRoomScreen._jumpToPost exactly, adapted for this screen's
-  /// reversed ListView.builder (state.messages is already newest-first,
-  /// matching the reversed list's visual top-to-bottom order, so the same
-  /// index × averageExtent estimate applies with no sign flip needed).
+  /// After ensureVisible: the list's place hold (ChatListScrollController)
+  /// can correct a row-targeted drive mid-flight and leave it a frame step
+  /// off its row. Re-measure and jump the rest of the way (a few frames at
+  /// most; the row's own layout settles as it is first painted).
+  Future<void> _settleOnTarget(String messageId, int epoch) async {
+    for (var attempt = 0; attempt < 4; attempt++) {
+      if (!mounted || epoch != _jumpEpoch) return;
+      final box = _messageKeys[messageId]?.currentContext?.findRenderObject();
+      if (box is! RenderBox || !box.attached || !box.hasSize) return;
+      if (!_scrollController.hasClients) return;
+      final viewport = RenderAbstractViewport.maybeOf(box);
+      if (viewport == null) return;
+      final position = _scrollController.position;
+      final reveal = viewport.getOffsetToReveal(box, 0.5).offset;
+      final target = reveal.clamp(
+        position.minScrollExtent,
+        position.maxScrollExtent,
+      );
+      // Within a pixel of centred (or as centred as the extent allows).
+      if ((position.pixels - target).abs() <= 1) return;
+      position.jumpTo(target);
+      await WidgetsBinding.instance.endOfFrame;
+    }
+  }
+
+  /// Bumped by every jump, so an older jump still converging (or its
+  /// delayed flash) stands down when a newer one starts.
+  int _jumpEpoch = 0;
+
+  /// A touch, a scroll-wheel/trackpad scroll or a trackpad pan on the
+  /// message list supersedes any jump in progress: paging toward the target
+  /// (the controller stops between pages), the scroll that follows, the
+  /// settle and its flash all stand down, so nothing moves the list under
+  /// the person's hand. (A reply quote's own tap is a pointer down too, but
+  /// its jump starts on the pointer UP, after this has run.)
+  void _cancelJumpFromList() {
+    final wasLoading = _jumpLoading;
+    _jumpEpoch++;
+    if (wasLoading) {
+      _jumpPager?.cancelJump();
+      setState(() {});
+    }
+  }
+
+  /// The controller paging toward the current jump's target, held so
+  /// dispose can stop it without reading a provider.
+  ChatController? _jumpPager;
+
+  /// The jump whose target is being paged in, if any. The "Finding that
+  /// message…" chip shows only while that is still the current jump: a
+  /// newer jump supersedes it, and a superseded load finishing never clears
+  /// the newer one's chip.
+  int? _jumpLoadingEpoch;
+  bool get _jumpLoading =>
+      _jumpLoadingEpoch != null && _jumpLoadingEpoch == _jumpEpoch;
+
+  /// The one jump entry point: reply quotes, pinned banner, viewer "Go to
+  /// message" and initialJumpToMessageId. Loads the target if needed
+  /// (ChatController.ensureMessageLoaded, contiguous pages), then scrolls
+  /// until its row is built, then ensureVisible + settle + flash (#30).
   Future<void> _jumpToMessage(
     String messageId,
     List<Message> currentMessages,
   ) async {
-    if (_tryEnsureMessageVisible(messageId)) return;
-
-    final index = currentMessages.indexWhere((m) => m.id == messageId);
-    if (index == -1 || !_scrollController.hasClients) return;
-
-    final position = _scrollController.position;
-    final averageExtent =
-        position.viewportDimension /
-        (_messageKeys.isEmpty ? 8 : _messageKeys.length);
-    final estimatedOffset = index * averageExtent;
-
-    await _scrollController.animateTo(
-      estimatedOffset.clamp(0.0, position.maxScrollExtent),
-      duration: const Duration(milliseconds: 350),
-      curve: Curves.easeInOut,
-    );
-
-    await Future<void>.delayed(const Duration(milliseconds: 50));
-    if (!mounted) return;
-    _tryEnsureMessageVisible(messageId);
-  }
-
-  /// Like _jumpToMessage, but for a target that may be further back than
-  /// the initially-loaded page — used for widget.initialJumpToMessageId
-  /// (e.g. arriving from Starred messages), where the target could be
-  /// arbitrarily old. Pages backward via loadMoreMessages until the
-  /// message is found or the conversation is exhausted (state.hasMore ==
-  /// false), then delegates to the normal same-page jump. A capped
-  /// iteration count guards against loadMoreMessages returning pages that
-  /// never actually reduce hasMore to false (defensive; getMessages'
-  /// contract already sets hasMore false on receiving a partial page).
-  Future<void> _jumpToMessageAcrossPages(String messageId) async {
-    final notifier = ref.read(
+    final wasLoading = _jumpLoading;
+    final epoch = ++_jumpEpoch;
+    final pager = ref.read(
       chatControllerProvider(widget.conversation).notifier,
     );
+    // A new jump supersedes the old one: its paging stops between pages
+    // (even when this one needs none), and its chip goes now.
+    pager.cancelJump();
+    if (wasLoading) setState(() {});
+    if (_tryEnsureMessageVisible(messageId)) return;
 
-    for (var attempt = 0; attempt < 50; attempt++) {
-      final state = ref.read(chatControllerProvider(widget.conversation));
-      if (state.messages.any((m) => m.id == messageId)) break;
-      if (!state.hasMore || state.isLoadingMore) {
-        if (!state.hasMore) break;
-        await Future<void>.delayed(const Duration(milliseconds: 50));
-        continue;
-      }
-      await notifier.loadMoreMessages();
-      if (!mounted) return;
+    var messages = currentMessages;
+    if (!messages.any((m) => m.id == messageId)) {
+      messages = ref.read(chatControllerProvider(widget.conversation)).messages;
     }
+    if (!messages.any((m) => m.id == messageId)) {
+      setState(() => _jumpLoadingEpoch = epoch);
+      _jumpPager = pager;
+      var result = JumpTargetResult.exhausted;
+      try {
+        result = await pager.ensureMessageLoaded(messageId);
+      } catch (_) {
+        result = JumpTargetResult.exhausted;
+      } finally {
+        if (mounted && _jumpLoadingEpoch == epoch) {
+          setState(() => _jumpLoadingEpoch = null);
+        }
+      }
+      if (!mounted || epoch != _jumpEpoch) return;
+      switch (result) {
+        case JumpTargetResult.loaded:
+          break;
+        case JumpTargetResult.cancelled:
+          return;
+        case JumpTargetResult.tooFarBack:
+          context.showInfoSnackbar('That message is too far back to jump to.');
+          return;
+        case JumpTargetResult.notFound:
+        case JumpTargetResult.exhausted:
+          context.showInfoSnackbar("Couldn't find that message.");
+          return;
+      }
+      messages = ref.read(chatControllerProvider(widget.conversation)).messages;
+      // Let the list build the newly loaded rows before measuring.
+      await WidgetsBinding.instance.endOfFrame;
+      if (!mounted || epoch != _jumpEpoch) return;
+    }
+    final reached = await _scrollUntilBuilt(messageId, messages, epoch);
+    // The scroll gave up (the target left the list mid-jump, nothing was
+    // built to measure from, or it never converged): say so rather than
+    // leave the tap looking ignored.
+    if (!reached && mounted && epoch == _jumpEpoch) {
+      context.showInfoSnackbar("Couldn't find that message.");
+    }
+  }
 
-    if (!mounted) return;
-    final currentMessages =
-        ref.read(chatControllerProvider(widget.conversation)).messages;
-    await _jumpToMessage(messageId, currentMessages);
+  /// Anchored extrapolation: from the built row nearest the target, step
+  /// by (index distance × mean built-row extent), jump, let a frame build,
+  /// repeat. Each pass measures real rows, so the error shrinks until the
+  /// target's GlobalKey is attached; the old single viewport/keys guess
+  /// could never converge on varied row heights (#30).
+  ///
+  /// Returns whether the target's row was reached (an ensureVisible
+  /// started); true too when the jump was superseded, which says nothing.
+  Future<bool> _scrollUntilBuilt(
+    String messageId,
+    List<Message> messages,
+    int epoch,
+  ) async {
+    if (!_scrollController.hasClients) return false;
+    for (var attempt = 0; attempt < 24; attempt++) {
+      if (!mounted || epoch != _jumpEpoch) return true;
+      if (_tryEnsureMessageVisible(messageId)) return true;
+      // Re-read each pass: an arrival at the newest end shifts indices.
+      final current =
+          ref.read(chatControllerProvider(widget.conversation)).messages;
+      if (current.isNotEmpty) messages = current;
+      final targetIndex = messages.indexWhere((m) => m.id == messageId);
+      if (targetIndex == -1) return false;
+      final indexById = <String, int>{
+        for (var i = 0; i < messages.length; i++) messages[i].id: i,
+      };
+      final anchor = _nearestBuiltRow(targetIndex, indexById);
+      if (anchor == null || !_scrollController.hasClients) break;
+      final position = _scrollController.position;
+      final estimate =
+          anchor.scrollOffset +
+          (targetIndex - anchor.index) * anchor.meanExtent;
+      position.jumpTo(
+        estimate.clamp(position.minScrollExtent, position.maxScrollExtent),
+      );
+      await WidgetsBinding.instance.endOfFrame;
+    }
+    if (!mounted || epoch != _jumpEpoch) return true;
+    return _tryEnsureMessageVisible(messageId);
+  }
+
+  /// The built row with the index closest to [targetIndex], its scroll
+  /// offset (centred) and the mean extent of all built rows.
+  ({int index, double scrollOffset, double meanExtent})? _nearestBuiltRow(
+    int targetIndex,
+    Map<String, int> indexById,
+  ) {
+    int? bestIndex;
+    RenderBox? bestBox;
+    var extentSum = 0.0;
+    var extentCount = 0;
+    final measured = <RenderBox>{};
+    for (final entry in _messageKeys.entries) {
+      final index = indexById[entry.key];
+      final context = entry.value.currentContext;
+      if (index == null || context == null) continue;
+      final box = context.findRenderObject();
+      if (box is! RenderBox || !box.attached || !box.hasSize) continue;
+      // Media-run members share their representative's key: count the box
+      // once in the mean.
+      if (measured.add(box)) {
+        extentSum += box.size.height;
+        extentCount++;
+      }
+      if (bestIndex == null ||
+          (index - targetIndex).abs() < (bestIndex - targetIndex).abs()) {
+        bestIndex = index;
+        bestBox = box;
+      }
+    }
+    if (bestIndex == null || bestBox == null || extentCount == 0) return null;
+    final viewport = RenderAbstractViewport.maybeOf(bestBox);
+    if (viewport == null) return null;
+    // Rows carry a small top padding inside their box and the date
+    // separator sits inside some rows, so the mean is only an estimate —
+    // the loop's next measurement corrects for it.
+    return (
+      index: bestIndex,
+      scrollOffset: viewport.getOffsetToReveal(bestBox, 0.5).offset,
+      meanExtent: extentSum / extentCount,
+    );
   }
 
   Future<void> _sendDraftText(String text) async {
     final trimmed = text.trim();
     if (trimmed.isEmpty) return;
+    if (_refuseOverLimitDraft(trimmed)) return;
 
     // Sending finishes this draft immediately from the composer's point of
     // view. Keeping it in the controller until the network request completed
@@ -856,21 +1168,43 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
   }
 
   Future<void> _attachImage() async {
-    final picked = await _imagePicker.pickImage(
-      fromCamera: false,
-      crop: true,
-      lockAspectRatio: false,
-    );
-    if (picked == null || !mounted) return;
+    // Chat-only picker: original bytes, staged under <support>/chat_picks, no
+    // crop/compress pass before ChatImagePreparer (chat review #20, #27).
+    final String? pickedPath;
+    try {
+      pickedPath = await ref.read(chatImagePickerProvider).pickFromGallery();
+    } on ChatImagePickException catch (error) {
+      // The picker has already deleted anything it staged.
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            error.failure == ChatImagePickFailure.accessDenied
+                ? 'Attune needs access to your photos. You can allow it in Settings.'
+                : 'That photo could not be opened. Try a different one.',
+          ),
+        ),
+      );
+      return;
+    }
+    if (pickedPath == null) return;
+    if (!mounted) {
+      // Picked after the chat closed: nothing will send it.
+      unawaited(ChatImagePicker.discard(pickedPath));
+      return;
+    }
 
     // Full-screen preview + caption, shown unconditionally after every
-    // pick/crop — matches WhatsApp/iMessage's pick-then-caption flow. Null
+    // pick — matches WhatsApp/iMessage's pick-then-caption flow. Null
     // means the user backed out (closed the screen) rather than sending.
     final caption = await context.pushNamed<String>(
       'imageCaption',
-      extra: picked.path,
+      extra: pickedPath,
     );
-    if (caption == null || !mounted) return;
+    if (caption == null || !mounted) {
+      unawaited(ChatImagePicker.discard(pickedPath));
+      return;
+    }
 
     await _clearDraft();
     // sendImageMessage has no replyToMessageId/quotedText params (image
@@ -881,13 +1215,11 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
     _clearReplyTarget();
     // sendImageMessage takes the RAW picked path and shows the optimistic
     // bubble before running ChatImagePreparer's compression itself (see its
-    // own doc comment) — compression is real, non-instant work, and used to
-    // run here, before the bubble ever appeared, which is what made sending
-    // an image feel like nothing happened for a moment after tapping send.
+    // own doc comment).
     await ref
         .read(chatControllerProvider(widget.conversation).notifier)
         .sendImageMessage(
-          localPath: picked.path,
+          localPath: pickedPath,
           caption: caption,
           onOptimisticMessage: (_) => _scrollToLatest(),
         );
@@ -972,6 +1304,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
   /// shows: the game stays staged and the idempotency key is kept, so
   /// the retry is the same request rather than a second invitation.
   Future<void> _sendStagedGame({String caption = ''}) async {
+    if (caption.isNotEmpty && _refuseOverLimitDraft(caption)) return;
     final gameType =
         ref
             .read(gameComposerProvider(widget.conversation.relationshipId))
@@ -1007,6 +1340,9 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
     // confirmation -- pushing into the game would take the player away
     // from the conversation they chose to send it in.
     ref.read(hapticsProvider).selection();
+    if (ref.read(messageSoundsEnabledProvider)) {
+      ref.read(soundServiceProvider).play(ChatSound.send);
+    }
     _scrollToLatest();
 
     if (sourceRect == null) return;
@@ -1228,7 +1564,11 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
 
   void _scrollToLatest() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!_scrollController.hasClients) return;
+      if (!mounted || !_scrollController.hasClients) return;
+      if (reduceMotionOf(context)) {
+        _scrollController.jumpTo(0);
+        return;
+      }
       _scrollController.animateTo(
         0,
         duration: const Duration(milliseconds: 250),
@@ -1260,6 +1600,30 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
     final state = ref.watch(chatControllerProvider(widget.conversation));
     final notifier = ref.read(
       chatControllerProvider(widget.conversation).notifier,
+    );
+    ref.listen<List<Message>>(
+      chatControllerProvider(
+        widget.conversation,
+      ).select((chat) => chat.messages),
+      _stopVoiceWhoseMessageWentAway,
+    );
+    // Archived (or no longer available, which the controller records as
+    // archived): every note of this conversation stops — including one
+    // played from Media for a message this list never loaded.
+    ref.listen<ConversationAvailability>(
+      chatControllerProvider(
+        widget.conversation,
+      ).select((chat) => chat.conversation.availability),
+      (previous, next) {
+        if (next != ConversationAvailability.archived || previous == next) {
+          return;
+        }
+        final playback = _voicePlayback;
+        final ownerId = widget.conversation.relationshipId;
+        scheduleMicrotask(
+          () => unawaited(playback.stop(ifOwnedBy: ownerId)),
+        );
+      },
     );
     ref.watch(gamePartnerNameProvider);
     final conversation = state.conversation;
@@ -1324,7 +1688,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
         state.messages.isNotEmpty) {
       _didAttemptInitialJump = true;
       WidgetsBinding.instance.addPostFrameCallback(
-        (_) => unawaited(_jumpToMessageAcrossPages(initialJumpId)),
+        (_) => unawaited(_jumpToMessage(initialJumpId, state.messages)),
       );
     }
 
@@ -1378,7 +1742,11 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
                   child: GestureDetector(
                     onTap: () => FocusScope.of(context).unfocus(),
                     behavior: HitTestBehavior.translucent,
-                    child: Column(
+                    // On an iPad the conversation is a centred column on
+                    // the full-screen wallpaper (header and message bar too).
+                    child: AppContentWidth(
+                      maxWidth: ContentWidth.chat,
+                      child: Column(
                       children: [
                         if (state.pinnedMessages.isNotEmpty)
                           _PinnedMessagesBanner(
@@ -1392,11 +1760,22 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
                           conversation: conversation,
                           state: state,
                           isOnline: isOnline,
-                          errorMessage: state.error,
+                          // A failed first load stays up until a page lands
+                          // or Retry, not just until the next state write.
+                          errorMessage: state.bannerErrorFor(
+                            isOnline: isOnline,
+                          ),
                           onRetry: () => notifier.loadMessages(),
                         ),
                         Expanded(
-                          child: _MessageList(
+                          // A hand on the list takes it back from a jump in
+                          // progress (see _cancelJumpFromList).
+                          child: Listener(
+                            onPointerDown: (_) => _cancelJumpFromList(),
+                            onPointerSignal: (_) => _cancelJumpFromList(),
+                            onPointerPanZoomStart:
+                                (_) => _cancelJumpFromList(),
+                            child: _MessageList(
                             conversation: widget.conversation,
                             state: state,
                             scrollController: _scrollController,
@@ -1407,13 +1786,17 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
                             flyingMessageIds: _flyingMessageIds,
                             flyingGameSessionIds: _flyingGameSessionIds,
                             highlightedMessageId: _highlightedMessageId,
-                            composerFocused: _composerFocusNode.hasFocus,
+                            bottomOverlayHeight: _bottomOverlayHeight,
+                            initialUnreadCount: widget.conversation.unreadCount,
+                            onScrollToLatest: _scrollToLatest,
                             onReply: _setReplyTarget,
                             onJumpToParent: _jumpToMessage,
                             onReactionFlight: _startReactionFlight,
                           ),
+                          ),
                         ),
                       ],
+                    ),
                     ),
                   ),
                 ),
@@ -1423,7 +1806,9 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
                   right: 0,
                   child: SafeArea(
                     bottom: false,
-                    child: SizedBox(
+                    child: AppContentWidth(
+                      maxWidth: ContentWidth.chat,
+                      child: SizedBox(
                       height: headerHeight,
                       child: Padding(
                         padding: EdgeInsets.symmetric(
@@ -1443,15 +1828,76 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
                         ),
                       ),
                     ),
+                    ),
                   ),
                 ),
+                if (_jumpLoading)
+                  Positioned(
+                    top: MediaQuery.of(context).padding.top + headerHeight + 8,
+                    left: 0,
+                    right: 0,
+                    child: IgnorePointer(
+                      child: Center(
+                        child: Semantics(
+                          liveRegion: true,
+                          child: Material(
+                            color: Theme.of(context).chatControlSurface,
+                            borderRadius: BorderRadius.circular(999),
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 14,
+                                vertical: 8,
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  // Under reduce motion a still glyph, as
+                                  // everywhere else in the chat.
+                                  SizedBox(
+                                    width: 14,
+                                    height: 14,
+                                    child:
+                                        reduceMotionOf(context)
+                                            ? Icon(
+                                              Icons.search_rounded,
+                                              key: const ValueKey(
+                                                'chat_jump_chip_still_icon',
+                                              ),
+                                              size: 14,
+                                              color:
+                                                  Theme.of(
+                                                    context,
+                                                  ).colorScheme.onSurfaceVariant,
+                                            )
+                                            : const CircularProgressIndicator(
+                                              strokeWidth: 2,
+                                            ),
+                                  ),
+                                  const SizedBox(width: 10),
+                                  Text(
+                                    'Finding that message…',
+                                    style:
+                                        Theme.of(context).textTheme.bodySmall,
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
                 Positioned(
                   left: 0,
                   right: 0,
                   bottom: 0,
-                  child: SafeArea(
+                  child: MeasureSize(
+                    onChange: _onBottomOverlayMeasured,
+                    child: SafeArea(
                     top: false,
-                    child: Column(
+                    child: AppContentWidth(
+                      maxWidth: ContentWidth.chat,
+                      child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         Consumer(
@@ -1464,13 +1910,18 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
                                       ),
                                     )
                                     .partnerTyping;
+                            final reduceMotion = reduceMotionOf(context);
                             return SizedBox(
                               width: double.infinity,
                               child: AnimatedSwitcher(
-                                duration: const Duration(milliseconds: 260),
-                                reverseDuration: const Duration(
-                                  milliseconds: 180,
-                                ),
+                                duration:
+                                    reduceMotion
+                                        ? Duration.zero
+                                        : const Duration(milliseconds: 260),
+                                reverseDuration:
+                                    reduceMotion
+                                        ? Duration.zero
+                                        : const Duration(milliseconds: 180),
                                 switchInCurve: Curves.linear,
                                 switchOutCurve: Curves.linear,
                                 layoutBuilder: (currentChild, previousChildren) {
@@ -1500,9 +1951,11 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
                                     return child;
                                   }
                                   return Padding(
+                                    // No transparent headroom: the list
+                                    // clears this measured overlay (#33).
                                     padding: const EdgeInsets.fromLTRB(
                                       16,
-                                      30,
+                                      8,
                                       16,
                                       8,
                                     ),
@@ -1705,6 +2158,8 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
                           ),
                       ],
                     ),
+                    ),
+                  ),
                   ),
                 ),
               ],
@@ -2922,7 +3377,9 @@ class _MessageList extends ConsumerStatefulWidget {
     required this.flyingMessageIds,
     required this.flyingGameSessionIds,
     required this.highlightedMessageId,
-    required this.composerFocused,
+    required this.bottomOverlayHeight,
+    required this.initialUnreadCount,
+    required this.onScrollToLatest,
     required this.onReply,
     required this.onJumpToParent,
     required this.onReactionFlight,
@@ -2968,10 +3425,20 @@ class _MessageList extends ConsumerStatefulWidget {
   /// The message currently flashed as a jump target, or null.
   final String? highlightedMessageId;
 
-  /// True while the chat composer owns focus. The Scaffold body can see a
-  /// zero keyboard inset after resize, so focus is the reliable signal for
-  /// tightening the list's bottom reserve above the floating composer.
-  final bool composerFocused;
+  /// Measured height of everything stacked over the bottom of the list
+  /// (typing indicator, reply strip, staged game, pause card, composer,
+  /// home-indicator inset). The list pads itself by exactly this much so
+  /// the newest bubble is always fully above the overlay (#33). Null until
+  /// the first frame has measured it.
+  final double? bottomOverlayHeight;
+
+  /// conversation.unreadCount as it was when the screen opened — the
+  /// one-shot "N unread messages" divider is placed from it, never from the
+  /// live count (which drops to 0 as soon as the view is active).
+  final int initialUnreadCount;
+
+  /// Returns the list to the newest message (the pill's tap).
+  final VoidCallback onScrollToLatest;
 
   /// Flies this message into the screen's reply-composer preview.
   final void Function(Message message) onReply;
@@ -2989,15 +3456,37 @@ class _MessageList extends ConsumerStatefulWidget {
 }
 
 class _MessageListState extends ConsumerState<_MessageList>
-    with SingleTickerProviderStateMixin {
+    with TickerProviderStateMixin {
   static const _timestampReturnDuration = Duration(milliseconds: 220);
+  /// Used only until the overlay has been measured (the first frame).
   static const _messageListBottomReserve = 120.0;
-  static const _messageListKeyboardBottomReserve = 64.0;
+
+  /// Breathing room between the newest row and the top of the overlay.
+  static const _messageListOverlayGap = 12.0;
+
+  /// At the bottom a reserve change glides instead of snapping every row
+  /// by the strip's height (a typing toggle is ~60px, many times a minute).
+  static const _reserveGlideDuration = Duration(milliseconds: 220);
+  late final AnimationController _reserveController;
+  late double _reserveFrom;
+  late double _reserveTo;
+
+  /// The bottom padding painted this frame.
+  double get _bottomReserve =>
+      _reserveFrom +
+      (_reserveTo - _reserveFrom) *
+          Curves.easeOutCubic.transform(_reserveController.value);
 
   final ValueNotifier<double> _timestampRevealOffset = ValueNotifier(0);
   final Map<String, GlobalKey> _rowKeys = {};
+  /// Pins the row being read while the list changes under it (#32).
+  final ChatListAnchor _listAnchor = ChatListAnchor();
   final MessageArrivalTracker _arrivalTracker = MessageArrivalTracker();
-  final Set<String> _pendingArrivalIds = <String>{};
+
+  /// Cards that moved (sort_at advanced) get a fresh motion key so they
+  /// settle into their new slot like an arrival; see GameMoveLedger.
+  final GameMoveLedger _gameMoves = GameMoveLedger();
+  final PendingArrivals _pendingArrivals = PendingArrivals();
   late final AnimationController _timestampReturnController;
   Animation<double>? _timestampReturnAnimation;
 
@@ -3017,6 +3506,26 @@ class _MessageListState extends ConsumerState<_MessageList>
   Timer? _pinnedDateTimer;
 
   static const _pinnedDateLinger = Duration(milliseconds: 900);
+
+  /// The reader has left the newest messages (more than a few bubbles up;
+  /// WhatsApp shows its arrow early). Drives the scroll-to-newest pill.
+  bool _awayFromBottom = false;
+  static const _awayThreshold = 240.0;
+
+  /// Partner messages that arrived while [_awayFromBottom]: the pill badge.
+  int _unseenWhileAway = 0;
+  bool _awayCheckScheduled = false;
+
+  /// The one-shot "N unread messages" divider, placed once from the first
+  /// server-backed page (and only moved further back as older history
+  /// loads, while the first page held fewer rows than the count).
+  UnreadDividerPlacement? _unreadDivider;
+  bool _unreadDividerResolved = false;
+
+  /// When this visit began — about when [_MessageList.initialUnreadCount]
+  /// was counted. Rows the server stamped later are not part of it.
+  final DateTime _openedAt = clock.now();
+  List<Message>? _unreadDividerCheckedMessages;
 
   /// Records the topmost visible day and keeps the chip up while the list
   /// is moving.
@@ -3041,29 +3550,357 @@ class _MessageListState extends ConsumerState<_MessageList>
       vsync: this,
       duration: _timestampReturnDuration,
     );
+    _reserveFrom = _reserveTo = _bottomPaddingFor(widget.bottomOverlayHeight);
+    _reserveController = AnimationController(
+      vsync: this,
+      duration: _reserveGlideDuration,
+      value: 1,
+    )..addListener(_onReserveTick);
     _syncArrivals(widget.state);
+    _attachListAnchor(widget.scrollController);
   }
 
   @override
   void didUpdateWidget(covariant _MessageList oldWidget) {
     super.didUpdateWidget(oldWidget);
     _syncArrivals(widget.state);
+    if (oldWidget.scrollController != widget.scrollController) {
+      _detachListAnchor(oldWidget.scrollController);
+      _attachListAnchor(widget.scrollController);
+    }
+    if (!identical(oldWidget.state.messages, widget.state.messages)) {
+      _armListAnchor();
+      _scheduleAwayCheck();
+    }
+    _followReserveChange(oldWidget.bottomOverlayHeight);
+    if (oldWidget.bottomOverlayHeight != widget.bottomOverlayHeight) {
+      _scheduleAwayCheck();
+    }
+  }
+
+  /// Whether the list is more than [_awayThreshold] from its newest end,
+  /// read live from the position (null before it has laid out). Never from
+  /// accumulated scroll deltas: the place hold (Task 9) and the reserve hold
+  /// (Task 8) move pixels with correctPixels, which sends no notification.
+  bool? _measureAwayFromBottom() {
+    final controller = widget.scrollController;
+    if (!controller.hasClients || controller.positions.length != 1) {
+      return null;
+    }
+    final position = controller.position;
+    if (!position.hasPixels || !position.hasContentDimensions) return null;
+    return position.pixels - position.minScrollExtent > _awayThreshold;
+  }
+
+  /// Rebuilds only when the threshold is crossed, never per scroll tick.
+  /// Back within it, the reader has seen what arrived: the badge clears.
+  void _setAwayFromBottom(bool away) {
+    if (away == _awayFromBottom) return;
+    setState(() {
+      _awayFromBottom = away;
+      if (!away) _unseenWhileAway = 0;
+    });
+  }
+
+  /// Re-reads [_awayFromBottom] after this frame's layout, where a hold may
+  /// have moved the list without telling anyone.
+  bool _loadMoreScheduled = false;
+
+  /// Pages older history after the current frame/build, never inside it.
+  /// A scroll notification can be dispatched mid-frame (a ballistic restart
+  /// inside applyContentDimensions, a position hand-over while the tree
+  /// builds); loadMoreMessages writes the controller's state synchronously,
+  /// and doing that while the tree builds trips Riverpod's "modify a
+  /// provider while the widget tree was building" assert. A microtask runs
+  /// once the frame's callbacks return (and right away after a pointer
+  /// event), and one burst of notifications schedules one call.
+  void _scheduleLoadMore() {
+    if (_loadMoreScheduled) return;
+    _loadMoreScheduled = true;
+    scheduleMicrotask(() {
+      _loadMoreScheduled = false;
+      if (!mounted) return;
+      ref
+          .read(chatControllerProvider(widget.conversation).notifier)
+          .loadMoreMessages();
+    });
+  }
+
+  void _scheduleAwayCheck() {
+    if (_awayCheckScheduled) return;
+    _awayCheckScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _awayCheckScheduled = false;
+      if (!mounted) return;
+      final away = _measureAwayFromBottom();
+      if (away != null) _setAwayFromBottom(away);
+    });
+  }
+
+  /// Whether the list sits at its newest end (or has not laid out yet).
+  /// Read live: rows are built lazily, during layout, as the list scrolls.
+  bool _atNewestEnd() {
+    final controller = widget.scrollController;
+    if (!controller.hasClients || controller.positions.length != 1) {
+      return true;
+    }
+    final position = controller.position;
+    return !position.hasPixels ||
+        !position.hasContentDimensions ||
+        position.pixels <= position.minScrollExtent + 1;
+  }
+
+  void _attachListAnchor(ScrollController controller) {
+    if (controller is ChatListScrollController) {
+      controller.layoutCorrection = _listAnchor.consume;
+      controller.pinRowBeingRead = _pinRowBeingRead;
+      controller.rowPinned = _isRowPinned;
+    }
+  }
+
+  void _detachListAnchor(ScrollController controller) {
+    if (controller is ChatListScrollController &&
+        controller.layoutCorrection == _listAnchor.consume) {
+      controller.layoutCorrection = null;
+      controller.pinRowBeingRead = null;
+      controller.rowPinned = null;
+    }
+  }
+
+  bool _isRowPinned() => _listAnchor.isArmed;
+
+  /// Asked by the list's position at the start of every layout: while
+  /// scrolled up, pin the row being read so any
+  /// content shift under it — Flutter's own origin repair included, which
+  /// moves the content by more than the offset — is cancelled in the same
+  /// layout. Already pinned (an arrival this frame, pinned at build, before
+  /// the sliver re-targets its rows): keep that pin. At the newest end:
+  /// nothing to hold, new rows push the list up.
+  bool _pinRowBeingRead() {
+    if (_listAnchor.isArmed) return true;
+    if (_atNewestEnd()) return false;
+    if (!_armAmongBuiltRows()) return false;
+    WidgetsBinding.instance.addPostFrameCallback((_) => _listAnchor.clear());
+    return true;
+  }
+
+  /// Scrolled up, pins the bottom-most visible row before this frame's
+  /// change (an arrival, a reorder) is laid out, and the list's position
+  /// cancels whatever that change moved it by in the same layout pass — so
+  /// the text being read never moves. At the bottom nothing is pinned: a new
+  /// message still pushes the list up into view, as before.
+  ///
+  /// Measured in CONTENT offsets, so it composes with
+  /// [_followReserveChange]'s padding hold (padding sits outside the row
+  /// offsets) and never undoes the reader's own scroll. Unpinned after the
+  /// frame, so a change that never reaches layout cannot linger.
+  ///
+  /// A running animateTo / ensureVisible writes absolute pixels on every
+  /// tick and would overwrite the hold on its next one. The controller
+  /// carries it across the hold (and across Flutter's later correctBy of
+  /// the content origin): toward the newest end it still lands there, on
+  /// time; toward a row it moves with the content and lands on that row.
+  void _armListAnchor() {
+    if (widget.scrollController is! ChatListScrollController) return;
+    if (_atNewestEnd()) {
+      _listAnchor.clear();
+      return;
+    }
+    if (_armAmongBuiltRows()) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _listAnchor.clear());
+    }
+  }
+
+  /// The list's sliver element, found once and kept while it is mounted.
+  SliverMultiBoxAdaptorElement? _listElement;
+
+  /// Pins among the rows the list has BUILT (a screenful), not every loaded
+  /// one — after a far jump that is thousands, on every layout while
+  /// scrolled up. Before the list has laid out, every loaded row (cheap:
+  /// nothing is built yet, so each lookup misses at once).
+  bool _armAmongBuiltRows() {
+    final controller = widget.scrollController;
+    var list = _listElement;
+    if (list == null || !list.mounted) {
+      list = _listElement =
+          controller.hasClients && controller.positions.length == 1
+              ? ChatListAnchor.findListElement(controller.position)
+              : null;
+    }
+    if (list == null) return _listAnchor.arm(_rowKeys.values);
+    return _listAnchor.armAmongBuilt(list, (rowKey) {
+      if (rowKey is! ValueKey<String>) return null;
+      final value = rowKey.value;
+      if (!value.startsWith('row-')) return null;
+      return _rowKeys[value.substring(4)];
+    });
+  }
+
+  void _onReserveTick() {
+    if (mounted) setState(() {});
+  }
+
+  /// List bottom padding for a measured overlay height (the fallback guess
+  /// only until the first measurement lands; a measured 0 is honoured).
+  static double _bottomPaddingFor(double? bottomOverlayHeight) =>
+      bottomOverlayHeight == null
+          ? _messageListBottomReserve
+          : bottomOverlayHeight + _messageListOverlayGap;
+
+  /// Moves the list's bottom reserve to the new measurement.
+  ///
+  /// The list is reversed, so a bigger reserve pushes every row up.
+  /// - At the bottom that is exactly right (the newest message stays fully
+  ///   above the grown overlay), and it GLIDES there over
+  ///   [_reserveGlideDuration] rather than hopping in one frame. A new
+  ///   measurement mid-glide retargets from the value painted now, so two
+  ///   strips arriving together never jump. Reduce motion, and the very
+  ///   first measurement, snap.
+  /// - Scrolled up into history it would shift the page under the reader,
+  ///   so the reserve snaps and the offset moves by the same amount: the
+  ///   rows stay put. correctPixels (not jumpTo) leaves a drag running, and
+  ///   a fling survives because the extent change restarts its simulation
+  ///   from the corrected offset. A running animateTo / ensureVisible
+  ///   follows the hold (the controller carries it, as for any correction):
+  ///   no hop on its next tick, and it still lands on its target.
+  void _followReserveChange(double? oldOverlayHeight) {
+    if (oldOverlayHeight == widget.bottomOverlayHeight) return;
+    final target = _bottomPaddingFor(widget.bottomOverlayHeight);
+    final current = _bottomReserve;
+    final controller = widget.scrollController;
+    final position =
+        controller.hasClients &&
+                controller.positions.length == 1 &&
+                controller.position.hasPixels &&
+                controller.position.hasContentDimensions
+            ? controller.position
+            : null;
+    final atBottom =
+        position == null || position.pixels <= position.minScrollExtent + 1;
+
+    if (atBottom &&
+        oldOverlayHeight != null &&
+        target != current &&
+        !reduceMotionOf(context)) {
+      _reserveFrom = current;
+      _reserveTo = target;
+      _reserveController.forward(from: 0);
+      return;
+    }
+
+    _reserveController.stop();
+    _reserveFrom = _reserveTo = target;
+    if (position != null && !atBottom) {
+      final held = math.max(
+        position.minScrollExtent,
+        position.pixels + target - current,
+      );
+      if (controller is ChatListScrollController) {
+        controller.correctPixelsCarryingDrive(held);
+      } else {
+        position.correctPixels(held);
+      }
+    }
   }
 
   void _syncArrivals(ChatState state) {
-    _pendingArrivalIds.addAll(
-      _arrivalTracker.sync(
+    // Copy: the tracker returns a const set on its baseline frames.
+    final arrivals = <String>{
+      ..._arrivalTracker.sync(
         state.messages.map((message) => message.clientMessageId),
         initialLoading: state.isLoading,
         loadingMore: state.isLoadingMore,
       ),
-    );
+    };
+    // A trail is a marker of where a card WAS (leave_game_trail inserts a
+    // new row at the card's old sort_at). It is never an arrival: it used
+    // to slide/fade in twenty messages up, where nobody was looking.
+    for (final message in state.messages) {
+      if (message.isGameTrail && arrivals.remove(message.clientMessageId)) {
+        widget.animatedMessageIds.add(message.clientMessageId);
+      }
+    }
+    // A moved card re-arrives at its new slot. Runs on every frame (baseline
+    // and history pages too) so the ledger always holds the latest slot.
+    // It animates like an arrival but stays out of `arrivals`, which the
+    // unseen-count block below reads: a move re-sorts an existing card —
+    // activity, not a new message — so neither the badge nor the divider
+    // counts it, and the pill must not either (final review M-2). A new
+    // invite card is a genuine tracker arrival and still counts.
+    final moved = _gameMoves.sync(state.messages);
+    for (final id in moved) {
+      widget.animatedMessageIds.remove(id);
+    }
+    _pendingArrivals.add({...arrivals, ...moved}, clock.now());
+
+    // --- Task 10: unseen-count block (#32b) ---
+    // Genuine arrivals only (the tracker drops history pages, and edits or
+    // reactions keep their client id, so they are never arrivals); my own
+    // rows never count. Read live: the reader's place before this change.
+    // Runs from didUpdateWidget, so the build that follows paints it.
+    if (arrivals.isNotEmpty &&
+        (_measureAwayFromBottom() ?? _awayFromBottom)) {
+      for (final message in state.messages) {
+        if (arrivals.contains(message.clientMessageId) &&
+            countsTowardUnread(message)) {
+          _unseenWhileAway++;
+        }
+      }
+    }
+    // --- end Task 10 unseen-count block ---
+  }
+
+  /// Stable per row, fresh per game move. Revision 0 keeps the plain
+  /// client-id key every existing test and flight lookup relies on.
+  Key _motionKey(String clientMessageId, String slot) {
+    final revision = _gameMoves.revisionOf(clientMessageId);
+    if (revision == 0) {
+      return slot == 'settle'
+          ? ValueKey(clientMessageId)
+          : ValueKey('$slot:$clientMessageId');
+    }
+    return ValueKey('$slot:$clientMessageId#move$revision');
+  }
+
+  /// Places the unread divider once a server page of the newest messages
+  /// has landed ([ChatState.firstPageLanded]: a warm cache painted before it
+  /// may not hold the unread rows yet, and counting from it would put the
+  /// divider on read messages). On a late placement only
+  /// ([ChatState.firstPageLate]: an offline open, then a reconnect) rows
+  /// sent after the open are skipped, so it still marks the rows that were
+  /// unread at the open. After that it stays put for the
+  /// visit; a placement the first page could not complete only moves
+  /// further back, as older history loads.
+  void _resolveUnreadDivider(ChatState state) {
+    if (state.isLoading || !state.firstPageLanded) return;
+    if (identical(state.messages, _unreadDividerCheckedMessages)) return;
+    _unreadDividerCheckedMessages = state.messages;
+    final before = _unreadDivider;
+    if (!_unreadDividerResolved) {
+      _unreadDividerResolved = true;
+      _unreadDivider = placeUnreadDivider(
+        state.messages,
+        widget.initialUnreadCount,
+        // Only a late page can hold rows sent after the open. A normal
+        // open's first page is already a snapshot taken after the count,
+        // and comparing server stamps with this phone's clock would drop
+        // unread rows whenever the clock runs behind the server's.
+        sentBy: state.firstPageLate ? _openedAt : null,
+      );
+    } else if (before != null && before.unplaced > 0) {
+      _unreadDivider = extendUnreadDivider(state.messages, before);
+    }
+    // Inserting (or moving) the divider changes a row's height: pin the
+    // row being read, as for any other list change (no-op at the bottom).
+    if (_unreadDivider?.messageId != before?.messageId) _armListAnchor();
   }
 
   @override
   void dispose() {
     _timestampReturnAnimation?.removeListener(_onTimestampReturnTick);
     _timestampReturnController.dispose();
+    _reserveController.dispose();
+    _detachListAnchor(widget.scrollController);
     _timestampRevealOffset.dispose();
     // A Timer outliving this State fires setState on an unmounted widget.
     _pinnedDateTimer?.cancel();
@@ -3162,7 +3999,6 @@ class _MessageListState extends ConsumerState<_MessageList>
     final messageKeys = widget.messageKeys;
     final bubbleFillKeys = widget.bubbleFillKeys;
     final highlightedMessageId = widget.highlightedMessageId;
-    final composerFocused = widget.composerFocused;
     final onReply = widget.onReply;
     final onJumpToParent = widget.onJumpToParent;
 
@@ -3238,9 +4074,8 @@ class _MessageListState extends ConsumerState<_MessageList>
     // Prune keys for messages no longer in state.messages (scrolled-out
     // history that got dropped, or a pagination/reload replacing the list)
     // — without this, messageKeys only ever grows across the screen's
-    // lifetime, leaking GlobalKeys and corrupting the jump-fallback's
-    // "messages currently on screen" estimate in _jumpToMessage, which
-    // divides the viewport by messageKeys.length.
+    // lifetime, leaking GlobalKeys and skewing _nearestBuiltRow's walk
+    // (the jump's anchored extrapolation) over every key ever built.
     final currentIds = state.messages.map((m) => m.id).toSet();
     final currentClientIds =
         state.messages.map((m) => m.clientMessageId).toSet();
@@ -3250,9 +4085,20 @@ class _MessageListState extends ConsumerState<_MessageList>
     );
     _rowKeys.removeWhere((id, _) => !currentIds.contains(id));
     final mediaRuns = ChatMediaRunLayout.fromMessages(state.messages);
+    // Key → index map for findChildIndexCallback, so the sliver matches a
+    // row by WHICH message it is, not by its position. Without it an
+    // arrival at index 0 re-targets every element one message over and each
+    // row is rebuilt into its neighbour's slot (#32). Keeping rows put on
+    // screen is the place hold's job (_armListAnchor); this keeps each
+    // row's element and render object with its message.
+    final indexByRowKey = <String, int>{
+      for (var i = 0; i < state.messages.length; i++)
+        'row-${state.messages[i].id}': i,
+    };
     final pinnedLabel = _pinnedDateLabel;
-    final keyboardIsOpen =
-        composerFocused || MediaQuery.of(context).viewInsets.bottom > 0;
+    _resolveUnreadDivider(state);
+    final unreadDividerId = _unreadDivider?.messageId;
+    final firstOwnIndex = state.messages.indexWhere((m) => m.isMine);
 
     return Stack(
       children: [
@@ -3263,9 +4109,7 @@ class _MessageListState extends ConsumerState<_MessageList>
             onNotification: (notification) {
               if (notification.metrics.pixels >=
                   notification.metrics.maxScrollExtent - 200) {
-                ref
-                    .read(chatControllerProvider(conversation).notifier)
-                    .loadMoreMessages();
+                _scheduleLoadMore();
               }
               if (notification.metrics.pixels <= 120) {
                 ref
@@ -3279,6 +4123,23 @@ class _MessageListState extends ConsumerState<_MessageList>
               if (notification is ScrollUpdateNotification) {
                 _updatePinnedDate(_topmostVisibleDateLabel(state.messages));
               }
+              // The pill: the list's own notifications only (depth 0, not
+              // a scrollable inside a row). One can be dispatched
+              // mid-layout (a ballistic restart inside
+              // applyContentDimensions); then it is read after the frame
+              // rather than setState during layout.
+              if (notification.depth == 0) {
+                if (WidgetsBinding.instance.schedulerPhase ==
+                    SchedulerPhase.persistentCallbacks) {
+                  _scheduleAwayCheck();
+                } else {
+                  _setAwayFromBottom(
+                    notification.metrics.pixels -
+                            notification.metrics.minScrollExtent >
+                        _awayThreshold,
+                  );
+                }
+              }
               return false;
             },
             child: Scrollbar(
@@ -3287,29 +4148,29 @@ class _MessageListState extends ConsumerState<_MessageList>
                 controller: scrollController,
                 reverse: true,
                 // Reserves room so the newest message doesn't sit behind the
-                // floating composer, now Positioned on top of this list rather than
-                // stacked in flow beneath it. Generous estimate covering the tallest
-                // composer state (multi-line text growing the field to maxLines:5)
-                // plus safe-area/keyboard-adjacent breathing room.
+                // floating overlay Positioned on top of this list (typing
+                // indicator, reply strip, staged game, composer, safe area).
+                // The reserve is that overlay's MEASURED height plus a gap,
+                // so it follows every strip and a growing multi-line draft
+                // (#33). It already rides above the keyboard (the Scaffold
+                // resizes its body), so viewInsets are never added here.
                 // No horizontal inset on the LIST: the date separator's
                 // rule has to reach both screen edges, and a list-level
                 // padding clips it however wide the row asks to be. The
                 // 8px moves onto the message rows themselves, which are
                 // the only children that wanted it.
-                // The unfocused reserve includes the floating composer and
-                // the home-indicator SafeArea. When the keyboard is open,
-                // that SafeArea collapses, so a tighter reserve keeps the
-                // newest bubble/footer close to the focused composer.
                 padding: EdgeInsets.fromLTRB(
                   0,
                   10,
                   0,
-                  keyboardIsOpen
-                      ? _messageListKeyboardBottomReserve
-                      : _messageListBottomReserve,
+                  _bottomReserve,
                 ),
                 itemCount:
                     state.messages.length + (state.isLoadingMore ? 1 : 0),
+                findChildIndexCallback: (key) {
+                  if (key is ValueKey<String>) return indexByRowKey[key.value];
+                  return null;
+                },
                 itemBuilder: (context, index) {
                   if (index == state.messages.length) {
                     return const Padding(
@@ -3319,7 +4180,10 @@ class _MessageListState extends ConsumerState<_MessageList>
                   }
 
                   if (mediaRuns.hiddenIndices.contains(index)) {
-                    return const SizedBox.shrink();
+                    return KeyedSubtree(
+                      key: ValueKey<String>('row-${state.messages[index].id}'),
+                      child: const SizedBox.shrink(),
+                    );
                   }
 
                   final message = state.messages[index];
@@ -3336,6 +4200,9 @@ class _MessageListState extends ConsumerState<_MessageList>
                     message.id,
                     GlobalKey.new,
                   );
+                  // Top-level row key read back by findChildIndexCallback;
+                  // messageKey stays the ensureVisible target inside it.
+                  final rowKey = ValueKey<String>('row-${message.id}');
                   messageKeys[message.id] = messageKey;
                   for (final groupedMessage in mediaGroup) {
                     messageKeys[groupedMessage.id] = messageKey;
@@ -3375,7 +4242,7 @@ class _MessageListState extends ConsumerState<_MessageList>
                   // delivery and server/device clock skew must not suppress the
                   // receiver animation. Pagination is filtered by the tracker.
                   final shouldAnimate =
-                      _pendingArrivalIds.remove(message.clientMessageId) &&
+                      _pendingArrivals.take(message.clientMessageId, clock.now()) &&
                       !animatedMessageIds.contains(message.clientMessageId);
                   if (shouldAnimate) {
                     animatedMessageIds.add(message.clientMessageId);
@@ -3397,10 +4264,13 @@ class _MessageListState extends ConsumerState<_MessageList>
                     }
                   }
 
-                  Widget bubble = ValueListenableBuilder<double>(
-                    valueListenable: _timestampRevealOffset,
-                    builder:
-                        (context, timestampRevealOffset, _) => MessageBubble(
+                  // #37: "Copy link" is offered only when the text has a web
+                  // link; it copies the first one ("Copy" keeps the whole text).
+                  final messageLinks = detectLinks(message.content);
+                  final firstLink =
+                      messageLinks.isEmpty ? null : messageLinks.first;
+
+                  Widget bubble = MessageBubble(
                           message: message,
                           // RULING 23: §12's `ai_assist_enabled`, the
                           // base spec's own missing gate on Ask
@@ -3419,10 +4289,15 @@ class _MessageListState extends ConsumerState<_MessageList>
                               0,
                           mediaGroup: mediaGroup,
                           conversation: conversation,
-                          showStatus: index == 0 && message.isMine,
+                          showStatus: showsDeliveryStatus(
+                            isMine: message.isMine,
+                            isNewestOwn: index == firstOwnIndex,
+                            isGroupEnd: !isGroupedWithPrevious,
+                            status: message.status,
+                          ),
                           showLatestTimestamp: index == 0,
                           showTimestamp: true,
-                          timestampRevealOffset: timestampRevealOffset,
+                          timestampRevealListenable: _timestampRevealOffset,
                           onTimestampRevealChanged: _setTimestampRevealOffset,
                           parentIsMine: parentIsMine,
                           isGrouped: isGrouped,
@@ -3510,6 +4385,14 @@ class _MessageListState extends ConsumerState<_MessageList>
                               ),
                             );
                           },
+                          onCancelSend:
+                              (toCancel) => ref
+                                  .read(
+                                    chatControllerProvider(
+                                      conversation,
+                                    ).notifier,
+                                  )
+                                  .cancelSend(toCancel),
                           onStreakViewSpent: (messageId, viewsRemaining) {
                             ref
                                 .read(
@@ -3520,8 +4403,10 @@ class _MessageListState extends ConsumerState<_MessageList>
                                   viewsRemaining,
                                 );
                           },
+                          // Retry on a read-only chat can only fail again;
+                          // Remove stays.
                           onRetry:
-                              message.isFailed
+                              message.isFailed && state.conversation.canSend
                                   ? () => ref
                                       .read(
                                         chatControllerProvider(
@@ -3566,6 +4451,7 @@ class _MessageListState extends ConsumerState<_MessageList>
                                       !message.id.startsWith('_local_')
                                   ? ref.read(currentUserProvider)?.id
                                   : null,
+                          viewerUserId: ref.read(currentUserProvider)?.id,
                           isStarred: state.starredMessageIds.contains(
                             message.id,
                           ),
@@ -3588,6 +4474,15 @@ class _MessageListState extends ConsumerState<_MessageList>
                             );
                             context.showSuccessSnackbar('Copied to clipboard');
                           },
+                          onCopyLink:
+                              firstLink == null
+                                  ? null
+                                  : () {
+                                    Clipboard.setData(
+                                      ClipboardData(text: firstLink.copyText),
+                                    );
+                                    context.showSuccessSnackbar('Link copied');
+                                  },
                           // Star/unstar/unpin are all fire-and-forget from the menu, but
                           // each awaits a network call that can throw — swallowing the
                           // failure silently would leave an unhandled async error, so each
@@ -3723,7 +4618,6 @@ class _MessageListState extends ConsumerState<_MessageList>
                           onShowEditHistory:
                               (target) =>
                                   _showEditHistorySheet(context, ref, target),
-                        ),
                   );
                   if (widget.flyingMessageIds.contains(
                         message.clientMessageId,
@@ -3794,10 +4688,18 @@ class _MessageListState extends ConsumerState<_MessageList>
                       // this bubble's height instead of jumping to their new
                       // positions a frame before it fades in. Outside SettleIn
                       // so the slot grows while the bubble settles into it.
+                      // Only at the newest end (#32): scrolled up, the row
+                      // lands at full height in one frame, so the place
+                      // hold cancels it whole, and a row first built later
+                      // as the reader scrolls back cannot lift the rows
+                      // above it while it grows.
                       child: MakeRoom(
-                        animate: shouldAnimate,
+                        // Fresh per game move: both decide "animate or not"
+                        // once per State, so a moved card needs a new one.
+                        key: _motionKey(message.clientMessageId, 'room'),
+                        animate: shouldAnimate && _atNewestEnd(),
                         child: SettleIn(
-                          key: ValueKey(message.clientMessageId),
+                          key: _motionKey(message.clientMessageId, 'settle'),
                           // Only animate a message the first time it is built after
                           // arriving live (cached history never replays on open, and
                           // recycled items never replay on scroll-back — Spec §2
@@ -3814,7 +4716,15 @@ class _MessageListState extends ConsumerState<_MessageList>
                     ),
                   );
 
-                  if (!isFirstOfDay) return row;
+                  // The unread divider sits directly above its row (a media
+                  // run draws as its newest member, so match any of it).
+                  final showsUnreadDivider =
+                      unreadDividerId != null &&
+                      (message.id == unreadDividerId ||
+                          mediaGroup.any((m) => m.id == unreadDividerId));
+                  if (!isFirstOfDay && !showsUnreadDivider) {
+                    return KeyedSubtree(key: rowKey, child: row);
+                  }
 
                   // The separator comes FIRST, so it renders above the
                   // message whose day it names.
@@ -3828,25 +4738,33 @@ class _MessageListState extends ConsumerState<_MessageList>
                   // first-of-day and draws no separator at all — which is
                   // what made this look like a send-path bug rather than a
                   // layout one.
-                  return Column(
+                  return KeyedSubtree(
+                    key: rowKey,
+                    child: Column(
                     mainAxisSize: MainAxisSize.min,
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      Padding(
-                        // 32 above, 20 below, which lands SYMMETRIC on
-                        // screen: the row beneath contributes its own 12px
-                        // top padding, so an even 20/20 here measures
-                        // 20 above and 32 below and leans the separator
-                        // toward the older day. A day boundary should also
-                        // read as a bigger break than a sender change,
-                        // which already gets 12.
-                        padding: const EdgeInsets.only(top: 32, bottom: 20),
-                        child: ChatDateSeparator(
-                          label: chatDateLabel(message.createdAt),
+                      if (isFirstOfDay)
+                        Padding(
+                          // 32 above, 20 below, which lands SYMMETRIC on
+                          // screen: the row beneath contributes its own 12px
+                          // top padding, so an even 20/20 here measures
+                          // 20 above and 32 below and leans the separator
+                          // toward the older day. A day boundary should also
+                          // read as a bigger break than a sender change,
+                          // which already gets 12.
+                          padding: const EdgeInsets.only(top: 32, bottom: 20),
+                          child: ChatDateSeparator(
+                            label: chatDateLabel(message.createdAt),
+                          ),
                         ),
-                      ),
+                      // Below the day's separator: it must sit immediately
+                      // above the first unread row.
+                      if (showsUnreadDivider)
+                        UnreadDivider(count: widget.initialUnreadCount),
                       row,
                     ],
+                    ),
                   );
                 },
               ),
@@ -3869,6 +4787,28 @@ class _MessageListState extends ConsumerState<_MessageList>
               ),
             ),
           ),
+        // Rides the same measured overlay height as the list's reserve
+        // (Task 8), so the typing indicator, reply strip and staged game
+        // bar push it up rather than cover it. Inside the list's column,
+        // so on an iPad it sits at the conversation's edge.
+        // The pill's 48 px hit box has a 2 px margin round its 44 px
+        // circle: the circle keeps a 16 px inset and the 12 px gap.
+        PositionedDirectional(
+          end: 14,
+          bottom:
+              (widget.bottomOverlayHeight ?? _messageListBottomReserve) +
+              _messageListOverlayGap -
+              2,
+          child: ScrollToLatestPill(
+            key: const ValueKey('chat_scroll_to_latest'),
+            visible: _awayFromBottom,
+            count: _unseenWhileAway,
+            onTap: () {
+              ref.read(hapticsProvider).selection();
+              widget.onScrollToLatest();
+            },
+          ),
+        ),
       ],
     );
   }
@@ -3938,6 +4878,15 @@ Future<void> _showEditDialog(
             controller: controller,
             maxLines: null,
             autofocus: true,
+            inputFormatters: [
+              RuneLengthLimitingTextInputFormatter(
+                Message.maxContentRunes,
+                onTruncated:
+                    () => dialogContext.showWarningSnackbar(
+                      overLimitPasteNotice(),
+                    ),
+              ),
+            ],
           ),
           actions: [
             TextButton(
@@ -3945,8 +4894,16 @@ Future<void> _showEditDialog(
               child: const Text('Cancel'),
             ),
             TextButton(
-              onPressed:
-                  () => Navigator.of(dialogContext).pop(controller.text.trim()),
+              onPressed: () {
+                final edited = controller.text.trim();
+                // Programmatic or pre-existing over-limit text: keep the
+                // dialog open with the text intact rather than failing later.
+                if (edited.isNotEmpty && !Message.isValidContent(edited)) {
+                  dialogContext.showErrorSnackbar(tooLongMessageNotice());
+                  return;
+                }
+                Navigator.of(dialogContext).pop(edited);
+              },
               child: const Text('Save'),
             ),
           ],
@@ -4023,9 +4980,10 @@ Future<void> _showEditHistorySheet(
                   (entry) => ListTile(
                     title: Text(entry.previousContent),
                     subtitle: Text(
-                      DateFormat.yMMMd(
-                        Localizations.localeOf(builderContext).toString(),
-                      ).add_jm().format(entry.editedAt),
+                      MyDateFormat.join([
+                        MyDateFormat.toDate(entry.editedAt),
+                        MyDateFormat.toTime(entry.editedAt),
+                      ]),
                     ),
                   ),
                 ),

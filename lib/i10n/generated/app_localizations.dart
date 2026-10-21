@@ -640,7 +640,7 @@ abstract class AppLocalizations {
   /// Welcome text for guest users on the login profile screen
   ///
   /// In en, this message translates to:
-  /// **'You are browsing {appName} as a guest. Log in or create an account to start managing your shop — it takes less than 5 seconds. We have a variety of tools to help grow your business, all free of charge.'**
+  /// **'You're browsing {appName} as a guest. Sign in with your phone number to start your shared space with your partner — it takes a few seconds.'**
   String authGuestOverview(String appName);
 
   /// Main title on the intro screen with app name

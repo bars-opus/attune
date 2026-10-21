@@ -13,6 +13,7 @@ import 'package:attune/features/chat/domain/entities/conversation.dart';
 import 'package:attune/features/chat/presentation/screens/chat_screen.dart';
 import 'package:attune/features/chat/presentation/widgets/reply_composer_preview.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:animated_emoji/animated_emoji.dart';
 import 'package:attune/features/chat/presentation/widgets/message_bubble.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -201,6 +202,105 @@ void main() {
     // explicit back button in that exact corner.
     await tester.tapAt(const Offset(400, 1350));
     await tester.pump(const Duration(milliseconds: 400));
+    await tearDownChat(tester, container);
+  });
+
+  testWidgets(
+    'long-press on a link still opens the menu, and Copy link copies it (#37)',
+    (tester) async {
+      final copied = <String>[];
+      tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        SystemChannels.platform,
+        (call) async {
+          if (call.method == 'Clipboard.setData') {
+            copied.add((call.arguments as Map)['text'] as String);
+          }
+          return null;
+        },
+      );
+      addTearDown(
+        () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+          SystemChannels.platform,
+          null,
+        ),
+      );
+      final repo = FakeChatRepository(currentUserId: 'user-a');
+      repo.seedIncoming(
+        id: 'm-plain',
+        relationshipId: 'rel-1',
+        senderId: 'partner',
+        content: 'no link in this one',
+        createdAt: DateTime.now().subtract(const Duration(minutes: 1)),
+      );
+      repo.seedIncoming(
+        id: 'm-link',
+        relationshipId: 'rel-1',
+        senderId: 'partner',
+        content: 'dinner here www.example.com/menu tonight?',
+        createdAt: DateTime.now(),
+      );
+      final container = await pumpChat(tester, repo);
+
+      await tester.longPress(find.text('no link in this one'));
+      await tester.pump(const Duration(milliseconds: 400));
+      expect(find.text('Copy'), findsOneWidget);
+      expect(find.text('Copy link'), findsNothing);
+      await tester.tapAt(const Offset(400, 1350));
+      await tester.pump(const Duration(milliseconds: 400));
+
+      await tester.longPress(
+        find.text('dinner here www.example.com/menu tonight?'),
+      );
+      await tester.pump(const Duration(milliseconds: 400));
+      expect(find.text('Copy'), findsOneWidget);
+      expect(find.text('Copy link'), findsOneWidget);
+
+      await tester.tap(find.text('Copy link'));
+      await tester.pump(const Duration(milliseconds: 400));
+      expect(copied, ['https://www.example.com/menu']);
+      expect(find.text('Link copied'), findsOneWidget);
+
+      await tester.pump(const Duration(seconds: 5));
+      await tearDownChat(tester, container);
+    },
+  );
+
+  testWidgets('Copy link copies the link as typed, not percent-encoded', (
+    tester,
+  ) async {
+    final copied = <String>[];
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+      SystemChannels.platform,
+      (call) async {
+        if (call.method == 'Clipboard.setData') {
+          copied.add((call.arguments as Map)['text'] as String);
+        }
+        return null;
+      },
+    );
+    addTearDown(
+      () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        SystemChannels.platform,
+        null,
+      ),
+    );
+    final repo = FakeChatRepository(currentUserId: 'user-a');
+    repo.seedIncoming(
+      id: 'm-cafe',
+      relationshipId: 'rel-1',
+      senderId: 'partner',
+      content: 'try https://example.com/café today',
+      createdAt: DateTime.now(),
+    );
+    final container = await pumpChat(tester, repo);
+
+    await tester.longPress(find.text('try https://example.com/café today'));
+    await tester.pump(const Duration(milliseconds: 400));
+    await tester.tap(find.text('Copy link'));
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(copied, ['https://example.com/café']);
+
+    await tester.pump(const Duration(seconds: 5));
     await tearDownChat(tester, container);
   });
 
@@ -605,7 +705,8 @@ void main() {
     expect(repo.editMessageCalls.single.messageId, 'm1');
     expect(repo.editMessageCalls.single.newContent, 'the typo');
     expect(find.text('the typo'), findsOneWidget);
-    expect(find.text('edited'), findsNothing);
+    // f29007b6 asserted the label was absent; that WAS the regression.
+    expect(find.text('edited'), findsOneWidget);
 
     // Dismisses the menu via its own barrierDismissible tap-outside
     // handler (focused_action_menu.dart) — a point far from both the

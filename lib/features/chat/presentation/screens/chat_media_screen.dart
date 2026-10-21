@@ -2,6 +2,7 @@ import 'package:attune/core/utils/exports/export_screens.dart';
 import 'package:attune/features/chat/domain/entities/conversation.dart';
 import 'package:attune/features/chat/domain/entities/message.dart';
 import 'package:attune/features/chat/presentation/state/chat_state.dart';
+import 'package:attune/features/chat/presentation/widgets/message_status_rule.dart';
 import 'package:attune/features/chat/presentation/widgets/resolved_media_url.dart';
 import 'package:attune/features/chat/presentation/widgets/voice_message_player.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -222,13 +223,31 @@ class _MediaGridTile extends StatelessWidget {
           color: Theme.of(context).colorScheme.onErrorContainer,
         ),
       ),
+      // A broken video poster still opens the video on tap; a broken photo
+      // is the retry button.
+      retryOnTap: message.mediaType != 'video',
+      retryLabel: "Photo didn't load. Tap to retry",
+      // Decoded at the tile's size, in memory only (the viewer shares the
+      // disk entry): a full-size photo behind every tile adds up fast.
       builder:
-          (context, url) => CachedNetworkImage(
+          (context, url) => LayoutBuilder(
+            builder: (context, constraints) {
+              final decode = thumbnailDecodeSize(
+                displayPx:
+                    (constraints.maxWidth *
+                            MediaQuery.devicePixelRatioOf(context))
+                        .round(),
+                mediaWidth: message.mediaWidth,
+                mediaHeight: message.mediaHeight,
+              );
+              return CachedNetworkImage(
             imageUrl: url,
             cacheKey:
                 message.mediaType == 'video'
                     ? message.mediaThumbnailKey
                     : message.mediaKey,
+            memCacheWidth: decode.width,
+            memCacheHeight: decode.height,
             fit: BoxFit.cover,
             placeholder:
                 (context, url) => Container(
@@ -242,6 +261,8 @@ class _MediaGridTile extends StatelessWidget {
                     color: Theme.of(context).colorScheme.onErrorContainer,
                   ),
                 ),
+              );
+            },
           ),
     );
 
@@ -328,6 +349,15 @@ class _AudioListTabState extends ConsumerState<_AudioListTab>
                   VoiceMessagePlayer(
                     key: ValueKey(message.clientMessageId),
                     messageId: message.clientMessageId,
+                    // Owned by this conversation, so leaving the chat stops
+                    // it like any other of its notes.
+                    ownerId: message.relationshipId,
+                    // A realtime hard delete names only the server id.
+                    serverMessageId: message.id,
+                    // Played from ChatMediaCache when the bytes are on disk;
+                    // otherwise this URL is downloaded there once (an
+                    // expired token is re-signed by the cache).
+                    mediaKey: message.mediaKey,
                     // Already resolved on this screen, so the resolver is
                     // just the value it holds.
                     resolveAudioUrl: () async => audioUrl,

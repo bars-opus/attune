@@ -1,4 +1,5 @@
 // lib/features/reflection_journal/presentation/screens/reflection_journal_screen.dart
+import 'package:attune/core/widgets/app_content_width.dart';
 import 'package:attune/app/documentations/user_manual/data/reflection_journal_docs.dart';
 import 'package:attune/core/utils/exports/export_screens.dart';
 import 'package:attune/core/notes/note_date_sections.dart';
@@ -161,7 +162,10 @@ class _EntriesTab extends ConsumerWidget {
           child: RefreshIndicator(
             onRefresh: () => ref.read(journalListProvider.notifier).refresh(),
             child: ListView(
-              padding: const EdgeInsets.only(bottom: 96),
+              padding: AppContentWidth.padded(
+                context,
+                const EdgeInsets.only(bottom: 96),
+              ),
               children: [
                 if (s.pinned.isNotEmpty) section('Pinned', s.pinned),
                 for (final g in noteDateSections(s.entries, (e) => e.createdAt, now)) section(g.title, g.items),

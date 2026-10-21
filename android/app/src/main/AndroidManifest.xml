@@ -42,9 +42,11 @@
     <!-- Networking (Supabase, media upload/download, Claude API). -->
     <uses-permission android:name="android.permission.INTERNET"/>
 
-    <!-- onesignal_flutter, which calls OneSignal.Notifications
-         .requestPermission() on startup (OneSignalService). Required from
-         Android 13 (API 33) onward. -->
+    <!-- onesignal_flutter: OneSignalService asks for notification permission
+         after sign-in, with the app open (OneSignal.Notifications
+         .requestPermission). Required from Android 13 (API 33) onward;
+         without it the dialog never appears and the OS treats the app as
+         notifications-off. -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
 
     <!-- Together free time: busy times only, never titles (device_calendar_plus).

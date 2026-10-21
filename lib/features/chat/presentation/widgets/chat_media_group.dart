@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:attune/core/ui/motion/shimmer.dart';
 import 'package:attune/core/widgets/media/stacked_media_cards.dart';
 import 'package:attune/features/chat/domain/entities/message.dart';
+import 'package:attune/features/chat/presentation/widgets/message_status_rule.dart';
 import 'package:attune/features/chat/presentation/widgets/resolved_media_url.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
@@ -232,10 +233,24 @@ class _MediaPoster extends StatelessWidget {
         message.hasVideo ? message.signedThumbnailUrl : message.signedMediaUrl;
     final mediaKey =
         message.hasVideo ? message.mediaThumbnailKey : message.mediaKey;
+    // Tiles are 238x300 pt: decode the side BoxFit.cover is bound by (the
+    // width for a photo narrower than the tile), so it never upscales. No
+    // LayoutBuilder - the bubble sits under IntrinsicWidth.
+    final dpr = MediaQuery.devicePixelRatioOf(context);
+    final decode = thumbnailDecodeSize(
+      displayPx: (238 * dpr).round(),
+      displayHeightPx: (300 * dpr).round(),
+      mediaWidth: message.mediaWidth,
+      mediaHeight: message.mediaHeight,
+    );
 
     if (localPath != null) {
-      return Image.file(
-        File(localPath),
+      return Image(
+        image: ResizeImage(
+          FileImage(File(localPath)),
+          width: decode.width,
+          height: decode.height,
+        ),
         fit: BoxFit.cover,
         errorBuilder: (_, __, ___) => const _PosterFallback(),
       );
@@ -246,10 +261,17 @@ class _MediaPoster extends StatelessWidget {
       mediaKey: mediaKey,
       loading: const Shimmer(sweeps: null, child: _PosterFallback()),
       error: const _PosterFallback(),
+      // A broken video poster still opens the video on tap, as in the
+      // single-video bubble; a broken photo is the retry button.
+      retryOnTap: !message.hasVideo,
+      retryLabel: "Photo didn't load. Tap to retry",
       builder:
           (context, url) => CachedNetworkImage(
             imageUrl: url,
             cacheKey: mediaKey,
+            // In-memory decode only; the viewer shares the disk entry.
+            memCacheWidth: decode.width,
+            memCacheHeight: decode.height,
             fit: BoxFit.cover,
             fadeInDuration: const Duration(milliseconds: 150),
             placeholder:

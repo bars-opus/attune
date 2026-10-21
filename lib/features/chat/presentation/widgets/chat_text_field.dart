@@ -12,6 +12,8 @@ import 'package:attune/core/ui/motion/scale_pop.dart';
 import 'package:attune/core/utils/exports/export_screens.dart';
 import 'package:permission_handler/permission_handler.dart';
 
+import 'package:attune/features/chat/domain/entities/message.dart';
+import 'package:attune/features/chat/presentation/widgets/rune_length_limiting_formatter.dart';
 import 'voice_recording_bar.dart';
 import 'voice_recording_scrim.dart';
 import 'package:attune/features/chat/presentation/widgets/voice_mic_halo.dart';
@@ -669,6 +671,21 @@ class _ChatAttachCloseButton extends StatelessWidget {
 class _ChatTextFieldState extends State<ChatTextField>
     with TickerProviderStateMixin {
   int _sendPulse = 0;
+
+  /// One instance per field: it remembers whether the person was already
+  /// told during this at-limit episode, so rapid keystrokes at the limit
+  /// show a single notice.
+  late final RuneLengthLimitingTextInputFormatter _limitFormatter =
+      RuneLengthLimitingTextInputFormatter(
+        Message.maxContentRunes,
+        onTruncated: _onDraftTruncated,
+      );
+
+  void _onDraftTruncated() {
+    if (!mounted) return;
+    context.showWarningSnackbar(overLimitPasteNotice());
+  }
+
   VoiceRecorderService? _recorder;
   bool _isRecording = false;
 
@@ -1520,7 +1537,11 @@ class _ChatTextFieldState extends State<ChatTextField>
                 final verticalPadding = 2.0 + (6.0 * expansion);
                 final textVerticalPadding = Spacing.sm + (2.0 * expansion);
 
-                return AnimatedSize(
+                // No AnimatedSize at all under reduce motion: with a zero
+                // duration inside this LayoutBuilder it resizes during its
+                // own layout and trips the framework's "mutated in its own
+                // performLayout" assert.
+                return _AnimatedSizeUnlessInstant(
                   duration:
                       reduceMotion
                           ? Duration.zero
@@ -1553,6 +1574,7 @@ class _ChatTextFieldState extends State<ChatTextField>
                         Expanded(
                           child: TextField(
                             key: widget.composerTextKey,
+                            inputFormatters: [_limitFormatter],
                             controller: widget.controller,
                             focusNode: widget.focusNode,
                             enabled: widget.enabled,
@@ -1719,6 +1741,34 @@ class _ChatTextFieldState extends State<ChatTextField>
       child: TextFieldTapRegion(
         child: IgnorePointer(ignoring: _isRecording, child: composer),
       ),
+    );
+  }
+}
+
+/// [AnimatedSize], or just [child] when [duration] is zero (reduce motion):
+/// a zero-duration AnimatedSize still resizes inside its own layout, which
+/// the framework asserts against when its parent is a LayoutBuilder.
+class _AnimatedSizeUnlessInstant extends StatelessWidget {
+  const _AnimatedSizeUnlessInstant({
+    required this.duration,
+    required this.curve,
+    required this.alignment,
+    required this.child,
+  });
+
+  final Duration duration;
+  final Curve curve;
+  final AlignmentGeometry alignment;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    if (duration == Duration.zero) return child;
+    return AnimatedSize(
+      duration: duration,
+      curve: curve,
+      alignment: alignment,
+      child: child,
     );
   }
 }

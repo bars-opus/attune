@@ -171,6 +171,7 @@ class _ZoomableImageState extends State<_ZoomableImage>
                         child: CircularProgressIndicator(color: Colors.white),
                       ),
                       error: const _ViewerError(),
+                      retryLabel: "Photo didn't load. Tap to retry",
                       builder:
                           (context, url) => CachedNetworkImage(
                             imageUrl: url,
@@ -199,10 +200,21 @@ class _ViewerError extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const Icon(
-      Icons.broken_image_outlined,
-      color: Colors.white54,
-      size: 64,
+    // A real tile, not a bare icon: it is the tap-to-retry target when the
+    // photo cannot be signed, and carries the retry glyph in its corner.
+    return Container(
+      width: 160,
+      height: 160,
+      decoration: BoxDecoration(
+        color: Colors.white10,
+        borderRadius: BorderRadius.circular(16),
+      ),
+      alignment: Alignment.center,
+      child: const Icon(
+        Icons.broken_image_outlined,
+        color: Colors.white54,
+        size: 64,
+      ),
     );
   }
 }

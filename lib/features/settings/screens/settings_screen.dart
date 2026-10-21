@@ -1,4 +1,5 @@
 // lib/features/settings/screens/settings_screen.dart
+import 'package:attune/core/widgets/app_content_width.dart';
 import 'package:attune/features/appreciation/data/appreciation_service.dart';
 import 'package:attune/features/quiet_states/presentation/quiet_state_providers.dart';
 import 'package:attune/features/appreciation/data/thankful_phrasing_preference.dart';
@@ -110,6 +111,55 @@ class SettingsScreen extends ConsumerWidget {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
 
+    // How chat feels: sounds, motion and phrasing, on this device. A settings
+    // card like the rest, high up (right under the profile).
+    final expressive = ref.watch(chatExpressivenessProvider) == ChatExpressiveness.expressive;
+    final thankful = ref.watch(thankfulPhrasingProvider);
+    final chatFeel = SettingsSection(
+      id: 'chat_feel',
+      title: 'Chat feel',
+      items: [
+        SettingsConfig(
+          id: 'message_sounds',
+          rowKey: const ValueKey('message_sounds_switch'),
+          title: 'Message sounds',
+          subtitle: 'Play a sound when you send or receive a message',
+          icon: Icons.volume_up_outlined,
+          type: SettingsItemType.toggle,
+          value: ref.watch(messageSoundsEnabledProvider),
+          onToggle: (_) => ref.read(messageSoundsEnabledProvider.notifier).toggle(),
+          iconColor: Colors.teal,
+        ),
+        SettingsConfig(
+          id: 'expressive_moments',
+          rowKey: const ValueKey('expressive_moments_switch'),
+          title: 'Expressive moments',
+          subtitle: 'A little more life in chat animations. Off keeps things calm.',
+          icon: Icons.auto_awesome_outlined,
+          type: SettingsItemType.toggle,
+          value: expressive,
+          onToggle: (v) => ref
+              .read(chatExpressivenessProvider.notifier)
+              .setExpressiveness(v ? ChatExpressiveness.expressive : ChatExpressiveness.calm),
+          iconColor: Colors.amber,
+        ),
+        // Spec 7 (P2): the gentler phrasing, only while "I noticed…" notes
+        // are on (final review I-2).
+        if (ref.watch(appreciationEnabledProvider).valueOrNull ?? false)
+          SettingsConfig(
+            id: 'thankful_phrasing',
+            rowKey: const ValueKey('thankful_phrasing_switch'),
+            title: '"Thankful for you" phrasing',
+            subtitle: 'Also offer "Thankful for you because…" when you write an I noticed note.',
+            icon: Icons.eco_outlined,
+            type: SettingsItemType.toggle,
+            value: thankful,
+            onToggle: (v) => ref.read(thankfulPhrasingProvider.notifier).set(v),
+            iconColor: Colors.green,
+          ),
+      ],
+    );
+
     // Dynamically load settings sections based on context
     final sections = SettingsDataSource.getSettingsSections(
       context,
@@ -118,6 +168,7 @@ class SettingsScreen extends ConsumerWidget {
       quietStatesOn: ref.watch(quietStatesEnabledProvider).valueOrNull ?? false,
       // Spec 8 (B10): placeholder content stays closed while its flag is off.
       outsidePerspectiveOn: ref.watch(outsidePerspectiveEnabledProvider),
+      chatFeel: chatFeel,
     );
 
     // Access localization for language prefence
@@ -140,6 +191,8 @@ class SettingsScreen extends ConsumerWidget {
       // CustomScrollView enables smooth scrolling with sliver-based optimization
       body: CustomScrollView(
         slivers: [
+          // On an iPad the cards sit in a centred column, as in Health.
+          AppContentSliver(slivers: [
           // Dynamically generate sliver lists for each settings section
           // Using spread operator to flatten list of SliverList widgets
           ...sections.map((section) {
@@ -215,132 +268,6 @@ class SettingsScreen extends ConsumerWidget {
             );
           }).toList(),
 
-          // "Chat feel" section header, styled to match the dynamic section
-          // titles rendered above (same Padding/Text style).
-          SliverToBoxAdapter(
-            child: Padding(
-              padding: EdgeInsets.fromLTRB(
-                Spacing.lg.w, // Left
-                0, // Top
-                Spacing.lg.w, // Right
-                0, // Bottom (no bottom padding)
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Chat feel',
-                    style: theme.textTheme.titleSmall?.copyWith(
-                      fontWeight: FontWeight.w600,
-                      color: colorScheme.onSurface.withOpacity(0.8),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-
-          // "Message sounds" toggle row, styled to match the section pattern
-          // above. Wrapped in a Consumer (not a full ConsumerWidget) to keep
-          // this screen's StatelessWidget signature unchanged.
-          SliverToBoxAdapter(
-            child: Padding(
-              padding: Spacing.allMd,
-              child: Consumer(
-                builder: (context, ref, _) => CardInkWell(
-                  margin: EdgeInsets.zero,
-                  onTap: () =>
-                      ref.read(messageSoundsEnabledProvider.notifier).toggle(),
-                  child: SwitchListTile(
-                    key: const ValueKey('message_sounds_switch'),
-                    title: const Text('Message sounds'),
-                    subtitle: const Text(
-                      'Play a sound when you send or receive a message',
-                    ),
-                    secondary: const Icon(Icons.volume_up_outlined),
-                    value: ref.watch(messageSoundsEnabledProvider),
-                    onChanged: (_) => ref
-                        .read(messageSoundsEnabledProvider.notifier)
-                        .toggle(),
-                  ),
-                ),
-              ),
-            ),
-          ),
-
-          // "Expressive moments" toggle row, sibling to the sounds row under
-          // the same "Chat feel" section header.
-          SliverToBoxAdapter(
-            child: Padding(
-              padding: Spacing.allMd,
-              child: Consumer(
-                builder: (context, ref, _) {
-                  final expressive = ref.watch(chatExpressivenessProvider) ==
-                      ChatExpressiveness.expressive;
-                  return CardInkWell(
-                    margin: EdgeInsets.zero,
-                    onTap: () => ref
-                        .read(chatExpressivenessProvider.notifier)
-                        .setExpressiveness(
-                          expressive
-                              ? ChatExpressiveness.calm
-                              : ChatExpressiveness.expressive,
-                        ),
-                    child: SwitchListTile(
-                      key: const ValueKey('expressive_moments_switch'),
-                      title: const Text('Expressive moments'),
-                      subtitle: const Text(
-                        'A little more life in chat animations. Off keeps things calm.',
-                      ),
-                      secondary: const Icon(Icons.auto_awesome_outlined),
-                      value: expressive,
-                      onChanged: (v) => ref
-                          .read(chatExpressivenessProvider.notifier)
-                          .setExpressiveness(
-                            v
-                                ? ChatExpressiveness.expressive
-                                : ChatExpressiveness.calm,
-                          ),
-                    ),
-                  );
-                },
-              ),
-            ),
-          ),
-          // Spec 7 (P2): the gentler "Thankful for you because…" phrasing,
-          // on this device only.
-          SliverToBoxAdapter(
-            child: Padding(
-              padding: Spacing.horizontalMd,
-              child: Consumer(
-                builder: (context, ref, _) {
-                  // Only while "I noticed…" notes are on (final review I-2).
-                  if (!(ref.watch(appreciationEnabledProvider).valueOrNull ??
-                      false)) {
-                    return const SizedBox.shrink();
-                  }
-                  final on = ref.watch(thankfulPhrasingProvider);
-                  return CardInkWell(
-                    margin: EdgeInsets.zero,
-                    onTap: () =>
-                        ref.read(thankfulPhrasingProvider.notifier).set(!on),
-                    child: SwitchListTile(
-                      key: const ValueKey('thankful_phrasing_switch'),
-                      title: const Text('"Thankful for you" phrasing'),
-                      subtitle: const Text(
-                        'Also offer "Thankful for you because…" when you write an I noticed note.',
-                      ),
-                      secondary: const Icon(Icons.eco_outlined),
-                      value: on,
-                      onChanged: (v) =>
-                          ref.read(thankfulPhrasingProvider.notifier).set(v),
-                    ),
-                  );
-                },
-              ),
-            ),
-          ),
-
           // App information footer (non-scrollable box adapter)
           SliverToBoxAdapter(
             child: Padding(
@@ -373,6 +300,7 @@ class SettingsScreen extends ConsumerWidget {
               ),
             ),
           ),
+          ]),
         ],
       ),
     );

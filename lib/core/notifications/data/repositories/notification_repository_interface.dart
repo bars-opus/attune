@@ -21,15 +21,9 @@ abstract class NotificationRepositoryInterface {
     String priority = 'normal',
   });
 
-  /// Save a push token for a user
-  Future<void> savePushToken({
-    required String userId,
-    required String token,
-    required String platform,
-  });
-
-  /// Remove/disable a push token
-  Future<void> removePushToken(String token);
+  // Push device registration is not here: push_tokens is closed to
+  // clients and written only through register_push_subscription /
+  // unregister_push_subscription (PushSubscriptionRegistry, chat review #18).
 
   /// Get all in-app notifications for a user
   Future<List<AppNotification>> getUserNotifications(String userId);

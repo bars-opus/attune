@@ -9,6 +9,7 @@ import 'package:attune/core/providers/routing_providers.dart';
 import 'package:attune/core/providers/theme_provider.dart';
 import 'package:attune/core/ui/feedback/sound_service.dart';
 import 'package:attune/core/utils/screen_util_config.dart';
+import 'package:attune/features/chat/presentation/state/chat_outbox_drainer.dart';
 import 'package:attune/features/couple_map/widget/presentation/couple_widget_publisher.dart';
 import 'package:attune/i10n/generated/app_localizations.dart';
 import 'package:flutter/material.dart';
@@ -42,6 +43,12 @@ class _AppState extends ConsumerState<App> {
     Future.microtask(() {
       if (!mounted) return;
       ref.read(oneSignalServiceProvider).initialize();
+    });
+    // Sends what was typed offline for chats that are not open, on resume and
+    // when connectivity returns (chat W1a #1).
+    Future.microtask(() {
+      if (!mounted) return;
+      ref.read(chatOutboxDrainerProvider);
     });
     // The home-screen distance widget: costs nothing unless opted in.
     Future.microtask(() {

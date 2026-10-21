@@ -39,3 +39,9 @@ const Duration kShimmerSweepExpressive = Duration(milliseconds: 1100);
 /// Reconnect-cascade stagger step per list position (clamped at call site).
 const int kCascadeStepCalmMs = 35;
 const int kCascadeStepExpressiveMs = 70;
+
+/// How long after a message arrives its one-time arrival animation may still
+/// play. A row first built later than this (the reader was scrolled up, in a
+/// game, or backgrounded) is simply there — iMessage never replays an arrival
+/// minutes late under your finger.
+const Duration kArrivalAnimationWindow = Duration(milliseconds: 1500);

@@ -589,14 +589,21 @@ class PlanningCategoryTitle extends StatelessWidget {
     super.key,
     required this.categoryId,
     required this.name,
+    this.icon,
+    this.color,
   });
   final String categoryId;
   final String name;
 
+  /// With both, the category's icon in its colour sits before the name, as
+  /// on its row in Planning. Outside the Hero: only the name flies.
+  final String? icon;
+  final String? color;
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return PlanningCategoryHero(
+    final title = PlanningCategoryHero(
       categoryId: categoryId,
       title: Text(
         name,
@@ -607,6 +614,25 @@ class PlanningCategoryTitle extends StatelessWidget {
           color: theme.colorScheme.onSurface.withValues(alpha: 0.8),
         ),
       ),
+    );
+    if (icon == null || color == null) return title;
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        ExcludeSemantics(
+          child: CircleAvatar(
+            radius: 14,
+            backgroundColor: planningCategoryFill(context, color!),
+            child: Icon(
+              planningIcon(icon!),
+              size: 16,
+              color: theme.colorScheme.background, // ignore: deprecated_member_use
+            ),
+          ),
+        ),
+        const SizedBox(width: Spacing.sm),
+        Flexible(child: title),
+      ],
     );
   }
 }

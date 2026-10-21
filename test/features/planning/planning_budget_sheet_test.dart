@@ -8,6 +8,7 @@ import 'package:attune/features/planning/presentation/screens/planning_entry_scr
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:attune/features/planning/presentation/widgets/planning_progress_bar.dart';
 import 'support/fake_planning_gateway.dart';
 import 'support/planning_test_app.dart';
 
@@ -109,8 +110,13 @@ void main() {
         }),
         _screen));
     await tester.pumpAndSettle();
-    final scheme = Theme.of(tester.element(find.byType(LinearProgressIndicator))).colorScheme;
-    expect(tester.widget<LinearProgressIndicator>(find.byType(LinearProgressIndicator)).backgroundColor,
-        scheme.primary.withValues(alpha: 0.18));
+    // The goal bar (PlanningProgressBar): the track is the same light primary.
+    final bar = find.byType(PlanningProgressBar);
+    final scheme = Theme.of(tester.element(bar)).colorScheme;
+    final colours = [
+      for (final e in find.descendant(of: bar, matching: find.byType(ColoredBox)).evaluate()) (e.widget as ColoredBox).color,
+    ];
+    expect(colours, contains(scheme.primary.withValues(alpha: 0.18)));
+    expect(colours, contains(scheme.primary));
   });
 }

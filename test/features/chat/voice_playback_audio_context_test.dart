@@ -1,60 +1,47 @@
 import 'dart:io';
 
+import 'package:attune/core/ui/feedback/audio_session.dart';
+import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
-  test('the voice player sets a playback audio context of its own', () {
-    // SoundService calls AudioPlayer.global.setAudioContext with
-    // respectSilence:true, which on iOS is AVAudioSessionCategory.ambient
-    // — muted by the Ring/Silent switch. That call is PROCESS-WIDE, so it
-    // applies to voice messages too, and a voice note played silently.
-    //
-    // UI chirps genuinely should respect the silent switch; a voice
-    // message a user deliberately tapped should not. The player therefore
-    // needs its own per-player context rather than inheriting the global.
-    final player =
+  test('the voice controller borrows the session instead of setting a '
+      'context', () {
+    // One owner for the audio session. A per-player playback context on iOS
+    // is applied to the SHARED AVAudioSession and nothing restored ambient,
+    // so one voice note broke every later chirp's silent-switch behaviour.
+    final controllerSrc =
         File(
-          'lib/features/chat/presentation/widgets/voice_message_player.dart',
+          'lib/features/chat/presentation/state/voice_playback_controller.dart',
         ).readAsStringSync();
-
-    expect(
-      player,
-      contains('setAudioContext'),
-      reason:
-          'without its own context the player inherits SoundService\'s '
-          'ambient category and plays silently',
-    );
-    expect(
-      player,
-      contains('respectSilence: false'),
-      reason: 'a deliberately-tapped voice note must play through silent mode',
-    );
+    expect(controllerSrc, isNot(contains('AudioContextConfig(')));
+    expect(controllerSrc, isNot(contains('respectSilence')));
+    expect(controllerSrc, contains('beginPlayback(_engine.setAudioContext)'));
+    expect(controllerSrc, contains('endPlayback'));
   });
 
-  test('SoundService still keeps UI chirps on the silent switch', () {
-    // The fix must not swing the other way: notification blips should stay
-    // muted when the phone is silenced.
-    final sound =
-        File('lib/core/ui/feedback/sound_service.dart').readAsStringSync();
-    expect(sound, contains('respectSilence: true'));
+  test('UI chirps stay on the silent switch and off other apps\' audio', () {
+    // The fix must not swing the other way: notification blips stay muted
+    // when the phone is silenced (iOS ambient), and never take Android
+    // audio focus.
+    expect(AppAudioContexts.chirp.iOS.category, AVAudioSessionCategory.ambient);
+    expect(AppAudioContexts.chirp.android.audioFocus, AndroidAudioFocus.none);
   });
 
   test('playback failures surface instead of reading as silence', () {
     // With no error handling a thrown play() — missing file, unsupported
     // codec, failed download — is indistinguishable from a silent one.
-    // That ambiguity is what made the ambient-category bug hard to place.
-    final player =
+    final controllerSrc =
         File(
-          'lib/features/chat/presentation/widgets/voice_message_player.dart',
+          'lib/features/chat/presentation/state/voice_playback_controller.dart',
         ).readAsStringSync();
-
     expect(
-      player,
+      controllerSrc,
       contains('catch'),
       reason: 'a failed play() must not look the same as a silent one',
     );
     expect(
-      player,
+      controllerSrc,
       isNot(contains('catch (_)')),
       reason: 'the cause has to reach the log, not be discarded',
     );

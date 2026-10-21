@@ -1,6 +1,8 @@
 import { serve } from "https://deno.land/std@0.177.0/http/server.ts";
 
-import { HttpError, jsonResponse, requireServiceRole, serviceRoleClient } from "../_shared/attune_auth.ts";
+import { HttpError, jsonResponse, requireEnv, requireServiceRole, serviceRoleClient } from "../_shared/attune_auth.ts";
+import { enqueuePush } from "../_shared/push_queue.ts";
+import { wakeScheduledSender } from "./dispatch.ts";
 
 const DEFAULT_LIMIT = 20;
 const MAX_ATTEMPTS = 5;
@@ -25,16 +27,16 @@ serve(async (req) => {
       limit: typeof body.limit === "number" ? body.limit : DEFAULT_LIMIT,
     });
 
-    const results = [];
-    for (const job of jobs) {
-      const claimed = await claimJob(supabase, String(job.id));
-      if (!claimed) continue;
-      results.push(await processJob(supabase, claimed));
-    }
+    const { results, wake } = await drainJobs(supabase, jobs, () =>
+      wakeScheduledSender({
+        supabaseUrl: requireEnv("SUPABASE_URL"),
+        serviceRoleKey: requireEnv("SUPABASE_SERVICE_ROLE_KEY"),
+      }));
 
     return jsonResponse({
       success: true,
       processed: results.length,
+      wake,
       results,
     });
   } catch (error) {
@@ -43,6 +45,30 @@ serve(async (req) => {
     return jsonResponse({ success: false, error: message }, status);
   }
 });
+
+/// Claims and processes each job, then -- only when at least one push was
+/// queued -- wakes the sender once (chat review #14: do not leave the push
+/// to the minute cron). A failed wake is reported, never thrown: the cron
+/// still sweeps the queued row.
+export async function drainJobs(
+  supabase: ReturnType<typeof serviceRoleClient>,
+  jobs: Record<string, unknown>[],
+  wake: () => Promise<"woken" | "failed">,
+) {
+  const results: Awaited<ReturnType<typeof processJob>>[] = [];
+  let queuedAny = false;
+  for (const job of jobs) {
+    const claimed = await claimJob(supabase, String(job.id));
+    if (!claimed) continue;
+    const result = await processJob(supabase, claimed);
+    results.push(result);
+    if (result.queued === true) queuedAny = true;
+  }
+
+  let woke: "woken" | "failed" | "not_needed" = "not_needed";
+  if (queuedAny) woke = await wake();
+  return { results, wake: woke };
+}
 
 async function loadJobs(
   supabase: ReturnType<typeof serviceRoleClient>,
@@ -96,7 +122,7 @@ async function claimJob(
   return data;
 }
 
-async function processJob(
+export async function processJob(
   supabase: ReturnType<typeof serviceRoleClient>,
   job: Record<string, unknown>,
 ) {
@@ -158,17 +184,13 @@ async function processJob(
 
     const { data: settings, error: settingsError } = await supabase
       .from("notification_settings")
-      .select("push_enabled, booking_reminders_enabled, chat_message_preview_enabled")
+      .select("push_enabled, chat_message_preview_enabled")
       .eq("user_id", recipientId)
       .maybeSingle();
 
     if (settingsError) throw settingsError;
 
-    if (
-      settings &&
-      (settings.push_enabled === false ||
-          settings.booking_reminders_enabled === false)
-    ) {
+    if (!chatPushAllowed(settings)) {
       // Deliberately NOT marked delivered. A recipient with push disabled
       // still receives the message, but nothing here observes their device
       // getting it -- their own client marks it delivered when it does.
@@ -204,7 +226,6 @@ async function processJob(
     const body = isReaction
       ? reactionBody(job, previewEnabled ? previewBody(message) : null)
       : (previewEnabled ? previewBody(message) : CHAT_PUSH_BODY);
-    const now = new Date().toISOString();
 
     const inAppResult = await supabase
       .from("in_app_notifications")
@@ -218,7 +239,9 @@ async function processJob(
           outbox_id: outboxId,
         },
       });
-    if (inAppResult.error) throw inAppResult.error;
+    // Chat review #17: a retry after this insert succeeded finds its own row
+    // (in_app_notifications_chat_outbox_idx) -- that is not an error.
+    if (inAppResult.error && inAppResult.error.code !== "23505") throw inAppResult.error;
 
     if (suppressPush) {
       // Suppressed because the recipient is actively viewing this
@@ -234,24 +257,18 @@ async function processJob(
       };
     }
 
-    const scheduledResult = await supabase
-      .from("scheduled_notifications")
-      .insert({
-        user_id: recipientId,
-        notification_type: "immediate",
-        scheduled_for: now,
-        status: "pending",
-        metadata: {
-          title,
-          body,
-          type: isReaction ? "message_reaction" : "new_message",
-          relationship_id: relationship.id,
-          outbox_id: outboxId,
-        },
-        created_at: now,
-        updated_at: now,
-      });
-    if (scheduledResult.error) throw scheduledResult.error;
+    // Chat review #17: keyed by the outbox id (scheduled_notifications_chat_
+    // outbox_idx); a retry after this insert finds its own row and moves on.
+    // Through enqueuePush so Spec 1b's guards and conventions apply; no
+    // sourceKey, which would opt the push out of the overnight collapse.
+    const queued = await enqueuePush(supabase, {
+      userId: recipientId,
+      type: isReaction ? "message_reaction" : "new_message",
+      title,
+      body,
+      data: { relationship_id: relationship.id, outbox_id: outboxId },
+      dedupedByData: true,
+    });
 
     // NOT marked delivered here. Queuing a push is not delivery: this
     // point is reached whether the recipient's device is reachable or
@@ -265,7 +282,12 @@ async function processJob(
     // looking at the conversation.
 
     await finalizeJob(supabase, outboxId, "done", null);
-    return { outbox_id: outboxId, status: "completed" };
+    // Plan 1b final review M2: an overnight message joined the 08:00 push
+    // (the quiet guard wrote no row): nothing is due now, so no wake.
+    if (!queued) {
+      return { outbox_id: outboxId, status: "completed", queued: false, push: "joined_overnight_push" };
+    }
+    return { outbox_id: outboxId, status: "completed", queued: true };
   } catch (error) {
     const code = errorCode(error);
     const nextState = attempts + 1 >= MAX_ATTEMPTS ? "dead_letter" : "pending";
@@ -303,6 +325,16 @@ async function finalizeJob(
 /// screens), is never pushed.
 export function messagePushable(message: Record<string, unknown>): boolean {
   return !message.deleted_at && message.is_system_notice !== true;
+}
+
+/// Chat review #16: a chat push is gated by the master switch only. The
+/// "Relationship Updates" toggle is about shared-activity pings (moments,
+/// plans), not messages from a partner; a person who turned it off kept
+/// losing message pushes and could not see why.
+export function chatPushAllowed(
+  settings: { push_enabled?: boolean | null } | null | undefined,
+): boolean {
+  return settings?.push_enabled !== false;
 }
 
 function previewBody(message: Record<string, unknown>) {

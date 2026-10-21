@@ -168,4 +168,30 @@ void main() {
       expect(message.isAttuneAssistOutput, isTrue);
     });
   });
+
+  group('Message.canEdit/canDelete — system notices (chat review #19)', () {
+    Message notice({required DateTime createdAt}) {
+      return Message.fromRow({
+        'id': 'n1',
+        'client_message_id': 'cn1',
+        'relationship_id': 'r1',
+        'sender_id': 'u1',
+        'content': 'Ama took a screenshot',
+        'created_at': createdAt.toIso8601String(),
+        'is_system_notice': true,
+      }, currentUserId: 'u1');
+    }
+
+    test(
+      'a notice attributed to me, inside the 5-minute window: neither editable nor deletable',
+      () {
+        final message = notice(
+          createdAt: DateTime.now().subtract(const Duration(minutes: 1)),
+        );
+        final now = DateTime.now();
+        expect(message.canEdit(currentUserId: 'u1', now: now), isFalse);
+        expect(message.canDelete(currentUserId: 'u1', now: now), isFalse);
+      },
+    );
+  });
 }

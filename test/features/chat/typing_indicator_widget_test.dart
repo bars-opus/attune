@@ -53,7 +53,9 @@ void main() {
         matching: find.byType(Padding),
       ).first,
     );
-    expect(padding.padding, const EdgeInsets.fromLTRB(16, 30, 16, 8));
+    // The list clears the measured overlay (#33), so no transparent 30px
+    // headroom above the bubble any more.
+    expect(padding.padding, const EdgeInsets.fromLTRB(16, 8, 16, 8));
 
     repo.emitPartnerTyping('partner', false);
     await tester.pump(const Duration(milliseconds: 60));

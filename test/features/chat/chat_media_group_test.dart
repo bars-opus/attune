@@ -1,10 +1,12 @@
 import 'package:attune/features/chat/domain/entities/message.dart';
+import 'package:attune/features/chat/presentation/state/chat_state.dart';
 import 'package:attune/features/chat/presentation/widgets/chat_media_group.dart';
 import 'package:attune/features/chat/presentation/widgets/message_bubble.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import '../../helpers/media_counter.dart';
+import 'support/chat_test_harness.dart';
 
 void main() {
   group('ChatMediaRunLayout', () {
@@ -69,9 +71,14 @@ void main() {
         _media('oldest', type: 'image', minute: 1),
       ];
       Message? opened;
+      // The photos must resolve: a tile whose URL cannot be signed is a
+      // tap-to-retry target (chat review #22), which would take this tap.
+      final repo = FakeChatRepository(currentUserId: 'me')
+        ..signMediaUrls = true;
 
       await tester.pumpWidget(
         ProviderScope(
+          overrides: [chatRepositoryProvider.overrideWithValue(repo)],
           child: MaterialApp(
             home: Scaffold(
               body: MessageBubble(
@@ -90,7 +97,12 @@ void main() {
       expect(mediaCounter('1 / 2'), findsOneWidget);
 
       await tester.drag(find.byType(PageView), const Offset(-230, 0));
-      await tester.pumpAndSettle();
+      // Bounded pumps, not pumpAndSettle: the resolved photos' loading
+      // shimmer repeats until the (test-binding) network load fails, so it
+      // never settles.
+      for (var i = 0; i < 10; i++) {
+        await tester.pump(const Duration(milliseconds: 100));
+      }
 
       expect(mediaCounter('2 / 2'), findsOneWidget);
 

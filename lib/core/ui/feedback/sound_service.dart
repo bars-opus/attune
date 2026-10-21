@@ -4,6 +4,8 @@ import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'package:attune/core/ui/feedback/audio_session.dart';
+
 /// Universal one-shot UI sounds. Content-blind — these are event sounds, not
 /// tied to any message/answer content. Any feature can add a value here.
 enum AppSound {
@@ -63,10 +65,22 @@ class FakeSoundService implements SoundService {
   void play(AppSound sound) => played.add(sound);
 }
 
-/// Real player. One preloaded AudioPlayer per sound. iOS uses the ambient audio
-/// context so the hardware silent switch / DND mute chat sounds automatically.
+/// Real player. One preloaded AudioPlayer per sound, on AppAudioContexts.chirp
+/// (no Android focus, iOS ambient) via the AudioSessionCoordinator.
 class AudioPlayerSoundService implements SoundService {
-  AudioPlayerSoundService();
+  AudioPlayerSoundService({
+    AudioSessionCoordinator? session,
+    AudioPlayer Function()? createPlayer,
+  }) : _session =
+           session ??
+           AudioSessionCoordinator(port: const AudioplayersSessionPort()),
+       _createPlayer = createPlayer ?? AudioPlayer.new;
+
+  /// Owns every audio-context decision; see AudioSessionCoordinator.
+  final AudioSessionCoordinator _session;
+
+  /// Test seam: a host with no audio plugin hands in a player double.
+  final AudioPlayer Function() _createPlayer;
 
   // AssetSource paths are relative to the `assets/` prefix already declared in
   // pubspec, so they start at `sounds/…`.
@@ -108,27 +122,33 @@ class AudioPlayerSoundService implements SoundService {
     if (_ready || _preloading) return;
     _preloading = true;
     try {
-      // respectSilence:true maps (on iOS) to AVAudioSessionCategory.ambient:
-      // silenced by the Ring/Silent switch and by screen locking, and does NOT
-      // interrupt other apps' (nonmixable) audio. That combination is exactly
-      // "silent switch mutes, don't interrupt other audio" — the ambient
-      // category already implies non-interruption, so no extra `focus` option
-      // is needed (and `mixWithOthers`/`duckOthers` are actually disallowed
-      // together with `respectSilence` by the package's own validation).
-      await AudioPlayer.global.setAudioContext(
-        AudioContextConfig(respectSilence: true).build(),
-      );
+      // Chirps never take Android audio focus and are ambient on iOS. The
+      // old respectSilence config helper silently defaulted to
+      // AUDIOFOCUS_GAIN, which stopped the person's music permanently.
+      await _session.applyChirpGlobalContext();
       for (final entry in _assets.entries) {
         // Per-asset guard: a missing clip (e.g. game_*.wav not yet added) loads
         // nothing for that key and is skipped, without aborting the others.
+        AudioPlayer? player;
         try {
-          final player =
-              AudioPlayer()
-                ..setReleaseMode(ReleaseMode.stop)
-                ..setPlayerMode(PlayerMode.lowLatency);
-          await player.setSource(AssetSource(entry.value));
-          _players[entry.key] = player;
+          final created = player = _createPlayer();
+          created
+            ..setReleaseMode(ReleaseMode.stop)
+            ..setPlayerMode(PlayerMode.lowLatency);
+          // Per player: on Android this is the context that actually
+          // governs focus and stream for this player.
+          await _session.configureChirpPlayer(created.setAudioContext);
+          await created.setSource(AssetSource(entry.value));
+          _players[entry.key] = created;
         } catch (_) {
+          // A player that got this far holds a native player: release it
+          // rather than leak one per failed clip.
+          final failed = player;
+          if (failed != null) {
+            unawaited(
+              Future.sync(failed.dispose).catchError((Object _) {}),
+            );
+          }
           if (kDebugMode) {
             debugPrint('[sound] ${entry.value} unavailable: silent no-op');
           }
@@ -156,7 +176,14 @@ class AudioPlayerSoundService implements SoundService {
     }
     final player = _players[sound];
     if (player == null) return;
-    player.seek(Duration.zero).then((_) => player.resume()).catchError((_) {});
+    // iOS re-asserts ambient before each chirp (AVAudioSession is global and
+    // a voice note / video may have moved it); Android is a no-op here.
+    // Future.sync: even a beforeChirp that throws synchronously lands in
+    // the catchError below rather than in the caller.
+    Future.sync(() => _session.beforeChirp(player.setAudioContext))
+        .then((_) => player.seek(Duration.zero))
+        .then((_) => player.resume())
+        .catchError((_) {});
   }
 
   void dispose() {
@@ -170,7 +197,9 @@ class AudioPlayerSoundService implements SoundService {
 /// Overridden in app startup / by the real impl. Now returns the real
 /// audioplayers-backed implementation.
 final soundServiceProvider = Provider<SoundService>((ref) {
-  final service = AudioPlayerSoundService();
+  final service = AudioPlayerSoundService(
+    session: ref.read(audioSessionProvider),
+  );
   ref.onDispose(service.dispose);
   return service;
 });

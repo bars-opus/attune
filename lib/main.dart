@@ -7,10 +7,13 @@ import 'package:attune/app/routing/routing_notifier.dart';
 import 'package:attune/core/config/env.dart';
 import 'package:attune/core/notifications/config/feature/notification_config.dart';
 import 'package:attune/core/notifications/config/notification_config.dart';
+import 'package:attune/core/notifications/services/onesignal_service.dart';
 import 'package:attune/core/providers/routing_providers.dart';
 import 'package:attune/core/providers/shared_prefs_provider.dart';
 import 'package:attune/core/services/shared_preferences_service.dart'
     hide preferencesServiceProvider;
+import 'package:attune/features/auth/providers/auth_provider.dart'
+    show SignOutHooks, signOutHooksProvider;
 import 'package:attune/features/chat/data/cache/chat_cache_service.dart';
 import 'package:attune/features/couple_map/widget/presentation/widget_deep_link.dart';
 import 'package:attune/features/location/presentation/providers/presence_providers.dart'
@@ -43,7 +46,15 @@ Future<void> main() async {
   await _initializeSupabase();
   _initializeDeepLinks();
   final chatCache = ChatCacheService();
-  await chatCache.init();
+  // init() recovers from a corrupt or locked store itself and bounds the
+  // keystore read; this outer bound is the last line: a cache can never
+  // hold the first frame (Spec 16). If it fires, init() keeps running in
+  // the background; until it finishes, cache reads miss.
+  try {
+    await chatCache.init().timeout(const Duration(seconds: 8));
+  } catch (error) {
+    debugPrint('[startup] chat cache unavailable: ${error.runtimeType}');
+  }
 
   final prefs = await SharedPreferences.getInstance();
   final routingNotifier = RoutingNotifier(
@@ -63,6 +74,16 @@ Future<void> main() async {
         chatCacheServiceProvider.overrideWithValue(chatCache),
         notificationConfigProvider.overrideWithValue(
           buildNanoEmbryoNotificationConfig(),
+        ),
+        // Chat review #18: every sign-out releases this phone's push
+        // subscription (the auth layer never imports the push plugin).
+        signOutHooksProvider.overrideWith(
+          (ref) => SignOutHooks(
+            beforeSignOut: () =>
+                ref.read(oneSignalServiceProvider).beforeSignOut(),
+            signOutFailed: () =>
+                ref.read(oneSignalServiceProvider).cancelRelease(),
+          ),
         ),
       ],
       child: const App(),

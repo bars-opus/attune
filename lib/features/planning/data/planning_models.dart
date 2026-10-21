@@ -161,9 +161,18 @@ class PlanningProgress {
     required this.total,
     required this.currency,
     this.checklistBlockId,
+    this.dateBlockId,
+    this.targetDate,
+    this.startedOn,
   });
 
   final String mode;
+
+  /// The Date block it's due by, that date, and when its plan began: what
+  /// its pace is worked out from. Null while there's no date.
+  final String? dateBlockId;
+  final DateTime? targetDate;
+  final DateTime? startedOn;
 
   /// In checklist mode, the checklist it tracks (null while there is none).
   final String? checklistBlockId;
@@ -488,6 +497,9 @@ class PlanningBlock {
           total: (computed['total'] as num?)?.toInt() ?? 0,
           currency: targetCurrency,
           checklistBlockId: computed['checklist_block_id'] as String?,
+          dateBlockId: computed['date_block_id'] as String?,
+          targetDate: _date(computed['target_date']),
+          startedOn: _date(computed['started_on']),
         )
       : null;
 

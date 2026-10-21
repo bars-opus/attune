@@ -1,3 +1,4 @@
+import 'package:attune/core/widgets/app_content_width.dart';
 import 'dart:async';
 import 'dart:typed_data';
 
@@ -272,7 +273,7 @@ class _JournalEntryScreenState extends ConsumerState<JournalEntryScreen> {
       keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.manual,
       scrollController: _doc.scroll,
       buildDefaultDragHandles: false,
-      padding: Spacing.horizontalMd,
+      padding: AppContentWidth.padded(context, Spacing.horizontalMd),
       header: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
         _TitleField(entryId: widget.entryId, detail: d),
         if (showPrompt)

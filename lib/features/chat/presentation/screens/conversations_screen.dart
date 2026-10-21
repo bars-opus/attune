@@ -1,4 +1,7 @@
+import 'package:attune/core/widgets/app_content_width.dart';
 import 'package:attune/features/chat/presentation/widgets/conversations_home_cards.dart';
+import 'package:attune/features/chat/presentation/widgets/reorderable_home_cards.dart';
+import 'package:attune/core/ui/motion/settle_in.dart';
 import 'package:attune/app/routing/app_router.dart';
 import 'package:attune/app/theme/app_theme.dart';
 import 'package:attune/core/utils/exports/export_screens.dart';
@@ -15,6 +18,13 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:attune/features/chat/domain/utils/conversation_preview.dart';
 
+/// Whether the cards have settled in this session: they do once, the first
+/// time the screen has its content, and never again until the app restarts.
+final conversationsSettledProvider = StateProvider<bool>((ref) => false);
+
+/// Each card settles a little after the one above (the Stagger timing).
+Duration _settleFor(int step) => Duration(milliseconds: 260 + 60 * step);
+
 class ConversationsScreen extends ConsumerWidget {
   const ConversationsScreen({super.key});
 
@@ -25,6 +35,15 @@ class ConversationsScreen extends ConsumerWidget {
     final conversationsAsync = ref.watch(conversationsProvider);
     final filtered = ref.watch(filteredConversationsProvider);
     final myId = ref.watch(currentUserProvider)?.id;
+    // First content this session: settle in, then never again (read, not
+    // watched, so marking it played doesn't rebuild the screen).
+    final settle = conversationsAsync.hasValue && !ref.read(conversationsSettledProvider);
+    if (settle) {
+      final container = ProviderScope.containerOf(context, listen: false);
+      WidgetsBinding.instance.addPostFrameCallback(
+        (_) => container.read(conversationsSettledProvider.notifier).state = true,
+      );
+    }
 
     return Scaffold(
       backgroundColor: colorScheme.neutral,
@@ -88,7 +107,10 @@ class ConversationsScreen extends ConsumerWidget {
         child:
             conversationsAsync.hasValue
                 ? ListView(
-                  padding: const EdgeInsets.all(Spacing.md),
+                  padding: AppContentWidth.padded(
+                    context,
+                    const EdgeInsets.all(Spacing.md),
+                  ),
                   children: [
                     // Two story rings, above the conversation tile (spec
                     // §5.1). Needs an active relationship to know which
@@ -100,7 +122,10 @@ class ConversationsScreen extends ConsumerWidget {
                     // matching the "at most one active conversation"
                     // shape the rest of this screen already assumes.
                     if (filtered.isNotEmpty)
-                      StoryRingsRow(
+                      SettleIn(
+                        animate: settle,
+                        duration: _settleFor(0),
+                        child: StoryRingsRow(
                         relationshipId: filtered.first.relationshipId,
                         partnerId: filtered.first.partnerId,
                         partnerName: filtered.first.partnerName,
@@ -136,10 +161,14 @@ class ConversationsScreen extends ConsumerWidget {
                               isOwnReel: false,
                             ),
                       ),
+                      ),
                     // The current relationship's chat, or the empty-state
                     // prompt to start one — one card, since there's at most one
                     // active conversation to show (see filteredConversationsProvider).
-                    CardInkWell(
+                    SettleIn(
+                      animate: settle,
+                      duration: _settleFor(1),
+                      child: CardInkWell(
                       borderRadius: BorderRadiusTokens.floatingNavAll,
                       child:
                           filtered.isEmpty
@@ -162,10 +191,19 @@ class ConversationsScreen extends ConsumerWidget {
                                     ),
                               ),
                     ),
-                    // The two journals, each with its latest.
-                    const JournalsCard(),
-                    // Days together, and what's coming up.
-                    const TogetherCard(),
+                    ),
+                    // Below the chat, the cards are each person's to order:
+                    // long-press one to move it. The default: the two
+                    // journals (one card), then days together and what's
+                    // coming up. New cards join here, at the end.
+                    ReorderableHomeCards(
+                      animateIn: settle,
+                      firstStep: 2,
+                      cards: const [
+                        HomeCard(id: 'journals', label: 'Journals', child: JournalsCard()),
+                        HomeCard(id: 'together', label: 'Together', child: TogetherCard()),
+                      ],
+                    ),
                   ],
                 )
                 : conversationsAsync.hasError

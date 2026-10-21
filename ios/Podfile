@@ -78,7 +78,7 @@ post_install do |installer|
         'PERMISSION_PHOTOS_ADD_ONLY=1',
         # geolocator: optional partner location sharing (LocationService).
         'PERMISSION_LOCATION=1',
-        # onesignal_flutter requests notification permission on startup.
+        # onesignal_flutter asks for notification permission after sign-in (OneSignalService).
         'PERMISSION_NOTIFICATIONS=1',
       ]
     end

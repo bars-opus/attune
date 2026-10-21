@@ -120,6 +120,13 @@ class Message {
   final String? storyItemId;
   final DateTime? deletedAt;
   final DateTime? editedAt;
+
+  /// The row's server `updated_at`, present only on rows read with that
+  /// column (the changes-since read). Server-owned: the changes-since sync
+  /// cursor advances from this and nothing else, never from a device-stamped
+  /// [editedAt]/[deletedAt]/[viewedAt]. Not persisted in [toJson] — the
+  /// cursor has its own cache slot.
+  final DateTime? serverUpdatedAt;
   final Map<String, Set<String>> reactions;
 
   /// True while a video message's optimistic bubble is showing but the
@@ -136,6 +143,12 @@ class Message {
   /// (value/100).clamp(0.0, 1.0) reading of video_compress's progress
   /// channel. Null before the first progress callback fires.
   final double? compressProgress;
+
+  /// 0..1 while an upload attempt is moving bytes; null when no attempt is
+  /// in flight (before the first, after each one ends). Non-null and below
+  /// 1 is what draws the ring's cancel button. Only the optimistic row
+  /// carries it; the canonical row replaces it.
+  final double? uploadProgress;
 
   /// On-device path to a video's poster frame, set on the optimistic row so
   /// a just-sent video shows its real thumbnail immediately instead of a
@@ -182,9 +195,11 @@ class Message {
     this.storyItemId,
     this.deletedAt,
     this.editedAt,
+    this.serverUpdatedAt,
     this.reactions = const {},
     this.isPreparing = false,
     this.compressProgress,
+    this.uploadProgress,
     this.localThumbnailPath,
   }) : sortAt = sortAt ?? createdAt,
        presentationSortAt = presentationSortAt ?? sortAt ?? createdAt;
@@ -247,6 +262,7 @@ class Message {
       storyItemId: row['story_item_id'] as String?,
       deletedAt: _parseDateTime(row['deleted_at']),
       editedAt: _parseDateTime(row['edited_at']),
+      serverUpdatedAt: _parseDateTime(row['updated_at']),
     );
   }
 
@@ -340,9 +356,13 @@ class Message {
     String? storyItemId,
     DateTime? deletedAt,
     DateTime? editedAt,
+    DateTime? serverUpdatedAt,
     Map<String, Set<String>>? reactions,
     bool? isPreparing,
     double? compressProgress,
+    // Object? so an attempt that ended can clear it: pass null to clear,
+    // omit to keep (the same sentinel as [assistantPayload]).
+    Object? uploadProgress = _unset,
     String? localThumbnailPath,
   }) {
     return Message(
@@ -384,9 +404,14 @@ class Message {
       storyItemId: storyItemId ?? this.storyItemId,
       deletedAt: deletedAt ?? this.deletedAt,
       editedAt: editedAt ?? this.editedAt,
+      serverUpdatedAt: serverUpdatedAt ?? this.serverUpdatedAt,
       reactions: reactions ?? this.reactions,
       isPreparing: isPreparing ?? this.isPreparing,
       compressProgress: compressProgress ?? this.compressProgress,
+      uploadProgress:
+          identical(uploadProgress, _unset)
+              ? this.uploadProgress
+              : (uploadProgress as num?)?.toDouble(),
       localThumbnailPath: localThumbnailPath ?? this.localThumbnailPath,
     );
   }
@@ -413,6 +438,7 @@ class Message {
       'mediaHeight': mediaHeight,
       'isViewOnce': isViewOnce,
       'viewedAt': viewedAt?.toIso8601String(),
+      'streakViewsRemaining': streakViewsRemaining,
       'isSystemNotice': isSystemNotice,
       'source': source,
       'messageOrigin': messageOrigin,
@@ -457,6 +483,7 @@ class Message {
       localThumbnailPath: json['localThumbnailPath'] as String?,
       isViewOnce: (json['isViewOnce'] as bool?) ?? false,
       viewedAt: _parseDateTime(json['viewedAt']),
+      streakViewsRemaining: (json['streakViewsRemaining'] as num?)?.toInt(),
       isSystemNotice: (json['isSystemNotice'] as bool?) ?? false,
       source: (json['source'] as String?) ?? 'native',
       messageOrigin: (json['messageOrigin'] as String?) ?? 'user',
@@ -557,6 +584,9 @@ class Message {
   /// only [canEdit] does.
   bool canEdit({required String currentUserId, required DateTime now}) {
     if (isAttuneAssistOutput) return false;
+    // Chat review #19: a system notice is server-authored; edit_message
+    // refuses it even though it carries my sender id.
+    if (isSystemNotice) return false;
     // Spec 7 (plan review I4): never rewritten under its leaf.
     if (isAppreciation) return false;
     // Spec 8 (plan review I4): nor a pause or its reply.
@@ -566,10 +596,13 @@ class Message {
 
   /// True only for the sender's own message, not yet deleted, sent within
   /// the last 5 minutes — unchanged for an Assist message (spec §5.3:
-  /// deletable under the ordinary rule even though not editable).
+  /// deletable under the ordinary rule even though not editable). Never
+  /// for a system notice (chat review #19: the screenshotter cannot hide
+  /// "X took a screenshot"; delete_message refuses it too).
   /// [now] is injectable for testing; callers pass DateTime.now() in
   /// production.
   bool canDelete({required String currentUserId, required DateTime now}) {
+    if (isSystemNotice) return false;
     return _withinEditDeleteWindow(currentUserId: currentUserId, now: now);
   }
 

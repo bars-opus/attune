@@ -291,7 +291,7 @@ class AppLocalizationsDe extends AppLocalizations {
 
   @override
   String authGuestOverview(String appName) {
-    return 'Sie durchsuchen $appName als Gast. Melden Sie sich an oder erstellen Sie ein Konto, um Ihren Shop zu verwalten – es dauert weniger als 5 Sekunden. Wir haben eine Vielzahl von Tools, um Ihr Geschäft zu entwickeln, alle kostenlos.';
+    return 'Sie sehen sich $appName als Gast an. Melden Sie sich mit Ihrer Telefonnummer an, um Ihren gemeinsamen Bereich mit Ihrem Partner zu beginnen – es dauert nur wenige Sekunden.';
   }
 
   @override

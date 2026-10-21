@@ -17,12 +17,14 @@ void main() {
     expect(src, contains('const DataExportScreen()'));
   });
 
-  test('Settings -> Account lists it after Where you\'re signed in', () {
+  // Settings regrouped (2026-10-18): Privacy & your data, after Where
+  // you're signed in.
+  test('Settings -> Privacy & your data lists it after Where you\'re signed in', () {
     final src = _read('lib/features/settings/data/settings_data.dart');
     final devices = src.indexOf("id: 'signed_in_devices'");
     final export = src.indexOf("id: 'download_my_data'");
     expect(export, greaterThan(devices));
-    expect(src.indexOf("id: 'qr_code'"), greaterThan(export));
+    expect(src.indexOf("id: 'care'"), greaterThan(export));
     expect(src, contains("routeName: '/settings/download-my-data'"));
   });
 

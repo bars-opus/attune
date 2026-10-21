@@ -1,7 +1,18 @@
+import 'package:attune/features/chat/data/repositories/chat_media_uploader.dart';
 import 'package:attune/features/chat/domain/entities/conversation.dart';
 import 'package:attune/features/chat/domain/entities/message.dart';
 
+/// A signed media URL and the moment its issuer stops trusting it
+/// ([ChatRepository.createSignedMediaGrant]).
+typedef SignedMediaGrant = ({String url, DateTime expiresAt});
+
 abstract class ChatRepository {
+  /// At most this many internal pages of `limit` rows per
+  /// [getMessagesChangedSince] call. Shared so a caller can tell a result
+  /// cut at the cap (exactly `limit * changedSinceMaxPages` rows) from an
+  /// exhausted change set (anything shorter) without a probing extra read.
+  static const changedSinceMaxPages = 4;
+
   Future<List<Conversation>> getConversations();
   Future<Conversation?> getPrimaryConversation();
   Future<Conversation?> getConversation(String relationshipId);
@@ -15,12 +26,43 @@ abstract class ChatRepository {
   /// Forward keyset catch-up: canonical rows strictly newer than [after],
   /// oldest-first, for reconnect/missed-event recovery (Spec 6.1). When [after]
   /// is null, returns the newest [limit] rows. Pages until fewer than [limit]
-  /// remain so a large gap is fully restored.
+  /// remain so a large gap is fully restored — or, with [maxPages], until
+  /// that many pages arrived, so a caller can page (and bound) the read
+  /// itself.
   Future<List<Message>> getMessagesAfter(
     String relationshipId, {
     ChatMessageCursor? after,
     int limit = 50,
+    int? maxPages,
   });
+
+  /// The current server rows for [ids] (hydrated with reactions), in no
+  /// particular order. Ids the server no longer returns are hard-deleted or
+  /// no longer visible; callers drop them locally.
+  Future<List<Message>> getMessagesByIds(String relationshipId, List<String> ids);
+
+  /// Rows whose server `updated_at` is at or after [since], oldest change
+  /// first, paged until exhausted or [changedSinceMaxPages] pages. Edits,
+  /// deletions, receipts and reactions all move `updated_at` (migration
+  /// 20261019100000), so this is the "what changed while I was away" read
+  /// used on resume and reconnect.
+  ///
+  /// With [afterId] the read is a keyset continuation instead: rows strictly
+  /// after (`since`, `afterId`) in (updated_at, id) order. One transaction
+  /// (a bulk read receipt) stamps hundreds of rows with the SAME updated_at,
+  /// so a caller resuming past a capped result must name the exact last row
+  /// it got, not just its timestamp.
+  Future<List<Message>> getMessagesChangedSince(
+    String relationshipId, {
+    required DateTime since,
+    String? afterId,
+    int limit = 50,
+  });
+
+  /// Asks the realtime socket to connect now if it is not. Called when the
+  /// device reports connectivity back, so the per-chat channel rejoins in
+  /// seconds instead of waiting for the heartbeat to notice. Best-effort.
+  Future<void> ensureRealtimeConnected();
   Future<Message> sendTextMessage({
     required String relationshipId,
     required String senderId,
@@ -37,11 +79,19 @@ abstract class ChatRepository {
     String? quotedText,
     bool isViewOnce = false,
     int? streakViewsRemaining,
-    bool isSystemNotice = false,
     String? storyItemId,
   });
   Future<Message?> findMessageByClientId({
     required String senderId,
+    required String clientMessageId,
+  });
+
+  /// "<name> took a screenshot" while a view-once video was open (design
+  /// §7.5). Server-authored: the server names the caller and marks the row
+  /// a system notice (chat review #19 — clients cannot write notices).
+  /// Idempotent per [clientMessageId].
+  Future<void> sendScreenshotNotice({
+    required String relationshipId,
     required String clientMessageId,
   });
 
@@ -55,10 +105,14 @@ abstract class ChatRepository {
     required String mimeType,
     required String mediaType,
   });
+  /// Uploads the prepared file for [intent]. [onProgress] receives 0..1;
+  /// [cancelToken] aborts the request ([ChatUploadCancelled]).
   Future<void> uploadChatMedia({
     required ChatMediaUploadIntent intent,
     required String localPath,
     required String mimeType,
+    void Function(double fraction)? onProgress,
+    ChatUploadCancelToken? cancelToken,
   });
 
   /// Resolves a signed URL for [mediaKey], reusing the in-memory cache when
@@ -70,6 +124,16 @@ abstract class ChatRepository {
   /// signature expired while the chat sat open). Without it, a retry would
   /// keep being handed the same dead URL from cache.
   Future<String?> createSignedMediaUrl(
+    String mediaKey, {
+    bool forceRefresh = false,
+  });
+
+  /// [createSignedMediaUrl] plus the moment the repository stops trusting
+  /// the URL (its token expiry less the repository's safety margin), so a
+  /// caller that holds the URL can re-sign before it dies instead of
+  /// guessing. Same cache, same [forceRefresh] semantics; null when every
+  /// candidate failed.
+  Future<SignedMediaGrant?> createSignedMediaGrant(
     String mediaKey, {
     bool forceRefresh = false,
   });
@@ -194,7 +258,12 @@ abstract class ChatRepository {
     required String intentId,
   });
 
-  Stream<void> watchConversationEvents(String relationshipId);
+  /// Everything the per-relationship channel delivers, as typed events: a
+  /// message insert/update/delete (with its id), a relationship row change,
+  /// a pin or reaction change (with the message id), or a `resync` — emitted
+  /// on every successful (re)subscribe, which is the moment the socket may
+  /// have missed anything (Spec 6.1).
+  Stream<ChatRealtimeEvent> watchConversationEvents(String relationshipId);
 
   /// Fires when anything that changes the CONVERSATION LIST happens in any
   /// of the user's relationships: a new message (preview and unread
@@ -299,4 +368,81 @@ class MessageEditHistoryEntry {
     required this.previousContent,
     required this.editedAt,
   });
+}
+
+/// What a realtime frame on the conversation channel was about.
+enum ChatRealtimeKind {
+  /// The channel (re)subscribed: refetch everything that could have moved.
+  resync,
+  messageInsert,
+  messageUpdate,
+  messageDelete,
+  relationship,
+  pin,
+  reaction,
+}
+
+/// One realtime frame, reduced to what the controller needs: the kind of
+/// change and, when the table has one, the message it concerns. Never the
+/// row itself — content must come from an authorized read, not a socket.
+class ChatRealtimeEvent {
+  const ChatRealtimeEvent(this.kind, {this.messageId, this.initial = false});
+
+  /// [initial] marks the channel's FIRST subscribe: the chat that opened the
+  /// channel has just read everything itself, so that resync only needs to
+  /// cover the moments before the channel was live. Every later subscribe (a
+  /// reconnect) is a full resync.
+  const ChatRealtimeEvent.resync({bool initial = false})
+    : this(ChatRealtimeKind.resync, initial: initial);
+
+  final ChatRealtimeKind kind;
+  final String? messageId;
+
+  /// See [ChatRealtimeEvent.resync].
+  final bool initial;
+
+  /// Maps a postgres_changes frame. Pure, so it is testable without a socket.
+  /// [eventType] is the lower-case realtime event name (`insert`, `update`,
+  /// `delete`). A DELETE frame only has the old record (primary key under
+  /// REPLICA IDENTITY DEFAULT; the whole row under FULL).
+  static ChatRealtimeEvent? fromPostgresChange({
+    required String table,
+    required String eventType,
+    required Map<String, dynamic> newRecord,
+    required Map<String, dynamic> oldRecord,
+  }) {
+    String? idFrom(String column) {
+      final value = newRecord[column] ?? oldRecord[column];
+      return value is String ? value : null;
+    }
+
+    switch (table) {
+      case 'messages':
+        final kind = switch (eventType.toLowerCase()) {
+          'insert' => ChatRealtimeKind.messageInsert,
+          'delete' => ChatRealtimeKind.messageDelete,
+          _ => ChatRealtimeKind.messageUpdate,
+        };
+        return ChatRealtimeEvent(kind, messageId: idFrom('id'));
+      case 'relationships':
+        return const ChatRealtimeEvent(ChatRealtimeKind.relationship);
+      case 'message_pins':
+        return ChatRealtimeEvent(
+          ChatRealtimeKind.pin,
+          messageId: idFrom('message_id'),
+        );
+      case 'message_reactions':
+        return ChatRealtimeEvent(
+          ChatRealtimeKind.reaction,
+          messageId: idFrom('message_id'),
+        );
+    }
+    return null;
+  }
+
+  @override
+  String toString() {
+    final flag = initial ? ', initial' : '';
+    return 'ChatRealtimeEvent(${kind.name}, $messageId$flag)';
+  }
 }

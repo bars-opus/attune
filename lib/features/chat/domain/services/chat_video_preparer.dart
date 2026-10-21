@@ -107,17 +107,15 @@ class ChatVideoPreparer {
     if (!isFtyp) return null;
 
     final brand = String.fromCharCodes(bytes.sublist(8, 12));
-    switch (brand) {
-      case 'isom':
-      case 'mp42':
-      case 'avc1':
-      case 'M4V ':
-        return 'video/mp4';
-      case 'qt  ':
-        return 'video/quicktime';
-      default:
-        return null;
-    }
+    if (brand == 'qt  ') return 'video/quicktime';
+    // Any other ISO base media file format brand (isom, iso2..iso6, mp41,
+    // mp42, avc1, hev1, M4V, 3gp*, dash, f4v, ...) is a container the
+    // transcode step normalises to mp4 anyway; refusing uncommon brands only
+    // rejected valid clips from ffmpeg/HEVC exports (chat review #29). The
+    // brand must still be four printable ASCII characters, so random bytes
+    // that happen to spell 'ftyp' at offset 4 are not treated as video.
+    final printable = brand.codeUnits.every((c) => c >= 0x20 && c <= 0x7E);
+    return printable ? 'video/mp4' : null;
   }
 
   /// Corrects raw encoded frame dimensions for rotation metadata, so the

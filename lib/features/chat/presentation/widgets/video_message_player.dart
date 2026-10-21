@@ -24,6 +24,7 @@ class VideoMessagePlayer extends ConsumerStatefulWidget {
     required this.width,
     required this.height,
     this.onRequestFreshUrl,
+    this.onLocalSourceFailed,
     this.autoPlay = false,
   });
 
@@ -42,6 +43,11 @@ class VideoMessagePlayer extends ConsumerStatefulWidget {
   /// silent and permanent for that bubble ("older videos sometimes don't
   /// show"). Null disables the retry (local-file callers don't need it).
   final Future<String?> Function()? onRequestFreshUrl;
+
+  /// Called once when a LOCAL [videoUrl] will not open (a bad cached copy,
+  /// chat review #28): the owner drops that file and may hand back another
+  /// source (a URL to stream) to try once. Null: a local failure is final.
+  final Future<String?> Function()? onLocalSourceFailed;
 
   /// Starts playback as soon as this widget mounts. True for the
   /// full-screen viewer, which the user reached by explicitly tapping play
@@ -158,6 +164,11 @@ class _VideoMessagePlayerState extends ConsumerState<VideoMessagePlayer> {
         final fresh = await widget.onRequestFreshUrl?.call();
         if (fresh != null && fresh != widget.videoUrl) {
           ok = await _initializeWith(fresh);
+        }
+      } else if (!ok) {
+        final instead = await widget.onLocalSourceFailed?.call();
+        if (instead != null && instead != widget.videoUrl) {
+          ok = await _initializeWith(instead);
         }
       }
 

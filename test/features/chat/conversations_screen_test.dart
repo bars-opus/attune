@@ -87,6 +87,47 @@ void main() {
     );
   }
 
+  // The cards settle in, in turn, the first time the screen shows its
+  // content in a session; never again until the app restarts, and not at
+  // all with reduce motion.
+  double opacityOf(WidgetTester tester, String text) => tester
+      .widgetList<FadeTransition>(find.ancestor(of: find.text(text), matching: find.byType(FadeTransition)))
+      .fold(1.0, (o, f) => o * f.opacity.value);
+
+  testWidgets('the cards settle in the first time, then never replay', (tester) async {
+    final harness = wrap(AsyncData([_conversation()]));
+    addTearDown(harness.container.dispose);
+    await tester.pumpWidget(harness.widget);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 60));
+    expect(opacityOf(tester, 'Partner'), lessThan(1), reason: 'settling in');
+    await tester.pumpAndSettle();
+    expect(opacityOf(tester, 'Partner'), 1);
+
+    // Back to Conversations later in the session: there at once.
+    await tester.pumpWidget(UncontrolledProviderScope(
+      container: harness.container,
+      child: MaterialApp(
+        home: ScreenUtilInit(designSize: const Size(390, 844), builder: (_, __) => const ConversationsScreen()),
+      ),
+    ));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 60));
+    expect(opacityOf(tester, 'Partner'), 1);
+  });
+
+  testWidgets('with reduce motion the cards are simply there', (tester) async {
+    final harness = wrap(AsyncData([_conversation()]));
+    addTearDown(harness.container.dispose);
+    await tester.pumpWidget(MediaQuery(
+      data: const MediaQueryData(disableAnimations: true),
+      child: harness.widget,
+    ));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 60));
+    expect(opacityOf(tester, 'Partner'), 1);
+  });
+
   testWidgets(
     'a background refresh (loading with a previous value) keeps showing the '
     'cached conversation instead of blanking to a spinner',

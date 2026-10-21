@@ -8,6 +8,7 @@ import 'package:attune/core/providers/shared_prefs_provider.dart';
 import 'package:attune/core/utils/bottom_sheet_utils.dart';
 import 'package:attune/core/utils/constants.dart';
 import 'package:attune/core/widgets/animated_circle.dart';
+import 'package:attune/core/widgets/app_content_width.dart';
 import 'package:attune/core/widgets/buttons/app_button.dart';
 import 'package:attune/features/auth/intro/widgets/intro_guide_widget.dart';
 import 'package:attune/i10n/generated/app_localizations.dart';
@@ -99,7 +100,10 @@ class _IntroScreenState extends ConsumerState<IntroScreen> {
 
       // theme.appColors.appColor,
       body: SafeArea(
-        child: Column(
+        // On an iPad: a centred column on the full-screen green.
+        child: AppContentWidth(
+          maxWidth: ContentWidth.form,
+          child: Column(
           children: [
             // Top Section with Title and Subtitle
             Padding(
@@ -231,6 +235,7 @@ class _IntroScreenState extends ConsumerState<IntroScreen> {
             Gap(Spacing.md.h),
             // Bottom Section with Legal Text and Button
           ],
+        ),
         ),
       ),
     );

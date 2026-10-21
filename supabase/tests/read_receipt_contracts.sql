@@ -58,7 +58,10 @@ DECLARE
     'media_thumbnail_url','media_type','media_duration_ms','media_waveform',
     'media_width','media_height','source','reply_to_message_id','quoted_text',
     'deleted_at','edited_at','is_view_once','viewed_at','is_system_notice',
-    'streak_views_remaining','story_item_id','message_origin','assistant_payload'];
+    'streak_views_remaining','story_item_id','message_origin','assistant_payload',
+    -- Chat robustness plan 1a (20261019100000/100010): the sync cursor
+    -- reads updated_at to pick up edits, deletes and receipts on any row.
+    'updated_at'];
   v_private text[] := ARRAY[
     'read_at','tone_score','nvc_violations','bid_type','sentiment',
     'message_analysis_done','message_analysis_skipped','included_in_session_id',

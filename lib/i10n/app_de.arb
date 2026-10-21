@@ -168,7 +168,7 @@
   "authPasswordResetSentNote": "Tippen Sie auf den Link in der E-Mail, um ein neues Passwort festzulegen. Der Link verfällt in 1 Stunde.",
 
   "authGuestHello": "Hallo!",
-  "authGuestOverview": "Sie durchsuchen {appName} als Gast. Melden Sie sich an oder erstellen Sie ein Konto, um Ihren Shop zu verwalten – es dauert weniger als 5 Sekunden. Wir haben eine Vielzahl von Tools, um Ihr Geschäft zu entwickeln, alle kostenlos.",
+  "authGuestOverview": "Sie sehen sich {appName} als Gast an. Melden Sie sich mit Ihrer Telefonnummer an, um Ihren gemeinsamen Bereich mit Ihrem Partner zu beginnen – es dauert nur wenige Sekunden.",
   "@authGuestOverview": {
     "description": "Willkommenstext für Gastbenutzer auf dem Login-Profilbildschirm",
     "placeholders": {

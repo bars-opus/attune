@@ -61,6 +61,13 @@ class ChatPosterPrewarmer {
     _readyPosterPaths[key] = path;
   }
 
+  /// Sign-out (I3): no path into the previous person's posters is kept.
+  static void forgetAllReadyPosterPaths() => _readyPosterPaths.clear();
+
+  /// A removed message's poster (I3): its path is no longer handed out.
+  static void forgetReadyPosterPath(String key) =>
+      _readyPosterPaths.remove(key);
+
   @visibleForTesting
   static void debugClearReadyPosterPaths() => _readyPosterPaths.clear();
 
