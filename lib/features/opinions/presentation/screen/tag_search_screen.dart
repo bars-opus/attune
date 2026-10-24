@@ -54,7 +54,7 @@ class _TagSearchScreenState extends ConsumerState<TagSearchScreen> {
               // focusNode: _searchFocusNode,
               autofocus: false,
 
-              hintText: 'Find opinions and forums using a tag',
+              hintText: 'Find opinions using a tag',
               showClearButton: true,
               onChanged: (value) => setState(() => _query = value),
             ),

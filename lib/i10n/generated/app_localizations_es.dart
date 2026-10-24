@@ -538,7 +538,7 @@ class AppLocalizationsEs extends AppLocalizations {
   String get mutedItemTitle => 'Cuentas Silenciadas';
 
   @override
-  String get mutedItemSubtitle => 'Cuentas anónimas del foro que has silenciado';
+  String get mutedItemSubtitle => 'Cuentas anónimas de Opinions que has silenciado';
 
   @override
   String get qrCodeItemTitle => 'Compartir Código QR';

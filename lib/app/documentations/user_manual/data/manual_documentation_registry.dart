@@ -19,7 +19,6 @@ import 'package:attune/app/documentations/user_manual/data/community_questions_d
 import 'package:attune/app/documentations/user_manual/data/conflict_style_quiz_docs.dart';
 import 'package:attune/app/documentations/user_manual/data/conflict_translator_docs.dart';
 import 'package:attune/app/documentations/user_manual/data/dating_mode_docs.dart';
-import 'package:attune/app/documentations/user_manual/data/forum_docs.dart';
 import 'package:attune/app/documentations/user_manual/data/games_docs.dart';
 import 'package:attune/app/documentations/user_manual/data/healing_docs.dart';
 import 'package:attune/app/documentations/user_manual/data/love_language_quiz_docs.dart';
@@ -130,7 +129,6 @@ class DocumentationRegistry {
       AnchorsDocs(),
       DatingModeDocs(),
       OpinionsDocs(),
-      ForumDocs(),
       CommunityQuestionsDocs(),
       PaintBallDocs(),
       AttachmentStyleQuizDocs(),

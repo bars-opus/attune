@@ -53,7 +53,7 @@ class ChatDocs implements DocumentationModule {
           title: 'It\'s not a public or group space',
           numberPrefix: '2',
           content:
-              'Chat is only ever between you and your one active partner. There\'s no group chat, no strangers, no public feed here — that lives in other parts of the app, like Opinions and Forums.',
+              'Chat is only ever between you and your one active partner. There\'s no group chat, no strangers, no public feed here — that lives in other parts of the app, like Opinions.',
           type: ManualContentType.text,
         ),
         ManualContent(

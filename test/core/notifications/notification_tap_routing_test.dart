@@ -21,20 +21,6 @@ void main() {
     });
   });
 
-  group('forum_topic_activated / forum_activity / forum_quiet payload extraction', () {
-    test('topic_id present', () {
-      final data = <String, dynamic>{'type': 'forum_activity', 'topic_id': 'topic-1'};
-      final topicId = data['topic_id'] as String?;
-      expect(topicId, 'topic-1');
-    });
-
-    test('empty topic_id treated as absent', () {
-      final data = <String, dynamic>{'type': 'forum_quiet', 'topic_id': ''};
-      final topicId = data['topic_id'] as String?;
-      expect(topicId != null && topicId.isNotEmpty, isFalse);
-    });
-  });
-
   group('opinion_liked / opinion_commented / opinion_comment_reply payload extraction', () {
     test('opinion_id present', () {
       final data = <String, dynamic>{'type': 'opinion_liked', 'opinion_id': 'op-1'};

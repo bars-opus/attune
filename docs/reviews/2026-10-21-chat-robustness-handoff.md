@@ -71,9 +71,10 @@ After pushing, run the verify queries:
 
 ### Step 4: edge functions
 ```
-supabase functions deploy process-chat-notification-outbox process-scheduled-notifications send-notification accept-invite activate-topics
+supabase functions deploy process-chat-notification-outbox process-scheduled-notifications send-notification accept-invite
 ```
 These share `_shared/push_queue.ts`. Deploy them only after step 3 is done on the test phones: from this moment, only registered devices receive pushes.
+Note (2026-10-25): the forum functions (`activate-topics`, `forum-quiet-check`) were retired by Spec 3 and are no longer deployed, so they are not in this command. See `docs/superpowers/plans/2026-10-25-spec3-forum-removal-w1-w2.md`, Owner deploy checklist.
 
 ### Step 5: prod sanity
 Use final-review.md step 5:

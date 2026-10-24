@@ -163,12 +163,10 @@ NotificationConfig buildNanoEmbryoNotificationConfig() {
         case 'forum_topic_activated':
         case 'forum_activity':
         case 'forum_quiet':
-          final topicId = notification.data?['topic_id'] as String?;
-          if (topicId != null && topicId.isNotEmpty) {
-            GoRouter.of(context).push(RouteNames.forumInsight, extra: topicId);
-          } else {
-            GoRouter.of(context).go(RouteNames.home);
-          }
+          // Forums were retired (Spec 3, 2026-10-24). A push sent before the
+          // producers stopped can still be tapped from the tray: home, never a
+          // removed route.
+          GoRouter.of(context).go(RouteNames.home);
           return;
 
         case 'opinion_liked':

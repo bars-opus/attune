@@ -1108,7 +1108,7 @@ abstract class AppLocalizations {
   /// No description provided for @mutedItemSubtitle.
   ///
   /// In en, this message translates to:
-  /// **'Anonymous forum accounts you\'ve muted'**
+  /// **'Anonymous Opinions accounts you\'ve muted'**
   String get mutedItemSubtitle;
 
   /// No description provided for @qrCodeItemTitle.

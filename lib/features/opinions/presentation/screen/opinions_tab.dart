@@ -6,9 +6,6 @@ import 'package:attune/core/widgets/create_content_chooser.dart';
 import 'package:attune/core/widgets/create_content_fab.dart';
 import 'package:attune/core/widgets/profile_avatar.dart';
 import 'package:attune/features/auth/presentation/widgets/logout_action.dart';
-import 'package:attune/features/forums/presentation/providers/forum_providers.dart'
-    show votingTopicsProvider;
-import 'package:attune/features/forums/presentation/screens/forums_section.dart';
 import 'package:attune/features/opinions/presentation/providers/opinion_providers.dart';
 import 'package:attune/features/opinions/presentation/providers/profile_providers.dart';
 import 'package:attune/features/opinions/presentation/screen/discover_feed_screen.dart';
@@ -25,33 +22,7 @@ class OpinionsTab extends ConsumerStatefulWidget {
   ConsumerState<OpinionsTab> createState() => _OpinionsTabState();
 }
 
-class _OpinionsTabState extends ConsumerState<OpinionsTab>
-    with SingleTickerProviderStateMixin {
-  late final TabController _outerTabController;
-
-  @override
-  void initState() {
-    super.initState();
-    _outerTabController = TabController(length: 2, vsync: this);
-    // Opinions/Forums sections are both kept alive in the IndexedStack, so a
-    // scroll-hidden nav from one side would otherwise persist after
-    // switching — see the matching reset in home_widget.dart's onTap.
-    _outerTabController.addListener(_resetNavVisibilityOnSwitch);
-  }
-
-  void _resetNavVisibilityOnSwitch() {
-    if (_outerTabController.indexIsChanging) {
-      ref.read(navVisibilityProvider.notifier).state = true;
-    }
-  }
-
-  @override
-  void dispose() {
-    _outerTabController.removeListener(_resetNavVisibilityOnSwitch);
-    _outerTabController.dispose();
-    super.dispose();
-  }
-
+class _OpinionsTabState extends ConsumerState<OpinionsTab> {
   @override
   Widget build(BuildContext context) {
     final isAuthenticated = ref.watch(currentUserIdProvider) != null;
@@ -59,37 +30,14 @@ class _OpinionsTabState extends ConsumerState<OpinionsTab>
 
     return Scaffold(
       backgroundColor: colorScheme.onBackground,
-      body: AnimatedBuilder(
-        animation: _outerTabController,
-        builder:
-            (context, _) => IndexedStack(
-              index: _outerTabController.index,
-              children: [
-                _OpinionsSection(
-                  outerTabController: _outerTabController,
-                  isAuthenticated: isAuthenticated,
-                ),
-                // ForumsSection renders for guests too as of
-                // 20260821120000_public_forum_reads — Contributing/Explore/
-                // debate rooms are all real-data anon-readable now, the same
-                // way Discover already was. Guests can read; ForumsSection's
-                // own children gate posting, voting, liking, reporting and
-                // Forum Insight behind sign-in.
-                ForumsSection(outerTabController: _outerTabController),
-              ],
-            ),
-      ),
+      body: _OpinionsSection(isAuthenticated: isAuthenticated),
     );
   }
 }
 
 class _OpinionsSection extends ConsumerStatefulWidget {
-  const _OpinionsSection({
-    required this.outerTabController,
-    required this.isAuthenticated,
-  });
+  const _OpinionsSection({required this.isAuthenticated});
 
-  final TabController outerTabController;
   final bool isAuthenticated;
 
   @override
@@ -126,8 +74,9 @@ class _OpinionsSectionState extends ConsumerState<_OpinionsSection>
   @override
   void didUpdateWidget(_OpinionsSection oldWidget) {
     super.didUpdateWidget(oldWidget);
-    // _OpinionsSection is kept alive inside OpinionsTab's IndexedStack, so
-    // it is never re-constructed on sign-in — initState's isAuthenticated
+    // _OpinionsSection is kept mounted by the home shell's Offstage stack
+    // (home_widget.dart), so it is never re-constructed on sign-in —
+    // initState's isAuthenticated
     // read above only ever ran once, while the guest was still signed out,
     // and _innerTabController stayed pinned to Discover forever even after
     // a real sign-in flipped widget.isAuthenticated to true (the same class
@@ -199,7 +148,6 @@ class _OpinionsSectionState extends ConsumerState<_OpinionsSection>
           // existing off-screen above wherever the user had scrolled to.
           await _scrollToTop();
         },
-        onTopicSubmitted: () => ref.invalidate(votingTopicsProvider),
       ),
       body: NestedScrollView(
         controller: _outerScrollController,
@@ -329,20 +277,6 @@ class _OpinionsSectionState extends ConsumerState<_OpinionsSection>
                       },
                     ),
                   ],
-                  bottom: PreferredSize(
-                    preferredSize: Size.fromHeight(48.h),
-                    child: SimpleTabs(
-                      tabs: const [
-                        AppTabItem(
-                          label: 'Opinions',
-                          icon: Icons.rate_review_outlined,
-                        ),
-                        AppTabItem(label: 'Forums', icon: Icons.forum_outlined),
-                      ],
-                      controller: widget.outerTabController,
-                      scrollable: false,
-                    ),
-                  ),
                 ),
               ),
               SliverToBoxAdapter(

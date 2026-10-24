@@ -32,10 +32,6 @@ import 'package:attune/features/opinions/presentation/screen/opinion_engagement_
 import 'package:attune/features/opinions/presentation/screen/quote_compose_screen.dart';
 import 'package:attune/features/opinions/presentation/screen/tag_browse_screen.dart';
 import 'package:attune/features/opinions/presentation/screens/opinion_thread_loader.dart';
-import 'package:attune/features/forums/data/models/topic_model.dart';
-import 'package:attune/features/forums/presentation/screens/debate_room_screen.dart';
-import 'package:attune/features/forums/presentation/screens/forum_insight_screen.dart';
-import 'package:attune/features/forums/presentation/screens/side_selection_screen.dart';
 import 'package:attune/features/chat/domain/entities/conversation.dart';
 import 'package:attune/features/chat/domain/entities/message.dart';
 import 'package:attune/features/chat/presentation/screens/chat_channel_loader.dart';
@@ -242,9 +238,6 @@ class RouteNames {
   static const String quoteCompose = '/quoteCompose';
   static const String opinionEngagement = '/opinionEngagement';
   static const String tagBrowse = '/tagBrowse';
-  static const String debateRoom = '/debateRoom';
-  static const String sideSelection = '/sideSelection';
-  static const String forumInsight = '/forumInsight';
   static const String healingJourney = '/healingJourney';
   static const String reflectionJournal = '/reflectionJournal';
   static const String journalEntry = '/journalEntry';
@@ -544,57 +537,6 @@ GoRouter createAppRouter(RoutingNotifier routingNotifier) {
             return const Scaffold(body: Center(child: Text('Tag missing.')));
           }
           return TagBrowseScreen(tagSlug: tagSlug);
-        },
-      ),
-      GoRoute(
-        path: RouteNames.debateRoom,
-        name: 'debateRoom',
-        builder: (context, state) {
-          final args =
-              state.extra
-                  as ({
-                    String topicId,
-                    String topicTitle,
-                    String userSide,
-                    TopicModel? initialTopic,
-                  })?;
-          if (args == null) {
-            return const Scaffold(
-              body: Center(child: Text('Topic unavailable.')),
-            );
-          }
-          return DebateRoomScreen(
-            topicId: args.topicId,
-            topicTitle: args.topicTitle,
-            userSide: args.userSide,
-            initialTopic: args.initialTopic,
-          );
-        },
-      ),
-      GoRoute(
-        path: RouteNames.sideSelection,
-        name: 'sideSelection',
-        builder: (context, state) {
-          final topic = routeExtra<TopicModel>(state);
-          if (topic == null) {
-            return const Scaffold(
-              body: Center(child: Text('Topic unavailable.')),
-            );
-          }
-          return SideSelectionScreen(topic: topic);
-        },
-      ),
-      GoRoute(
-        path: RouteNames.forumInsight,
-        name: 'forumInsight',
-        builder: (context, state) {
-          final topicId = routeExtra<String>(state);
-          if (topicId == null) {
-            return const Scaffold(
-              body: Center(child: Text('Topic unavailable.')),
-            );
-          }
-          return ForumInsightScreen(topicId: topicId);
         },
       ),
       GoRoute(

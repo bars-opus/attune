@@ -538,7 +538,7 @@ class AppLocalizationsIt extends AppLocalizations {
   String get mutedItemTitle => 'Account Silenziati';
 
   @override
-  String get mutedItemSubtitle => 'Account anonimi del forum che hai silenziato';
+  String get mutedItemSubtitle => 'Account anonimi di Opinions che hai silenziato';
 
   @override
   String get qrCodeItemTitle => 'Condividi Codice QR';

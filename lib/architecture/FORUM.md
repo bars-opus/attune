@@ -1,4 +1,7 @@
 # ATTUNE — FORUM FEATURE SPECIFICATION V2
+
+> **Forums retired 2026-10 (Spec 3):** screens and pushes removed in W1, producers stopped in W2, tables dropped in W3. §4, §7 and §8 still describe Opinions.
+
 ### Updated implementation spec incorporating owner decisions
 **Version:** 2.0
 **Created:** June 2026
@@ -441,6 +444,8 @@ Does NOT show:
 
 ## 5. FEATURE 2 — FORUMS
 
+> **Retired (Spec 3, 2026-10).** Kept for history; nothing in this section ships.
+
 ### What it is
 
 Forums are live debate rooms where users argue FOR or AGAINST a topic.
@@ -725,6 +730,8 @@ REOPEN   → future feature (Section 13 open questions)
 ---
 
 ## 6. FORUM INSIGHT SCREEN
+
+> **Retired (Spec 3, 2026-10).** Kept for history; nothing in this section ships.
 
 Accessed by tapping the ⓘ icon inside any active forum.
 
@@ -1103,6 +1110,8 @@ Admin dashboard (or Supabase direct) shows priority queue separately.
 
 ## 9. DATABASE SCHEMA
 
+> **Retired (Spec 3, 2026-10):** the forum tables, views and functions below are closed to clients in W2 and dropped in W3; `forum_reports`, `post_polls`, the tag tables and every Opinions row stay.
+
 ```sql
 -- No forum_identities table in v2.
 -- Posts link directly to user_id from auth.
@@ -1435,6 +1444,8 @@ USING (false);
 ---
 
 ## 10. NOTIFICATION SYSTEM
+
+> **Retired (Spec 3, 2026-10):** the forum pushes below (`forum_topic_activated`, `forum_activity`, `forum_quiet`) are no longer sent and their taps open home; the Opinions pushes and the two moderation notices stay.
 
 OneSignal is already configured. All notifications use
 existing OneSignal integration.

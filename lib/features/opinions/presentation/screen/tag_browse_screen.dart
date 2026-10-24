@@ -2,21 +2,14 @@
 
 import 'package:attune/core/utils/exports/export_screens.dart';
 import 'package:attune/core/widgets/shop_listview_loading_shimmer.dart';
-import 'package:attune/features/forums/data/models/topic_model.dart';
-import 'package:attune/features/forums/presentation/providers/forum_providers.dart';
-import 'package:attune/features/forums/presentation/widgets/forum_card.dart';
 import 'package:attune/features/opinions/data/models/opinion_model.dart';
 import 'package:attune/features/opinions/presentation/providers/opinion_providers.dart';
 import 'package:attune/features/opinions/presentation/widgets/opinion_card.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-/// Everything carrying one tag, newest first (ATTUNE_MASTER_SPEC.md §8.11
-/// "Tag browsing", FORUM.md §7).
-///
-/// ONE screen with two tabs rather than two separate screens: a tag applies to
-/// opinions and forum topics alike, so splitting them into different routes
-/// would make the user guess which surface a tag has results on and navigate
-/// twice to find out. Tabs put both counts one tap apart.
+/// Every opinion carrying one tag, newest first (ATTUNE_MASTER_SPEC.md §8.11
+/// "Tag browsing", FORUM.md §7). One list: Forums were retired (Spec 3,
+/// 2026-10), so there is no second tab.
 ///
 /// Filters by TAG ONLY. There is deliberately no author parameter on this
 /// screen, its providers, or the RPCs beneath them, and none may be added:
@@ -28,9 +21,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 ///
 /// A standalone pushed route with its own Scaffold, built on NestedScrollView
 /// + SliverAppBar (the same SliverOverlapAbsorber/Injector pattern OpinionsTab
-/// and ForumsSection use) so the title, follow button, and tab bar all scroll
-/// away together as the list beneath scrolls — see _buildOpinionList /
-/// _buildTopicList for the matching SliverOverlapInjector on the other side.
+/// uses) so the title and follow button scroll away together as the list
+/// beneath scrolls — see _buildOpinionList for the matching
+/// SliverOverlapInjector on the other side.
 class TagBrowseScreen extends ConsumerStatefulWidget {
   final String tagSlug;
 
@@ -40,22 +33,7 @@ class TagBrowseScreen extends ConsumerStatefulWidget {
   ConsumerState<TagBrowseScreen> createState() => _TagBrowseScreenState();
 }
 
-class _TagBrowseScreenState extends ConsumerState<TagBrowseScreen>
-    with SingleTickerProviderStateMixin {
-  late final TabController _tabController;
-
-  @override
-  void initState() {
-    super.initState();
-    _tabController = TabController(length: 2, vsync: this);
-  }
-
-  @override
-  void dispose() {
-    _tabController.dispose();
-    super.dispose();
-  }
-
+class _TagBrowseScreenState extends ConsumerState<TagBrowseScreen> {
   /// Guarded and error-handled the same way OpinionCard._toggleFollow and
   /// AnonymousProfileScreen._toggleFollow are — follow_tag/unfollow_tag are
   /// authenticated-only RPCs with no internal guard, so an unguarded tap
@@ -91,21 +69,12 @@ class _TagBrowseScreenState extends ConsumerState<TagBrowseScreen>
     return false;
   }
 
-  bool _handleTopicScroll(ScrollNotification notification) {
-    if (notification.metrics.pixels >=
-        notification.metrics.maxScrollExtent - 200) {
-      ref.read(forumTopicsByTagProvider(widget.tagSlug).notifier).loadMore();
-    }
-    return false;
-  }
-
   @override
   Widget build(BuildContext context) {
     // Access theme for consistent styling
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
     final opinionsAsync = ref.watch(opinionsByTagProvider(widget.tagSlug));
-    final topicsAsync = ref.watch(forumTopicsByTagProvider(widget.tagSlug));
     // For a guest, get_followed_tags 42501s (authenticated-only) the same
     // way followStatusProvider already does for author follows — the error
     // is swallowed by valueOrNull's null, and isTagFollowedProvider's ??
@@ -129,10 +98,10 @@ class _TagBrowseScreenState extends ConsumerState<TagBrowseScreen>
                   floating: true,
                   pinned: false,
                   snap: true,
-                  // Taller than the default toolbar so the title row and the
-                  // follow button sit on their own lines underneath it,
-                  // rather than squeezed beside it as AppBar.actions did.
-                  toolbarHeight: 56.h + 44.h,
+                  // The title row only: the follow button sits on its own line
+                  // in `bottom` below, rather than squeezed beside the title
+                  // as AppBar.actions did.
+                  toolbarHeight: 56.h,
                   title: Padding(
                     padding: EdgeInsets.only(top: Spacing.xs.h),
                     child: Text(
@@ -143,8 +112,10 @@ class _TagBrowseScreenState extends ConsumerState<TagBrowseScreen>
                       ),
                     ),
                   ),
+                  // The Follow row only: a small AppButton (36) inside
+                  // Spacing.sm padding on every side.
                   bottom: PreferredSize(
-                    preferredSize: Size.fromHeight(48.h),
+                    preferredSize: const Size.fromHeight(36 + Spacing.sm * 2),
                     child: Column(
                       children: [
                         Padding(
@@ -178,80 +149,36 @@ class _TagBrowseScreenState extends ConsumerState<TagBrowseScreen>
                                     : colorScheme.onPrimary,
                           ),
                         ),
-                        SimpleTabs(
-                          tabs: const [
-                            AppTabItem(
-                              label: 'Opinions',
-                              icon: Icons.rate_review_outlined,
-                            ),
-                            AppTabItem(
-                              label: 'Forums',
-                              icon: Icons.forum_outlined,
-                            ),
-                          ],
-                          controller: _tabController,
-                          scrollable: false,
-                        ),
                       ],
                     ),
                   ),
                 ),
               ),
             ],
-        body: TabBarView(
-          controller: _tabController,
-          children: [
-            // Builder gives this subtree a context BELOW the NestedScrollView,
-            // which sliverOverlapAbsorberHandleFor requires to find the
-            // handle — the outer build(context) here is above the
-            // NestedScrollView, same reason DiscoverFeedScreen/ForumsSection
-            // get theirs from their own build(context) as a separate widget.
-            Builder(
-              builder:
-                  (context) => NotificationListener<ScrollNotification>(
-                    onNotification: _handleOpinionScroll,
-                    child: RefreshIndicator(
-                      onRefresh:
-                          () =>
-                              ref
-                                  .read(
-                                    opinionsByTagProvider(
-                                      widget.tagSlug,
-                                    ).notifier,
-                                  )
-                                  .refresh(),
-                      child: opinionsAsync.when(
-                        loading: () => const ListviewLoadingShimmer(),
-                        error: (error, stack) => ErrorStateWidget.from(error),
-                        data:
-                            (opinions) => _buildOpinionList(context, opinions),
-                      ),
-                    ),
+        // Builder gives this subtree a context BELOW the NestedScrollView,
+        // which sliverOverlapAbsorberHandleFor requires to find the
+        // handle — the outer build(context) here is above the
+        // NestedScrollView, same reason DiscoverFeedScreen gets its own
+        // from its own build(context) as a separate widget.
+        body: Builder(
+          builder:
+              (context) => NotificationListener<ScrollNotification>(
+                onNotification: _handleOpinionScroll,
+                child: RefreshIndicator(
+                  onRefresh:
+                      () =>
+                          ref
+                              .read(
+                                opinionsByTagProvider(widget.tagSlug).notifier,
+                              )
+                              .refresh(),
+                  child: opinionsAsync.when(
+                    loading: () => const ListviewLoadingShimmer(),
+                    error: (error, stack) => ErrorStateWidget.from(error),
+                    data: (opinions) => _buildOpinionList(context, opinions),
                   ),
-            ),
-            Builder(
-              builder:
-                  (context) => NotificationListener<ScrollNotification>(
-                    onNotification: _handleTopicScroll,
-                    child: RefreshIndicator(
-                      onRefresh:
-                          () =>
-                              ref
-                                  .read(
-                                    forumTopicsByTagProvider(
-                                      widget.tagSlug,
-                                    ).notifier,
-                                  )
-                                  .refresh(),
-                      child: topicsAsync.when(
-                        loading: () => const ListviewLoadingShimmer(),
-                        error: (error, stack) => ErrorStateWidget.from(error),
-                        data: (topics) => _buildTopicList(context, topics),
-                      ),
-                    ),
-                  ),
-            ),
-          ],
+                ),
+              ),
         ),
       ),
     );
@@ -300,45 +227,6 @@ class _TagBrowseScreenState extends ConsumerState<TagBrowseScreen>
               },
             );
           }, childCount: opinions.length + (hasMore ? 1 : 0)),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildTopicList(BuildContext context, List<TopicModel> topics) {
-    if (topics.isEmpty) {
-      return _emptyState(
-        context: context,
-        icon: Icons.forum_outlined,
-        title: 'No forums tagged #${widget.tagSlug}',
-        subtitle: 'Submit a topic with this tag to start the conversation.',
-      );
-    }
-
-    final hasMore =
-        ref.read(forumTopicsByTagProvider(widget.tagSlug).notifier).hasMore;
-    return CustomScrollView(
-      physics: const AlwaysScrollableScrollPhysics(),
-      slivers: [
-        SliverOverlapInjector(
-          handle: NestedScrollView.sliverOverlapAbsorberHandleFor(context),
-        ),
-        SliverPadding(
-          padding: EdgeInsets.all(Spacing.md.w),
-          sliver: SliverList(
-            delegate: SliverChildBuilderDelegate((context, index) {
-              if (index == topics.length) {
-                return const Padding(
-                  padding: EdgeInsets.all(16.0),
-                  child: Center(child: CircularProgressIndicator()),
-                );
-              }
-              // No userSide passed: the browse RPC returns no per-viewer vote
-              // state, so the card renders without a side indicator rather
-              // than guessing one.
-              return ForumCard(forum: topics[index]);
-            }, childCount: topics.length + (hasMore ? 1 : 0)),
-          ),
         ),
       ],
     );
