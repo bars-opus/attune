@@ -131,8 +131,8 @@ Existing stories keep their dates. Pending archival jobs are picked up by the ne
 - **Archival:** a portrait photo story, after 24 hours, has an archived object 1600 px tall.
 
 ## Owner decisions pending
-1. **iOS `video_compress` ignores a trim when the video has sound** (`SwiftVideoCompressPlugin` returns the whole asset; the time range is set only without audio). Trimmed chat videos with sound export whole on iOS. Stories are unaffected (always whole-source). **Recommendation:** a small patched copy of the plugin (path dependency) that applies the time range with audio. (Wave 2.)
-2. **`ChatError` checks a PostgREST message before its code**, so a refusal whose message contains "rate" is treated as rate-limited and never strikes. The fix belongs in chat. (Wave 2.)
+1. **iOS `video_compress` ignores a trim when the video has sound** (`SwiftVideoCompressPlugin` returns the whole asset; the time range is set only without audio). Trimmed chat videos with sound export whole on iOS. Stories are unaffected (always whole-source). **Recommendation:** a small patched copy of the plugin (path dependency) that applies the time range with audio. (Wave 2.) **Done 2026-10-24:** vendored and patched in `packages/video_compress` (see its PATCHES.md); device check below.
+2. **`ChatError` checks a PostgREST message before its code**, so a refusal whose message contains "rate" is treated as rate-limited and never strikes. The fix belongs in chat. (Wave 2.) **Done 2026-10-24:** `chat_error.dart` classifies by code first (42501/429/`RATE_LIMITED`, 23505, transport 5xx/408/PGRST0xx/PGRST3xx ⇒ unavailable), then whole phrases only ("rate limit", "rate_limited", "too many requests"). Trimmed videos now report their exported length on iOS too.
 3. **Confirm or reverse the Wave 5 rulings** (each is cheap to reverse before deploy):
    - `occurred_on` from capture time, clamped to 7 days, corrected for the phone's clock and floored at the relationship's start; the 24-hour window still runs from posting. Reverse: a one-line change to `created_at`/`expires_at` plus the CHECK.
    - Video media and every thumbnail upload link last 60 minutes (images 15). Cost: an abandoned thumbnail slot holds an object up to an hour.
@@ -161,7 +161,7 @@ One line each. W1–W5 is the wave that added the check. Release-like build, two
 - [ ] W2 Microphone: WithoutPrompt on a reopen and Screen Time restricted both still allow photos; record whether toggling the mic in Settings terminates the app.
 - [ ] W2 First-launch camera prompt: exactly one session, and a live preview after Allow.
 - [ ] W2 960×540 re-encode: measure size and time on an iPhone.
-- [ ] W2 Trimmed chat video with sound: confirm it exports whole (owner decision 1).
+- [ ] Trim a chat video that has sound to a few seconds → the sent video plays only the trimmed part, with sound. (Vendored `packages/video_compress` fix; run `pod install` first.)
 - [ ] W3 Type in the chat composer, swipe to the app switcher: no keyboard or QuickType bar on the card; back in Attune the keyboard returns with the draft and caret.
 - [ ] W3 PIN "every open": the keyboard never flashes over the checking cover and is not up after unlock.
 - [ ] W3 Mic indicator: the orange dot goes off after a Control Centre pull mid-recording.

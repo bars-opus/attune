@@ -131,6 +131,9 @@ dependencies:
 dependency_overrides:
   web:
     version: 1.0.0
+  # Vendored with an iOS/macOS trim fix; see packages/video_compress/PATCHES.md.
+  video_compress:
+    path: packages/video_compress
 
 flutter_launcher_icons:
   android: true

@@ -478,13 +478,11 @@ class ChatVideoPreparer {
         window: effectiveDuration,
         exportedMs: compressed.duration,
         maxDuration: effectiveMaxDuration,
-        // A real trim on Android is rounded outward (debugCompressArgs), so
-        // the exported length is reported, not the window (review #7). iOS
-        // keeps the window: its plugin ignores the range with audio (C1,
-        // owner decision).
-        precise:
-            boundaryTolerance != null ||
-            (!window.whole && defaultTargetPlatform == TargetPlatform.android),
+        // A real trim is rounded outward to whole seconds on both platforms
+        // (debugCompressArgs; the vendored iOS plugin now applies the range
+        // with audio, packages/video_compress/PATCHES.md), so the exported
+        // length is reported, not the window (review #7).
+        precise: boundaryTolerance != null || !window.whole,
       ),
       thumbnailFile: preparedThumbnail.file,
       thumbnailMimeType: preparedThumbnail.mimeType,

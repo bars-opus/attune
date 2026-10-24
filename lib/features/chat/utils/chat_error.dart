@@ -244,15 +244,38 @@ class ChatError implements Exception {
     return ChatErrorCategory.unknown;
   }
 
+  /// The rate-limit code our own RPCs and functions report
+  /// (`story_intent_error('RATE_LIMITED')`, `RAISE EXCEPTION 'rate_limited'`,
+  /// the edge functions' `code: "RATE_LIMITED"`). Matched whole, any case.
+  static const serverRateLimitCode = 'rate_limited';
+
+  /// Last-resort message fallback: whole rate-limit phrases only, never the
+  /// bare substring "rate" ("generate_story_item failed", "separate").
+  static final _rateLimitPhrase = RegExp(
+    r'\b(?:rate[ _-]?limit(?:ed|s|ing)?|too many requests)\b',
+    caseSensitive: false,
+  );
+
+  static bool _isRateLimitCode(String? value) =>
+      value != null && value.trim().toLowerCase() == serverRateLimitCode;
+
   static ChatErrorCategory _categorizePostgrest(PostgrestException error) {
+    // Structured first: the code (SQLSTATE, PGRST*, or the HTTP status the
+    // client puts there when the body has none) decides before any message
+    // word, so a gateway page or an unrelated RAISE text can't pick a
+    // category by accident.
     final code = error.code;
     if (code == '42501') return ChatErrorCategory.unauthenticated;
-    if (code == '429') return ChatErrorCategory.rateLimited;
+    if (code == '429' || _isRateLimitCode(code)) {
+      return ChatErrorCategory.rateLimited;
+    }
     if (code == '23505') {
       // Duplicate is handled as success-with-fetch by callers; if it reaches
       // here treat as transient.
       return ChatErrorCategory.unknown;
     }
+    if (_isTransport(code)) return ChatErrorCategory.unavailable;
+    if (_isRateLimitCode(error.message)) return ChatErrorCategory.rateLimited;
 
     final message = error.message.toLowerCase();
     if (message.contains('archived')) {
@@ -267,7 +290,7 @@ class ChatError implements Exception {
         message.contains('violates')) {
       return ChatErrorCategory.payloadInvalid;
     }
-    if (message.contains('rate') || message.contains('too many')) {
+    if (_rateLimitPhrase.hasMatch(message)) {
       return ChatErrorCategory.rateLimited;
     }
     if (message.contains('intent') || message.contains('upload')) {
@@ -283,6 +306,21 @@ class ChatError implements Exception {
     // which never turns a message red.
     if (_isServerRejection(code)) return ChatErrorCategory.unknown;
     return ChatErrorCategory.unavailable;
+  }
+
+  /// Transport-shaped codes that no message word may override: HTTP 5xx
+  /// and 408 (gateway / timeout), PostgREST connection (PGRST0xx) and JWT
+  /// (PGRST3xx, e.g. PGRST301 expired across a resume) errors. A missing
+  /// code is unavailable too, but only after the message checks.
+  static bool _isTransport(String? code) {
+    if (code == null) return false;
+    if (code.startsWith('PGRST')) {
+      final group = code.length > 5 ? code[5] : '';
+      return group == '0' || group == '3';
+    }
+    if (code.length != 3) return false;
+    final status = int.tryParse(code);
+    return status != null && (status >= 500 || status == 408);
   }
 
   /// SQLSTATE classes P0 (PL/pgSQL RAISE / ASSERT), 22 (data exception), 23

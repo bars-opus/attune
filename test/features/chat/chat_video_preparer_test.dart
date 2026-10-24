@@ -718,8 +718,9 @@ void main() {
       }
     });
 
-    test('fix round 2: a trimmed Android export reports the length it '
-        'actually has (rounded outward); iOS keeps the window (C1)', () async {
+    test('a trimmed export reports the length it actually has (rounded '
+        'outward) on Android and on iOS (vendored plugin trims with audio)',
+        () async {
       bytesByQuality = {hd: limit};
       exportedMs = 10900.0; // 5-15.9 s exported for a 5.4-15.3 s window
       addTearDown(() => debugDefaultTargetPlatformOverride = null);
@@ -736,7 +737,7 @@ void main() {
         reported[platform] = prepared.durationMs;
       }
       expect(reported[TargetPlatform.android], 10900);
-      expect(reported[TargetPlatform.iOS], 9900);
+      expect(reported[TargetPlatform.iOS], 10900);
     });
 
     test('fix round 2: an untrimmed chat take still reports its source '

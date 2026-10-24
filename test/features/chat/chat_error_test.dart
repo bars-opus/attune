@@ -166,4 +166,72 @@ void main() {
       );
     });
   });
+
+  group('structured codes decide before message words (2026-10-24)', () {
+    test('"rate" inside another word is not a rate limit', () {
+      for (final message in const [
+        'generate_story_item failed',
+        'accurate',
+        'separate',
+        'Too many games started. Try again later.',
+      ]) {
+        expect(
+          categoryOf('P0001', message),
+          ChatErrorCategory.unknown,
+          reason: message,
+        );
+      }
+      expect(
+        categoryOf('PGRST000', 'could not generate a connection'),
+        ChatErrorCategory.unavailable,
+      );
+      expect(
+        categoryOf('22023', 'moderate value out of range'),
+        ChatErrorCategory.unknown,
+      );
+      expect(
+        categoryOf('53300', 'sorry, too many clients already'),
+        ChatErrorCategory.unavailable,
+      );
+    });
+
+    test('HTTP 429 is rate limited whatever the body says', () {
+      expect(categoryOf('429', 'Too Many Requests'), ChatErrorCategory.rateLimited);
+      expect(categoryOf('429', '{"message":"slow down"}'), ChatErrorCategory.rateLimited);
+    });
+
+    test("the server's own RATE_LIMITED / rate_limited code is rate limited", () {
+      expect(categoryOf('RATE_LIMITED', 'Too many tries'), ChatErrorCategory.rateLimited);
+      expect(categoryOf('rate_limited', 'x'), ChatErrorCategory.rateLimited);
+      // RAISE EXCEPTION 'rate_limited' USING ERRCODE='22023' (dating).
+      expect(categoryOf('22023', 'rate_limited'), ChatErrorCategory.rateLimited);
+    });
+
+    test('whole rate-limit phrases still work as a last resort', () {
+      expect(categoryOf(null, 'API rate limit exceeded'), ChatErrorCategory.rateLimited);
+      expect(categoryOf('P0001', 'Rate limited, try later'), ChatErrorCategory.rateLimited);
+      expect(categoryOf(null, 'too many requests'), ChatErrorCategory.rateLimited);
+    });
+
+    test('a gateway 5xx body never picks a permanent category', () {
+      const html =
+          '<html><meta http-equiv="content-type" content="text/html">'
+          '<body>502 Bad Gateway: upload of the active session failed</body>'
+          '</html>';
+      expect(categoryOf('502', html), ChatErrorCategory.unavailable);
+      expect(categoryOf('503', 'relationship archived?'), ChatErrorCategory.unavailable);
+      expect(categoryOf('PGRST301', 'JWT expired; content invalid'), ChatErrorCategory.unavailable);
+    });
+
+    test('story outbox contract: transport codes unavailable, P0001 not', () {
+      for (final code in const ['500', '502', '503', '504', 'PGRST000', 'PGRST001', 'PGRST002', 'PGRST003', 'PGRST301', null]) {
+        expect(
+          categoryOf(code, 'upstream failure'),
+          ChatErrorCategory.unavailable,
+          reason: '$code',
+        );
+      }
+      expect(categoryOf('P0001', 'Story unavailable'), isNot(ChatErrorCategory.unavailable));
+    });
+  });
 }
