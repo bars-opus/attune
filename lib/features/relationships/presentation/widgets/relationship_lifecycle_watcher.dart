@@ -94,7 +94,11 @@ class _RelationshipLifecycleWatcherState
   @override
   Widget build(BuildContext context) {
     ref.listen<bool>(lifecycleLockOpenProvider, (prev, next) {
-      if (next && prev == false) _check();
+      // Every return from the background passes the lock check (checking
+      // -> open). The shell keeps this widget mounted across it now
+      // (stories Wave 3), so this is "the next open": ask again, as the
+      // fresh mount on every return used to.
+      if (next && prev == false) _check(force: true);
     });
     ref.listen<String?>(lifecycleUserIdProvider, (prev, next) {
       if (next != null && next != prev) _check(force: true);

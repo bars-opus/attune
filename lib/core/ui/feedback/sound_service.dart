@@ -4,6 +4,7 @@ import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'package:attune/core/services/app_content_visibility.dart';
 import 'package:attune/core/ui/feedback/audio_session.dart';
 
 /// Universal one-shot UI sounds. Content-blind — these are event sounds, not
@@ -71,7 +72,9 @@ class AudioPlayerSoundService implements SoundService {
   AudioPlayerSoundService({
     AudioSessionCoordinator? session,
     AudioPlayer Function()? createPlayer,
-  }) : _session =
+    bool Function()? isVisible,
+  }) : _isVisible = isVisible,
+       _session =
            session ??
            AudioSessionCoordinator(port: const AudioplayersSessionPort()),
        _createPlayer = createPlayer ?? AudioPlayer.new;
@@ -81,6 +84,12 @@ class AudioPlayerSoundService implements SoundService {
 
   /// Test seam: a host with no audio plugin hands in a player double.
   final AudioPlayer Function() _createPlayer;
+
+  /// Whether Attune's content is on screen (appContentVisibleProvider).
+  /// Stories Wave 3: the app stays mounted behind the privacy cover and the
+  /// lock check, so a sound fired there (a partner's game move, a chirp)
+  /// is dropped rather than heard. Null plays always.
+  final bool Function()? _isVisible;
 
   // AssetSource paths are relative to the `assets/` prefix already declared in
   // pubspec, so they start at `sounds/…`.
@@ -167,6 +176,7 @@ class AudioPlayerSoundService implements SoundService {
 
   @override
   void play(AppSound sound) {
+    if (!(_isVisible?.call() ?? true)) return;
     // Lazily preload if startup didn't (so the feature works even without an
     // explicit preload); the first play may be silent while it warms up, but
     // subsequent plays are ready. Never awaits, never throws into the caller.
@@ -199,6 +209,7 @@ class AudioPlayerSoundService implements SoundService {
 final soundServiceProvider = Provider<SoundService>((ref) {
   final service = AudioPlayerSoundService(
     session: ref.read(audioSessionProvider),
+    isVisible: () => ref.read(appContentVisibleProvider),
   );
   ref.onDispose(service.dispose);
   return service;

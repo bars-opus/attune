@@ -4,6 +4,7 @@ import 'package:attune/features/reminders/data/models/reminder_model.dart';
 import 'package:attune/core/utils/exports/export_screens.dart';
 import 'package:attune/features/timeline/data/models/timeline_event_model.dart';
 import 'package:attune/features/timeline/presentation/widgets/calendar_day_indicators.dart';
+import 'package:attune/features/timeline/presentation/widgets/story_month_load_error.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
@@ -219,6 +220,12 @@ class CalendarStrip extends StatelessWidget {
             },
           ),
         ),
+        // 04 #5: a month whose story counts failed says so.
+        if (relationshipId != null)
+          StoryMonthLoadErrorRow(
+            relationshipId: relationshipId!,
+            month: focusedMonth,
+          ),
         // A key to what is actually on screen this month, not a static
         // list of every type the app supports.
         if (showLegend) ...[

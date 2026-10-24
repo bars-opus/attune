@@ -54,6 +54,7 @@ class RelationshipLifecycleDocs implements DocumentationModule {
           type: ManualContentType.bulletList,
           bulletPoints: [
             'Chat becomes read-only for both of you: you can read, not send.',
+            'Stories and the story calendar are hidden for both of you until you resume.',
             'Nothing new is shared — no reactions, places, ticks or "here now" signals.',
             'Pending notifications and reminders for your space stop.',
             'Calendar links keep working until the space ends.',
@@ -92,9 +93,16 @@ class RelationshipLifecycleDocs implements DocumentationModule {
               'After an ending, you can both still read your chat for 30 days. In that time you can download what you shared (Settings → Download my data).',
         ),
         ManualContent(
+          id: 'lifecycle_end_stories',
+          title: 'Your stories',
+          numberPrefix: '3',
+          content:
+              'Stories close for both of you when the space ends. In those 30 days you can download your own stories from Settings → Download my data, and delete them there any time. Sealing your side ends this at once: your stories leave your download and can\'t be fetched again, so download first if you want a copy.',
+        ),
+        ManualContent(
           id: 'lifecycle_end_seal',
           title: 'Seal your side now',
-          numberPrefix: '3',
+          numberPrefix: '4',
           content:
               'If you don\'t want the 30 days, choose "Seal my side now". Your chat closes for you straight away and can\'t be opened again. It closes only for you — your partner keeps their 30 days unless they seal too. Download first if you want a copy.',
         ),

@@ -1,3 +1,4 @@
+import 'package:attune/core/services/app_content_visibility.dart';
 import 'package:attune/features/planning/domain/youtube_link.dart';
 import 'package:attune/features/planning/presentation/screens/planning_entry_screen.dart';
 import 'package:attune/features/planning/presentation/widgets/link_block_view.dart';
@@ -185,5 +186,46 @@ void main() {
     final menu = menuIn(find.byType(LinkBlockView));
     expect(menu, findsOneWidget);
     expect(tester.getRect(menu).center.dy, moreOrLessEquals(tester.getRect(find.text('Add link')).center.dy, epsilon: 4));
+  });
+
+  group('a playing video stops while Attune is not on screen (stories Wave 3 '
+      'final review I2)', () {
+    Future<void> play(WidgetTester tester) async {
+      await tester.pumpWidget(app(gateway('https://youtu.be/wmZtslmSqfk')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byIcon(Icons.play_arrow_rounded));
+      await tester.pumpAndSettle();
+      expect(find.text('player wmZtslmSqfk'), findsOneWidget);
+    }
+
+    testWidgets('the cover (inactive) closes the player; back, the thumbnail '
+        'shows and only a tap plays again', (tester) async {
+      await play(tester);
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+      await tester.pump();
+      expect(
+        find.text('player wmZtslmSqfk', skipOffstage: false),
+        findsNothing,
+        reason: 'the web view keeps its sound behind the cover',
+      );
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+      await tester.pumpAndSettle();
+      expect(find.text('player wmZtslmSqfk'), findsNothing, reason: 'no auto-play');
+      expect(find.byIcon(Icons.play_arrow_rounded), findsOneWidget);
+      await tester.tap(find.byIcon(Icons.play_arrow_rounded));
+      await tester.pumpAndSettle();
+      expect(find.text('player wmZtslmSqfk'), findsOneWidget);
+    });
+
+    testWidgets("the Safety lock's return check stops it too", (tester) async {
+      await play(tester);
+      final container = ProviderScope.containerOf(tester.element(find.byType(PlanningEntryScreen)));
+      container.read(appContentVisibleProvider.notifier).setLockOpen(false);
+      await tester.pump();
+      expect(find.text('player wmZtslmSqfk', skipOffstage: false), findsNothing);
+      container.read(appContentVisibleProvider.notifier).setLockOpen(true);
+      await tester.pumpAndSettle();
+      expect(find.text('player wmZtslmSqfk'), findsNothing);
+    });
   });
 }

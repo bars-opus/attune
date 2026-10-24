@@ -1,6 +1,8 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:attune/core/services/app_content_visibility.dart';
+import 'package:attune/core/services/media/visible_only_playback.dart';
 import 'package:attune/features/chat/domain/entities/conversation.dart';
 import 'package:attune/features/chat/domain/services/chat_video_preparer.dart';
 import 'package:attune/features/chat/domain/services/streak_recording_session.dart';
@@ -73,6 +75,20 @@ class _StreakCameraScreenState extends ConsumerState<StreakCameraScreen> {
   /// are standing in rather than the take they are deciding on. Null for
   /// a photo take — see [_previewImagePath] instead.
   VideoPlayerController? _previewController;
+
+  /// The preview loops only while Attune is on screen (stories Wave 3).
+  late final VisibleOnlyPlayback _previewPlayback = VisibleOnlyPlayback(
+    isVisible: () => ref.read(appContentVisibleProvider),
+  );
+
+  @override
+  void initState() {
+    super.initState();
+    ref.listenManual<bool>(
+      appContentVisibleProvider,
+      (_, visible) => _previewPlayback.onVisibility(visible),
+    );
+  }
 
   /// The captured photo's path, shown as a static image behind the review
   /// sheet exactly where [_previewController] shows a looping video for a
@@ -273,11 +289,13 @@ class _StreakCameraScreenState extends ConsumerState<StreakCameraScreen> {
     // Looping, because a clip that plays once and freezes on a black last
     // frame reads as a crash mid-review.
     await controller.setLooping(true);
-    await controller.play();
     setState(() => _previewController = controller);
+    // Plays only while Attune is on screen (stories Wave 3).
+    _previewPlayback.start(controller);
   }
 
   Future<void> _disposePreview() async {
+    _previewPlayback.clear();
     final controller = _previewController;
     _previewController = null;
     _previewImagePath = null;

@@ -40,6 +40,8 @@ void main() {
           'quiet_states',
           'couple_map_enabled',
           'quiz_clinical_signoff',
+          'chat_ephemeral_video',
+          'chat_video_sharing',
         }),
       );
     }

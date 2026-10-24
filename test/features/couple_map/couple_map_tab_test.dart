@@ -437,4 +437,23 @@ void main() {
       );
     },
   );
+
+  // Stories Wave 3: the shell keeps the map mounted behind the privacy
+  // cover, so its minute tick must stop itself while nobody can see it.
+  testWidgets('the minute tick stops while Attune is covered and picks up '
+      'again, with a redraw, when it is on screen', (t) async {
+    final h = TabHarness([selfRow, partnerRow()]);
+    await h.pump(t);
+    t.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+    await t.pump();
+    final hidden = h.view.built;
+    await t.pump(const Duration(minutes: 3));
+    expect(h.view.built, hidden, reason: 'no tick while covered');
+    t.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+    await t.pumpAndSettle();
+    final back = h.view.built;
+    expect(back, greaterThan(hidden), reason: 'redrawn on return');
+    await t.pump(const Duration(minutes: 1));
+    expect(h.view.built, greaterThan(back), reason: 'ticking again');
+  });
 }

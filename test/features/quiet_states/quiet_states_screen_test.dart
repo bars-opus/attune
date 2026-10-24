@@ -165,4 +165,23 @@ void main() {
     expect(find.text('Coming soon'), findsOneWidget);
     expect(find.byType(Switch), findsNothing);
   });
+
+  // Stories Wave 3: kept mounted behind the privacy cover, the screen no
+  // longer refetches by being re-created on every return.
+  testWidgets('the quiet state is read again when Attune is on screen again, '
+      'without a remount', (t) async {
+    final (fake, _) = await _pump(t, null);
+    expect(find.text('End now'), findsNothing);
+    t.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+    await t.pump();
+    // Its window was set on another device while this one was away.
+    fake.state = QuietState(
+      kind: QuietKind.loss,
+      until: DateTime.utc(2026, 10, 30),
+      lineOffered: true,
+    );
+    t.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+    await t.pumpAndSettle();
+    expect(find.text('End now'), findsOneWidget);
+  });
 }

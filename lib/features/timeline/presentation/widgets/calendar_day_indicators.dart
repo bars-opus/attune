@@ -18,7 +18,7 @@ library;
 import 'package:attune/features/reminders/presentation/reminder_icons.dart';
 import 'package:attune/features/stories/data/story_read_repository.dart';
 import 'package:attune/features/stories/presentation/providers/story_providers.dart';
-import 'package:cached_network_image/cached_network_image.dart';
+import 'package:attune/features/stories/presentation/widgets/story_ring.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -230,6 +230,10 @@ class _StoryAvatar extends ConsumerWidget {
         (key == null || key.isEmpty)
             ? null
             : ref.watch(storyMediaSignedUrlProvider(key)).valueOrNull;
+    final decodeWidth = storyThumbnailDecodeWidth(
+      kCalendarStoryAvatarDiameter,
+      MediaQuery.maybeDevicePixelRatioOf(context) ?? 3,
+    );
 
     return Container(
       width: kCalendarStoryAvatarDiameter,
@@ -240,20 +244,19 @@ class _StoryAvatar extends ConsumerWidget {
       ),
       child: ClipOval(
         child:
-            (url == null || url.isEmpty)
-                ? ColoredBox(color: colorScheme.surfaceContainerHighest)
-                : CachedNetworkImage(
+            (key != null && key.isNotEmpty)
+                // One widget before and after the URL lands: the disk copy
+                // stays up until the network image is ready.
+                ? StoryKeyCachedImage(
+                  storageKey: key,
                   imageUrl: url,
-                  fit: BoxFit.cover,
-                  placeholder:
-                      (_, __) => ColoredBox(
-                        color: colorScheme.surfaceContainerHighest,
-                      ),
-                  errorWidget:
-                      (_, __, ___) => ColoredBox(
-                        color: colorScheme.surfaceContainerHighest,
-                      ),
-                ),
+                  decodeWidth: decodeWidth,
+                  fadeInDuration: const Duration(milliseconds: 500),
+                  fallback: ColoredBox(
+                    color: colorScheme.surfaceContainerHighest,
+                  ),
+                )
+                : ColoredBox(color: colorScheme.surfaceContainerHighest),
       ),
     );
   }

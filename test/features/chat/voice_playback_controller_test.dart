@@ -239,6 +239,23 @@ void main() {
     expect(state.isPlaying, isFalse);
   });
 
+  test('an inactive blip pauses too: the privacy cover is up and the chat '
+      'stays mounted behind it (stories Wave 3)', () async {
+    await controller.toggle('m1', url);
+    controller.didChangeAppLifecycleState(AppLifecycleState.inactive);
+    await tick();
+    expect(state.isPlaying, isFalse);
+  });
+
+  test('coming back does not start the note again on its own', () async {
+    await controller.toggle('m1', url);
+    controller.didChangeAppLifecycleState(AppLifecycleState.inactive);
+    await tick();
+    controller.didChangeAppLifecycleState(AppLifecycleState.resumed);
+    await tick();
+    expect(state.isPlaying, isFalse);
+  });
+
   test('stop() clears everything (leaving the chat screen)', () async {
     await controller.toggle('m1', url);
     await controller.stop();

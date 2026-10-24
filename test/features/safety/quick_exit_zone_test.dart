@@ -4,7 +4,9 @@
 // so a centred tab or title under it is not a trap (review I8).
 import 'package:attune/app/routing/app_router.dart' show RouteNames;
 import 'package:attune/features/auth/providers/auth_provider.dart';
+import 'package:attune/features/safety/domain/services/quick_exit_service.dart';
 import 'package:attune/features/safety/presentation/widgets/quick_exit_zone.dart';
+import 'package:attune/features/stories/data/story_device_wipe.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
@@ -96,6 +98,10 @@ void main() {
   setUp(() {
     FlutterSecureStorage.setMockInitialValues({});
     SharedPreferences.setMockInitialValues({});
+    // The story wipe's real image cache arms a 3 s bound under fake time
+    // (stories Wave 4 Task 9); this suite tests the cover, not the wipe.
+    QuickExitService.clearStories = () async {};
+    addTearDown(() => QuickExitService.clearStories = clearStoryDeviceCaches);
   });
 
   for (final p in _paths) {

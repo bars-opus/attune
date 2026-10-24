@@ -1,7 +1,9 @@
 // test/features/location/presence_providers_test.dart
+import 'package:attune/core/services/app_content_visibility.dart';
 import 'package:attune/features/location/data/presence_sampler.dart';
 import 'package:attune/features/location/domain/couple_map_presence.dart';
 import 'package:attune/features/location/presentation/providers/presence_providers.dart';
+import 'package:flutter/widgets.dart' show AppLifecycleState;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:attune/features/location/domain/location_access.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -140,5 +142,67 @@ void main() {
     final c = _container(g, s);
     expect(await c.read(locationAccessProvider.future), LocationAccess.denied);
     expect(s.asked, 0);
+  });
+
+  // Stories Wave 3: the map tab stays mounted behind the privacy cover, so
+  // this provider no longer dies on leave. It must not sample or record
+  // while Attune is not on screen, nor before the lock opens on a return
+  // (Review Focus 1).
+  testWidgets('no sample, record or read while covered or while the lock '
+      'checks; one refresh once the lock opens', (t) async {
+    final g = FakePresenceGateway({
+      'couple_map_presence':
+          (_) => const [
+            {
+              'who': 'self',
+              'cell_lat': 5.565,
+              'cell_lng': -0.205,
+              'freshness': 'fresh',
+            },
+          ],
+    });
+    final s = FakeSampler(next: _accra);
+    final c = ProviderContainer(
+      overrides: [
+        presenceGatewayProvider.overrideWithValue(g),
+        presenceSamplerProvider.overrideWithValue(s),
+        presenceTimezoneProvider.overrideWithValue(() async => 'Africa/Accra'),
+      ],
+    );
+    final sub = c.listen(coupleMapPresenceProvider('r1'), (_, __) {});
+    await t.pump(const Duration(milliseconds: 10));
+    int reads() => g.calls.where((x) => x.$1 == 'couple_map_presence').length;
+    final opened = reads();
+    expect(opened, greaterThan(0));
+
+    for (final st in [
+      AppLifecycleState.inactive,
+      AppLifecycleState.hidden,
+      AppLifecycleState.paused,
+    ]) {
+      t.binding.handleAppLifecycleStateChanged(st);
+    }
+    c.read(appContentVisibleProvider.notifier).setLockOpen(false); // gate
+    await t.pump(const Duration(minutes: 16));
+    expect(reads(), opened, reason: 'nothing while backgrounded');
+
+    for (final st in [
+      AppLifecycleState.hidden,
+      AppLifecycleState.inactive,
+      AppLifecycleState.resumed,
+    ]) {
+      t.binding.handleAppLifecycleStateChanged(st);
+    }
+    await t.pump(const Duration(milliseconds: 10));
+    expect(reads(), opened, reason: 'the lock is still checking');
+
+    c.read(appContentVisibleProvider.notifier).setLockOpen(true);
+    await t.pump(const Duration(milliseconds: 10));
+    // One refresh (its record is debounced by the real clock: one read).
+    expect(reads(), opened + 1, reason: 'one refresh once the lock opens');
+
+    sub.close();
+    c.dispose();
+    await t.pump(const Duration(milliseconds: 1));
   });
 }

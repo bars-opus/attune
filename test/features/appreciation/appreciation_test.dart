@@ -252,4 +252,26 @@ void main() {
     expect(File('lib/features/appreciation/data/appreciation_service.dart').readAsStringSync(),
         contains("rpc('list_my_jar_ids')"));
   });
+
+  // Stories Wave 3: the shell keeps the jar mounted behind the privacy
+  // cover, so it no longer refetches by being re-created on every return.
+  testWidgets('the jar refetches when Attune is on screen again, without a '
+      'remount', (t) async {
+    JarNote n(String id, String text) => JarNote(
+      messageId: id,
+      relationshipId: 'r1',
+      content: text,
+      sentAt: DateTime.utc(2026, 10, 1, 9),
+    );
+    final fake = _Fake([n('m1', 'I noticed you made tea. Thank you.')]);
+    await t.pumpWidget(_app(const AppreciationJarScreen(), fake));
+    await t.pumpAndSettle();
+    t.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+    await t.pump();
+    // Kept on another device while this one was away.
+    fake.notes = [...fake.notes, n('m2', 'I noticed you called. Thank you.')];
+    t.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+    await t.pumpAndSettle();
+    expect(find.text('I noticed you called. Thank you.'), findsOneWidget);
+  });
 }

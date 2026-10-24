@@ -12,6 +12,7 @@ import { serve } from 'https://deno.land/std@0.177.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { relationshipAiSuppressed } from '../_shared/ai_suppression.ts'
 import { hostilitySignalsEnabled } from '../_shared/hostility_signals.ts'
+import { constantTimeEqual } from '../_shared/attune_auth.ts'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -66,7 +67,8 @@ serve(async (req) => {
     const forceRecompute = body?.force_recompute === true
 
     const token = bearerToken(req)
-    const isService = token !== '' && token === serviceKey
+    // Constant time (checklist 2.3): the cron's token is the service key.
+    const isService = token.length > 0 && constantTimeEqual(token, serviceKey)
 
     let relationships: RelationshipRow[]
     if (isService) {

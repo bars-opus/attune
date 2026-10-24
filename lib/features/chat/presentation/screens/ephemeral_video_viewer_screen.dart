@@ -1,7 +1,9 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:attune/core/services/app_content_visibility.dart';
 import 'package:attune/core/services/media/screenshot_detection_service.dart';
+import 'package:attune/core/services/media/visible_only_playback.dart';
 import 'package:attune/features/auth/providers/auth_provider.dart';
 import 'package:attune/features/chat/config/chat_config.dart';
 import 'package:attune/features/chat/domain/entities/conversation.dart';
@@ -69,9 +71,21 @@ class _EphemeralVideoViewerScreenState
   final _screenshotDetection = ScreenshotDetectionService();
   StreamSubscription<void>? _screenshotSubscription;
 
+  /// The clip plays only while Attune is on screen (stories Wave 3: this
+  /// route now stays mounted behind the privacy cover and the lock check,
+  /// where it could otherwise play to its end, unseen, and be marked
+  /// viewed).
+  late final VisibleOnlyPlayback _playback = VisibleOnlyPlayback(
+    isVisible: () => ref.read(appContentVisibleProvider),
+  );
+
   @override
   void initState() {
     super.initState();
+    ref.listenManual<bool>(
+      appContentVisibleProvider,
+      (_, visible) => _playback.onVisibility(visible),
+    );
     final controller =
         widget.videoUrl.startsWith('http')
             ? VideoPlayerController.networkUrl(Uri.parse(widget.videoUrl))
@@ -82,7 +96,7 @@ class _EphemeralVideoViewerScreenState
         .then((_) {
           if (!mounted) return;
           setState(() => _controller = controller);
-          controller.play();
+          _playback.start(controller);
         })
         .catchError((_) {
           // Does NOT auto-pop and does NOT auto-mark-viewed: a decode

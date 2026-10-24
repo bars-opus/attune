@@ -6,6 +6,7 @@ import 'package:attune/features/together/presentation/together_providers.dart';
 import 'package:attune/features/wins/domain/win_card.dart';
 import 'package:attune/features/wins/presentation/share_win_sheet.dart';
 import 'package:attune/features/wins/presentation/support_chips_sheet.dart';
+import 'package:attune/features/wins/presentation/win_providers.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
@@ -107,5 +108,54 @@ void main() {
       );
       expect(RegExp(r'\.length\}').hasMatch(src), isFalse, reason: f.path);
     }
+  });
+
+  // Stories Wave 3: the Together hub is kept mounted behind the privacy
+  // cover, so the cards no longer refetch by being re-created on a return.
+  testWidgets('the win cards refetch when Attune is on screen again, without '
+      'a remount', (t) async {
+    var rows = [
+      {
+        'event_id': 'e1',
+        'title': 'Got the grant!',
+        'created_at': '2026-10-18T09:00:00Z',
+      },
+    ];
+    final g = FakeTogetherGateway({'list_win_cards': (_) => rows});
+    await t.pumpWidget(
+      _app(
+        Consumer(
+          builder:
+              (_, ref, __) => Column(
+                children: [
+                  for (final w
+                      in ref.watch(winCardsProvider('r1')).valueOrNull ??
+                          const <WinCard>[])
+                    Text(w.title),
+                ],
+              ),
+        ),
+        overrides: [
+          togetherRepositoryProvider.overrideWithValue(TogetherRepository(g)),
+          winsEnabledProvider.overrideWith((ref) async => true),
+        ],
+      ),
+    );
+    await t.pumpAndSettle();
+    expect(find.text('Got the grant!'), findsOneWidget);
+    t.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+    await t.pump();
+    // The partner shared another while this phone was away.
+    rows = [
+      ...rows,
+      {
+        'event_id': 'e2',
+        'title': 'Passed my test',
+        'created_at': '2026-10-19T09:00:00Z',
+      },
+    ];
+    t.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+    await t.pumpAndSettle();
+    expect(find.text('Passed my test'), findsOneWidget);
   });
 }

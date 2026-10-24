@@ -29,6 +29,7 @@ class _NoStories implements StoryReadGateway {
     required DateTime occurredOn,
     StoryPageCursor? after,
     int limit = 50,
+    String? authorId,
   }) async => const StoryItemPage(items: [], nextCursor: null);
 
   // Change signals never fire; channel clean-up is a no-op.

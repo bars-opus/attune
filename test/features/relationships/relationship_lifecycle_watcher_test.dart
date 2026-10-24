@@ -44,14 +44,17 @@ class _Service extends RelationshipLifecycleService {
   }
 }
 
+/// The lock state as the watcher sees it; a test flips it to play a return.
+final _lockOpen = StateProvider<bool>((_) => true);
+
 Future<({GoRouter router, _Service service, List<int> clears})> _pump(
   WidgetTester t,
   RelationshipLifecycle? l, {
   String start = '/',
   String? userId = 'u1',
 }) async {
-  // A fresh mount, as after every resume (the privacy cover unmounts the
-  // app's subtree); re-pumping the same tree would keep the old State.
+  // A fresh mount, as after a cold start or a PIN unlock (the lock replaces
+  // the app's subtree); re-pumping the same tree would keep the old State.
   await t.pumpWidget(const SizedBox());
   final service = _Service(l);
   final clears = <int>[];
@@ -76,7 +79,7 @@ Future<({GoRouter router, _Service service, List<int> clears})> _pump(
           () async => clears.add(1),
         ),
         lifecycleUserIdProvider.overrideWithValue(userId),
-        lifecycleLockOpenProvider.overrideWith((ref) => true),
+        lifecycleLockOpenProvider.overrideWith((ref) => ref.watch(_lockOpen)),
       ],
       child: ScreenUtilInit(
         designSize: const Size(390, 844),
@@ -161,8 +164,8 @@ void main() {
       '(final review IMP-2)', (t) async {
     await _pump(t, _l());
     expect(find.text('Ama has ended your shared space.'), findsOneWidget);
-    // The privacy cover unmounts everything on inactive: the sheet is gone
-    // without the person having read it.
+    // The PIN lock replaces everything: the sheet is gone without the
+    // person having read it.
     await t.pumpWidget(const SizedBox());
     await t.pumpAndSettle();
     await _pump(t, _l());
@@ -171,5 +174,22 @@ void main() {
     await t.pumpAndSettle();
     await _pump(t, _l());
     expect(find.text('Ama has ended your shared space.'), findsNothing);
+  });
+
+  testWidgets('kept mounted across a return (stories Wave 3): every reopen of '
+      'the lock asks again, even within 5 minutes', (t) async {
+    final w = await _pump(t, null);
+    expect(w.service.fetches, 1);
+    final c = ProviderScope.containerOf(
+      t.element(find.byType(RelationshipLifecycleWatcher)),
+    );
+    // The partner ends it while this phone is in the background.
+    w.service.value = _l();
+    c.read(_lockOpen.notifier).state = false; // the return's lock check
+    await t.pump();
+    c.read(_lockOpen.notifier).state = true;
+    await t.pumpAndSettle();
+    expect(w.service.fetches, 2);
+    expect(find.text('Ama has ended your shared space.'), findsOneWidget);
   });
 }

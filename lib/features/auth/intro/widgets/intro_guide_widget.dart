@@ -10,7 +10,12 @@ import 'package:gap/gap.dart';
 class IntroGuideWidget extends StatelessWidget {
   final DocumentationModule module;
 
-  const IntroGuideWidget({super.key, required this.module});
+  /// The card's square side, before ScreenUtil scaling. The intro and login
+  /// screens use the default; the empty chat uses a smaller card so the row
+  /// still fits above the message bar with the keyboard open.
+  final double size;
+
+  const IntroGuideWidget({super.key, required this.module, this.size = 250});
 
   @override
   Widget build(BuildContext context) {
@@ -18,10 +23,14 @@ class IntroGuideWidget extends StatelessWidget {
 
     final colorScheme = theme.colorScheme;
     final textTheme = theme.textTheme;
+    // A smaller card (the empty chat's) keeps its text room by trimming
+    // the padding and the icon; the default 250 card is unchanged.
+    final compact = size < 250;
+    final iconBox = compact ? 44.0 : 60.0;
 
     return Container(
-      width: 250.w,
-      height: 250.h,
+      width: size.w,
+      height: size.h,
       margin: EdgeInsets.only(right: Spacing.sm.w),
       child: CardInkWell(
         onTap: () {
@@ -34,15 +43,15 @@ class IntroGuideWidget extends StatelessWidget {
             ),
           );
         },
-        padding: EdgeInsets.all(Spacing.xl.h),
+        padding: EdgeInsets.all((compact ? Spacing.md : Spacing.xl).h),
         // color: colorScheme.background,
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             // Icon
             Container(
-              width: 60.w,
-              height: 60.h,
+              width: iconBox.w,
+              height: iconBox.h,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
                 border: Border.all(
@@ -51,7 +60,7 @@ class IntroGuideWidget extends StatelessWidget {
               ),
               child: Icon(
                 module.icon,
-                size: IconSizes.lg.h,
+                size: (compact ? IconSizes.md : IconSizes.lg).h,
                 color: colorScheme.onBackground.withOpacity(.5),
               ),
             ),

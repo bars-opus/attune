@@ -36,8 +36,8 @@ class RelationshipEndedSheet extends StatelessWidget {
       builder: (_) => RelationshipEndedSheet(lifecycle: l),
     );
     // Seen only if the person actually had it: a button, or a dismiss while
-    // the app is in front. An unmount (the privacy cover on a call or the
-    // notification shade) is not seeing it (final review IMP-2).
+    // the app is in front. An unmount (the PIN lock replacing the app, or
+    // quick exit) is not seeing it (final review IMP-2).
     final seen =
         choice != null ||
         (context.mounted &&

@@ -56,13 +56,13 @@ BEGIN
   END IF;
   IF has_function_privilege('anon', 'public.list_story_places(uuid,uuid,numeric,numeric,numeric,numeric,int)', 'EXECUTE')
      OR has_function_privilege('anon', 'public.clear_story_place(uuid)', 'EXECUTE')
-     OR has_function_privilege('anon', 'public.create_story_item(uuid,uuid,uuid,uuid,int,int,int,int,jsonb)', 'EXECUTE') THEN
+     OR has_function_privilege('anon', 'public.create_story_item(uuid,uuid,uuid,uuid,int,int,int,int,jsonb,timestamptz,timestamptz)', 'EXECUTE') THEN
     RAISE EXCEPTION 'CONTRACT VIOLATED: anon can reach story places';
   END IF;
-  IF to_regprocedure('public.create_story_item(uuid,uuid,uuid,uuid,int,int,int,int)') IS NOT NULL THEN
-    RAISE EXCEPTION 'CONTRACT VIOLATED: the 8-argument overload still exists (PGRST203 ambiguity)';
+  IF to_regprocedure('public.create_story_item(uuid,uuid,uuid,uuid,int,int,int,int)') IS NOT NULL OR to_regprocedure('public.create_story_item(uuid,uuid,uuid,uuid,int,int,int,int,jsonb)') IS NOT NULL OR to_regprocedure('public.create_story_item(uuid,uuid,uuid,uuid,int,int,int,int,jsonb,timestamptz)') IS NOT NULL THEN
+    RAISE EXCEPTION 'CONTRACT VIOLATED: an older finalize overload still exists (PGRST203 ambiguity)';
   END IF;
-  IF has_function_privilege('authenticated', 'public.create_story_item_core(uuid,uuid,uuid,uuid,int,int,int,int)', 'EXECUTE') THEN
+  IF has_function_privilege('authenticated', 'public.create_story_item_core(uuid,uuid,uuid,uuid,int,int,int,int,timestamptz,timestamptz)', 'EXECUTE') THEN
     RAISE EXCEPTION 'CONTRACT VIOLATED: clients can call the core directly (bypassing place rules)';
   END IF;
 END $$;

@@ -37,6 +37,7 @@ library;
 
 import 'dart:async';
 
+import 'package:attune/core/services/app_content_visibility.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart'
     show Supabase, SupabaseClient;
@@ -259,6 +260,12 @@ class AiSessionController extends AutoDisposeNotifier<AiSessionViewState> {
     //
     // Registered in `build` so it is re-armed if the provider is rebuilt.
     ref.onDispose(stopPolling);
+    // The shell keeps the sheet mounted behind the privacy cover (stories
+    // Wave 3), so leaving no longer tears this down: [_pollTick] skips
+    // while Attune is not on screen, and a return catches up at once.
+    ref.listen<bool>(appContentVisibleProvider, (prev, next) {
+      if (next && prev == false && _pollTimer != null) unawaited(_pollTick());
+    });
     // Idle until prepare() is called — a fresh sheet open is a fresh
     // instance, so nothing here carries over from a previous session.
     return const AiSessionViewState();
@@ -736,6 +743,8 @@ class AiSessionController extends AutoDisposeNotifier<AiSessionViewState> {
   Future<void> _pollTick() async {
     final sessionId = state.sessionId;
     if (sessionId == null) return;
+    // Not while nobody can see it (a network and AI-session cost).
+    if (!ref.read(appContentVisibleProvider)) return;
     // Non-overlapping: a slow round trip must not let ticks pile up and
     // apply out of order.
     if (_polling) return;

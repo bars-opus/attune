@@ -1,6 +1,7 @@
 // lib/features/games/thirty_six_questions/presentation/screens/thirty_six_waiting_screen.dart
 
 import 'dart:async';
+import 'package:attune/core/services/app_content_visibility.dart';
 import 'package:attune/core/utils/exports/export_screens.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -15,6 +16,14 @@ class ThirtySixWaitingScreen extends ConsumerStatefulWidget {
   final String questionText;
   final String answerText;
 
+  /// Test seams (stories Wave 3): the poll's read of the round, and the
+  /// realtime watch, which returns its cancel. Supabase when null.
+  @visibleForTesting
+  final Future<Map<String, dynamic>> Function(String roundId)? readRound;
+  @visibleForTesting
+  final VoidCallback Function(String roundId, VoidCallback onBothAnswered)?
+  watchRound;
+
   const ThirtySixWaitingScreen({
     super.key,
     required this.sessionId,
@@ -24,6 +33,8 @@ class ThirtySixWaitingScreen extends ConsumerStatefulWidget {
     required this.chapter,
     required this.questionText,
     required this.answerText,
+    this.readRound,
+    this.watchRound,
   });
 
   @override
@@ -34,57 +45,88 @@ class ThirtySixWaitingScreen extends ConsumerStatefulWidget {
 class _ThirtySixWaitingScreenState
     extends ConsumerState<ThirtySixWaitingScreen> {
   late Timer _pollTimer;
-  RealtimeChannel? _roundChannel;
+  VoidCallback? _unwatchRound;
   bool _isRevealReady = false;
 
   @override
   void initState() {
     super.initState();
     _subscribeToReveal();
+    // Kept mounted behind the privacy cover (stories Wave 3): the poll
+    // reads nothing while Attune is not on screen, then reads once on return.
+    ref.listenManual<bool>(appContentVisibleProvider, (prev, next) {
+      if (next && prev == false) unawaited(_pollRound());
+    });
   }
 
   @override
   void dispose() {
     _pollTimer.cancel();
-    final channel = _roundChannel;
-    if (channel != null) {
-      Supabase.instance.client.removeChannel(channel);
-    }
+    _unwatchRound?.call();
     super.dispose();
   }
 
   void _subscribeToReveal() {
-    final supabase = ref.read(supabaseClientProvider);
-
     // Listen for reveal_triggered_at
-    _pollTimer = Timer.periodic(const Duration(seconds: 2), (timer) async {
-      final round =
-          await supabase
-              .from('game_session_rounds')
-              .select('both_answered, reveal_triggered_at')
-              .eq('id', widget.roundId)
-              .single();
+    _pollTimer = Timer.periodic(
+      const Duration(seconds: 2),
+      (timer) => _pollRound(),
+    );
 
-      if (round['both_answered'] == true &&
-          round['reveal_triggered_at'] != null) {
+    // Also listen to real-time updates (fallback to polling)
+    _unwatchRound = (widget.watchRound ?? _watchRoundOnSupabase)(
+      widget.roundId,
+      () {
         setState(() {
           _isRevealReady = true;
         });
-        _pollTimer.cancel();
-
-        // Wait 500ms grace window before navigating to reveal
         Future.delayed(const Duration(milliseconds: 500), () {
-          if (mounted) {
-            _navigateToReveal();
-          }
+          if (mounted) _navigateToReveal();
         });
-      }
-    });
+      },
+    );
+  }
 
-    // Also listen to real-time updates (fallback to polling)
-    _roundChannel =
-        supabase
-            .channel('36q_round_${widget.roundId}')
+  Future<void> _pollRound() async {
+    if (!ref.read(appContentVisibleProvider)) return;
+    final round = await (widget.readRound ?? _readRoundOnSupabase)(
+      widget.roundId,
+    );
+    if (!mounted) return;
+
+    if (round['both_answered'] == true &&
+        round['reveal_triggered_at'] != null) {
+      setState(() {
+        _isRevealReady = true;
+      });
+      _pollTimer.cancel();
+
+      // Wait 500ms grace window before navigating to reveal
+      Future.delayed(const Duration(milliseconds: 500), () {
+        if (mounted) {
+          _navigateToReveal();
+        }
+      });
+    }
+  }
+
+  Future<Map<String, dynamic>> _readRoundOnSupabase(String roundId) {
+    return ref
+        .read(supabaseClientProvider)
+        .from('game_session_rounds')
+        .select('both_answered, reveal_triggered_at')
+        .eq('id', roundId)
+        .single();
+  }
+
+  VoidCallback _watchRoundOnSupabase(
+    String roundId,
+    VoidCallback onBothAnswered,
+  ) {
+    final channel =
+        ref
+            .read(supabaseClientProvider)
+            .channel('36q_round_$roundId')
             .onPostgresChanges(
               event: PostgresChangeEvent.update,
               schema: 'public',
@@ -92,21 +134,15 @@ class _ThirtySixWaitingScreenState
               filter: PostgresChangeFilter(
                 type: PostgresChangeFilterType.eq,
                 column: 'id',
-                value: widget.roundId,
+                value: roundId,
               ),
               callback: (payload) {
                 final data = payload.newRecord;
-                if (data['both_answered'] == true) {
-                  setState(() {
-                    _isRevealReady = true;
-                  });
-                  Future.delayed(const Duration(milliseconds: 500), () {
-                    if (mounted) _navigateToReveal();
-                  });
-                }
+                if (data['both_answered'] == true) onBothAnswered();
               },
             )
             .subscribe();
+    return () => Supabase.instance.client.removeChannel(channel);
   }
 
   void _navigateToReveal() {

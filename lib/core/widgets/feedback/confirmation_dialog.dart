@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
@@ -73,14 +74,20 @@ class ConfirmationDialog extends StatelessWidget {
             ),
             Gap(Spacing.sm.h),
 
-            // Message
+            // Message. Scrolls only when it would not fit (a small phone,
+            // large text), so the buttons below always stay on screen and
+            // tappable; when it fits, the layout is exactly as before.
             if (message.isNotEmpty)
-              Text(
-                message,
-                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+              Flexible(
+                child: SingleChildScrollView(
+                  child: Text(
+                    message,
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
                 ),
-                textAlign: TextAlign.center,
               ),
             Gap(Spacing.xl.h),
 
@@ -153,7 +160,8 @@ class ConfirmationDialog extends StatelessWidget {
           size: ButtonSize.small,
           width: double.infinity,
           padding: Spacing.horizontalMd,
-          height: 40.h,
+          // At least a 48 dp target.
+          height: math.max(40.h, Spacing.xxl),
           textColor: _getConfirmButtonTextColor(colorScheme),
           customColor: _getConfirmButtonColor(colorScheme),
         ),
@@ -162,7 +170,8 @@ class ConfirmationDialog extends StatelessWidget {
         if (showCancel) ...[
           AppButton(
             elevation: 0,
-            height: 40.h,
+            // At least a 48 dp target.
+            height: math.max(40.h, Spacing.xxl),
             label: cancelText,
             onPressed: () {
               Navigator.of(context).pop();

@@ -6,6 +6,7 @@ import {
   STATIC_PROHIBITED_PATTERNS,
 } from "../_shared/gemini_json.ts";
 import { relationshipAiSuppression } from "../_shared/ai_suppression.ts";
+import { constantTimeEqual } from "../_shared/attune_auth.ts";
 import {
   HOSTILITY_PATTERN_TYPES,
   hostilitySignalsEnabled,
@@ -60,7 +61,9 @@ serve(async (req) => {
     // only nudge their own couple's job (the client calls this after
     // request_verdict_generation queues it).
     const allowed = await resolveVerdictScope(token, body, {
-      isServiceToken: (t) => t.length > 0 && t === Deno.env.get("SUPABASE_SERVICE_ROLE_KEY"),
+      // Constant time (checklist 2.3).
+      isServiceToken: (t) =>
+        t.length > 0 && constantTimeEqual(t, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? ""),
       userIdFor: async (t) => {
         const { data, error } = await supabase.auth.getUser(t);
         return error ? null : data.user?.id ?? null;

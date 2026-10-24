@@ -235,10 +235,12 @@ void main() {
     );
     await t.tap(find.text('GO'));
     await t.pumpAndSettle();
+    expect(t.takeException(), isNull);
     expect(find.text('Pause your shared space?'), findsOneWidget);
     expect(
       find.text(
         'Chat becomes read-only for both of you and nothing new is shared. '
+        'Stories and the story calendar are hidden for both of you until you resume. '
         'Either of you can resume or end it within 30 days. '
         // Only the live games end on a pause (their relationship-change
         // triggers); the rest wait until you resume.
@@ -280,10 +282,15 @@ void main() {
     );
     await t.tap(find.text('GO'));
     await t.pumpAndSettle();
+    expect(t.takeException(), isNull);
     expect(find.text('End your shared space?'), findsOneWidget);
     expect(
       find.text(
         "You'll both be able to read your chat for 30 days, then it closes. "
+        'Stories close for both of you now. You can download yours from '
+        'Download my data in those 30 days, and delete them there any time. '
+        'If you seal your side, that ends at once: download first if you '
+        'want a copy. '
         'Closed chats are deleted after 12 months. '
         "Your partner won't get a notification; they'll see it the next time "
         'they open Attune.',
@@ -306,4 +313,58 @@ void main() {
     await t.pumpAndSettle();
     expect(w.loads, greaterThanOrEqualTo(2));
   });
+
+  // Batch 7 review I2: the longer Pause/End copy at a small phone (320x568)
+  // must not overflow, and Cancel must stay on screen and tappable.
+  for (final which in ['pause', 'end']) {
+    testWidgets('$which sheet at 320 x 568: no overflow, Cancel tappable', (
+      t,
+    ) async {
+      t.view.physicalSize = const Size(320, 568);
+      t.view.devicePixelRatio = 1;
+      addTearDown(t.view.reset);
+      await t.pumpWidget(
+        ScreenUtilInit(
+          designSize: const Size(390, 844),
+          builder:
+              (_, __) => MaterialApp(
+                home: Builder(
+                  builder:
+                      (context) => Scaffold(
+                        body: TextButton(
+                          onPressed:
+                              () =>
+                                  which == 'pause'
+                                      ? PauseRelationshipAction.confirmAndPause(
+                                        context,
+                                        relationshipId: 'r1',
+                                        service: _Service(),
+                                        clearSurfaces: () async {},
+                                      )
+                                      : EndRelationshipAction.confirmAndEnd(
+                                        context,
+                                        relationshipId: 'r1',
+                                      ),
+                          child: const Text('GO'),
+                        ),
+                      ),
+                ),
+              ),
+        ),
+      );
+      await t.tap(find.text('GO'));
+      await t.pumpAndSettle();
+      expect(t.takeException(), isNull);
+      expect(find.text('Cancel').hitTestable(), findsOneWidget);
+      expect(
+        find.text(which == 'pause' ? 'Pause' : 'End').hitTestable(),
+        findsOneWidget,
+      );
+      // The confirm buttons are 48 dp targets (review M8).
+      final cancel = t.getSize(
+        find.ancestor(of: find.text('Cancel'), matching: find.byType(InkWell)).first,
+      );
+      expect(cancel.height, greaterThanOrEqualTo(48));
+    });
+  }
 }

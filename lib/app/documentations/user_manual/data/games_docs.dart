@@ -27,7 +27,7 @@ class GamesDocs implements DocumentationModule {
       'Playful ways to connect with your partner';
 
   @override
-  IconData get icon => Icons.stadium_outlined;
+  IconData get icon => Icons.sports_esports_outlined;
 
   @override
   List<ManualSection> getSections(BuildContext context) => [
@@ -35,7 +35,7 @@ class GamesDocs implements DocumentationModule {
       id: 'games_overview',
       title: 'What Games are for',
       subtitle: 'Connection, not competition',
-      icon: Icons.stadium_outlined,
+      icon: Icons.sports_esports_outlined,
       category: 'Games',
       order: 1,
       contents: [

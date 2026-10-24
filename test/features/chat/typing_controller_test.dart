@@ -1,4 +1,5 @@
 import 'package:attune/features/chat/presentation/state/typing_controller.dart';
+import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'support/chat_test_harness.dart';
@@ -132,4 +133,35 @@ void main() {
     },
     timeout: const Timeout(Duration(seconds: 30)),
   );
+
+  // Stories Wave 3: the chat stays mounted behind the privacy cover, with
+  // the composer still focused, so the throttle no longer dies with it.
+  testWidgets('never sends typing while Attune is covered: leaving stops it; '
+      'typing again on return starts it', (t) async {
+    final repo = FakeChatRepository(currentUserId: userId);
+    final container = buildChatContainer(repository: repo, userId: userId);
+    final sub = container.listen(typingControllerProvider(relId), (_, __) {});
+    final controller = container.read(typingControllerProvider(relId).notifier);
+
+    controller.onComposingChanged(true);
+    expect(repo.sentTyping.map((e) => e.typing), [true]);
+    t.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+    await t.pump();
+    expect(repo.sentTyping.last.typing, isFalse, reason: 'cleared on leave');
+    final atLeave = repo.sentTyping.length;
+    controller.onComposingChanged(true); // a draft restored while covered
+    await t.pump(const Duration(seconds: 7));
+    expect(repo.sentTyping.length, atLeave, reason: 'nothing while covered');
+
+    t.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+    await t.pump();
+    controller.onComposingChanged(true);
+    expect(repo.sentTyping.last.typing, isTrue);
+
+    controller.onSent();
+    sub.close();
+    container.dispose();
+    // Riverpod schedules the auto-dispose on a zero-length timer.
+    await t.pump(const Duration(milliseconds: 1));
+  });
 }

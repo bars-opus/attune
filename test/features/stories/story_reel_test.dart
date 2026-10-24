@@ -29,6 +29,7 @@
 import 'dart:async';
 
 import 'package:attune/app/theme/app_theme.dart';
+import 'package:attune/core/services/app_content_visibility.dart';
 import 'package:attune/features/auth/providers/auth_provider.dart';
 import 'package:attune/features/stories/data/story_read_repository.dart';
 import 'package:attune/features/stories/presentation/providers/story_providers.dart';
@@ -38,6 +39,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+
+import 'support/reel_test_kit.dart' show kitInstantImage;
 
 const _myId = 'me-1';
 const _partnerId = 'partner-1';
@@ -185,6 +188,7 @@ class _FakeReelGateway implements StoryReadGateway {
     required DateTime occurredOn,
     StoryPageCursor? after,
     int limit = 50,
+    String? authorId,
   }) async => const StoryItemPage(items: [], nextCursor: null);
 
   @override
@@ -311,6 +315,7 @@ Widget _harness({
         isOwnReel: isOwnReel,
         videoPlayerFactory: videoPlayerFactory,
         imageHoldDuration: imageHoldDuration,
+        imageProviderBuilder: kitInstantImage,
       ),
     ),
   );
@@ -932,6 +937,158 @@ void main() {
         expect(player.isPlaying, isTrue);
       },
     );
+    testWidgets(
+      'a return that stops at the Safety lock check stays paused until the '
+      'lock opens (stories Wave 3)',
+      (tester) async {
+        final items = [
+          _item(
+            id: 'v',
+            createdAt: DateTime.utc(2026, 9, 1),
+            mediaType: 'video',
+          ),
+          _item(id: 'after', createdAt: DateTime.utc(2026, 9, 2)),
+        ];
+        final gateway = _FakeReelGateway(items: items);
+        final playerFactory = _FakePlayerFactory();
+        await tester.pumpWidget(
+          _harness(gateway: gateway, videoPlayerFactory: playerFactory.factory),
+        );
+        await tester.pump();
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 50));
+        final player = playerFactory.players.single;
+        expect(player.isPlaying, isTrue);
+        final container = ProviderScope.containerOf(
+          tester.element(find.byType(StoryReelScreen)),
+        );
+        final binding = TestWidgetsFlutterBinding.instance;
+        for (final s in [
+          AppLifecycleState.inactive,
+          AppLifecycleState.hidden,
+          AppLifecycleState.paused,
+        ]) {
+          binding.handleAppLifecycleStateChanged(s);
+          await tester.pump();
+        }
+        expect(player.isPlaying, isFalse);
+        // What SafetyLockGate does on a return: the lock is being checked.
+        container.read(appContentVisibleProvider.notifier).setLockOpen(false);
+        for (final s in [
+          AppLifecycleState.hidden,
+          AppLifecycleState.inactive,
+          AppLifecycleState.resumed,
+        ]) {
+          binding.handleAppLifecycleStateChanged(s);
+          await tester.pump();
+        }
+        expect(
+          player.isPlaying,
+          isFalse,
+          reason: 'nothing plays behind the PIN check',
+        );
+        container.read(appContentVisibleProvider.notifier).setLockOpen(true);
+        await tester.pump();
+        expect(player.isPlaying, isTrue);
+        expect(gateway.markViewedCalls, ['v']);
+      },
+    );
+
+    testWidgets(
+      'an item that finishes loading behind the Safety lock check is not '
+      'marked seen, and its hold does not run, until the lock opens '
+      '(stories Wave 3)',
+      (tester) async {
+        final items = [
+          _item(id: 'a', createdAt: DateTime.utc(2026, 9, 1)),
+          _item(id: 'after', createdAt: DateTime.utc(2026, 9, 2)),
+        ];
+        final gateway = _FakeReelGateway(items: items)
+          ..gatedKey = 'story-media/a.jpg'
+          ..signUrlGate = Completer<void>();
+        await tester.pumpWidget(_harness(gateway: gateway));
+        await tester.pump();
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 50));
+        expect(gateway.markViewedCalls, isEmpty);
+        final container = ProviderScope.containerOf(
+          tester.element(find.byType(StoryReelScreen)),
+        );
+        final binding = TestWidgetsFlutterBinding.instance;
+        for (final s in [
+          AppLifecycleState.inactive,
+          AppLifecycleState.hidden,
+          AppLifecycleState.paused,
+        ]) {
+          binding.handleAppLifecycleStateChanged(s);
+          await tester.pump();
+        }
+        container.read(appContentVisibleProvider.notifier).setLockOpen(false);
+        for (final s in [
+          AppLifecycleState.hidden,
+          AppLifecycleState.inactive,
+          AppLifecycleState.resumed,
+        ]) {
+          binding.handleAppLifecycleStateChanged(s);
+          await tester.pump();
+        }
+        // The photo renders while the PIN check is on screen.
+        gateway.signUrlGate!.complete();
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 50));
+        await tester.pump(const Duration(seconds: 6));
+        expect(
+          gateway.markViewedCalls,
+          isEmpty,
+          reason: 'nobody has seen it: the PIN check is on screen',
+        );
+        expect(find.byType(StoryReelScreen), findsOneWidget);
+
+        container.read(appContentVisibleProvider.notifier).setLockOpen(true);
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 50));
+        expect(gateway.markViewedCalls, ['a']);
+      },
+    );
+
+    testWidgets(
+      'a reel opened while the privacy cover is up waits to play and to '
+      'mark seen until Attune is on screen (stories Wave 3)',
+      (tester) async {
+        final items = [
+          _item(
+            id: 'v',
+            createdAt: DateTime.utc(2026, 9, 1),
+            mediaType: 'video',
+          ),
+        ];
+        final gateway = _FakeReelGateway(items: items);
+        final playerFactory = _FakePlayerFactory();
+        final binding = TestWidgetsFlutterBinding.instance;
+        addTearDown(
+          () => binding.handleAppLifecycleStateChanged(
+            AppLifecycleState.resumed,
+          ),
+        );
+        // A notification tapped from Notification Centre: inactive only.
+        binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+        await tester.pumpWidget(
+          _harness(gateway: gateway, videoPlayerFactory: playerFactory.factory),
+        );
+        await tester.pump();
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 50));
+        final player = playerFactory.players.single;
+        expect(player.isPlaying, isFalse, reason: 'the cover is up');
+        expect(gateway.markViewedCalls, isEmpty);
+
+        binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 50));
+        expect(player.isPlaying, isTrue);
+        expect(gateway.markViewedCalls, ['v']);
+      },
+    );
   });
 
   group('fix round 1, F4: progress bars render across the top', () {
@@ -1033,6 +1190,7 @@ void main() {
                   child: StoryReelScreen(
                     relationshipId: _relationshipId,
                     authorId: _partnerId,
+                    imageProviderBuilder: kitInstantImage,
                   ),
                 ),
               ],

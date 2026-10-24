@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:attune/core/services/app_content_visibility.dart';
 import 'package:attune/core/ui/motion/reduce_motion.dart';
 import 'package:attune/features/chat/data/repositories/streak_repository.dart';
 import 'package:attune/features/chat/utils/chat_log.dart';
@@ -74,8 +75,7 @@ class StreakViewerScreen extends ConsumerStatefulWidget {
   ConsumerState<StreakViewerScreen> createState() => _StreakViewerScreenState();
 }
 
-class _StreakViewerScreenState extends ConsumerState<StreakViewerScreen>
-    with WidgetsBindingObserver {
+class _StreakViewerScreenState extends ConsumerState<StreakViewerScreen> {
   List<StreakClip> _clips = const [];
   int _index = 0;
   VideoPlayerController? _controller;
@@ -93,10 +93,11 @@ class _StreakViewerScreenState extends ConsumerState<StreakViewerScreen>
   /// in the background is not a failed load.
   _HoldTimer? _loadTimeoutTimer;
 
-  /// The app is not visible (hidden or paused). Nothing plays and no hold
-  /// runs until it is back (final review M-3): a clip sounding over the
-  /// home screen, or a photo's hold running out behind the lock screen,
-  /// is a view nobody is watching.
+  /// Attune's content is not on screen: any lifecycle state but resumed
+  /// (the privacy cover is up from `inactive` on) or the Safety lock check
+  /// (stories Wave 3). Nothing plays and no hold runs until it is back
+  /// (final review M-3): a clip sounding over the home screen, or a photo's
+  /// hold running out behind the cover, is a view nobody is watching.
   bool _away = false;
 
   /// The generation whose photo hold has already been started, so the
@@ -159,7 +160,13 @@ class _StreakViewerScreenState extends ConsumerState<StreakViewerScreen>
     super.initState();
     _streaks = ref.read(streakRepositoryProvider);
     _messageId = widget.messageId;
-    WidgetsBinding.instance.addObserver(this);
+    ref.listenManual<bool>(
+      appContentVisibleProvider,
+      (_, visible) => _setAway(!visible),
+    );
+    // Opened while not on screen (a notification tapped behind the cover):
+    // start away, so nothing plays or is spent until Attune is back.
+    _away = !ref.read(appContentVisibleProvider);
     unawaited(_load());
   }
 
@@ -167,31 +174,29 @@ class _StreakViewerScreenState extends ConsumerState<StreakViewerScreen>
   /// stopped. Not a close — the view was spent at presentation, so closing
   /// would cost the recipient their (often only) view for a phone call;
   /// the app's PIN lock / quick exit, not this screen, decide whether the
-  /// person who comes back may see it. Inactive alone (a pulled-down
-  /// shade, an incoming-call banner) leaves it playing.
-  @override
-  void didChangeAppLifecycleState(AppLifecycleState state) {
-    switch (state) {
-      case AppLifecycleState.hidden:
-      case AppLifecycleState.paused:
-        if (_away) return;
-        _away = true;
-        _imageHoldTimer?.pause();
-        _loadTimeoutTimer?.pause();
-        final controller = _controller;
-        if (controller != null && controller.value.isPlaying) {
-          unawaited(controller.pause());
-        }
-      case AppLifecycleState.resumed:
-        if (!_away) return;
-        _away = false;
-        _imageHoldTimer?.resume();
-        _loadTimeoutTimer?.resume();
-        _resumeClip();
-      case AppLifecycleState.inactive:
-      case AppLifecycleState.detached:
-        break;
+  /// person who comes back may see it. Since stories Wave 3 an inactive
+  /// blip (a pulled-down shade, an incoming-call banner) counts as away:
+  /// the privacy cover is up, so nobody is watching.
+  void _setAway(bool away) {
+    if (away) {
+      if (_away) return;
+      _away = true;
+      _imageHoldTimer?.pause();
+      _loadTimeoutTimer?.pause();
+      final controller = _controller;
+      if (controller != null && controller.value.isPlaying) {
+        unawaited(controller.pause());
+      }
+      return;
     }
+    if (!_away) return;
+    _away = false;
+    _imageHoldTimer?.resume();
+    _loadTimeoutTimer?.resume();
+    _resumeClip();
+    // A photo whose first frame arrived while away was not presented
+    // (stories Wave 3): rebuild so its frameBuilder presents it now.
+    if (mounted) setState(() {});
   }
 
   /// Restarts the current video if it stopped short of its end (paused
@@ -402,6 +407,12 @@ class _StreakViewerScreenState extends ConsumerState<StreakViewerScreen>
     final index = _index;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted || generation != _generation) return;
+      // Decoded behind the privacy cover or the Safety lock check: not
+      // seen yet (stories Wave 3). Presented on the rebuild after return.
+      if (_away) {
+        _holdStartedFor = -1;
+        return;
+      }
       _hasPresented = true;
       _spendNow();
       _loadTimeoutTimer?.cancel();
@@ -522,7 +533,6 @@ class _StreakViewerScreenState extends ConsumerState<StreakViewerScreen>
 
   @override
   void dispose() {
-    WidgetsBinding.instance.removeObserver(this);
     _generation++;
     _imageHoldTimer?.cancel();
     _loadTimeoutTimer?.cancel();

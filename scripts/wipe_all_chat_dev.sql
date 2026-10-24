@@ -56,6 +56,10 @@ DELETE FROM public.message_read_marks;
 
 -- Only incremented on insert; nothing recounts it on delete.
 UPDATE public.relationships SET message_count = 0 WHERE message_count <> 0;
+-- The live count since 20261019100100 (its delete trigger already
+-- decrements it; this makes the reset explicit).
+UPDATE public.relationship_message_counters SET message_count = 0, updated_at = now()
+WHERE message_count <> 0;
 
 COMMIT;
 

@@ -21,11 +21,16 @@ class EndRelationshipAction {
         noIcon: true,
         type: ConfirmationType.warning,
         // Spec 3a (F1 (1), (2)): no one is notified, and the chat stays
-        // readable for both for 30 days.
+        // readable for both for 30 days. Stories close at once (Wave 5
+        // copy, owner ruling 4).
         title: 'End your shared space?',
         confirmText: 'End',
         message:
             "You'll both be able to read your chat for 30 days, then it closes. "
+            'Stories close for both of you now. You can download yours from '
+            'Download my data in those 30 days, and delete them there any time. '
+            'If you seal your side, that ends at once: download first if you '
+            'want a copy. '
             'Closed chats are deleted after 12 months. '
             "Your partner won't get a notification; they'll see it the next "
             'time they open Attune.',

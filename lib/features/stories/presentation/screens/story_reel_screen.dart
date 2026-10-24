@@ -7,8 +7,9 @@
 /// dismissal gesture, no image branch (spec §5.2's own table). This
 /// screen is NOT an adaptation of it: it is new code that reuses only
 /// two things by pattern, not by import — signed-media loading (a
-/// storage KEY is signed fresh through [storyMediaSignedUrlProvider] on
-/// every item, never cached, spec §4.1/§5.5) and `VideoPlayerController`
+/// storage KEY is signed when first shown on this screen and reused for up
+/// to 540 s on this screen only, §4.1 as amended, Wave 1) and
+/// `VideoPlayerController`
 /// setup/disposal shape. `streak_viewer_screen.dart` itself is untouched
 /// by this task.
 ///
@@ -52,16 +53,26 @@ library;
 
 import 'dart:async';
 
+import 'package:attune/app/theme/design_tokens.dart';
+import 'package:attune/core/services/app_content_visibility.dart';
 import 'package:attune/features/auth/providers/auth_provider.dart';
 import 'package:attune/features/chat/presentation/state/chat_state.dart'
     show chatRepositoryProvider;
 import 'package:attune/features/couple_map/presentation/providers/story_places_providers.dart';
+import 'package:attune/features/quiz/presentation/providers/quiz_providers.dart'
+    show partnerNameProvider;
 import 'package:attune/features/stories/data/story_read_repository.dart';
+import 'package:attune/features/stories/data/story_signed_url_cache.dart';
 import 'package:attune/features/stories/presentation/providers/story_providers.dart';
 import 'package:attune/features/stories/presentation/widgets/story_progress_bars.dart';
+import 'package:attune/features/stories/presentation/widgets/story_reel_header.dart';
+import 'package:clock/clock.dart';
+import 'package:flutter/foundation.dart' show defaultTargetPlatform;
 import 'package:flutter/material.dart';
-import 'package:flutter/semantics.dart' show SemanticsService;
+import 'package:flutter/semantics.dart'
+    show CustomSemanticsAction, SemanticsService;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:supabase_flutter/supabase_flutter.dart' show PostgrestException;
 import 'package:uuid/uuid.dart';
 import 'package:video_player/video_player.dart';
 
@@ -74,6 +85,10 @@ const Duration kStoryImageHoldDuration = Duration(seconds: 5);
 /// Independent of the underlying player: for a video this is purely a
 /// UI refresh rate, not what drives playback (the player drives itself).
 const Duration kStoryProgressTickInterval = Duration(milliseconds: 100);
+
+/// How long the reel reuses a signed URL it minted itself: comfortably
+/// inside the 600 s TTL, so §4.5's deletion bound is unchanged.
+const Duration kStorySignedUrlReuse = kStoryUrlReuseWindow;
 
 /// What the reel needs from a playing item, independent of whether it is
 /// backed by a real `VideoPlayerController` or a test fake. See this
@@ -101,18 +116,53 @@ abstract class StoryItemPlayer {
   Future<void> dispose();
 }
 
+/// Health signals a [StoryItemPlayer] may offer. Kept apart from
+/// [StoryItemPlayer] so players that only implement the core seam (the
+/// existing test fakes) keep compiling.
+abstract interface class StoryItemPlayerStatus {
+  /// Fires when playback fails after it started (a dropped connection, a
+  /// signed URL that expired during a long pause).
+  Stream<Object> get onError;
+
+  /// True while playback waits for data.
+  bool get isBuffering;
+}
+
+/// A video that is not ready by now counts as failed (02 #15).
+const Duration kStoryVideoInitTimeout = Duration(seconds: 15);
+
+/// Automatic retries for an item that failed, 1 s, 2 s then 4 s apart; the
+/// person can always tap Retry or Next (02 #5).
+const int kStoryItemAutoRetries = 3;
+
+/// How many further pages the reel reads looking for where to start
+/// ([StoryReelScreen.initialStoryItemId], or the first unseen story).
+const int kStoryStartSearchMaxPages = 10;
+
+/// The longest the reel waits, in all, for later pages while it looks for
+/// where to start (batch-5 review, Minor 1). Then it starts at the oldest,
+/// so a stalled network never leaves the person on a spinner.
+const kStoryStartSearchBudget = Duration(seconds: 3);
+
+/// A story reply that has not been answered by now counts as failed and can
+/// be retried with the same message id (02 #17).
+const Duration kStoryReplySendTimeout = Duration(seconds: 30);
+
 /// Production [StoryItemPlayer]: wraps a real `VideoPlayerController`,
 /// constructed and disposed the same way the streak viewer does
 /// (`VideoPlayerController.networkUrl` + `initialize()` + a listener that
 /// latches on end-of-clip so it cannot fire twice — mirrored from
 /// `streak_viewer_screen.dart`'s own `_playAt`).
-class VideoControllerStoryItemPlayer implements StoryItemPlayer {
+class VideoControllerStoryItemPlayer
+    implements StoryItemPlayer, StoryItemPlayerStatus {
   VideoControllerStoryItemPlayer(Uri uri)
     : _controller = VideoPlayerController.networkUrl(uri);
 
   final VideoPlayerController _controller;
   final _endedController = StreamController<void>.broadcast();
   bool _ended = false;
+  final _errorController = StreamController<Object>.broadcast();
+  bool _errored = false;
 
   /// Exposed so [_MediaView] can hand the real controller to Flutter's
   /// `VideoPlayer` widget for actual rendering — the ONE place this
@@ -128,8 +178,15 @@ class VideoControllerStoryItemPlayer implements StoryItemPlayer {
   }
 
   void _onTick() {
-    if (_ended) return;
     final value = _controller.value;
+    if (value.hasError && !_errored) {
+      _errored = true;
+      if (!_errorController.isClosed) {
+        _errorController.add(value.errorDescription ?? 'playback error');
+      }
+      return;
+    }
+    if (_ended) return;
     if (value.isInitialized &&
         value.duration > Duration.zero &&
         value.position >= value.duration &&
@@ -155,20 +212,38 @@ class VideoControllerStoryItemPlayer implements StoryItemPlayer {
   Stream<void> get onEnded => _endedController.stream;
 
   @override
+  Stream<Object> get onError => _errorController.stream;
+
+  @override
+  bool get isBuffering => _controller.value.isBuffering;
+
+  @override
   Future<void> dispose() async {
     _controller.removeListener(_onTick);
     await _endedController.close();
+    await _errorController.close();
     await _controller.dispose();
   }
 }
 
-/// Opens at the OLDEST active item of one author's page (spec §5.5:
-/// "the active reel opens at the oldest active item"). Viewed segments
-/// are faded (handled by [StoryProgressBars]'s already-filled bars for
-/// `i < currentIndex`; a segment the viewer has already seen from a
-/// previous visit is NOT skipped — this screen still plays it, just
-/// starting the walk at the oldest item every open, matching the
-/// ring's own "faded, not hidden" posture, spec §5.5).
+/// Why the reel is paused. Each cause sets and clears only itself, so one
+/// ending (a hold released, the app back in front) never resumes a story
+/// another cause still holds (02 #12; the F1 lesson generalised).
+enum _PauseCause { hold, lifecycle, composer, modal, accessibility }
+
+/// Where the current item is: loading its media, on screen, or failed.
+/// "Ready" means a decoded first frame for a photo, or an initialized
+/// player for a video, and is the only state that starts the clock and
+/// records a view (spec §5.2; 07a V6).
+enum _ItemPhase { loading, ready, failed }
+
+/// The reel (spec §5.2). Where it opens (owner ruling 3, §5.5 as amended):
+/// the partner's active reel, and the partner's ring on a calendar day
+/// ([StoryReelScreen.forDay] with [dayAuthorId], 04 #4), at the first story
+/// the viewer has not seen (the oldest when all are seen); a reply's quoted
+/// story via [initialStoryItemId]; otherwise the oldest, as on my own day
+/// ring. Watched segments are faded,
+/// not skipped ([StoryProgressBars.viewed]).
 class StoryReelScreen extends ConsumerStatefulWidget {
   /// Author mode (Task 4's original shape, unchanged): one author's
   /// active reel via [storyReelPagesProvider] (`list_active_story_items`,
@@ -182,8 +257,11 @@ class StoryReelScreen extends ConsumerStatefulWidget {
     this.isOwnReel = false,
     this.videoPlayerFactory,
     this.imageHoldDuration = kStoryImageHoldDuration,
+    this.imageProviderBuilder,
   }) : occurredOn = null,
-       placeItems = null;
+       placeItems = null,
+       initialStoryItemId = null,
+       dayAuthorId = null;
 
   /// Day mode (Task 5, spec §5.3): one calendar day's items via
   /// [storyDayItemsProvider] (`list_story_day_items`, INCLUDES expired
@@ -200,8 +278,11 @@ class StoryReelScreen extends ConsumerStatefulWidget {
     super.key,
     required this.relationshipId,
     required this.occurredOn,
+    this.initialStoryItemId,
+    this.dayAuthorId,
     this.videoPlayerFactory,
     this.imageHoldDuration = kStoryImageHoldDuration,
+    this.imageProviderBuilder,
   }) : authorId = '',
        isOwnReel = false,
        placeItems = null;
@@ -215,10 +296,13 @@ class StoryReelScreen extends ConsumerStatefulWidget {
     required List<StoryItem> items,
     this.videoPlayerFactory,
     this.imageHoldDuration = kStoryImageHoldDuration,
+    this.imageProviderBuilder,
   }) : placeItems = items,
        authorId = '',
        isOwnReel = false,
-       occurredOn = null;
+       occurredOn = null,
+       initialStoryItemId = null,
+       dayAuthorId = null;
 
   final String relationshipId;
   final String authorId;
@@ -238,6 +322,15 @@ class StoryReelScreen extends ConsumerStatefulWidget {
   /// Non-null selects places mode (see [StoryReelScreen.forPlaces]).
   final List<StoryItem>? placeItems;
 
+  /// Day mode: the story to start at (a story reply's quoted item, 02 #11).
+  /// Pages forward until found; falls back to the first item.
+  final String? initialStoryItemId;
+
+  /// Day mode for one author's ring on the calendar (04 #4): only that
+  /// author's stories play. Null plays the whole day. The server reads them
+  /// (Wave 5, `p_author_id`); the filter here stays for an older server.
+  final String? dayAuthorId;
+
   /// Test seam: mints a [StoryItemPlayer] for a video item's signed URL.
   /// Defaults to [VideoControllerStoryItemPlayer]. See this file's header.
   final StoryItemPlayer Function(Uri uri)? videoPlayerFactory;
@@ -247,12 +340,216 @@ class StoryReelScreen extends ConsumerStatefulWidget {
   /// at [kStoryImageHoldDuration] by default).
   final Duration imageHoldDuration;
 
+  /// Test seam, as on [StreakViewerScreen]: how a signed photo URL becomes
+  /// an [ImageProvider]. Production uses [NetworkImage].
+  final ImageProvider Function(String url)? imageProviderBuilder;
+
   @override
   ConsumerState<StoryReelScreen> createState() => _StoryReelScreenState();
 }
 
 class _StoryReelScreenState extends ConsumerState<StoryReelScreen> {
   int _index = 0;
+
+  /// The story on screen. Delete, Reply, the bars and auto-advance act on
+  /// this item, found by id in the live list, never by position: the list
+  /// is refetched underneath the reel (review 02 #1/#4, 07a group A).
+  StoryItem? _current;
+
+  /// Playback starts once, from the first non-empty list. Replaces the old
+  /// render-state heuristic that restarted a failed first item every frame
+  /// (review 02 #5).
+  bool _started = false;
+
+  /// Stories this screen deleted: hidden at once, so the reel steps off
+  /// them before, or without, the refetch that confirms it (02 #1).
+  final Set<String> _removedIds = {};
+
+  /// A Delete or Remove-from-map call is in flight: both buttons are
+  /// disabled, and the reel stays paused ([_PauseCause.modal]) until it
+  /// returns (final review #2).
+  bool _deleting = false;
+
+  /// Latched by [_close]: the reel pops itself once, and only itself.
+  bool _closing = false;
+
+  /// Latched while the reel waits for the next page at the end of the
+  /// loaded one; [_pageLoading] shows its spinner.
+  bool _advancingPage = false;
+  bool _pageLoading = false;
+
+  /// One author's day ring paging forward to that author's first story
+  /// ([_fillAuthorPage]): started once, then done.
+  bool _authorFillStarted = false;
+  bool _authorFillDone = false;
+
+  /// One author's ring on a busy day: their stories may start pages in.
+  /// Pages forward once, at most [kStoryStartSearchMaxPages], then lets the
+  /// empty state speak if there are still none.
+  void _fillAuthorPage() {
+    if (_authorFillStarted) return;
+    _authorFillStarted = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      try {
+        for (var page = 0; page < kStoryStartSearchMaxPages; page++) {
+          if (!mounted || _liveItems().isNotEmpty || !_pagerHasMore()) break;
+          await _pagerLoadMore();
+          // A failed page (the pager keeps its list and reports the error)
+          // ends the run: the empty branch then offers Retry instead of
+          // re-fetching it back to back (M-1). A loadMore that only waited
+          // out a refresh fetched nothing, so the loop goes round again.
+          if (!mounted || _pagerHasError()) break;
+        }
+      } catch (_) {
+        // A failed page leaves the empty state to say there is nothing.
+      } finally {
+        _authorFillDone = true;
+        if (mounted) setState(() {});
+      }
+    });
+  }
+
+  /// Retry after a failed author fill: page forward again (M-1).
+  void _retryAuthorFill() {
+    setState(() {
+      _authorFillStarted = false;
+      _authorFillDone = false;
+    });
+  }
+
+  /// I-1: a refresh restarts the day at page one, and one author's ring may
+  /// have its story on screen pages past it. While the reel pages forward
+  /// to that story, it keeps drawing the list it last showed.
+  List<StoryItem>? _seekHold;
+  Future<void>? _seekDone;
+
+  /// The visible list [_buildLoaded] last drew.
+  List<StoryItem> _shownItems = const [];
+
+  /// Final review M-1: one author's day ring, after deleting the last of
+  /// their loaded stories, pages forward for their next one; a spinner
+  /// stands in for the deleted story meanwhile.
+  bool _pagingPastDeleted = false;
+
+  /// Whether [items] holds a story posted after [current] (lists are
+  /// oldest-first by `(created_at, id)`).
+  static bool _hasNewer(List<StoryItem> items, StoryItem current) =>
+      items.any(
+        (i) =>
+            i.createdAt.isAfter(current.createdAt) ||
+            (i.createdAt == current.createdAt &&
+                i.id.compareTo(current.id) > 0),
+      );
+
+  /// Pages forward, at most [kStoryStartSearchMaxPages], for the deleted
+  /// [gone]'s author's next story, then plays it; with none, the newest one
+  /// left before it, and closes only when none remain (M-1). A loadMore
+  /// that only waited out the delete's refresh fetched nothing, so the
+  /// loop goes round again, as [_advanceAtEndOfPage] does.
+  void _pagePastDeleted(StoryItem gone) {
+    setState(() => _pagingPastDeleted = true);
+    unawaited(() async {
+      try {
+        for (var page = 0; page < kStoryStartSearchMaxPages; page++) {
+          if (!mounted || !_pagerHasMore()) break;
+          await _pagerLoadMore();
+          if (!mounted || _pagerHasError()) break;
+          if (_hasNewer(_liveItems(), gone)) break;
+        }
+      } catch (_) {
+        // Settled below on whatever is loaded.
+      } finally {
+        if (mounted) {
+          setState(() => _pagingPastDeleted = false);
+          final items = _liveItems();
+          if (items.isEmpty) {
+            _close();
+          } else {
+            _startItem(items, _successorIndex(items, gone));
+          }
+        }
+      }
+    }());
+  }
+
+  /// The story on screen may still be on a page not loaded since the last
+  /// refresh: one author's day ring, more pages, and the story newer than
+  /// the last loaded row (lists are oldest-first by `(created_at, id)`).
+  bool _mayLieAhead(StoryItem current) {
+    if (widget.dayAuthorId == null || _removedIds.contains(current.id)) {
+      return false;
+    }
+    if (!_pagerHasMore()) return false;
+    final raw = _pagerCurrentItems();
+    if (raw == null || raw.isEmpty) return true;
+    final last = raw.last;
+    return current.createdAt.isAfter(last.createdAt) ||
+        (current.createdAt == last.createdAt &&
+            current.id.compareTo(last.id) > 0);
+  }
+
+  /// Pages forward, at most [kStoryStartSearchMaxPages], until the story on
+  /// screen is loaded again, then reconciles by id. A failed page, or no
+  /// more pages, reconciles on what is loaded (successor, or close).
+  void _seekCurrent(StoryItem current) {
+    setState(() => _seekHold = _shownItems.isEmpty ? [current] : _shownItems);
+    final done = Completer<void>();
+    _seekDone = done.future;
+    unawaited(() async {
+      try {
+        for (var page = 0; page < kStoryStartSearchMaxPages; page++) {
+          // The story on screen now: a delete during the seek stepped on
+          // to the next one in the held list.
+          if (!mounted || !_mayLieAhead(_current ?? current)) break;
+          // Started from inside the refresh's update: the first loadMore
+          // waits it out and fetches nothing, so the loop goes round again.
+          await _pagerLoadMore();
+          if (!mounted || _pagerHasError()) break;
+        }
+      } catch (_) {
+        // Reconciled below on whatever is loaded.
+      } finally {
+        _seekDone = null;
+        done.complete();
+        if (mounted) {
+          setState(() => _seekHold = null);
+          final now = _current;
+          if (now != null) _reconcile(_liveItems(), now);
+        }
+      }
+    }());
+  }
+
+  /// The start search's overall budget ([kStoryStartSearchBudget]).
+  Timer? _startSearchTimer;
+
+  /// The reel's own dialog while one is open ([_showReelDialog]), set
+  /// before it is pushed, so [_close] can dismiss it first.
+  DialogRoute<Object?>? _dialogRoute;
+
+  /// [_close] was asked for while a dialog was open; it runs once the
+  /// dialog is down.
+  bool _closeAfterDialog = false;
+
+  List<StoryItem> _visible(List<StoryItem> raw) {
+    final author = widget.dayAuthorId;
+    if (_removedIds.isEmpty && author == null) return raw;
+    return raw
+        .where(
+          (i) =>
+              !_removedIds.contains(i.id) &&
+              (author == null || i.authorId == author),
+        )
+        .toList();
+  }
+
+  /// This screen's day pager key: one author's stories when opened from a
+  /// calendar ring (Wave 5 asks the server for them), else the whole day.
+  StoryDayKey get _dayKey => StoryDayKey(
+    relationshipId: widget.relationshipId,
+    occurredOn: widget.occurredOn!,
+    authorId: widget.dayAuthorId,
+  );
 
   /// Places mode's own copy of the list, so removals take effect at once.
   late final List<StoryItem> _placeItems = [...?widget.placeItems];
@@ -261,58 +558,82 @@ class _StoryReelScreenState extends ConsumerState<StoryReelScreen> {
   StoryItemPlayer? _player;
   StreamSubscription<void>? _endedSub;
 
+  /// Automatic retries spent on the current item ([kStoryItemAutoRetries]).
+  int _autoRetries = 0;
+  Timer? _retryTimer;
+
+  /// The video init deadline ([kStoryVideoInitTimeout]); screen-owned, so a
+  /// disposed reel leaves no pending timer.
+  Timer? _initTimer;
+
+  /// A video still initializing: disposed by [_stopMedia] if the reel moves
+  /// on before it is ready.
+  StoryItemPlayer? _pendingPlayer;
+  StreamSubscription<Object>? _errorSub;
+
   /// Elapsed time within the current item, advanced by [_tickTimer] for
   /// an image and read from the player for a video. Drives
   /// [StoryProgressBars.currentProgress].
   Duration _elapsed = Duration.zero;
   Duration _currentDuration = kStoryImageHoldDuration;
 
-  /// True while the user is actively holding a press (spec: hold pauses).
-  /// Cleared on release, independent of [_lifecyclePaused] — see
-  /// [_paused]'s doc comment (fix round 1, F1).
-  bool _heldPaused = false;
+  /// The player's buffering state as of the last tick. A flip repaints
+  /// even under reduce motion, which otherwise skips mid-item repaints and
+  /// would never show (or clear) the buffering spinner (batch-3 review #1).
+  bool _buffering = false;
 
-  /// True while the app is backgrounded (spec/brief: "backgrounding
-  /// mid-item pauses rather than skips"). Cleared automatically when the
-  /// app returns to the foreground (fix round 1, F1) — kept SEPARATE
-  /// from [_heldPaused] so a resume can clear its own cause of pausing
-  /// without accidentally resuming a hold the user is still applying (a
-  /// backgrounding mid-hold — e.g. a notification banner while the
-  /// finger is still down — should leave the hold in control on return,
-  /// not silently un-pause under the user's finger).
-  bool _lifecyclePaused = false;
+  final Set<_PauseCause> _pauseCauses = {};
+  bool get _paused => _pauseCauses.isNotEmpty;
 
-  /// The combined pause state that actually gates the ticker/player —
-  /// paused while EITHER cause is active. Fix round 1, F1: the original
-  /// single `_paused` flag was set by `_setForeground(false)` and only
-  /// ever cleared by `onHoldEnd`, so a lifecycle pause with no matching
-  /// hold-release could never be cleared — the reel froze permanently
-  /// after any backgrounding. Foreground/hold now each own and clear
-  /// their own half.
-  bool get _paused => _heldPaused || _lifecyclePaused;
+  /// The reply this person is typing goes to the story they started it on.
+  StoryItem? _replyTarget;
 
-  bool _loadingItem = false;
+  /// The current item's load phase. [_ItemPhase.ready] is reached only
+  /// once the item has actually rendered — an image after its first frame
+  /// decodes, a video after [StoryItemPlayer.initialize] succeeds — and
+  /// only then do its clock and [_maybeMarkViewed] run (spec §5.2: "after
+  /// a partner's active item renders successfully" — never on open, never
+  /// on a failed load).
+  _ItemPhase _phase = _ItemPhase.loading;
 
-  /// Set once the current item has actually rendered — an image after
-  /// its bytes resolve, a video after [StoryItemPlayer.initialize]
-  /// succeeds. [_maybeMarkViewed] is a no-op until this is true (spec
-  /// §5.2: "after a partner's active item renders successfully" — never
-  /// on open, never on a failed load).
-  bool _rendered = false;
-
-  /// The signed URL `_startItemAsync` minted for the CURRENT item.
-  /// Fix round 1, F5: previously `_MediaView` minted its OWN second URL
-  /// via `storyMediaSignedUrlProvider` instead of using this one — one
-  /// wasted round-trip per image, and a real risk of disagreement
-  /// between "the URL that gated the render/mark check" and "the URL
-  /// actually rendered." Reset to null on every item change so a stale
-  /// URL from the previous item is never shown while the next one loads.
-  String? _currentSignedUrl;
+  /// The provider [_loadImage] resolved for the current photo: the same
+  /// object that gated ready is the one rendered. Fix round 1, F5:
+  /// previously `_MediaView` minted its OWN second URL, risking
+  /// disagreement between "what gated the render/mark check" and "what
+  /// was actually rendered." Reset to null on every item change so the
+  /// previous item is never shown while the next one loads.
+  ImageProvider? _currentImage;
+  ImageStream? _imageStream;
+  ImageStreamListener? _imageListener;
 
   /// Guards a single `mark_story_viewed` call per item id, the same
   /// shape as the streak viewer's `_viewSpent` guard for its own
   /// once-only server call.
   final Set<String> _markedItemIds = {};
+
+  /// Signed URLs minted on THIS screen, by storage key, reused while
+  /// younger than [kStorySignedUrlReuse] (STORIES.md §4.1 as amended):
+  /// the preloaded photo is the one displayed, and a step back does not
+  /// re-sign. Never stored beyond this screen. Keyed by storage key, so an
+  /// archive swap (a new key) always signs afresh.
+  final Map<String, ({String url, DateTime mintedAt})> _signedUrls = {};
+
+  Future<String?> _signedUrlFor(StoryItem item) async {
+    final cached = _signedUrls[item.mediaKey];
+    // Same age rule as the rings' cache: the injected clock, a negative age
+    // (clock set back) is stale, aged from the request's start.
+    if (cached != null && storyUrlFreshFor(cached.mintedAt) != null) {
+      return cached.url;
+    }
+    final startedAt = clock.now();
+    final url = await ref
+        .read(storyReadGatewayProvider)
+        .signMediaUrl(item.mediaKey);
+    if (url != null) {
+      _signedUrls[item.mediaKey] = (url: url, mintedAt: startedAt);
+    }
+    return url;
+  }
 
   /// Bumped on every item change/dispose so a callback from an item the
   /// user has since left (advanced past, backgrounded across, or that
@@ -321,7 +642,6 @@ class _StoryReelScreenState extends ConsumerState<StoryReelScreen> {
   /// following Task 2's F1/F2 lesson.
   int _generation = 0;
 
-  AppLifecycleListener? _lifecycleListener;
   bool _appForeground = true;
 
   /// Task 6 (spec §5.4): composing a reply to the CURRENT item. Owns its
@@ -336,22 +656,45 @@ class _StoryReelScreenState extends ConsumerState<StoryReelScreen> {
   final FocusNode _replyFocusNode = FocusNode();
   bool _sendingReply = false;
 
+  /// One client message id per composed reply: kept while the same text
+  /// goes to the same story ([_replyDraftKey] is `'$storyItemId|$text'`).
+  String? _replyDraftId;
+  String? _replyDraftKey;
+
   @override
   void initState() {
     super.initState();
-    _lifecycleListener = AppLifecycleListener(
-      onResume: () => _setForeground(true),
-      onPause: () => _setForeground(false),
-      onInactive: () => _setForeground(false),
-      onHide: () => _setForeground(false),
+    // Stories Wave 3: the shell keeps this route mounted behind the privacy
+    // cover and the Safety lock check, so "foreground" is whether Attune's
+    // content is on screen (resumed AND the lock open), not the lifecycle
+    // alone: a return that ends at the PIN screen must not play.
+    ref.listenManual<bool>(
+      appContentVisibleProvider,
+      (_, visible) => _setForeground(visible),
     );
-    // Composing a reply pauses the reel exactly like a hold — the item
-    // must not advance or expire the progress bar out from under a
-    // partially-typed reply.
+    // Opened while not on screen (a notification tapped behind the cover):
+    // start paused. No setState in initState; the first build reads it.
+    if (!ref.read(appContentVisibleProvider)) {
+      _appForeground = false;
+      _pauseCauses.add(_PauseCause.lifecycle);
+    }
+    // Composing a reply pauses the reel on its own cause — the item must
+    // not advance out from under a partially-typed reply, and releasing a
+    // hold must not resume it (02 #12).
     _replyFocusNode.addListener(() {
       if (!mounted) return;
-      _setHeldPaused(_replyFocusNode.hasFocus);
+      final focused = _replyFocusNode.hasFocus;
+      _replyTarget = focused ? _current : null;
+      _setPaused(_PauseCause.composer, focused);
     });
+    if (!_placesMode) {
+      ref.listenManual<AsyncValue<List<StoryItem>>>(
+        _itemsProvider(),
+        (_, next) => _onItemsChanged(
+          next.valueOrNull == null ? null : _visible(next.valueOrNull!),
+        ),
+      );
+    }
   }
 
   void _setForeground(bool foreground) {
@@ -361,7 +704,7 @@ class _StoryReelScreenState extends ConsumerState<StoryReelScreen> {
       // Backgrounding mid-item PAUSES rather than skips (spec/brief):
       // the timer/player simply stops advancing; nothing advances the
       // index, and nothing is lost.
-      _setLifecyclePaused(true);
+      _setPaused(_PauseCause.lifecycle, true);
     } else {
       // Fix round 1, F1: returning to the foreground RESUMES — the
       // spec's own table names "Lifecycle pause/RESUME" as one
@@ -373,60 +716,201 @@ class _StoryReelScreenState extends ConsumerState<StoryReelScreen> {
       // plain tap navigates — so every backgrounding (including a
       // routine `inactive` blip from a Control Centre pull or an
       // incoming-call banner) froze the reel until the user happened
-      // to long-press. Clearing the lifecycle half here leaves a
-      // concurrent HELD pause in control via `_paused`'s OR — see that
-      // getter's doc comment.
-      _setLifecyclePaused(false);
+      // to long-press. Clearing only the lifecycle cause here leaves any
+      // other cause (a hold, the composer) in control — see
+      // [_PauseCause].
+      _setPaused(_PauseCause.lifecycle, false);
+      // Stories Wave 3: an item that finished loading while not on screen
+      // counts as seen only now (once per item: [_markedItemIds]).
+      final current = _current;
+      if (current != null && _phase == _ItemPhase.ready) {
+        unawaited(_maybeMarkViewed(current));
+      }
     }
   }
 
-  void _startItem(List<StoryItem> items, int index) {
-    unawaited(_startItemAsync(items, index));
+  /// The pager backing this screen (author or day mode).
+  ProviderListenable<AsyncValue<List<StoryItem>>> _itemsProvider() {
+    final occurredOn = widget.occurredOn;
+    if (occurredOn != null) {
+      return storyDayItemsProvider(_dayKey);
+    }
+    return storyReelPagesProvider(
+      StoryReelKey(
+        relationshipId: widget.relationshipId,
+        authorId: widget.authorId,
+      ),
+    );
   }
 
-  Future<void> _startItemAsync(List<StoryItem> items, int index) async {
+  /// The list backing the screen right now.
+  List<StoryItem> _liveItems() =>
+      _visible(_pagerCurrentItems() ?? const <StoryItem>[]);
+
+  int _currentIndexIn(List<StoryItem> items) {
+    final id = _current?.id;
+    return id == null ? -1 : items.indexWhere((i) => i.id == id);
+  }
+
+  /// Reconciles a refreshed list with the story on screen: same story,
+  /// new position (and fresh row data); or, when it is gone, stop it and
+  /// play the story that followed it, or close when nothing is left.
+  void _onItemsChanged(List<StoryItem>? items) {
+    final current = _current;
+    if (items == null || current == null || !mounted) return;
+    // Paging past a deleted story settles once it lands (M-1).
+    if (_pagingPastDeleted) return;
+    // A seek in flight reconciles once it lands (I-1), except that a story
+    // this screen deleted steps off at once, within the held list, never
+    // after the page fetch (Wave 4 carry).
+    final hold = _seekHold;
+    if (hold != null) {
+      if (!_removedIds.contains(current.id)) return;
+      final kept = [
+        for (final i in hold)
+          if (!_removedIds.contains(i.id)) i,
+      ];
+      if (kept.isEmpty) {
+        setState(() => _seekHold = null);
+        _reconcile(items, current);
+        return;
+      }
+      setState(() => _seekHold = kept);
+      _reconcile(kept, current);
+      return;
+    }
+    if (!items.any((i) => i.id == current.id) && _mayLieAhead(current)) {
+      _seekCurrent(current);
+      return;
+    }
+    _reconcile(items, current);
+  }
+
+  /// [_onItemsChanged] once the story on screen is known not to lie on a
+  /// page still to load.
+  void _reconcile(List<StoryItem> items, StoryItem current) {
+    final target = _replyTarget;
+    if (target != null && !items.any((i) => i.id == target.id)) {
+      _onReplyTargetGone();
+    }
+    final at = items.indexWhere((i) => i.id == current.id);
+    if (at >= 0) {
+      setState(() {
+        _index = at;
+        _current = items[at];
+      });
+      return;
+    }
+    _stopMedia();
+    // M-1: the deleted story ended this author's loaded run, and the day
+    // has more pages: their next story may be on one. Not during a seek,
+    // which reconciles once its page lands.
+    if (widget.dayAuthorId != null &&
+        _removedIds.contains(current.id) &&
+        _seekDone == null &&
+        !_hasNewer(items, current) &&
+        _pagerHasMore()) {
+      _pagePastDeleted(current);
+      return;
+    }
+    if (items.isEmpty) {
+      _close();
+      return;
+    }
+    _startItem(items, _successorIndex(items, current));
+  }
+
+  /// The story being replied to was deleted or expired (batch-1 review,
+  /// Minor 3). Close the keyboard and keep the text, so nothing goes to a
+  /// story the person did not choose; a Send now quotes the story on
+  /// screen. A send already in flight reports its own result instead.
+  void _onReplyTargetGone() {
+    _replyTarget = null;
+    if (_replyFocusNode.hasFocus) _replyFocusNode.unfocus();
+    if (_sendingReply || _replyController.text.trim().isEmpty) return;
+    ScaffoldMessenger.of(context)
+      ..removeCurrentSnackBar()
+      ..showSnackBar(
+        const SnackBar(
+          content: Text(
+            'That story is no longer available. Your reply is still here.',
+          ),
+        ),
+      );
+  }
+
+  /// The first story posted after [gone] (lists are oldest-first by
+  /// `(created_at, id)`), else the newest one left.
+  static int _successorIndex(List<StoryItem> items, StoryItem gone) {
+    final at = items.indexWhere(
+      (i) =>
+          i.createdAt.isAfter(gone.createdAt) ||
+          (i.createdAt == gone.createdAt && i.id.compareTo(gone.id) > 0),
+    );
+    return at == -1 ? items.length - 1 : at;
+  }
+
+  /// Stops whatever is playing without choosing what comes next. Bumps
+  /// [_generation] so every late callback for it is ignored.
+  void _stopMedia() {
+    _generation++;
     _tickTimer?.cancel();
     _tickTimer = null;
-    // NOT awaited: this can run from INSIDE _endedSub's own onEnded
-    // callback (onEnded -> _advance -> _startItem -> here), and
-    // StreamSubscription.cancel() on a broadcast controller does not
-    // complete until the event delivery that triggered it finishes —
-    // awaiting it here from inside that same delivery deadlocks (the
-    // microtask that would complete it never runs because this call
-    // stack is blocking on it). Fire-and-forget mirrors dispose()'s own
-    // unawaited cancel below.
     unawaited(_endedSub?.cancel());
     _endedSub = null;
-    final oldPlayer = _player;
+    final player = _player;
     _player = null;
-    if (oldPlayer != null) unawaited(oldPlayer.dispose());
+    if (player != null) {
+      player.pause();
+      unawaited(player.dispose());
+    }
+    final stream = _imageStream;
+    final listener = _imageListener;
+    if (stream != null && listener != null) stream.removeListener(listener);
+    _imageStream = null;
+    _imageListener = null;
+    _retryTimer?.cancel();
+    _retryTimer = null;
+    _initTimer?.cancel();
+    _initTimer = null;
+    unawaited(_errorSub?.cancel());
+    _errorSub = null;
+    final pending = _pendingPlayer;
+    _pendingPlayer = null;
+    if (pending != null) unawaited(pending.dispose());
+  }
 
-    final generation = ++_generation;
+  void _startItem(List<StoryItem> items, int index, {bool retry = false}) =>
+      unawaited(_startItemAsync(items, index, retry: retry));
+
+  Future<void> _startItemAsync(
+    List<StoryItem> items,
+    int index, {
+    bool retry = false,
+  }) async {
+    // NOT awaited inside: this can run from INSIDE _endedSub's own onEnded
+    // callback (onEnded -> _advance -> _startItem -> here); [_stopMedia]
+    // cancels it fire-and-forget, since awaiting a broadcast cancel from
+    // inside that same delivery deadlocks.
+    _stopMedia();
+    if (!retry) _autoRetries = 0;
+    final generation = _generation;
+    final item = items[index];
     setState(() {
       _index = index;
+      _current = item;
       _elapsed = Duration.zero;
-      _rendered = false;
-      _loadingItem = true;
-      // A hold never carries across an item transition — releasing is
-      // meaningless once the item it applied to is gone. Deliberately
-      // NOT clearing _lifecyclePaused here (fix round 1, F1): if the
-      // app is still backgrounded when an item transition happens
-      // (e.g. a video's onEnded fires while backgrounded), the new
-      // item must start paused too, not slip into playing while nobody
-      // can see it.
-      _heldPaused = false;
-      _currentDuration = kStoryImageHoldDuration;
-      // Fix round 1, F5: clear the previous item's URL immediately so
-      // a slow next-item fetch never shows a stale image behind the
-      // loading spinner.
-      _currentSignedUrl = null;
+      _phase = _ItemPhase.loading;
+      // A hold never carries across an item transition. The other causes
+      // do (fix round 1, F1): a backgrounded app starts the next item
+      // paused too.
+      _pauseCauses.remove(_PauseCause.hold);
+      _currentDuration = widget.imageHoldDuration;
+      // Fix round 1, F5: never show the previous item's media while the
+      // next one loads.
+      _currentImage = null;
     });
-    // Fix round 1, F8: a live announcement on every item change, in
-    // addition to StoryProgressBars' own static "Story N of M"
-    // Semantics label — a screen-reader user who just performed the
-    // "advance"/"go back" action hears where they landed immediately,
-    // rather than needing to re-navigate onto the progress bar to
-    // discover it.
+    // Fix round 1, F8: a live announcement on every item change.
     unawaited(
       SemanticsService.announce(
         'Story ${index + 1} of ${items.length}',
@@ -434,85 +918,142 @@ class _StoryReelScreenState extends ConsumerState<StoryReelScreen> {
       ),
     );
 
-    final item = items[index];
-    final gateway = ref.read(storyReadGatewayProvider);
-    final signedUrl = await gateway.signMediaUrl(item.mediaKey);
+    final signedUrl = await _signedUrlFor(item);
     if (!mounted || generation != _generation) return;
-
     if (signedUrl == null) {
-      // Nothing to render. Treat like the streak viewer's "clips are
-      // gone" branch: do not mark viewed (spec: only after a successful
-      // render), surface the failure, and let the viewer navigate away
-      // manually rather than auto-advancing past a real gap.
-      setState(() {
-        _loadingItem = false;
-        _rendered = false;
-      });
+      _onItemFailed(generation);
       return;
     }
-
     if (item.mediaType == 'video') {
-      final factory = widget.videoPlayerFactory ?? _defaultVideoPlayerFactory;
-      final player = factory(Uri.parse(signedUrl));
-      try {
-        await player.initialize();
-      } catch (_) {
-        if (mounted && generation == _generation) {
-          setState(() => _loadingItem = false);
-        }
-        await player.dispose();
-        return;
-      }
-      if (!mounted || generation != _generation) {
-        await player.dispose();
-        return;
-      }
-
-      _player = player;
-      _endedSub = player.onEnded.listen((_) {
-        if (!mounted || generation != _generation) return;
-        unawaited(_advance(items, generation));
-      });
-
-      setState(() {
-        _loadingItem = false;
-        _rendered = true;
-        _currentDuration = player.duration;
-      });
-      // Only actually start playback if nothing is currently pausing
-      // the reel (fix round 1, F1) — a video whose onEnded fired while
-      // the app is backgrounded must not start the NEXT item playing
-      // out of sight.
-      if (!_paused) player.play();
-      _startTicker(generation, items);
-      unawaited(_maybeMarkViewed(item));
+      await _loadVideo(item, signedUrl, generation);
     } else {
-      // Image: no controller, no natural duration. Hold for
-      // widget.imageHoldDuration on a plain Timer (spec §5.2).
-      setState(() {
-        _loadingItem = false;
-        _rendered = true;
-        _currentDuration = widget.imageHoldDuration;
-        // Fix round 1, F5: this IS the URL _MediaView renders — no
-        // second mint. Set only once we've already confirmed it
-        // non-null above, so `_rendered` and `_currentSignedUrl` agree
-        // by construction.
-        _currentSignedUrl = signedUrl;
-      });
-      _startTicker(generation, items);
-      unawaited(_maybeMarkViewed(item));
+      _loadImage(item, signedUrl, generation);
     }
+  }
 
-    // Fix round 1, F6: named explicitly in spec §5.2's table ("New in
-    // the reel: next-item preloading") and this task's own Step 3.
-    // Warming the NEXT item's signed URL/image bytes while the CURRENT
-    // one is playing means tap-right usually lands on already-fetched
-    // media instead of a fresh storage round-trip. Only ever warms a
-    // cache Flutter/the image pipeline already owns (`precacheImage`)
-    // or a Riverpod `.future` a future rebuild can re-await — nothing
-    // here stores a signed URL past this call, so it does not create a
-    // second "hold a URL" path alongside `_currentSignedUrl` above.
-    _preloadNextItem(items, index);
+  static ImageProvider _networkImage(String url) => NetworkImage(url);
+
+  /// Resolves the photo itself and waits for its first decoded frame: the
+  /// provider that gates ready is the one [_MediaView] renders (F5).
+  void _loadImage(StoryItem item, String url, int generation) {
+    final provider = (widget.imageProviderBuilder ?? _networkImage)(url);
+    final stream = provider.resolve(createLocalImageConfiguration(context));
+    final listener = ImageStreamListener(
+      (info, _) {
+        info.dispose();
+        if (!mounted ||
+            generation != _generation ||
+            _phase != _ItemPhase.loading) {
+          return;
+        }
+        _onItemReady(item, generation, widget.imageHoldDuration);
+      },
+      onError: (_, __) {
+        if (!mounted || generation != _generation) return;
+        _onItemFailed(generation);
+      },
+    );
+    setState(() => _currentImage = provider);
+    _imageStream = stream;
+    _imageListener = listener;
+    stream.addListener(listener);
+  }
+
+  Future<void> _loadVideo(StoryItem item, String url, int generation) async {
+    final player = (widget.videoPlayerFactory ?? _defaultVideoPlayerFactory)(
+      Uri.parse(url),
+    );
+    _pendingPlayer = player;
+    final ready = Completer<bool>();
+    final initTimer = Timer(kStoryVideoInitTimeout, () {
+      if (!ready.isCompleted) ready.complete(false);
+    });
+    _initTimer = initTimer;
+    unawaited(
+      player.initialize().then(
+        (_) {
+          if (!ready.isCompleted) ready.complete(true);
+        },
+        onError: (Object _) {
+          if (!ready.isCompleted) ready.complete(false);
+        },
+      ),
+    );
+    final ok = await ready.future;
+    // Only this load's own deadline: a stale init settling late must not
+    // cancel the next video's (final review #3).
+    initTimer.cancel();
+    if (identical(_initTimer, initTimer)) _initTimer = null;
+    final stillMine = identical(_pendingPlayer, player);
+    if (stillMine) _pendingPlayer = null;
+    if (!mounted || generation != _generation || !ok) {
+      if (stillMine) await player.dispose();
+      if (mounted && generation == _generation && !ok) {
+        _onItemFailed(generation);
+      }
+      return;
+    }
+    _player = player;
+    _endedSub = player.onEnded.listen((_) {
+      if (!mounted || generation != _generation) return;
+      unawaited(_advance(generation));
+    });
+    if (player is StoryItemPlayerStatus) {
+      _errorSub = (player as StoryItemPlayerStatus).onError.listen((_) {
+        if (!mounted || generation != _generation) return;
+        _tickTimer?.cancel();
+        _tickTimer = null;
+        _player?.pause();
+        _onItemFailed(generation);
+      });
+    }
+    _onItemReady(item, generation, player.duration);
+    // Only start playback if nothing is pausing the reel (fix round 1,
+    // F1): a video that became ready while backgrounded stays paused.
+    if (!_paused) player.play();
+  }
+
+  /// The item is on screen: only now does its clock run and its view count.
+  void _onItemReady(StoryItem item, int generation, Duration duration) {
+    setState(() {
+      _phase = _ItemPhase.ready;
+      _currentDuration = duration;
+    });
+    _startTicker(generation);
+    // Stories Wave 3: rendered behind the privacy cover or the Safety lock
+    // check is not seen; [_setForeground] marks it once Attune is back.
+    if (_appForeground) unawaited(_maybeMarkViewed(item));
+    // Fix round 1, F6 (spec §5.2 "next-item preloading"): warm the next
+    // photo once this one is up.
+    final live = _liveItems();
+    final at = _currentIndexIn(live);
+    if (at >= 0) _preloadNextItem(live, at);
+  }
+
+  /// The item cannot be shown. Say so, offer Retry and Next, and retry on
+  /// a growing gap a bounded number of times; never in a loop (02 #5).
+  void _onItemFailed(int generation) {
+    final key = _current?.mediaKey;
+    if (key != null) _signedUrls.remove(key);
+    setState(() => _phase = _ItemPhase.failed);
+    if (_autoRetries >= kStoryItemAutoRetries) return;
+    final delay = Duration(seconds: 1 << _autoRetries);
+    _autoRetries++;
+    _retryTimer?.cancel();
+    _retryTimer = Timer(delay, () {
+      if (!mounted || generation != _generation) return;
+      _retryCurrent();
+    });
+  }
+
+  /// Reloads the story on screen from the live list (so a swapped storage
+  /// key is the one signed). A manual Retry earns a fresh set of retries.
+  void _retryCurrent({bool manual = false}) {
+    if (manual) _autoRetries = 0;
+    final items = _liveItems();
+    final at = _currentIndexIn(items);
+    if (at < 0) return;
+    _startItem(items, at, retry: true);
   }
 
   /// Best-effort warm-up for `items[index + 1]`, if it exists and is an
@@ -522,7 +1063,7 @@ class _StoryReelScreenState extends ConsumerState<StoryReelScreen> {
   /// scope — see this task's report for that call). Failures are
   /// swallowed: this is a pure optimization, never a correctness path,
   /// so nothing here may throw into an unguarded context or affect
-  /// `_rendered`/`markViewed` for the CURRENT item.
+  /// `_phase`/`markViewed` for the CURRENT item.
   void _preloadNextItem(List<StoryItem> items, int currentIndex) {
     final nextIndex = currentIndex + 1;
     if (nextIndex >= items.length) return;
@@ -531,12 +1072,10 @@ class _StoryReelScreenState extends ConsumerState<StoryReelScreen> {
 
     unawaited(() async {
       try {
-        final url = await ref.read(storyReadGatewayProvider).signMediaUrl(
-          next.mediaKey,
-        );
+        final url = await _signedUrlFor(next);
         if (url == null || !mounted) return;
         await precacheImage(
-          NetworkImage(url),
+          (widget.imageProviderBuilder ?? _networkImage)(url),
           context,
           // A failed preload must not surface as an app-visible error —
           // it is a pure optimization, and the normal fetch path in
@@ -561,7 +1100,7 @@ class _StoryReelScreenState extends ConsumerState<StoryReelScreen> {
   StoryItemPlayer _defaultVideoPlayerFactory(Uri uri) =>
       VideoControllerStoryItemPlayer(uri);
 
-  void _startTicker(int generation, List<StoryItem> items) {
+  void _startTicker(int generation) {
     _tickTimer?.cancel();
     // Fix round 1, F7: the completion/auto-advance TIMING must stay
     // real regardless of this setting — an image still needs to hold
@@ -578,6 +1117,7 @@ class _StoryReelScreenState extends ConsumerState<StoryReelScreen> {
     final reduceMotion = mounted
         ? MediaQuery.of(context).disableAnimations
         : false;
+    _buffering = false;
     _tickTimer = Timer.periodic(kStoryProgressTickInterval, (_) {
       if (!mounted || generation != _generation || _paused) return;
 
@@ -587,50 +1127,62 @@ class _StoryReelScreenState extends ConsumerState<StoryReelScreen> {
           : _elapsed + kStoryProgressTickInterval;
 
       if (elapsed >= _currentDuration) {
-        // For an image the timer itself reaching the hold duration is
-        // the completion signal; for a video, StoryItemPlayer.onEnded
-        // is (that listener already calls _advance) — but a slow tick
-        // that observes position >= duration first is harmless to catch
-        // here too, now that _advance itself is generation-guarded (fix
-        // round 1, F2).
+        // One-shot (07a group C): stop this clock before advancing, so the
+        // completion cannot fire again every tick while the next item (or
+        // the close transition) is on its way. For a video this is also a
+        // fallback when onEnded never arrives; whichever runs first wins on
+        // the generation guard.
+        _tickTimer?.cancel();
+        _tickTimer = null;
         setState(() => _elapsed = _currentDuration);
-        if (player == null) unawaited(_advance(items, generation));
+        unawaited(_advance(generation));
         return;
       }
 
-      if (reduceMotion) {
+      final buffering =
+          player is StoryItemPlayerStatus &&
+          (player as StoryItemPlayerStatus).isBuffering;
+      final bufferingChanged = buffering != _buffering;
+      _buffering = buffering;
+
+      if (reduceMotion && !bufferingChanged) {
         // Track time without an intermediate repaint — the segment
         // stays visually at its start-of-item state until the jump to
         // fully-filled above, rather than smoothly animating.
         _elapsed = elapsed;
       } else {
+        // Under reduce motion only a buffering flip lands here: the
+        // spinner must show or go. The bar steps to where it is, the same
+        // discrete repaint a hold or pause already causes (no animation).
         setState(() => _elapsed = elapsed);
       }
     });
   }
 
-  /// The user's own hold/release (fix round 1, F1: split from
-  /// [_setLifecyclePaused] so each cause of pausing can clear itself
-  /// without stepping on the other — see [_paused]'s doc comment).
-  void _setHeldPaused(bool paused) {
-    if (_heldPaused == paused) return;
+  void _setPaused(_PauseCause cause, bool on) {
     final wasPaused = _paused;
-    setState(() => _heldPaused = paused);
+    final changed = on ? _pauseCauses.add(cause) : _pauseCauses.remove(cause);
+    if (!changed) return;
+    setState(() {});
     _applyPausedTransition(wasPaused);
   }
 
-  /// The app foreground/background transition's own half of the pause
-  /// state (fix round 1, F1).
-  void _setLifecyclePaused(bool paused) {
-    if (_lifecyclePaused == paused) return;
-    final wasPaused = _paused;
-    setState(() => _lifecyclePaused = paused);
-    _applyPausedTransition(wasPaused);
+  /// Screen-reader pause (02 #18): its own cause, so neither a hold release
+  /// nor moving to the next story resumes it; only playing it again does.
+  void _toggleAccessibilityPause() {
+    final pausing = !_pauseCauses.contains(_PauseCause.accessibility);
+    _setPaused(_PauseCause.accessibility, pausing);
+    unawaited(
+      SemanticsService.announce(
+        pausing ? 'Paused' : 'Playing',
+        Directionality.of(context),
+      ),
+    );
   }
 
   /// Drives the actual player/ticker effect off the COMBINED [_paused]
-  /// state, only when it actually changed between the two setters
-  /// above — e.g. backgrounding while already held-paused must not
+  /// state, only when it actually changed in [_setPaused] — e.g.
+  /// backgrounding while already held-paused must not
   /// call `player.pause()` a second time, and foregrounding while still
   /// held-paused must not call `player.play()` while the user's finger
   /// is still down.
@@ -674,6 +1226,20 @@ class _StoryReelScreenState extends ConsumerState<StoryReelScreen> {
       // Spec 1a: the server bumps story_change_signals only while the couple
       // shows seen-state, so my own ring refreshes from here instead.
       if (mounted) ref.invalidate(storyRingSummaryProvider(widget.relationshipId));
+      // Wave 5: a day ring's brightness comes from the month's counts, so
+      // every first view (from a day, a map pin or the Conversations ring)
+      // re-reads that month: the change signal does not fire while seen
+      // receipts are off, and the Month view stays alive in Together.
+      if (mounted && !item.hasBeenViewed) {
+        ref.invalidate(
+          storyDayCountsProvider(
+            StoryDayRangeKey.month(
+              relationshipId: widget.relationshipId,
+              day: item.occurredOn,
+            ),
+          ),
+        );
+      }
     } catch (_) {
       // Best-effort, same posture as the streak viewer's own
       // _spendView catch: a failed mark must not trap the viewer or
@@ -704,14 +1270,21 @@ class _StoryReelScreenState extends ConsumerState<StoryReelScreen> {
   /// second call a no-op: whichever call runs first bumps `_generation`
   /// via `_startItem`, so the second call's stale generation no longer
   /// matches and it returns immediately instead of advancing again.
-  Future<void> _advance(List<StoryItem> items, int fromGeneration) async {
+  Future<void> _advance(int fromGeneration) async {
     if (fromGeneration != _generation) return;
-
-    if (_index + 1 < items.length) {
-      _startItem(items, _index + 1);
+    // Advance from where the story on screen really is (I-1).
+    final seeking = _seekDone;
+    if (seeking != null) {
+      await seeking;
+      if (!mounted || fromGeneration != _generation) return;
+    }
+    final items = _liveItems();
+    final at = _currentIndexIn(items);
+    if (at + 1 < items.length) {
+      _startItem(items, at + 1);
       return;
     }
-    return _advanceAtEndOfPage(items, fromGeneration);
+    return _advanceAtEndOfPage(fromGeneration);
   }
 
   /// Test-only seam for fix round 1, F2's exact race: two callers who
@@ -731,45 +1304,45 @@ class _StoryReelScreenState extends ConsumerState<StoryReelScreen> {
   /// `(state as dynamic).raceAdvanceForTest(...)` the same way that
   /// file's own test does.
   @visibleForTesting
-  Future<void> raceAdvanceForTest(List<StoryItem> items) async {
+  Future<void> raceAdvanceForTest([List<StoryItem>? unused]) async {
     final generation = _generation;
-    unawaited(_advance(items, generation));
-    unawaited(_advance(items, generation));
+    unawaited(_advance(generation));
+    unawaited(_advance(generation));
   }
 
-  Future<void> _advanceAtEndOfPage(
-    List<StoryItem> items,
-    int fromGeneration,
-  ) async {
+  Future<void> _advanceAtEndOfPage(int fromGeneration) async {
     // Fix round 1, F3: reaching the end of the currently-loaded PAGE is
     // not necessarily the end of the reel — list_active_story_items
     // pages at 50 (spec §5.5) and an author can post more than that in
-    // 24h (spec §7: "no posting limit"). Closing here unconditionally
-    // made item 51+ permanently unreachable and left the partner's ring
-    // stuck unviewed with no way to clear it. `storyReelPagesProvider`/
-    // `storyDayItemsProvider` already implement the keyset walk; this
-    // only ever CALLS `loadMore()` on whichever one backs this screen,
-    // never re-implements paging.
-    if (!_pagerHasMore()) {
+    // 24h (spec §7: "no posting limit"). This only ever CALLS
+    // `loadMore()` on whichever pager backs this screen, never
+    // re-implements paging. Wave 1 (02 #13): latched, so a tap while the
+    // page loads waits for it instead of reading the short list and
+    // closing.
+    if (_advancingPage) return;
+    _advancingPage = true;
+    try {
+      // Two passes: a loadMore that landed during a refresh returns once the
+      // refresh ends without fetching; the second pass fetches page two.
+      // One author's day ring may need several pages to reach their next
+      // story (04 #4); the whole day needs at most two passes.
+      final passes = widget.dayAuthorId == null ? 2 : kStoryStartSearchMaxPages;
+      for (var pass = 0; pass < passes; pass++) {
+        if (!_pagerHasMore()) break;
+        setState(() => _pageLoading = true);
+        await _pagerLoadMore();
+        if (!mounted || fromGeneration != _generation) return;
+        final items = _liveItems();
+        final at = _currentIndexIn(items);
+        if (at + 1 < items.length) {
+          _startItem(items, at + 1);
+          return;
+        }
+      }
       _close();
-      return;
-    }
-
-    // Show the loading state rather than a dead end or a flicker while
-    // the next page is in flight.
-    setState(() => _loadingItem = true);
-    await _pagerLoadMore();
-    if (!mounted || fromGeneration != _generation) return;
-
-    final refreshed = _pagerCurrentItems() ?? items;
-    if (_index + 1 < refreshed.length) {
-      _startItem(refreshed, _index + 1);
-    } else {
-      // loadMore() returned a short/empty page — genuinely no more
-      // items despite hasMore having been true a moment ago (e.g. the
-      // very last page). Close rather than spin forever.
-      setState(() => _loadingItem = false);
-      _close();
+    } finally {
+      _advancingPage = false;
+      if (mounted) setState(() => _pageLoading = false);
     }
   }
 
@@ -784,16 +1357,7 @@ class _StoryReelScreenState extends ConsumerState<StoryReelScreen> {
     if (_placesMode) return false;
     final occurredOn = widget.occurredOn;
     if (occurredOn != null) {
-      return ref
-          .read(
-            storyDayItemsProvider(
-              StoryDayKey(
-                relationshipId: widget.relationshipId,
-                occurredOn: occurredOn,
-              ),
-            ).notifier,
-          )
-          .hasMore;
+      return ref.read(storyDayItemsProvider(_dayKey).notifier).hasMore;
     }
     return ref
         .read(
@@ -811,16 +1375,7 @@ class _StoryReelScreenState extends ConsumerState<StoryReelScreen> {
     if (_placesMode) return Future.value();
     final occurredOn = widget.occurredOn;
     if (occurredOn != null) {
-      return ref
-          .read(
-            storyDayItemsProvider(
-              StoryDayKey(
-                relationshipId: widget.relationshipId,
-                occurredOn: occurredOn,
-              ),
-            ).notifier,
-          )
-          .loadMore();
+      return ref.read(storyDayItemsProvider(_dayKey).notifier).loadMore();
     }
     return ref
         .read(
@@ -834,20 +1389,17 @@ class _StoryReelScreenState extends ConsumerState<StoryReelScreen> {
         .loadMore();
   }
 
+  /// The pager's last read or page failed (it keeps the list it had).
+  bool _pagerHasError() {
+    if (_placesMode) return false;
+    return ref.read(_itemsProvider()).hasError;
+  }
+
   List<StoryItem>? _pagerCurrentItems() {
     if (_placesMode) return _placeItems;
     final occurredOn = widget.occurredOn;
     if (occurredOn != null) {
-      return ref
-          .read(
-            storyDayItemsProvider(
-              StoryDayKey(
-                relationshipId: widget.relationshipId,
-                occurredOn: occurredOn,
-              ),
-            ),
-          )
-          .valueOrNull;
+      return ref.read(storyDayItemsProvider(_dayKey)).valueOrNull;
     }
     return ref
         .read(
@@ -861,15 +1413,193 @@ class _StoryReelScreenState extends ConsumerState<StoryReelScreen> {
         .valueOrNull;
   }
 
-  void _retreat(List<StoryItem> items) {
-    if (_index > 0) {
-      _startItem(items, _index - 1);
+  /// Re-reads whichever pager backs this screen.
+  Future<void> _refreshPager() {
+    if (_placesMode) return Future.value();
+    final occurredOn = widget.occurredOn;
+    if (occurredOn != null) {
+      return ref.read(storyDayItemsProvider(_dayKey).notifier).refresh();
+    }
+    return ref
+        .read(
+          storyReelPagesProvider(
+            StoryReelKey(
+              relationshipId: widget.relationshipId,
+              authorId: widget.authorId,
+            ),
+          ).notifier,
+        )
+        .refresh();
+  }
+
+  Future<void> _beginPlayback() async {
+    final index = await _resolveStartIndex();
+    if (!mounted || _current != null) return;
+    final items = _liveItems();
+    if (items.isEmpty) return;
+    _startItem(items, index.clamp(0, items.length - 1));
+  }
+
+  /// Where playback starts (owner ruling 3; STORIES.md §5.5 as amended):
+  /// the quoted story when opened from a reply; the first unseen story in
+  /// the partner's active reel (the oldest when all are seen); otherwise
+  /// the oldest. Pages forward, at most [kStoryStartSearchMaxPages].
+  Future<int> _resolveStartIndex() async {
+    final targetId = widget.initialStoryItemId;
+    final myId = ref.read(currentUserProvider)?.id;
+    // The partner's ring on a calendar day opens where the partner's
+    // active reel would: their first story I have not seen (04 #4).
+    final partnerDayRing =
+        widget.occurredOn != null &&
+        widget.dayAuthorId != null &&
+        widget.dayAuthorId != myId;
+    final firstUnseen =
+        targetId == null &&
+        ((widget.occurredOn == null && !_placesMode && !widget.isOwnReel) ||
+            partnerDayRing);
+    if (targetId == null && !firstUnseen) return 0;
+    bool matches(StoryItem i) =>
+        targetId != null ? i.id == targetId : !i.hasBeenViewed;
+    // Started only when a later page is needed, so the usual first-page
+    // match never arms a timer.
+    Completer<void>? budget;
+    try {
+      for (var page = 0; ; page++) {
+        final at = _liveItems().indexWhere(matches);
+        if (at >= 0) return at;
+        if (!_pagerHasMore() || page >= kStoryStartSearchMaxPages) return 0;
+        if (budget == null) {
+          final expired = budget = Completer<void>();
+          _startSearchTimer = Timer(kStoryStartSearchBudget, expired.complete);
+        }
+        // A failed or overdue page ends the search at the oldest.
+        final loaded = await Future.any([
+          _pagerLoadMore().then((_) => true, onError: (_) => false),
+          budget.future.then((_) => false),
+        ]);
+        if (!mounted || !loaded) return 0;
+      }
+    } finally {
+      _startSearchTimer?.cancel();
+      _startSearchTimer = null;
     }
   }
 
+  void _retreat() {
+    final items = _liveItems();
+    final at = _currentIndexIn(items);
+    if (at > 0) {
+      _startItem(items, at - 1);
+    } else if (at == 0) {
+      // Reference apps restart the first story on tap-back (02 #27).
+      _startItem(items, 0);
+    }
+  }
+
+  /// While the reply field has focus, a tap on the story only closes the
+  /// keyboard. It never pages the reel under a half-typed reply (07a §3).
+  bool _consumeTapForComposer() {
+    if (!_replyFocusNode.hasFocus) return false;
+    _replyFocusNode.unfocus();
+    return true;
+  }
+
+  void _onTapNext() {
+    if (_consumeTapForComposer()) return;
+    unawaited(_advance(_generation));
+  }
+
+  void _onTapBack() {
+    if (_consumeTapForComposer()) return;
+    _retreat();
+  }
+
+  /// Closes the reel once. Pops only when this reel's own route is on top:
+  /// never a confirm dialog above it, never the screen beneath it while
+  /// the reel is already animating out (07a V4).
   void _close() {
-    if (!mounted) return;
-    Navigator.of(context).maybePop();
+    if (_closing || !mounted) return;
+    // A signal emptied the reel under one of its own dialogs (batch-1
+    // review, Minor 5): dismiss that dialog, which asks about a story that
+    // is gone, and close once it is down ([_showReelDialog]'s finally). The
+    // dialog lives on the root navigator, which may not be the reel's, so
+    // it is popped through its own route, never the reel's navigator.
+    final dialog = _dialogRoute;
+    if (dialog != null) {
+      if (!_closeAfterDialog) {
+        _closeAfterDialog = true;
+        final navigator = dialog.navigator;
+        if (navigator != null && dialog.isActive) {
+          if (dialog.isCurrent) {
+            navigator.pop();
+          } else {
+            // Covered by another route: remove it in place. removeRoute
+            // never completes the push future, so [_showReelDialog]'s
+            // finally will not run; finish the close here instead.
+            navigator.removeRoute(dialog);
+            _dialogRoute = null;
+            _closeAfterDialog = false;
+            _setPaused(_PauseCause.modal, false);
+            _close();
+          }
+        }
+      }
+      return;
+    }
+    final route = ModalRoute.of(context);
+    if (route != null && !route.isCurrent) return;
+    _closing = true;
+    _stopMedia();
+    final navigator = Navigator.of(context);
+    if (navigator.canPop()) {
+      navigator.pop();
+    } else {
+      unawaited(navigator.maybePop());
+    }
+  }
+
+  /// Shows a dialog above the reel with the story paused underneath, so it
+  /// cannot advance or finish behind the question (02 #14).
+  ///
+  /// The route is built and recorded before it is pushed, so the reel
+  /// knows a dialog is open from the same frame (batch-2 review, Minor 2).
+  /// Same route and defaults as [showDialog].
+  ///
+  /// When [keepPausedAfter] says so for the dialog's result, the modal
+  /// pause outlives the dialog and the caller releases it
+  /// ([_releaseActionPause]) once the action it confirmed has returned.
+  Future<T?> _showReelDialog<T>(
+    WidgetBuilder builder, {
+    bool Function(T? result)? keepPausedAfter,
+  }) async {
+    final navigator = Navigator.of(context, rootNavigator: true);
+    final route = DialogRoute<T>(
+      context: context,
+      builder: builder,
+      barrierColor:
+          DialogTheme.of(context).barrierColor ??
+          Theme.of(context).dialogTheme.barrierColor ??
+          Colors.black54,
+      themes: InheritedTheme.capture(from: context, to: navigator.context),
+      traversalEdgeBehavior: TraversalEdgeBehavior.closedLoop,
+    );
+    _dialogRoute = route;
+    _setPaused(_PauseCause.modal, true);
+    T? result;
+    try {
+      return result = await navigator.push<T>(route);
+    } finally {
+      if (identical(_dialogRoute, route)) _dialogRoute = null;
+      if (mounted) {
+        final keepPaused =
+            !_closeAfterDialog && (keepPausedAfter?.call(result) ?? false);
+        if (!keepPaused) _setPaused(_PauseCause.modal, false);
+        if (_closeAfterDialog) {
+          _closeAfterDialog = false;
+          _close();
+        }
+      }
+    }
   }
 
   /// Shows the "this cannot be undone" confirmation the brief requires,
@@ -879,20 +1609,17 @@ class _StoryReelScreenState extends ConsumerState<StoryReelScreen> {
   /// copy shape) rather than inventing a new confirmation style.
   ///
   /// Deletion removes the item from BOTH surfaces at once (spec §3.1/
-  /// §3.2: one row, one `deleted_at`) — this screen does not need to
-  /// separately invalidate the ring/reel provider; the server bumps
+  /// §3.2: one row, one `deleted_at`). The server bumps
   /// `story_change_signals` on soft delete (spec §5.5) and every
-  /// provider watching it (including `storyReelPagesProvider` for this
-  /// same author, if the ring is still mounted elsewhere) refetches on
-  /// its own. This screen only needs to refresh ITS OWN day-items page
-  /// and step off the now-gone item.
-  Future<void> _confirmAndDelete(
-    StoryItem item,
-    List<StoryItem> items,
-  ) async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
+  /// provider watching it refetches on its own, but a signal can be
+  /// missed, so this screen also invalidates Home's ring summary itself
+  /// (batch-4 review, Minor 4). It hides the item at once (by id,
+  /// [_removedIds]), steps off it, and refreshes whichever pager backs it.
+  Future<void> _confirmAndDelete(StoryItem item) async {
+    if (_deleting) return;
+    final confirmed = await _showReelDialog<bool>(
+      keepPausedAfter: (ok) => ok == true,
+      (dialogContext) => AlertDialog(
         title: const Text('Delete this story?'),
         content: const Text(
           'This removes it from the reel and the calendar permanently. '
@@ -912,64 +1639,76 @@ class _StoryReelScreenState extends ConsumerState<StoryReelScreen> {
     );
     if (confirmed != true || !mounted) return;
 
+    // Still paused (modal) from the confirm: a delete slower than the
+    // story's remaining time must not let the reel advance or close under
+    // it, or a late failure goes untold (final review #2).
+    final container = ProviderScope.containerOf(context);
+    setState(() => _deleting = true);
     try {
       await ref.read(storyReadGatewayProvider).deleteItem(storyItemId: item.id);
     } catch (_) {
-      // Best-effort surface: if the RPC refuses (e.g. a race where the
-      // item was already gone), there is nothing actionable to retry
-      // here beyond leaving the viewer as-is; the next refetch/signal
-      // reflects true server state either way.
       if (mounted) {
+        _releaseActionPause();
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Could not delete this story.')),
         );
       }
       return;
     }
+    // Batch-4 review, Minor 4: refresh Home's ring here too, before a
+    // reconcile can close the reel. The signal can be missed, the same
+    // reason [_maybeMarkViewed] invalidates it. Through the container, so
+    // it runs even if the person closed the reel meanwhile.
+    container.invalidate(storyRingSummaryProvider(widget.relationshipId));
+    // Wave 4 (05 #6): the story's media leaves this phone's caches, and
+    // the calendar month re-reads, as the ring does: the signal can be
+    // missed.
+    unawaited(
+      container
+          .read(storyMediaEvictorProvider)
+          .evict([item.thumbnailKey, item.mediaKey]),
+    );
+    container.invalidate(
+      storyDayCountsProvider(
+        StoryDayRangeKey.month(
+          relationshipId: widget.relationshipId,
+          day: item.occurredOn,
+        ),
+      ),
+    );
     if (!mounted) return;
 
-    // Places mode: `items` IS the list being changed, so reading its length
-    // after removal would step off wrongly. Drop the item, refresh the map's
-    // pins, and show what's left.
     if (_placesMode) {
-      ProviderScope.containerOf(context).invalidate(storyPlacesProvider);
+      container.invalidate(storyPlacesProvider);
       _stepOffPlaceItem(item.id);
+      _releaseActionPause();
       return;
     }
 
-    // Step off the deleted item before the page refreshes out from
-    // under the current index: if it was the last item, close; else
-    // stay at the same index (the next item slides into its place once
-    // the day-items page reloads without the deleted row).
-    if (items.length <= 1) {
-      _close();
-    } else if (_index >= items.length - 1) {
-      _startItem(items, items.length - 2);
-    }
+    // Step off NOW, by id: hide it locally and reconcile, so the screen
+    // never keeps showing a story that no longer exists (02 #1). The
+    // refetch then confirms server truth.
+    _removedIds.add(item.id);
+    _onItemsChanged(_liveItems());
+    _releaseActionPause();
+    unawaited(_refreshPager());
+  }
 
-    final occurredOn = widget.occurredOn;
-    if (occurredOn != null) {
-      unawaited(
-        ref
-            .read(
-              storyDayItemsProvider(
-                StoryDayKey(
-                  relationshipId: widget.relationshipId,
-                  occurredOn: occurredOn,
-                ),
-              ).notifier,
-            )
-            .refresh(),
-      );
-    }
+  /// Ends the pause a confirmed Delete or Remove-from-map held while its
+  /// call was in flight. After any step-off, so the removed story never
+  /// resumes for a frame.
+  void _releaseActionPause() {
+    setState(() => _deleting = false);
+    _setPaused(_PauseCause.modal, false);
   }
 
   /// "Remove from map" (couple map, author only): the story stays, its
   /// place is removed for good.
   Future<void> _confirmAndRemovePlace(StoryItem item) async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
+    if (_deleting) return;
+    final confirmed = await _showReelDialog<bool>(
+      keepPausedAfter: (ok) => ok == true,
+      (dialogContext) => AlertDialog(
         title: const Text('Remove from our map?'),
         content: const Text('The story stays. Its place is removed for good.'),
         actions: [
@@ -985,11 +1724,14 @@ class _StoryReelScreenState extends ConsumerState<StoryReelScreen> {
       ),
     );
     if (confirmed != true || !mounted) return;
+    // Paused until the call returns, as Delete is (final review #2).
     final container = ProviderScope.containerOf(context);
+    setState(() => _deleting = true);
     try {
       await container.read(storyPlacesRepositoryProvider).clear(item.id);
     } catch (_) {
       if (mounted) {
+        _releaseActionPause();
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text("Couldn't remove the place. Try again.")),
         );
@@ -1000,6 +1742,7 @@ class _StoryReelScreenState extends ConsumerState<StoryReelScreen> {
     container.invalidate(storyPlacesProvider);
     if (!mounted) return;
     _stepOffPlaceItem(item.id);
+    _releaseActionPause();
   }
 
   /// Places mode: drop [id] from the fixed list and show what's left (the
@@ -1017,17 +1760,15 @@ class _StoryReelScreenState extends ConsumerState<StoryReelScreen> {
 
   @override
   void dispose() {
-    _generation++;
-    _tickTimer?.cancel();
-    unawaited(_endedSub?.cancel());
-    unawaited(_player?.dispose());
-    _lifecycleListener?.dispose();
+    _startSearchTimer?.cancel();
+    _stopMedia();
     _replyController.dispose();
     _replyFocusNode.dispose();
     super.dispose();
   }
 
-  /// Sends a chat message quoting [item] — Task 6, spec §5.4. Composes
+  /// Sends a chat message quoting the story the reply was started on
+  /// ([_replyTarget], else [_current]) — Task 6, spec §5.4. Composes
   /// through [chatRepositoryProvider].sendTextMessage directly (not
   /// chatControllerProvider): this screen has no chat conversation/outbox
   /// context of its own, and a reply from the reel is a single
@@ -1043,40 +1784,75 @@ class _StoryReelScreenState extends ConsumerState<StoryReelScreen> {
   /// set its own; SupabaseChatRepository.sendTextMessage additionally
   /// omits the key outright when storyItemId is set, but not sending a
   /// value here keeps the intent visible at the call site too.
-  Future<void> _sendReply(StoryItem item) async {
+  ///
+  /// Idempotent across retries (02 #17): the same text to the same story
+  /// reuses one client message id, so a retry after a lost answer is
+  /// refused by the unique key (23505) and counted as sent, never posted
+  /// twice. A send that has no answer in [kStoryReplySendTimeout] counts as
+  /// failed and keeps the text for a retry.
+  Future<void> _sendReply() async {
+    final item = _replyTarget ?? _current;
     final text = _replyController.text.trim();
-    if (text.isEmpty || _sendingReply) return;
+    if (item == null || text.isEmpty || _sendingReply) return;
     final user = ref.read(currentUserProvider);
     if (user == null) return;
 
+    // One client id per composed reply (02 #17): retrying the same text to
+    // the same story reuses it, so messages' (sender, client_message_id)
+    // unique key drops a duplicate whose first answer was lost.
+    final draftKey = '${item.id}|$text';
+    if (_replyDraftKey != draftKey) {
+      _replyDraftKey = draftKey;
+      _replyDraftId = const Uuid().v4();
+    }
+    final clientMessageId = _replyDraftId!;
+
     setState(() => _sendingReply = true);
-    final generation = _generation;
+    var sent = false;
     try {
       await ref
           .read(chatRepositoryProvider)
           .sendTextMessage(
             relationshipId: widget.relationshipId,
             senderId: user.id,
-            clientMessageId: const Uuid().v4(),
+            clientMessageId: clientMessageId,
             content: text,
             storyItemId: item.id,
-          );
-      // Guard every post-await state write (Task 2's F1/F2 lesson): both
-      // `mounted` (this screen may have been popped while the request
-      // was in flight) and the generation token (the user may have
-      // advanced/retreated to a different item, whose reply this send
-      // must not be mistaken for clearing).
-      if (!mounted || generation != _generation) return;
+          )
+          .timeout(kStoryReplySendTimeout);
+      sent = true;
+    } on PostgrestException catch (e) {
+      // 23505: an earlier attempt with this id already landed.
+      sent = e.code == '23505';
+    } catch (_) {
+      sent = false;
+    }
+    // Tied to its story, not to the item on screen: no generation guard,
+    // so the reel moving on never leaves Send disabled (batch-1 review,
+    // Minor 4). Only a popped screen drops the result.
+    if (!mounted) return;
+    setState(() => _sendingReply = false);
+    // Replace, don't queue: a retry's "Reply sent" must not wait behind the
+    // earlier "Could not send" for its full display time.
+    final messenger = ScaffoldMessenger.of(context)..removeCurrentSnackBar();
+    if (sent) {
+      _replyDraftKey = null;
+      _replyDraftId = null;
       _replyController.clear();
       _replyFocusNode.unfocus();
-      setState(() => _sendingReply = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Reply sent')),
+      messenger.showSnackBar(const SnackBar(content: Text('Reply sent')));
+    } else if (!_liveItems().any((i) => i.id == item.id)) {
+      // Batch-5 review, Minor 2: its story went while the send was on its
+      // way. Say so, as the deleted-while-typing path does; the text stays.
+      messenger.showSnackBar(
+        const SnackBar(
+          content: Text(
+            'That story is no longer available. Your reply is still here.',
+          ),
+        ),
       );
-    } catch (_) {
-      if (!mounted || generation != _generation) return;
-      setState(() => _sendingReply = false);
-      ScaffoldMessenger.of(context).showSnackBar(
+    } else {
+      messenger.showSnackBar(
         const SnackBar(content: Text('Could not send your reply.')),
       );
     }
@@ -1092,7 +1868,6 @@ class _StoryReelScreenState extends ConsumerState<StoryReelScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final occurredOn = widget.occurredOn;
     // Day mode (spec §5.3) watches the day-scoped, expired-inclusive
     // provider; author mode watches the exact same
     // storyReelPagesProvider(key) Task 4 already wired — unchanged.
@@ -1100,84 +1875,148 @@ class _StoryReelScreenState extends ConsumerState<StoryReelScreen> {
     // is never instantiated for it.
     final AsyncValue<List<StoryItem>> pagesAsync = _placesMode
         ? AsyncValue.data(_placeItems)
-        : occurredOn != null
-        ? ref.watch(
-            storyDayItemsProvider(
-              StoryDayKey(
-                relationshipId: widget.relationshipId,
-                occurredOn: occurredOn,
-              ),
-            ),
-          )
-        : ref.watch(
-            storyReelPagesProvider(
-              StoryReelKey(
-                relationshipId: widget.relationshipId,
-                authorId: widget.authorId,
-              ),
-            ),
-          );
+        : ref.watch(_itemsProvider());
 
     return Scaffold(
       backgroundColor: Colors.black,
-      body: pagesAsync.when(
-        loading: () => const _CenteredSpinner(),
-        error: (error, _) => _ErrorState(onClose: _close),
-        data: (items) {
-          if (items.isEmpty) return _EmptyState(onClose: _close);
-          // Open at the OLDEST active item on first build only — items
-          // arrive already oldest-first (spec §5.5), so index 0 IS the
-          // oldest; this only needs to kick off playback once.
-          if (_index == 0 && !_loadingItem && !_rendered && _player == null) {
-            WidgetsBinding.instance.addPostFrameCallback((_) {
-              if (mounted) _startItem(items, 0);
-            });
-          }
-          final clampedIndex = _index.clamp(0, items.length - 1);
-          // Deletion lives in the calendar's day view, author-only (spec
-          // §5.3: "this is where deletion-from-the-past lives, and it is
-          // author-only"). `delete_story_item` is enforced author-only
-          // server-side regardless, but the brief requires the UI not even
-          // OFFER an action that will be refused — so this is gated on
-          // BOTH day mode and the CURRENT item's own author, never a
-          // static per-screen flag (a day can mix both partners' items).
-          final currentItem = items[clampedIndex];
-          final myId = ref.read(currentUserProvider)?.id;
-          final perItemAuthor = occurredOn != null || _placesMode;
-          final isAuthor = myId != null && currentItem.authorId == myId;
-          final canDeleteCurrent = perItemAuthor && isAuthor;
-          // Replying is only offered on the PARTNER's item — replying to
-          // your own story would quote yourself in your own chat, which
-          // is not a sensible action and nothing in the spec asks for
-          // it. Same per-item (not per-screen) derivation canDeleteCurrent
-          // uses, since day mode can mix both partners' items.
-          final isCurrentMine = perItemAuthor ? isAuthor : widget.isOwnReel;
-          return _ReelBody(
-            items: items,
-            index: clampedIndex,
-            progress: _progressFraction,
-            loading: _loadingItem,
-            player: _player,
-            signedUrl: _currentSignedUrl,
-            onTapLeft: () => _retreat(items),
-            onTapRight: () => unawaited(_advance(items, _generation)),
-            onHoldStart: () => _setHeldPaused(true),
-            onHoldEnd: () => _setHeldPaused(false),
-            onDismiss: _close,
-            onDelete: canDeleteCurrent
-                ? () => unawaited(_confirmAndDelete(currentItem, items))
-                : null,
-            onRemovePlace: _placesMode && isAuthor
-                ? () => unawaited(_confirmAndRemovePlace(currentItem))
-                : null,
-            canReply: !isCurrentMine,
-            replyController: _replyController,
-            replyFocusNode: _replyFocusNode,
-            sendingReply: _sendingReply,
-            onSendReply: () => unawaited(_sendReply(currentItem)),
-          );
-        },
-      ),
+      body: switch (pagesAsync.valueOrNull) {
+        final List<StoryItem> raw => _buildLoaded(raw),
+        null when pagesAsync.hasError => _ErrorState(
+          onClose: _close,
+          onRetry: () => unawaited(_refreshPager()),
+        ),
+        null => const _CenteredSpinner(),
+      },
+    );
+  }
+
+  /// The reel for a list that exists. A refresh keeps the previous list
+  /// (R2), so this keeps rendering through it: no spinner, no lost
+  /// keyboard.
+  Widget _buildLoaded(List<StoryItem> raw) {
+    // The deleted story is never drawn while the next one is found (M-1).
+    if (_pagingPastDeleted) return const _CenteredSpinner();
+    final occurredOn = widget.occurredOn;
+    final items = _seekHold ?? _visible(raw);
+    _shownItems = items;
+    if (items.isEmpty) {
+      // One author's ring: page forward once before saying there is
+      // nothing; the spinner holds only while that single run pages.
+      if (widget.dayAuthorId != null && !_authorFillDone) {
+        if (!_pagerHasMore()) return _EmptyState(onClose: _close);
+        _fillAuthorPage();
+        return const _CenteredSpinner();
+      }
+      // A page that failed on the way is an error, not "nothing" (M-1).
+      if (widget.dayAuthorId != null && _pagerHasError()) {
+        return _ErrorState(onClose: _close, onRetry: _retryAuthorFill);
+      }
+      return _EmptyState(onClose: _close);
+    }
+    // Start once, where [_resolveStartIndex] says (owner ruling 3).
+    if (!_started) {
+      _started = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) unawaited(_beginPlayback());
+      });
+    }
+    final found = _currentIndexIn(items);
+    final clampedIndex =
+        found >= 0 ? found : _index.clamp(0, items.length - 1);
+    // Owner ruling 2: the author can delete their own story wherever they
+    // watch it: their reel, the calendar day, the map. delete_story_item
+    // stays author-only server-side.
+    final currentItem = _current ?? items[clampedIndex];
+    // Until playback starts on the story [_resolveStartIndex] chose, the
+    // fallback is items[0], a story the person may never see: no action
+    // and no byline may act on or name it (final review #4).
+    final started = _current != null;
+    final myId = ref.read(currentUserProvider)?.id;
+    final perItemAuthor = occurredOn != null || _placesMode;
+    final isAuthor = myId != null && currentItem.authorId == myId;
+    final canDeleteCurrent = isAuthor;
+    // Replying is only offered on the PARTNER's item — replying to
+    // your own story would quote yourself in your own chat, which
+    // is not a sensible action and nothing in the spec asks for
+    // it. Same per-item (not per-screen) derivation canDeleteCurrent
+    // uses, since day mode can mix both partners' items.
+    final isCurrentMine = perItemAuthor ? isAuthor : widget.isOwnReel;
+    final partnerName = ref.watch(partnerNameProvider).valueOrNull;
+    final authorLabel = isCurrentMine ? 'You' : (partnerName ?? 'Partner');
+    final now = DateTime.now();
+    final clockTime = occurredOn != null || _placesMode;
+    // A map cluster mixes days, and a quoted story can be from any day:
+    // those reels name the date too (final review #9).
+    final withDate = _placesMode || widget.initialStoryItemId != null;
+    final postedLabel = storyPostedLabel(
+      currentItem.createdAt,
+      now: now,
+      clockTime: clockTime,
+      withDate: withDate,
+    );
+    final postedSpokenLabel = storyPostedSpokenLabel(
+      currentItem.createdAt,
+      now: now,
+      clockTime: clockTime,
+      withDate: withDate,
+    );
+    // Spec §5.2: the poster sees Seen once the partner has watched. No
+    // client privacy logic: the server masks has_been_viewed when seen
+    // receipts are off. The map path has no server flag at all
+    // (list_story_places returns no seen column; StoryPlace.fromRow sets
+    // it true for the pins), so places mode shows no Seen and no faded
+    // bars (final review #1).
+    final seenBy =
+        started &&
+            !_placesMode &&
+            isCurrentMine &&
+            currentItem.hasBeenViewed
+        ? (partnerName ?? 'Partner')
+        : null;
+    // Owner ruling 3: a partner's story I already watched shows faded in
+    // the bars. A partner's view of MY story never fades it.
+    final viewed = [
+      for (final i in items)
+        !_placesMode &&
+            i.authorId != myId &&
+            (i.hasBeenViewed || _markedItemIds.contains(i.id)),
+    ];
+    return _ReelBody(
+      items: items,
+      index: clampedIndex,
+      current: currentItem,
+      authorLabel: authorLabel,
+      postedLabel: postedLabel,
+      postedSpokenLabel: postedSpokenLabel,
+      showByline: started,
+      seenBy: seenBy,
+      viewed: viewed,
+      progress: _progressFraction,
+      phase: _phase,
+      pageLoading: _pageLoading,
+      player: _player,
+      image: _currentImage,
+      onTapLeft: _onTapBack,
+      onTapRight: _onTapNext,
+      onRetry: () => _retryCurrent(manual: true),
+      onNext: _onTapNext,
+      onHoldStart: () => _setPaused(_PauseCause.hold, true),
+      onHoldEnd: () => _setPaused(_PauseCause.hold, false),
+      onTogglePause: _toggleAccessibilityPause,
+      accessibilityPaused: _pauseCauses.contains(_PauseCause.accessibility),
+      onDismiss: _close,
+      onDelete: started && canDeleteCurrent
+          ? () => unawaited(_confirmAndDelete(currentItem))
+          : null,
+      deleting: _deleting,
+      onRemovePlace: started && _placesMode && isAuthor
+          ? () => unawaited(_confirmAndRemovePlace(currentItem))
+          : null,
+      canReply: started && !isCurrentMine,
+      replyController: _replyController,
+      replyFocusNode: _replyFocusNode,
+      sendingReply: _sendingReply,
+      onSendReply: () => unawaited(_sendReply()),
     );
   }
 }
@@ -1186,16 +2025,29 @@ class _ReelBody extends StatelessWidget {
   const _ReelBody({
     required this.items,
     required this.index,
+    required this.current,
+    required this.authorLabel,
+    required this.postedLabel,
+    required this.postedSpokenLabel,
+    this.showByline = true,
+    this.seenBy,
+    required this.viewed,
     required this.progress,
-    required this.loading,
+    required this.phase,
     required this.player,
-    required this.signedUrl,
+    required this.image,
     required this.onTapLeft,
     required this.onTapRight,
+    required this.onRetry,
+    required this.onNext,
     required this.onHoldStart,
     required this.onHoldEnd,
+    required this.onTogglePause,
+    required this.accessibilityPaused,
     required this.onDismiss,
+    this.pageLoading = false,
     this.onDelete,
+    this.deleting = false,
     this.onRemovePlace,
     this.canReply = false,
     this.replyController,
@@ -1206,26 +2058,58 @@ class _ReelBody extends StatelessWidget {
 
   final List<StoryItem> items;
   final int index;
+
+  /// The story on screen, by identity (R1) — never `items[index]`.
+  final StoryItem current;
+
+  /// The byline under the bars (R6): "You" or the partner's name, and
+  /// when the story was posted ([storyPostedLabel]).
+  final String authorLabel;
+  final String postedLabel;
+  final String postedSpokenLabel;
+
+  /// False until the start story is chosen ([StoryReelHeader.showByline]).
+  final bool showByline;
+
+  /// The partner's name on my own story once they have seen it (spec
+  /// §5.2); null hides the Seen chip.
+  final String? seenBy;
+
+  /// Per item, whether this viewer had already seen it
+  /// ([StoryProgressBars.viewed]).
+  final List<bool> viewed;
   final double progress;
-  final bool loading;
+  final _ItemPhase phase;
+
+  /// True while the reel waits for the next page at the end of this one.
+  final bool pageLoading;
   final StoryItemPlayer? player;
 
-  /// The signed URL the screen already minted for the CURRENT item
-  /// (fix round 1, F5) — passed straight to [_MediaView] rather than
-  /// having it re-fetch its own.
-  final String? signedUrl;
+  /// The provider the screen already resolved for the CURRENT photo (fix
+  /// round 1, F5) — passed straight to [_MediaView] rather than having it
+  /// mint its own.
+  final ImageProvider? image;
   final VoidCallback onTapLeft;
   final VoidCallback onTapRight;
+
+  /// The failure overlay's actions ([_ItemFailed]).
+  final VoidCallback onRetry;
+  final VoidCallback onNext;
   final VoidCallback onHoldStart;
   final VoidCallback onHoldEnd;
+
+  /// The screen-reader Pause/Play toggle, and whether it is paused now.
+  final VoidCallback onTogglePause;
+  final bool accessibilityPaused;
   final VoidCallback onDismiss;
 
-  /// Non-null only when the CURRENT item's author is the signed-in user
-  /// AND this reel is in day mode (spec §5.3: calendar deletion is
-  /// author-only). Null hides the affordance entirely rather than
-  /// showing it disabled — the brief requires the UI not offer an
-  /// action `delete_story_item` would refuse server-side.
+  /// Non-null when the current story is the signed-in user's own (any
+  /// mode; owner ruling 2).
   final VoidCallback? onDelete;
+
+  /// True while a delete is in flight: the button stays visible but
+  /// disabled, so a second tap cannot fire a second delete.
+  final bool deleting;
 
   /// Couple map places mode, author only: removes the story's place.
   final VoidCallback? onRemovePlace;
@@ -1248,114 +2132,156 @@ class _ReelBody extends StatelessWidget {
   /// the press counts as a hold (pause) rather than a tap (navigate).
   static const _holdThreshold = Duration(milliseconds: 200);
 
+  /// Below the safe area: the bars and header row (~64 dp) plus a fade.
+  static const _kTopScrimHeight = 120.0;
+
   @override
   Widget build(BuildContext context) {
-    final item = items[index];
+    final item = current;
     return _GestureLayer(
       holdThreshold: _holdThreshold,
       onHoldStart: onHoldStart,
       onHoldEnd: onHoldEnd,
       onTapLeft: onTapLeft,
       onTapRight: onTapRight,
+      onTogglePause: onTogglePause,
+      accessibilityPaused: accessibilityPaused,
       onDismiss: onDismiss,
       child: Stack(
         fit: StackFit.expand,
         children: [
           Center(
-            child: loading
-                ? const CircularProgressIndicator(color: Colors.white)
-                : _MediaView(item: item, player: player, signedUrl: signedUrl),
+            child: phase == _ItemPhase.failed
+                ? _ItemFailed(onRetry: onRetry, onNext: onNext)
+                : _MediaView(
+                    item: item,
+                    player: player,
+                    image: image,
+                    phase: phase,
+                  ),
           ),
-          // Fix round 1, F4: a bare SafeArea here was a non-Positioned
-          // child of a StackFit.expand Stack, which stretched it to
-          // the FULL screen height; StoryProgressBars' Row (only 3dp
-          // tall) then centred itself inside that stretched box,
-          // landing at screen mid-height instead of "across the top"
-          // (spec §5.2's first sentence). Positioned pins this to the
-          // top edge instead, so SafeArea only insets the notch/status
-          // bar and the bars themselves stay flush with the top.
+          if (phase == _ItemPhase.ready &&
+              player is StoryItemPlayerStatus &&
+              (player as StoryItemPlayerStatus).isBuffering)
+            const Center(
+              child: SizedBox(
+                width: IconSizes.lg,
+                height: IconSizes.lg,
+                child: CircularProgressIndicator(
+                  key: ValueKey('story-reel-buffering'),
+                  strokeWidth: 2,
+                  color: Colors.white,
+                ),
+              ),
+            ),
+          // Batch-4 review, Minor 2: a scrim keeps the white bars, byline,
+          // Seen and icons readable on a bright photo. Literal colours: the
+          // reel is a fixed black surface in both themes. It never takes a
+          // tap, so paging and the quick-exit band behave as before.
+          Positioned(
+            top: 0,
+            left: 0,
+            right: 0,
+            height: MediaQuery.paddingOf(context).top + _kTopScrimHeight,
+            child: const IgnorePointer(
+              child: DecoratedBox(
+                key: ValueKey('story-reel-top-scrim'),
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: [Color(0x73000000), Color(0x00000000)],
+                  ),
+                ),
+              ),
+            ),
+          ),
+          // Fix round 1, F4: a Positioned pins the bars to the top edge
+          // (a bare SafeArea stretched to full height and centred them).
+          // R6: the byline and the reel's actions sit in a row under the
+          // bars, so the buttons no longer cover them (02 #21).
           Positioned(
             top: 0,
             left: 0,
             right: 0,
             child: SafeArea(
+              bottom: false,
               child: Padding(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 8,
-                  vertical: 8,
+                padding: const EdgeInsets.fromLTRB(
+                  Spacing.sm,
+                  Spacing.sm,
+                  Spacing.xs,
+                  0,
                 ),
-                child: StoryProgressBars(
-                  itemCount: items.length,
-                  currentIndex: index,
-                  currentProgress: progress,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    StoryProgressBars(
+                      itemCount: items.length,
+                      currentIndex: index,
+                      currentProgress: progress,
+                      viewed: viewed,
+                    ),
+                    const SizedBox(height: Spacing.xs),
+                    StoryReelHeader(
+                      authorLabel: authorLabel,
+                      postedLabel: postedLabel,
+                      postedSpokenLabel: postedSpokenLabel,
+                      showByline: showByline,
+                      seenBy: seenBy,
+                      trailing: [
+                        if (onRemovePlace != null)
+                          IconButton(
+                            key: const ValueKey('story-reel-remove-place'),
+                            iconSize: IconSizes.md,
+                            constraints: const BoxConstraints(
+                              minWidth: 48,
+                              minHeight: 48,
+                            ),
+                            icon: const Icon(
+                              Icons.wrong_location_outlined,
+                              color: Colors.white,
+                            ),
+                            tooltip: 'Remove from map',
+                            onPressed: deleting ? null : onRemovePlace,
+                          ),
+                        if (onDelete != null)
+                          IconButton(
+                            key: const ValueKey('story-reel-delete'),
+                            iconSize: IconSizes.md,
+                            constraints: const BoxConstraints(
+                              minWidth: 48,
+                              minHeight: 48,
+                            ),
+                            icon: const Icon(
+                              Icons.delete_outline,
+                              color: Colors.white,
+                            ),
+                            // Its own semantics node: the tooltip is its
+                            // label.
+                            tooltip: 'Delete this story',
+                            onPressed: deleting ? null : onDelete,
+                          ),
+                        IconButton(
+                          iconSize: IconSizes.md,
+                          constraints: const BoxConstraints(
+                            minWidth: 48,
+                            minHeight: 48,
+                          ),
+                          icon: const Icon(
+                            Icons.close_rounded,
+                            color: Colors.white,
+                          ),
+                          tooltip: 'Close story',
+                          onPressed: onDismiss,
+                        ),
+                      ],
+                    ),
+                  ],
                 ),
               ),
             ),
           ),
-          Positioned(
-            top: 0,
-            right: 0,
-            child: SafeArea(
-              child: IconButton(
-                iconSize: 28,
-                padding: const EdgeInsets.all(10),
-                constraints: const BoxConstraints(
-                  minWidth: 48,
-                  minHeight: 48,
-                ),
-                icon: const Icon(Icons.close_rounded, color: Colors.white),
-                // Its own semantics node: the tooltip is its label.
-                tooltip: 'Close story',
-                onPressed: onDismiss,
-              ),
-            ),
-          ),
-          if (onDelete != null)
-            Positioned(
-              top: 0,
-              left: 0,
-              child: SafeArea(
-                child: IconButton(
-                  key: const ValueKey('story-reel-delete'),
-                  iconSize: 24,
-                  padding: const EdgeInsets.all(12),
-                  constraints: const BoxConstraints(
-                    minWidth: 48,
-                    minHeight: 48,
-                  ),
-                  icon: const Icon(
-                    Icons.delete_outline,
-                    color: Colors.white,
-                  ),
-                  // The IconButton is its own semantics node: without a
-                  // tooltip a screen reader announced an unlabelled button.
-                  tooltip: 'Delete this story',
-                  onPressed: onDelete,
-                ),
-              ),
-            ),
-          if (onRemovePlace != null)
-            Positioned(
-              top: 0,
-              left: onDelete != null ? 48 : 0,
-              child: SafeArea(
-                child: IconButton(
-                  key: const ValueKey('story-reel-remove-place'),
-                  iconSize: 24,
-                  padding: const EdgeInsets.all(12),
-                  constraints: const BoxConstraints(
-                    minWidth: 48,
-                    minHeight: 48,
-                  ),
-                  icon: const Icon(
-                    Icons.wrong_location_outlined,
-                    color: Colors.white,
-                  ),
-                  tooltip: 'Remove from map',
-                  onPressed: onRemovePlace,
-                ),
-              ),
-            ),
           if (canReply)
             Positioned(
               left: 0,
@@ -1363,12 +2289,25 @@ class _ReelBody extends StatelessWidget {
               bottom: 0,
               child: SafeArea(
                 top: false,
-                child: _ReplyComposer(
-                  controller: replyController!,
-                  focusNode: replyFocusNode!,
-                  sending: sendingReply,
-                  onSend: onSendReply!,
+                // Opaque: a tap in the strip's padding never reaches the
+                // navigation layer underneath (02 #27).
+                child: GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onTap: () {},
+                  child: _ReplyComposer(
+                    controller: replyController!,
+                    focusNode: replyFocusNode!,
+                    sending: sendingReply,
+                    onSend: onSendReply!,
+                  ),
                 ),
+              ),
+            ),
+          if (pageLoading)
+            const Center(
+              child: CircularProgressIndicator(
+                key: ValueKey('story-reel-page-loading'),
+                color: Colors.white,
               ),
             ),
         ],
@@ -1481,6 +2420,8 @@ class _GestureLayer extends StatefulWidget {
     required this.onHoldEnd,
     required this.onTapLeft,
     required this.onTapRight,
+    required this.onTogglePause,
+    required this.accessibilityPaused,
     required this.onDismiss,
     required this.child,
   });
@@ -1490,6 +2431,10 @@ class _GestureLayer extends StatefulWidget {
   final VoidCallback onHoldEnd;
   final VoidCallback onTapLeft;
   final VoidCallback onTapRight;
+
+  /// Screen-reader Pause/Play (02 #18): a persistent toggle, not a hold.
+  final VoidCallback onTogglePause;
+  final bool accessibilityPaused;
   final VoidCallback onDismiss;
   final Widget child;
 
@@ -1522,6 +2467,11 @@ class _GestureLayerState extends State<_GestureLayer> {
       widget.onHoldEnd();
       return;
     }
+    // TripleTapDetector's quick-exit band sits above every route; taps
+    // there must not also page the reel and mark stories seen on the way
+    // out (05 #7).
+    final quickExitBand = MediaQuery.paddingOf(context).top + kToolbarHeight;
+    if (details.localPosition.dy < quickExitBand) return;
     if (details.localPosition.dx < width / 2) {
       widget.onTapLeft();
     } else {
@@ -1563,14 +2513,23 @@ class _GestureLayerState extends State<_GestureLayer> {
           // "Story N of M" label on the progress bars were exposed.
           container: true,
           label: 'Story viewer',
-          hint:
-              'Swipe up or right for the next story, swipe down or left '
-              'for the previous one, double-tap and hold to pause',
+          // Batch-5 review, Nit 4: on iPhone, VoiceOver's double-tap and
+          // hold is a real touch hold (pause only while held); the toggle
+          // is the Actions rotor's "Pause story".
+          hint: defaultTargetPlatform == TargetPlatform.iOS
+              ? 'Swipe up or right for the next story, swipe down or left '
+                    'for the previous one. To pause or play, use the Pause '
+                    'story action.'
+              : 'Swipe up or right for the next story, swipe down or left '
+                    'for the previous one. Double-tap and hold to pause or '
+                    'play.',
           onIncrease: widget.onTapRight,
           onDecrease: widget.onTapLeft,
-          onLongPress: () {
-            widget.onHoldStart();
-            widget.onHoldEnd();
+          onLongPress: widget.onTogglePause,
+          customSemanticsActions: {
+            CustomSemanticsAction(
+              label: widget.accessibilityPaused ? 'Play story' : 'Pause story',
+            ): widget.onTogglePause,
           },
           onDismiss: widget.onDismiss,
           child: GestureDetector(
@@ -1600,41 +2559,36 @@ class _MediaView extends StatelessWidget {
   const _MediaView({
     required this.item,
     required this.player,
-    required this.signedUrl,
+    required this.image,
+    required this.phase,
   });
 
   final StoryItem item;
   final StoryItemPlayer? player;
 
-  /// The URL `_startItemAsync` already minted for THIS item via
-  /// `StoryReadGateway.signMediaUrl` — passed down rather than re-
-  /// fetched here.
+  /// The provider `_loadImage` resolved for THIS item (one mint per item,
+  /// the same provider object that gated ready) — passed down rather than
+  /// re-fetched here.
   ///
   /// Fix round 1, F5: this widget used to independently
   /// `ref.watch(storyMediaSignedUrlProvider(item.mediaKey))`, which
   /// minted a SECOND signed URL for every image item — one wasted
   /// `create_signed_url` round-trip per image, and worse, a second
   /// source of truth that could disagree with the first: the URL that
-  /// gated `_rendered`/`markViewed` (the one `_startItemAsync` minted)
-  /// was not necessarily the URL actually rendered here, so a view
-  /// could be marked while the viewer was looking at `_ErrorGlyph`. This
-  /// widget now renders whatever URL the screen already confirmed
-  /// non-null before marking anything — one mint per item, one source
-  /// of truth. Still "minted per request, never cached" (spec §5.5):
-  /// `_startItemAsync` mints fresh on every item start and this widget
-  /// never persists it past that item's lifetime.
-  final String? signedUrl;
+  /// gated `markViewed` was not necessarily the URL actually rendered
+  /// here. This widget renders exactly what the screen resolved.
+  final ImageProvider? image;
+  final _ItemPhase phase;
 
   @override
   Widget build(BuildContext context) {
     if (item.mediaType == 'video') {
       // The real player owns its own texture/rendering when backed by a
       // VideoPlayerController; a fake test player has nothing visual to
-      // present, so this just reflects "a video is active" without
-      // assuming a concrete widget type is available from the seam.
-      if (player is VideoControllerStoryItemPlayer) {
-        final controller = (player as VideoControllerStoryItemPlayer)
-            .controller;
+      // present.
+      final p = player;
+      if (p is VideoControllerStoryItemPlayer) {
+        final controller = p.controller;
         return AspectRatio(
           aspectRatio: controller.value.aspectRatio == 0
               ? 1
@@ -1642,25 +2596,88 @@ class _MediaView extends StatelessWidget {
           child: VideoPlayer(controller),
         );
       }
-      return const ColoredBox(color: Colors.black);
+      return phase == _ItemPhase.loading
+          ? const _ItemSpinner()
+          : const ColoredBox(color: Colors.black);
     }
-
-    final url = signedUrl;
-    if (url == null) return const _ErrorGlyph();
-    return Image.network(
-      url,
-      fit: BoxFit.contain,
-      errorBuilder: (_, __, ___) => const _ErrorGlyph(),
+    final provider = image;
+    if (provider == null) return const _ItemSpinner();
+    return Stack(
+      alignment: Alignment.center,
+      children: [
+        Image(
+          key: const ValueKey('story-reel-image'),
+          image: provider,
+          fit: BoxFit.contain,
+          gaplessPlayback: true,
+          errorBuilder: (_, __, ___) => const SizedBox.shrink(),
+        ),
+        if (phase == _ItemPhase.loading) const _ItemSpinner(),
+      ],
     );
   }
 }
 
-class _ErrorGlyph extends StatelessWidget {
-  const _ErrorGlyph();
+class _ItemSpinner extends StatelessWidget {
+  const _ItemSpinner();
+
+  @override
+  Widget build(BuildContext context) => const CircularProgressIndicator(
+    key: ValueKey('story-reel-item-loading'),
+    color: Colors.white,
+  );
+}
+
+/// Shown in place of a story that could not load (02 #5): says so, and
+/// offers Retry and Next, so the person is never stuck on a dead item.
+class _ItemFailed extends StatelessWidget {
+  const _ItemFailed({required this.onRetry, required this.onNext});
+
+  final VoidCallback onRetry;
+  final VoidCallback onNext;
 
   @override
   Widget build(BuildContext context) {
-    return const Icon(Icons.broken_image_outlined, color: Colors.white54);
+    final textTheme = Theme.of(context).textTheme;
+    final buttonStyle = TextButton.styleFrom(foregroundColor: Colors.white);
+    return Padding(
+      padding: Spacing.horizontalLG,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Icon(
+            Icons.broken_image_outlined,
+            color: Colors.white70,
+            size: IconSizes.lg,
+          ),
+          const SizedBox(height: Spacing.sm),
+          Text(
+            "Couldn't load this story.",
+            textAlign: TextAlign.center,
+            style: textTheme.bodyLarge?.copyWith(color: Colors.white),
+          ),
+          const SizedBox(height: Spacing.md),
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextButton(
+                key: const ValueKey('story-reel-retry'),
+                style: buttonStyle,
+                onPressed: onRetry,
+                child: const Text('Retry'),
+              ),
+              const SizedBox(width: Spacing.sm),
+              TextButton(
+                key: const ValueKey('story-reel-next'),
+                style: buttonStyle,
+                onPressed: onNext,
+                child: const Text('Next'),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
   }
 }
 
@@ -1689,11 +2706,12 @@ class _EmptyState extends StatelessWidget {
           ),
         ),
         Positioned(
-          top: 8,
-          right: 8,
+          top: Spacing.sm,
+          right: Spacing.sm,
           child: SafeArea(
             child: IconButton(
               constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
+              tooltip: 'Close story',
               icon: const Icon(Icons.close_rounded, color: Colors.white),
               onPressed: onClose,
             ),
@@ -1705,26 +2723,40 @@ class _EmptyState extends StatelessWidget {
 }
 
 class _ErrorState extends StatelessWidget {
-  const _ErrorState({required this.onClose});
+  const _ErrorState({required this.onClose, required this.onRetry});
 
   final VoidCallback onClose;
+  final VoidCallback onRetry;
 
   @override
   Widget build(BuildContext context) {
     return Stack(
       children: [
-        const Center(
-          child: Text(
-            "Couldn't load this story.",
-            style: TextStyle(color: Colors.white70),
+        Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text(
+                "Couldn't load this story.",
+                style: TextStyle(color: Colors.white70),
+              ),
+              const SizedBox(height: Spacing.md),
+              TextButton(
+                key: const ValueKey('story-reel-error-retry'),
+                style: TextButton.styleFrom(foregroundColor: Colors.white),
+                onPressed: onRetry,
+                child: const Text('Try again'),
+              ),
+            ],
           ),
         ),
         Positioned(
-          top: 8,
-          right: 8,
+          top: Spacing.sm,
+          right: Spacing.sm,
           child: SafeArea(
             child: IconButton(
               constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
+              tooltip: 'Close story',
               icon: const Icon(Icons.close_rounded, color: Colors.white),
               onPressed: onClose,
             ),

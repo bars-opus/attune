@@ -3,6 +3,8 @@ import 'package:attune/core/providers/shared_prefs_provider.dart';
 import 'package:attune/core/utils/exports/export_screens.dart';
 import 'package:attune/features/auth/providers/auth_provider.dart';
 import 'package:attune/features/couple_map/data/couple_map_device_data.dart';
+import 'package:attune/features/stories/data/story_device_wipe.dart';
+import 'package:attune/features/stories/data/story_outbox_wipe.dart';
 import 'package:attune/features/together/data/together_device_surfaces.dart';
 import 'package:attune/features/together/presentation/together_providers.dart'
     show
@@ -17,11 +19,13 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 /// confirmation sheet. The caller checks it worked before opening anything
 /// (review I1).
 Future<void> safetySignOut(Ref ref) async {
+  var refused = false;
   try {
     await ref.read(authOperationsProvider).signOut();
   } catch (_) {
     // AuthOperations refuses while busy; the SDK's own sign-out below always
     // clears the local session first.
+    refused = true;
   }
   if (ref.read(currentUserProvider) != null) {
     // Chat review #18: this fallback skips AuthOperations, so release the
@@ -31,6 +35,18 @@ Future<void> safetySignOut(Ref ref) async {
     } catch (_) {}
     try {
       await Supabase.instance.client.auth.signOut();
+    } catch (_) {}
+  }
+  try {
+    // The AuthOperations path above may have been refused (busy); wipe the
+    // story outbox here too. A repeat is a no-op. Bounded by its owner.
+    await ref.read(storyOutboxWiperProvider).wipeAll();
+  } catch (_) {}
+  if (refused) {
+    try {
+      // Nor did its image wipe run: story thumbnails and chat photos, on
+      // disk and decoded, go here (stories batch-4 review #5). Bounded.
+      await clearStoryDeviceState(ref).timeout(const Duration(seconds: 3));
     } catch (_) {}
   }
   try {

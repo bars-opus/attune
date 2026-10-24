@@ -27,9 +27,9 @@ INSERT INTO auth.users(id) VALUES
   ('00000000-0000-0000-0000-00000000d503'::uuid) ON CONFLICT DO NOTHING;
 
 INSERT INTO public.users(id, phone, display_name) VALUES
-  ('00000000-0000-0000-0000-00000000d501'::uuid, '+15559990001', 'RR1'),
-  ('00000000-0000-0000-0000-00000000d502'::uuid, '+15559990002', 'RR2'),
-  ('00000000-0000-0000-0000-00000000d503'::uuid, '+15559990003', 'RR3')
+  ('00000000-0000-0000-0000-00000000d501'::uuid, '+15550931001', 'RR1'),
+  ('00000000-0000-0000-0000-00000000d502'::uuid, '+15550931002', 'RR2'),
+  ('00000000-0000-0000-0000-00000000d503'::uuid, '+15550931003', 'RR3')
   ON CONFLICT (id) DO NOTHING;
 
 CREATE OR REPLACE FUNCTION public.test_set_story_read_auth(p_user_id uuid)
@@ -62,7 +62,7 @@ DO $$ BEGIN
     RAISE EXCEPTION 'anon can execute list_story_day_counts';
   END IF;
   IF has_function_privilege('anon',
-    'public.list_story_day_items(uuid,date,timestamptz,uuid,int)',
+    'public.list_story_day_items(uuid,date,timestamptz,uuid,int,uuid)',
     'EXECUTE') THEN
     RAISE EXCEPTION 'anon can execute list_story_day_items';
   END IF;
@@ -81,7 +81,7 @@ DO $$ BEGIN
     RAISE EXCEPTION 'authenticated cannot execute list_story_day_counts';
   END IF;
   IF NOT has_function_privilege('authenticated',
-    'public.list_story_day_items(uuid,date,timestamptz,uuid,int)',
+    'public.list_story_day_items(uuid,date,timestamptz,uuid,int,uuid)',
     'EXECUTE') THEN
     RAISE EXCEPTION 'authenticated cannot execute list_story_day_items';
   END IF;

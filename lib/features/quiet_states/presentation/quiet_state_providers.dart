@@ -1,3 +1,4 @@
+import 'package:attune/core/services/app_content_visibility.dart';
 import 'package:attune/features/chat/domain/services/chat_feature_flags.dart';
 import 'package:attune/features/quiet_states/data/quiet_state_service.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -15,8 +16,10 @@ final quietStatesEnabledProvider = FutureProvider<bool>((ref) async {
 });
 
 /// The person's own quiet state, or null when there is none (or the feature
-/// is off). Re-read whenever a screen that uses it opens again.
+/// is off). Re-read whenever a screen that uses it opens again, and on each
+/// return to Attune (the screens stay mounted behind the privacy cover).
 final quietStateProvider = FutureProvider.autoDispose<QuietState?>((ref) async {
+  refreshWhenVisibleAgain(ref);
   if (!await ref.watch(quietStatesEnabledProvider.future)) return null;
   return ref.read(quietStateServiceProvider).mine();
 });

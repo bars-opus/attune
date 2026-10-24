@@ -1,5 +1,6 @@
 // test/features/couple_map/story_reel_places_test.dart
 import 'package:attune/features/auth/providers/auth_provider.dart';
+import 'package:attune/features/chat/domain/services/chat_image_cache.dart';
 import 'package:attune/features/couple_map/domain/story_place.dart';
 import 'package:attune/features/couple_map/presentation/providers/story_places_providers.dart';
 import 'package:attune/features/stories/presentation/providers/story_providers.dart';
@@ -12,6 +13,7 @@ import 'package:supabase_flutter/supabase_flutter.dart' show User;
 import 'support/fakes.dart';
 
 import '../stories/support/fake_story_read_gateway.dart';
+import '../stories/support/ring_test_kit.dart' show NoopImageCache;
 
 User _user(String id) => User(
   id: id,
@@ -45,6 +47,8 @@ Future<FakeStoryPlacesGateway> _pump(
         currentUserProvider.overrideWithValue(_user(me)),
         storyPlacesGatewayProvider.overrideWithValue(g),
         storyReadGatewayProvider.overrideWithValue(FakeStoryReadGateway()),
+        // A delete evicts the story's media (Wave 4).
+        chatImageCacheProvider.overrideWithValue(NoopImageCache()),
       ],
       child: MaterialApp(
         home: Builder(

@@ -13,6 +13,8 @@
 library;
 
 import 'package:attune/features/couple_map/domain/story_place.dart';
+import 'package:attune/features/stories/data/story_repository.dart'
+    show StoryUploadIntent;
 import 'package:attune/features/stories/domain/captured_media.dart';
 
 /// spec §6.1, verbatim and exhaustive: `queued`, `uploading_media`,
@@ -46,6 +48,10 @@ class StoryOutboxRecord {
     this.lastErrorCode,
     required this.createdAt,
     this.place,
+    this.mediaIntent,
+    this.thumbnailIntent,
+    this.strikes = 0,
+    this.slowUploads = 0,
   });
 
   /// Idempotency key for `create_story_item` (spec §4.2, §6.1). Minted
@@ -75,6 +81,26 @@ class StoryOutboxRecord {
   /// Absent from records queued before this field existed.
   final StoryPlaceDraft? place;
 
+  /// The pair this record is uploading under (spec §4.2), persisted inside
+  /// the encrypted payload so a restart resumes the same keys instead of
+  /// orphaning uploaded objects (01 #8). Null until minted; cleared when
+  /// stale.
+  final StoryUploadIntent? mediaIntent;
+  final StoryUploadIntent? thumbnailIntent;
+
+  /// Failures that count toward the automatic cap (unknown shape, stale
+  /// intent). [attempts] still drives the backoff window; offline failures
+  /// raise [attempts] but never [strikes] (Wave 2, P1).
+  final int strikes;
+
+  /// Full uploads that outlived their intents (the link was too slow to
+  /// finish inside the 15-minute window, final review #2). Two end the
+  /// record as `media_link_too_slow`; Retry resets it. Absent from records
+  /// written before this field existed.
+  final int slowUploads;
+
+  bool get hasIntents => mediaIntent != null && thumbnailIntent != null;
+
   StoryOutboxRecord copyWith({
     StoryOutboxState? state,
     int? attempts,
@@ -82,6 +108,11 @@ class StoryOutboxRecord {
     bool clearNextAttemptAt = false,
     String? lastErrorCode,
     bool clearLastErrorCode = false,
+    StoryUploadIntent? mediaIntent,
+    StoryUploadIntent? thumbnailIntent,
+    bool clearIntents = false,
+    int? strikes,
+    int? slowUploads,
   }) {
     return StoryOutboxRecord(
       clientStoryId: clientStoryId,
@@ -102,6 +133,11 @@ class StoryOutboxRecord {
           clearLastErrorCode ? null : (lastErrorCode ?? this.lastErrorCode),
       createdAt: createdAt,
       place: place,
+      mediaIntent: clearIntents ? null : (mediaIntent ?? this.mediaIntent),
+      thumbnailIntent:
+          clearIntents ? null : (thumbnailIntent ?? this.thumbnailIntent),
+      strikes: strikes ?? this.strikes,
+      slowUploads: slowUploads ?? this.slowUploads,
     );
   }
 
@@ -122,6 +158,10 @@ class StoryOutboxRecord {
     'lastErrorCode': lastErrorCode,
     'createdAt': createdAt.toIso8601String(),
     if (place != null) 'place': place!.toJson(),
+    if (mediaIntent != null) 'mediaIntent': mediaIntent!.toJson(),
+    if (thumbnailIntent != null) 'thumbnailIntent': thumbnailIntent!.toJson(),
+    'strikes': strikes,
+    'slowUploads': slowUploads,
   };
 
   factory StoryOutboxRecord.fromJson(Map<String, dynamic> json) {
@@ -145,6 +185,10 @@ class StoryOutboxRecord {
       lastErrorCode: json['lastErrorCode'] as String?,
       createdAt: DateTime.parse(json['createdAt'] as String),
       place: StoryPlaceDraft.fromJson(json['place']),
+      mediaIntent: StoryUploadIntent.fromJson(json['mediaIntent']),
+      thumbnailIntent: StoryUploadIntent.fromJson(json['thumbnailIntent']),
+      strikes: (json['strikes'] as num?)?.toInt() ?? 0,
+      slowUploads: (json['slowUploads'] as num?)?.toInt() ?? 0,
     );
   }
 }

@@ -3,6 +3,7 @@
 import 'dart:async';
 import 'dart:io';
 import 'package:attune/features/couple_map/data/couple_map_device_data.dart';
+import 'package:attune/features/stories/data/story_device_wipe.dart';
 import 'package:attune/features/together/data/together_device_surfaces.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
@@ -26,6 +27,10 @@ class QuickExitService {
   static FlutterSecureStorage storage = defaultStorage;
   @visibleForTesting
   static Future<void> Function()? exitOverride;
+
+  /// Story thumbnails, signed URLs and the last-known rings (05 #6).
+  @visibleForTesting
+  static Future<void> Function() clearStories = clearStoryDeviceCaches;
   static const String _requiresSafetyUnlockKey = 'safety_requires_unlock';
   static const _channel = MethodChannel('attune/safety');
 
@@ -49,6 +54,9 @@ class QuickExitService {
     unawaited(clearTogetherDeviceSurfaces());
     // The map's tile cache holds the partner's area; pins hold faces.
     unawaited(clearCoupleMapDeviceData());
+    // Story thumbnails sit in the shared image cache; empty it, with the
+    // story URLs and rings snapshot (05 #6).
+    unawaited(Future.sync(clearStories).catchError((Object _) {}));
     // The flag must be on disk before Attune leaves, or a kill during the
     // decoy comes back unlocked (Spec 2 review C3). The cover is already up,
     // so waiting reveals nothing; 300 ms is a minimum, not a maximum.
@@ -56,6 +64,9 @@ class QuickExitService {
       await _markSafetyUnlockRequired();
     } catch (_) {}
     await Future<void>.delayed(const Duration(milliseconds: 300));
+    // Once more now the old screen is gone: anything it saved or downloaded
+    // during the cover goes too (stories batch-4 review #2).
+    unawaited(Future.sync(clearStories).catchError((Object _) {}));
     await (exitOverride ?? _exitApp)();
   }
 

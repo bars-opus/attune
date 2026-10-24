@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:attune/app/theme/design_tokens.dart';
+import 'package:attune/core/services/app_content_visibility.dart';
 import 'package:attune/features/couple_map/domain/couple_map_config.dart';
 import 'package:attune/features/couple_map/domain/couple_map_copy.dart';
 import 'package:attune/features/auth/providers/auth_provider.dart';
@@ -81,12 +82,25 @@ class _CoupleMapTabState extends ConsumerState<CoupleMapTab> {
             if (mounted) setState(() => _hintSeen = v == 'true');
           }),
     );
-    // Keeps "Paused · 42 min" counting down.
-    _tick = Timer.periodic(const Duration(minutes: 1), (_) {
-      if (mounted) setState(() {});
+    // Keeps "Paused · 42 min" counting down, only while on screen: the
+    // shell keeps this tab mounted behind the privacy cover (stories
+    // Wave 3), so the tick stops there and restarts, redrawn, on return.
+    if (ref.read(appContentVisibleProvider)) _startTick();
+    ref.listenManual<bool>(appContentVisibleProvider, (_, visible) {
+      _tick?.cancel();
+      _tick = null;
+      if (!visible || !mounted) return;
+      setState(() {});
+      _startTick();
     });
     // Back from airplane mode or Settings: give the map another go.
     _lifecycle = AppLifecycleListener(onResume: _retryMap);
+  }
+
+  void _startTick() {
+    _tick = Timer.periodic(const Duration(minutes: 1), (_) {
+      if (mounted) setState(() {});
+    });
   }
 
   @override

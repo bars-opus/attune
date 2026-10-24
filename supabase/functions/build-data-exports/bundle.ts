@@ -69,6 +69,10 @@ export function calendarItems(bundle: any): FeedItem[] {
 
 // deno-lint-ignore no-explicit-any
 export function readme(bundle: any): string {
+  // Stories Wave 5 (04 #1): stories are walked first among the media; the
+  // README is written in part 1, so the left-out count is in the last part.
+  // deno-lint-ignore no-explicit-any
+  const stories = (bundle.relationships ?? []).reduce((n: number, r: any) => n + (r?.my_stories?.length ?? 0), 0);
   return [
     "Your Attune download",
     "",
@@ -83,9 +87,13 @@ export function readme(bundle: any): string {
     "data.json                 everything as data",
     "calendar.ics              your calendar, to open in any calendar app",
     "relationship-N/chat/      your conversations, a page per file",
-    "media/                    photos, voice notes and videos",
+    "media/my_stories/         your stories, photos and videos",
+    "media/                    the other photos, voice notes and videos",
     "",
     `Shared spaces in this download: ${(bundle.relationships ?? []).length}.`,
+    `Your stories: ${stories}, each listed in data.json. They come first among the media.`,
+    "If anything didn't fit, media_not_included.txt (in the last part) says",
+    "what, and how many of those files are your stories.",
   ].join("\n") + "\n";
 }
 
@@ -110,6 +118,11 @@ export function leftOutNote(items: LeftOut[]): string {
     lines.push(`${n} file${n === 1 ? "" : "s"} could not be read (it may have been deleted).`);
   }
   if (count("over_limit")) lines.push(`${files(count("over_limit"))} over this download's size limit.`);
+  // Stories Wave 5: part of the counts above, not in addition (review M4).
+  const stories = items.filter((i) => i.file.startsWith("media/my_stories/")).length;
+  if (stories) {
+    lines.push(`Of these files, ${stories === 1 ? "1 is one of your stories" : `${stories} are your stories`}.`);
+  }
   lines.push("", "The full list is in media_not_included.json.");
   return lines.join("\n") + "\n";
 }

@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:attune/core/services/app_content_visibility.dart';
 import 'package:attune/features/chat/presentation/providers/voice_playback_provider.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -198,6 +199,17 @@ class _VideoMessagePlayerState extends ConsumerState<VideoMessagePlayer> {
       if (mounted) setState(() => _initializing = false);
     }
 
+    // Stories Wave 3: a tap or autoPlay whose loading finished after
+    // Attune left the screen (the chat stays mounted behind the cover and
+    // the lock check) does not start sound there. It stays paused, the
+    // cross-media lock is let go, and a tap plays it.
+    if (!ref.read(appContentVisibleProvider)) {
+      if (ref.read(currentlyPlayingVideoMessageIdProvider) ==
+          widget.messageId) {
+        ref.read(currentlyPlayingVideoMessageIdProvider.notifier).state = null;
+      }
+      return;
+    }
     await _controller!.play();
     if (mounted) setState(() => _isPlaying = true);
   }
@@ -257,6 +269,15 @@ class _VideoMessagePlayerState extends ConsumerState<VideoMessagePlayer> {
       next,
     ) {
       if (next != widget.messageId && _isPlaying) {
+        _controller?.pause();
+        setState(() => _isPlaying = false);
+      }
+    });
+    // Stories Wave 3: the chat stays mounted behind the privacy cover and
+    // the lock check, so a playing video stops itself when Attune is not on
+    // screen. It stays stopped: a tap plays it again, as for a voice note.
+    ref.listen<bool>(appContentVisibleProvider, (_, visible) {
+      if (!visible && _isPlaying) {
         _controller?.pause();
         setState(() => _isPlaying = false);
       }

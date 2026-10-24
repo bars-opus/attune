@@ -4,6 +4,7 @@
 // countdown (the lock screen ticks every second).
 import 'dart:async';
 
+import 'package:attune/core/services/app_content_visibility.dart';
 import 'package:attune/features/safety/data/safety_pin_store.dart';
 import 'package:attune/features/safety/domain/safety_pin.dart';
 import 'package:attune/features/safety/presentation/safety_lock_controller.dart';
@@ -14,6 +15,8 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+
+import '../../helpers/state_probe.dart';
 
 class _World {
   bool flag = false;
@@ -485,5 +488,264 @@ void main() {
       shouldSuppressForegroundPush(SafetyLockState.open, '/home'),
       isFalse,
     );
+  });
+
+  group('a return keeps a shown app mounted behind the check '
+      '(stories Wave 3; 07b G7)', () {
+    Future<ProviderContainer> pumpProbe(WidgetTester t, _World w) async {
+      await t.pumpWidget(
+        ProviderScope(
+          overrides: [safetyLockDepsProvider.overrideWithValue(w.deps)],
+          child: const MaterialApp(
+            home: SafetyLockGate(child: StateProbe('APP')),
+          ),
+        ),
+      );
+      await t.pumpAndSettle();
+      return ProviderScope.containerOf(t.element(find.byType(SafetyLockGate)));
+    }
+
+    Future<void> holdTheCheck(WidgetTester t, _World w) async {
+      w.flagGate = Completer<void>();
+      for (final s in background) {
+        t.binding.handleAppLifecycleStateChanged(s);
+      }
+      await t.pump();
+    }
+
+    testWidgets('no PIN: hidden while checking, the same State after', (
+      t,
+    ) async {
+      final w = _World();
+      await pumpProbe(t, w);
+      await t.tap(find.text('APP 0'));
+      await t.pump();
+      await holdTheCheck(t, w);
+      expect(find.text('APP 1'), findsNothing, reason: 'nothing paints');
+      expect(find.text('APP 1', skipOffstage: false), findsOneWidget);
+      expect(
+        find.byKey(const Key('safety_lock_checking_cover')),
+        findsOneWidget,
+      );
+      w.flagGate!.complete();
+      await t.pumpAndSettle();
+      expect(find.text('APP 1'), findsOneWidget);
+    });
+
+    testWidgets('a PIN not asked on every open: the same State after', (
+      t,
+    ) async {
+      final w = _World();
+      await pumpProbe(t, w);
+      await w.pins.setPin('2468');
+      await t.tap(find.text('APP 0'));
+      await t.pump();
+      await holdTheCheck(t, w);
+      w.flagGate!.complete();
+      await t.pumpAndSettle();
+      expect(find.text('APP 1'), findsOneWidget);
+    });
+
+    testWidgets('a PIN asked on every open still replaces the app: nothing '
+        'of it survives the lock', (t) async {
+      final w = _World();
+      await pumpProbe(t, w);
+      await w.pins.setPin('2468');
+      await w.pins.setEveryOpen(true);
+      await t.tap(find.text('APP 0'));
+      await t.pump();
+      for (final s in background) {
+        t.binding.handleAppLifecycleStateChanged(s);
+      }
+      await t.pumpAndSettle();
+      expect(find.text('Enter PIN'), findsOneWidget);
+      expect(find.text('APP 1', skipOffstage: false), findsNothing);
+      await _type(t, '2468');
+      expect(find.text('APP 0'), findsOneWidget, reason: 'built fresh');
+    });
+
+    testWidgets('cold start: the app is not built until the first check '
+        'ends (review I5)', (t) async {
+      final w = _World()..flagGate = Completer<void>();
+      await t.pumpWidget(
+        ProviderScope(
+          overrides: [safetyLockDepsProvider.overrideWithValue(w.deps)],
+          child: const MaterialApp(
+            home: SafetyLockGate(child: StateProbe('APP')),
+          ),
+        ),
+      );
+      await t.pump();
+      expect(find.text('APP 0', skipOffstage: false), findsNothing);
+      w.flagGate!.complete();
+      await t.pumpAndSettle();
+      expect(find.text('APP 0'), findsOneWidget);
+    });
+
+    testWidgets('the visibility signal never reads "on screen" between '
+        'leaving and the lock opening (Review Focus 1)', (t) async {
+      final w = _World();
+      final c = await pumpProbe(t, w);
+      final seen = <bool>[];
+      c.listen<bool>(
+        appContentVisibleProvider,
+        (_, v) => seen.add(v),
+        fireImmediately: true,
+      );
+      await holdTheCheck(t, w);
+      expect(seen, [true, false], reason: 'resumed, but the lock is checking');
+      w.flagGate!.complete();
+      await t.pumpAndSettle();
+      expect(seen, [true, false, true]);
+    });
+
+    testWidgets('during the check a Navigator exists, yet a notification tap '
+        'still waits: deferral keys on the lock (07b G7 risk 4)', (t) async {
+      final w = _World();
+      final router = GoRouter(
+        routes: [GoRoute(path: '/', builder: (_, __) => const Text('HOME'))],
+      );
+      await t.pumpWidget(
+        ProviderScope(
+          overrides: [safetyLockDepsProvider.overrideWithValue(w.deps)],
+          child: MaterialApp.router(
+            routerConfig: router,
+            builder: (context, child) => SafetyLockGate(child: child!),
+          ),
+        ),
+      );
+      await t.pumpAndSettle();
+      final c = ProviderScope.containerOf(
+        t.element(find.byType(SafetyLockGate)),
+      );
+      await holdTheCheck(t, w);
+      expect(router.routerDelegate.navigatorKey.currentState, isNotNull);
+      expect(
+        shouldDeferNotificationTap(
+          state: c.read(safetyLockProvider),
+          path: '/',
+          navigatorReady: true,
+        ),
+        isTrue,
+      );
+      w.flagGate!.complete();
+      await t.pumpAndSettle();
+    });
+  });
+
+  group('the visibility signal starts from the lock state at cold start '
+      '(stories Wave 3; fix round 0)', () {
+    Future<ProviderContainer> pumpSeeded(
+      WidgetTester t,
+      _World w, {
+      SafetyLockState? seed,
+    }) async {
+      await t.pumpWidget(
+        ProviderScope(
+          overrides: [
+            safetyLockDepsProvider.overrideWithValue(w.deps),
+            safetyLockSeedProvider.overrideWithValue(seed),
+          ],
+          child: const MaterialApp(
+            home: SafetyLockGate(child: StateProbe('APP')),
+          ),
+        ),
+      );
+      await t.pump();
+      return ProviderScope.containerOf(t.element(find.byType(SafetyLockGate)));
+    }
+
+    testWidgets('seeded locked: not visible; unlocking makes it visible', (
+      t,
+    ) async {
+      final w = _World();
+      await w.pins.setPin('2468');
+      final c = await pumpSeeded(t, w, seed: SafetyLockState.locked);
+      expect(find.text('Enter PIN'), findsOneWidget);
+      expect(c.read(appContentVisibleProvider), isFalse);
+      await _type(t, '2468');
+      expect(find.text('APP 0'), findsOneWidget);
+      expect(c.read(appContentVisibleProvider), isTrue);
+    });
+
+    testWidgets('unseeded cold start: not visible while checking; visible '
+        'once the check opens', (t) async {
+      final w = _World()..flagGate = Completer<void>();
+      final c = await pumpSeeded(t, w);
+      expect(c.read(safetyLockProvider), SafetyLockState.checking);
+      expect(c.read(appContentVisibleProvider), isFalse);
+      w.flagGate!.complete();
+      await t.pumpAndSettle();
+      expect(c.read(appContentVisibleProvider), isTrue);
+    });
+  });
+
+  group('the signal is off from hide until the check passes, whatever the '
+      'listener order (stories Wave 3; fix round 1)', () {
+    Future<void> holdAndLeave(WidgetTester t, _World w) async {
+      w.flagGate = Completer<void>();
+      for (final s in background) {
+        t.binding.handleAppLifecycleStateChanged(s);
+      }
+      await t.pump();
+    }
+
+    testWidgets('the provider read before the gate is built', (t) async {
+      final w = _World();
+      final c = ProviderContainer(
+        overrides: [safetyLockDepsProvider.overrideWithValue(w.deps)],
+      );
+      addTearDown(c.dispose);
+      c.read(appContentVisibleProvider);
+      await t.pumpWidget(
+        UncontrolledProviderScope(
+          container: c,
+          child: const MaterialApp(
+            home: SafetyLockGate(child: StateProbe('APP')),
+          ),
+        ),
+      );
+      await t.pumpAndSettle();
+      final seen = <bool>[];
+      c.listen<bool>(
+        appContentVisibleProvider,
+        (_, v) => seen.add(v),
+        fireImmediately: true,
+      );
+      await holdAndLeave(t, w);
+      expect(seen, [true, false], reason: 'no true while the lock checks');
+      w.flagGate!.complete();
+      await t.pumpAndSettle();
+      expect(seen, [true, false, true]);
+    });
+
+    testWidgets('the gate re-created after the provider was built', (t) async {
+      final w = _World();
+      final c = ProviderContainer(
+        overrides: [safetyLockDepsProvider.overrideWithValue(w.deps)],
+      );
+      addTearDown(c.dispose);
+      Widget app(Key key) => UncontrolledProviderScope(
+        container: c,
+        child: MaterialApp(
+          home: SafetyLockGate(key: key, child: const StateProbe('APP')),
+        ),
+      );
+      await t.pumpWidget(app(const ValueKey(1)));
+      await t.pumpAndSettle();
+      await t.pumpWidget(app(const ValueKey(2)));
+      await t.pumpAndSettle();
+      final seen = <bool>[];
+      c.listen<bool>(
+        appContentVisibleProvider,
+        (_, v) => seen.add(v),
+        fireImmediately: true,
+      );
+      await holdAndLeave(t, w);
+      expect(seen, [true, false], reason: 'no true while the lock checks');
+      w.flagGate!.complete();
+      await t.pumpAndSettle();
+      expect(seen, [true, false, true]);
+    });
   });
 }

@@ -1,3 +1,4 @@
+import 'package:attune/core/services/app_content_visibility.dart';
 import 'package:attune/features/chat/domain/services/chat_feature_flags.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -98,9 +99,13 @@ final appreciationEnabledProvider = FutureProvider<bool>((ref) async {
 });
 
 /// The notes this person kept, newest first.
-final appreciationJarProvider = FutureProvider.autoDispose<List<JarNote>>(
-  (ref) => ref.read(appreciationServiceProvider).jar(),
-);
+final appreciationJarProvider = FutureProvider.autoDispose<List<JarNote>>((
+  ref,
+) {
+  // Kept mounted behind the privacy cover: read again on each return.
+  refreshWhenVisibleAgain(ref);
+  return ref.read(appreciationServiceProvider).jar();
+});
 
 /// Which received notes this person kept (final review M-7: ids only).
 final appreciationJarIdsProvider = FutureProvider.autoDispose<Set<String>>(

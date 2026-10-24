@@ -33,30 +33,32 @@
 /// produced a signed URL yet.
 library;
 
-import 'dart:async';
-
 import 'package:attune/app/theme/design_tokens.dart';
 import 'package:attune/features/auth/providers/auth_provider.dart';
 import 'package:attune/features/stories/data/story_outbox_record.dart';
 import 'package:attune/features/stories/data/story_read_repository.dart'
     show StoryRingSummary;
+import 'package:attune/features/stories/domain/story_ring_copy.dart';
 import 'package:attune/features/stories/presentation/providers/story_providers.dart';
 import 'package:attune/features/stories/presentation/state/story_outbox_controller.dart';
+import 'package:attune/features/stories/presentation/state/story_posted_hold.dart';
+import 'package:attune/features/stories/presentation/state/story_ring_refresh.dart';
+import 'package:attune/features/stories/presentation/widgets/story_outbox_notices.dart';
 import 'package:attune/features/stories/presentation/widgets/story_ring.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-/// Rough upload-progress fraction per outbox state, for the pending
-/// ring's progress indicator. Not a byte-accurate progress — the outbox
-/// controller does not track partial-upload byte counts — just enough to
-/// show the capture visibly advancing rather than sitting static (spec
-/// §6.1's "the capture is visible before it is posted").
-double _pendingProgressFor(StoryOutboxState state) {
+/// Upload-progress fraction for the pending ring: byte-accurate while the
+/// media streams (`storyUploadProgressProvider`, fed by the uploader's
+/// progress callback), step-based otherwise — enough to show the capture
+/// visibly advancing rather than sitting static (spec §6.1's "the capture
+/// is visible before it is posted").
+double _pendingProgressFor(StoryOutboxState state, {double? mediaFraction}) {
   switch (state) {
     case StoryOutboxState.queued:
       return 0.05;
     case StoryOutboxState.uploadingMedia:
-      return 0.35;
+      return mediaFraction == null ? 0.35 : 0.05 + 0.6 * mediaFraction;
     case StoryOutboxState.uploadingThumbnail:
       return 0.7;
     case StoryOutboxState.finalizing:
@@ -97,6 +99,11 @@ class StoryRingsRow extends ConsumerWidget {
     final myId = ref.watch(currentUserProvider)?.id;
     final summariesAsync = ref.watch(storyRingSummaryProvider(relationshipId));
     final outbox = ref.watch(storyOutboxProvider);
+    final uploadProgress = ref.watch(storyUploadProgressProvider);
+    StoryPostedHold? myHold;
+    for (final hold in ref.watch(storyPostedHoldsProvider)) {
+      if (hold.relationshipId == relationshipId) myHold = hold;
+    }
 
     // A pending capture for a DIFFERENT relationship must not paint over
     // this row's ring — the outbox is per-user, not per-relationship
@@ -120,7 +127,7 @@ class StoryRingsRow extends ConsumerWidget {
     //   all. That is precisely what spec §6.1 forbids ("it never
     //   silently disappears") — the user would see their PREVIOUS story
     //   on the ring, with no signal, no retry, and the local file never
-    //   reclaimed. `_FailedStoryNotice` below is that missing surface.
+    //   reclaimed. `StoryFailedNotice` below is that missing surface.
     // - Among the remaining candidates, the NEWEST by `createdAt` wins,
     //   not the first one in the store's (oldest-first) iteration order
     //   (F5) — the ring shows the most recent thing the user did.
@@ -137,7 +144,14 @@ class StoryRingsRow extends ConsumerWidget {
       }
     }
 
-    final summaries = summariesAsync.valueOrNull ?? const {};
+    // 03 M3: until this session's first read lands, or when it fails,
+    // paint the last rings this phone saw, and say so if the read failed.
+    final live = summariesAsync.valueOrNull;
+    final lastKnown = live == null
+        ? ref.watch(storyRingLastKnownProvider(relationshipId)).valueOrNull
+        : null;
+    final summaries = live ?? lastKnown ?? const <String, StoryRingSummary>{};
+    final loadFailed = live == null && summariesAsync.hasError;
     final partnerSummary = partnerId.isEmpty ? null : summaries[partnerId];
     // Loading/error states for the summary fetch must not hide MY ring —
     // it is drawn unconditionally regardless of fetch state (rule 1 in
@@ -146,70 +160,94 @@ class StoryRingsRow extends ConsumerWidget {
     final mySummary = myId == null ? null : summaries[myId];
 
     final mySegmentCount = mySummary?.activeCount ?? 0;
-    // The RPC's unviewed_count is defined as the PARTNER's-view-of-me
-    // count on MY row (StoryRingSummary's doc comment: "always 0 for the
-    // caller's own row by construction" — it counts MY unviewed items
-    // from THEIR perspective, never populated for the caller's own
-    // entry). For MY ring there is no "have I seen my own story" concept
-    // at all, so every one of my own active segments renders bright:
-    // unviewedCount mirrors segmentCount here rather than reading the
-    // always-zero field literally, which would incorrectly fade every
-    // segment on my own ring. Mirroring segmentCount is inherently in
-    // range (it IS segmentCount), so no separate clamp is needed here —
-    // unlike the partner ring below, this value is never read from the
-    // RPC's unviewed_count field at all.
-    final myUnviewedCount = mySegmentCount;
-
-    final myRing = myPending == null && mySegmentCount > 0
-        ? _MineRing(
-            key: const ValueKey('story-ring-mine'),
-            summary: mySummary!,
-            onTap: onOpenMine,
-            onTapPlus: onCapture,
-          )
-        : StoryRing(
-            key: const ValueKey('story-ring-mine'),
-            isMine: true,
-            hasStories: myPending != null || mySegmentCount > 0,
-            segmentCount: mySegmentCount,
-            unviewedCount: myUnviewedCount,
-            localThumbnailPath: myPending?.localThumbnailPath,
-            pendingProgress: myPending == null
-                ? null
-                : _pendingProgressFor(myPending.state),
-            onTap: myPending != null || mySegmentCount > 0 ? onOpenMine : null,
-            onTapPlus: onCapture,
-            semanticLabel: myPending != null
-                ? 'Your story, posting'
-                : mySegmentCount > 0
-                ? 'Your story, $mySegmentCount ${mySegmentCount == 1 ? 'item' : 'items'}'
-                : 'Add to your story',
-          );
+    final Widget myRing;
+    if (myPending == null && myHold != null) {
+      // 03 M1: posted, and the summary has not caught up yet.
+      final count = mySegmentCount + 1;
+      myRing = StoryRing(
+        key: const ValueKey('story-ring-mine'),
+        isMine: true,
+        hasStories: true,
+        segmentCount: count,
+        unviewedCount: count,
+        localThumbnailBytes: myHold.thumbnailBytes,
+        // No bytes (unreadable, or over 512 KB): the previous story's photo
+        // rather than grey (batch-4 review nit 6).
+        thumbnailCacheKey: myHold.thumbnailBytes == null
+            ? mySummary?.newestThumbnailKey
+            : null,
+        onTap: onOpenMine,
+        onTapPlus: onCapture,
+        semanticLabel: storyRingMineLabel(count),
+      );
+    } else if (myPending == null && mySegmentCount > 0) {
+      myRing = _MineRing(
+        key: const ValueKey('story-ring-mine'),
+        summary: mySummary!,
+        onTap: onOpenMine,
+        onTapPlus: onCapture,
+      );
+    } else {
+      // My own segments are always bright: unviewed_count on my own row is
+      // the partner's view of me (StoryRingSummary), never mine.
+      final pending = myPending;
+      // A held story is on the server already (batch-4 review nit 7).
+      final posted = mySegmentCount + (myHold != null ? 1 : 0);
+      myRing = StoryRing(
+        key: const ValueKey('story-ring-mine'),
+        isMine: true,
+        hasStories: pending != null || mySegmentCount > 0,
+        segmentCount: mySegmentCount,
+        unviewedCount: mySegmentCount,
+        localThumbnailPath: pending?.localThumbnailPath,
+        pendingProgress: pending == null
+            ? null
+            : _pendingProgressFor(
+                pending.state,
+                mediaFraction: uploadProgress[pending.clientStoryId],
+              ),
+        // 03 L1: with nothing on the server yet there is no reel to open.
+        onTap: pending == null
+            ? null
+            : posted > 0
+            ? onOpenMine
+            : () => _showStillPosting(context),
+        onTapPlus: onCapture,
+        semanticLabel: pending != null
+            ? storyRingPostingLabel(posted)
+            : storyRingAddLabel,
+      );
+    }
 
     final showPartnerRing =
         partnerSummary != null && partnerSummary.activeCount > 0;
 
+    // No bottom padding: my ring's box already ends kStoryRingPlusOverhang
+    // below the ring (room for the `+` target), which is the gap the design
+    // wants under the rings. Each notice brings its own Spacing.sm below.
     return Padding(
-      padding: const EdgeInsets.symmetric(
-        horizontal: Spacing.md,
-        vertical: Spacing.sm,
+      padding: const EdgeInsets.only(
+        left: Spacing.md,
+        right: Spacing.md,
+        top: Spacing.sm,
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisSize: MainAxisSize.min,
         children: [
           SizedBox(
-            height:
-                kStoryRingThumbnailDiameter +
-                2 * (kStoryRingGap + kStoryRingStrokeWidth) +
-                4,
+            height: kStoryRingMineExtent,
             child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 myRing,
                 // Nothing at all for an empty partner ring — no SizedBox, no
                 // placeholder slot. Rule 2 in this file's header.
                 if (showPartnerRing) ...[
-                  const SizedBox(width: Spacing.md),
+                  // My ring's box already reaches kStoryRingPlusOverhang
+                  // past the ring for the `+` target, so the gap gives it
+                  // back: the partner ring stays Spacing.md from mine.
+                  const SizedBox(width: Spacing.md - kStoryRingPlusOverhang),
                   _PartnerRing(
                     summary: partnerSummary,
                     partnerName: partnerName,
@@ -219,14 +257,46 @@ class StoryRingsRow extends ConsumerWidget {
               ],
             ),
           ),
+          if (loadFailed)
+            StoryRingsLoadErrorNotice(
+              showingLastKnown: lastKnown?.isNotEmpty ?? false,
+              onRetry: () {
+                ref
+                    .read(storyRingFetchCoalescerProvider)
+                    .resetFailures(relationshipId);
+                ref.invalidate(storyRingSummaryProvider(relationshipId));
+                // Final review I-1: the photos on the rings shown, too.
+                storyResignFailedThumbnails(
+                  ref.read(storySignedUrlCacheProvider),
+                  [
+                    for (final summary in summaries.values)
+                      summary.newestThumbnailKey,
+                  ],
+                  (key) => ref.invalidate(storyMediaSignedUrlProvider(key)),
+                );
+              },
+            ),
           // Sits BELOW the fixed-height ring row rather than inside it:
           // the row's height is derived from the ring geometry, so a
           // child of it would be clipped.
+          if (myPending != null)
+            StoryPendingNotice(
+              key: ValueKey('pending-${myPending.clientStoryId}'),
+              record: myPending,
+            ),
           for (final failed in myFailed)
-            _FailedStoryNotice(key: ValueKey(failed.clientStoryId), record: failed),
+            StoryFailedNotice(key: ValueKey(failed.clientStoryId), record: failed),
+          StoryOrphanedPostsNotice(activeRelationshipId: relationshipId),
+          const StoryPrepareFailedNotice(),
         ],
       ),
     );
+  }
+
+  void _showStillPosting(BuildContext context) {
+    ScaffoldMessenger.maybeOf(context)
+      ?..hideCurrentSnackBar()
+      ..showSnackBar(const SnackBar(content: Text(storyRingStillPostingCopy)));
   }
 }
 
@@ -268,10 +338,13 @@ class _PartnerRing extends ConsumerWidget {
       // already guarantee is in range.
       unviewedCount: summary.unviewedCount.clamp(0, summary.activeCount),
       thumbnailUrl: thumbnailUrl,
+      thumbnailCacheKey: summary.newestThumbnailKey,
       onTap: onTap,
-      semanticLabel:
-          "$partnerName's story, "
-          '${summary.unviewedCount > 0 ? 'new' : 'seen'}',
+      semanticLabel: storyRingPartnerLabel(
+        partnerName,
+        active: summary.activeCount,
+        unviewed: summary.unviewedCount,
+      ),
     );
   }
 }
@@ -310,6 +383,10 @@ class _MineRing extends ConsumerWidget {
         .valueOrNull;
 
     final segmentCount = summary.activeCount;
+    // A story that just posted: its bytes until the disk copy is found.
+    final justPosted = ref
+        .read(storyPostedHoldsProvider.notifier)
+        .bridgeFor(summary.newestThumbnailKey);
 
     return StoryRing(
       isMine: true,
@@ -320,61 +397,11 @@ class _MineRing extends ConsumerWidget {
       // active segments renders bright.
       unviewedCount: segmentCount,
       thumbnailUrl: thumbnailUrl,
+      thumbnailCacheKey: summary.newestThumbnailKey,
+      localThumbnailBytes: justPosted,
       onTap: onTap,
       onTapPlus: onTapPlus,
-      semanticLabel:
-          'Your story, $segmentCount ${segmentCount == 1 ? 'item' : 'items'}',
-    );
-  }
-}
-
-/// The surface for a story that will never post on its own.
-///
-/// Spec §6.1: a failed upload "never silently disappears" — it is worse
-/// here than in chat, because there is no bubble to hang a retry off. The
-/// outbox has always RETAINED these records and `retry()`/`discard()` have
-/// always existed; until the final branch review nothing in `lib/` called
-/// either, so the record was retained and invisible. This is the call site.
-///
-/// Deliberately a plain row rather than a ring overlay: a dead record must
-/// not outrank a real, already-posted story on the ring (the F2 finding
-/// this file's header records), so it gets its own space beneath.
-class _FailedStoryNotice extends ConsumerWidget {
-  const _FailedStoryNotice({super.key, required this.record});
-
-  final StoryOutboxRecord record;
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final colors = Theme.of(context).colorScheme;
-    final notifier = ref.read(storyOutboxProvider.notifier);
-
-    return Padding(
-      padding: const EdgeInsets.only(top: Spacing.sm),
-      child: MergeSemantics(
-        child: Row(
-          children: [
-            Icon(Icons.error_outline_rounded, size: 18, color: colors.error),
-            const SizedBox(width: Spacing.xs),
-            Expanded(
-              child: Text(
-                'Your story could not be posted.',
-                style: Theme.of(
-                  context,
-                ).textTheme.bodySmall?.copyWith(color: colors.error),
-              ),
-            ),
-            TextButton(
-              onPressed: () => unawaited(notifier.retry(record.clientStoryId)),
-              child: const Text('Retry'),
-            ),
-            TextButton(
-              onPressed: () => unawaited(notifier.discard(record.clientStoryId)),
-              child: const Text('Discard'),
-            ),
-          ],
-        ),
-      ),
+      semanticLabel: storyRingMineLabel(segmentCount),
     );
   }
 }

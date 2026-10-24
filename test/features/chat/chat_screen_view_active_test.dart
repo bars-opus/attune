@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:attune/app/routing/app_route_observer.dart';
 import 'package:attune/app/routing/app_router.dart';
 import 'package:attune/app/routing/routing_notifier.dart';
+import 'package:attune/core/services/app_content_visibility.dart';
 import 'package:attune/features/chat/presentation/screens/chat_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -426,4 +427,46 @@ void main() {
 
     await tearDownChat(tester, container);
   });
+
+  testWidgets(
+    'a return that stops at the Safety lock check keeps presence and read '
+    'receipts off until the lock opens (stories Wave 3)',
+    (tester) async {
+      final repo = FakeChatRepository(currentUserId: userId);
+      final container = await pumpChat(tester, repo);
+      expect(repo.presenceCalls.last, relId);
+
+      await setLifecycle(tester, 'AppLifecycleState.paused');
+      await tester.pump(const Duration(milliseconds: 50));
+      // What SafetyLockGate does on a return: the lock is being checked.
+      container.read(appContentVisibleProvider.notifier).setLockOpen(false);
+      await setLifecycle(tester, 'AppLifecycleState.resumed');
+      await tester.pump(const Duration(milliseconds: 50));
+
+      repo.seedIncoming(
+        id: 'inc-1',
+        relationshipId: relId,
+        senderId: 'partner',
+        content: 'are you there?',
+        createdAt: DateTime.now(),
+      );
+      repo.emitRealtime();
+      await tester.pump(const Duration(milliseconds: 400));
+      await tester.pump(const Duration(milliseconds: 700));
+      expect(
+        repo.presenceCalls.last,
+        isNull,
+        reason: 'the PIN check is on screen, not the chat',
+      );
+      expect(repo.markReadCalls, isEmpty, reason: 'nobody has seen it');
+
+      container.read(appContentVisibleProvider.notifier).setLockOpen(true);
+      await tester.pump(const Duration(milliseconds: 50));
+      expect(repo.presenceCalls.last, relId);
+      await tester.pump(const Duration(milliseconds: 700));
+      expect(repo.markReadCalls, isNotEmpty);
+
+      await tearDownChat(tester, container);
+    },
+  );
 }

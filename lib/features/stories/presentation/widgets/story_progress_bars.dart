@@ -3,7 +3,8 @@
 /// screen. A bar left of [currentIndex] is fully filled (already played
 /// this viewing), the bar AT [currentIndex] fills according to
 /// [currentProgress] (0..1, driven by the reel's own image timer or video
-/// position), and every bar to the right is empty.
+/// position), and every bar to the right is empty unless [viewed] marks it
+/// seen on an earlier visit, which draws it full but faded.
 ///
 /// This widget is a pure function of its inputs — no timers, no
 /// animation controllers, no knowledge of media type. [StoryReelScreen]
@@ -21,6 +22,7 @@ class StoryProgressBars extends StatelessWidget {
     required this.itemCount,
     required this.currentIndex,
     required this.currentProgress,
+    this.viewed,
   }) : assert(
          itemCount >= 0,
          'itemCount must not be negative — there is nothing to draw fewer '
@@ -45,9 +47,19 @@ class StoryProgressBars extends StatelessWidget {
   /// Ignored for bars other than [currentIndex].
   final double currentProgress;
 
+  /// Per item: already seen by this viewer on an earlier visit. A segment
+  /// after [currentIndex] that is seen draws fully, in [seenColor] (faded,
+  /// not skipped: spec §5.5 / owner ruling 3).
+  final List<bool>? viewed;
+
+  /// The reel is a fixed black surface in both themes, so the bars are
+  /// white regardless of theme (06 #10: dark `onPrimary` is near-black).
+  static const Color trackColor = Color(0x59FFFFFF);
+  static const Color fillColor = Colors.white;
+  static const Color seenColor = Color(0x99FFFFFF);
+
   @override
   Widget build(BuildContext context) {
-    final colorScheme = Theme.of(context).colorScheme;
     if (itemCount == 0) return const SizedBox.shrink();
 
     return Semantics(
@@ -57,19 +69,31 @@ class StoryProgressBars extends StatelessWidget {
           for (var i = 0; i < itemCount; i++) ...[
             if (i > 0) const SizedBox(width: Spacing.xs),
             Expanded(
-              child: _Segment(
-                fraction: i < currentIndex
-                    ? 1.0
-                    : i == currentIndex
-                    ? currentProgress
-                    : 0.0,
-                trackColor: Colors.white.withValues(alpha: 0.35),
-                fillColor: colorScheme.onPrimary,
+              child: KeyedSubtree(
+                key: ValueKey('story-progress-segment-$i'),
+                child: _segmentFor(i),
               ),
             ),
           ],
         ],
       ),
+    );
+  }
+
+  Widget _segmentFor(int i) {
+    final seenAhead =
+        i > currentIndex &&
+        (viewed != null && i < viewed!.length && viewed![i]);
+    return _Segment(
+      fraction: i < currentIndex
+          ? 1.0
+          : i == currentIndex
+          ? currentProgress
+          : seenAhead
+          ? 1.0
+          : 0.0,
+      trackColor: trackColor,
+      fillColor: seenAhead ? seenColor : fillColor,
     );
   }
 }

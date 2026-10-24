@@ -1,9 +1,11 @@
 import 'dart:async';
 
+import 'package:attune/core/services/app_content_visibility.dart';
 import 'package:attune/features/games/session_games/data/repositories/session_game_repository.dart';
 import 'package:flutter/foundation.dart';
 import 'package:attune/features/games/session_games/presentation/widgets/session_game_ui.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart' show ProviderSubscription;
 
 /// Shown after this user submits, until the partner does too.
 ///
@@ -68,6 +70,12 @@ class _SessionGameWaitingScreenState extends State<SessionGameWaitingScreen> {
   bool _revealed = false;
   bool _left = false;
 
+  /// The wait stays mounted behind the privacy cover and the Safety lock's
+  /// return check (stories Wave 3): while Attune is not on screen nothing
+  /// is read and the grace window does not run (final review M2).
+  ProviderSubscription<bool>? _visibility;
+  bool get _visible => _visibility?.read() ?? true;
+
   /// Three seconds: fast enough that a partner answering feels
   /// near-immediate, slow enough that a five-minute wait costs ~100
   /// requests rather than thousands.
@@ -89,22 +97,41 @@ class _SessionGameWaitingScreenState extends State<SessionGameWaitingScreen> {
     }
     if (widget._testBothAnswered != null) return; // test, not yet revealed
     _poll = Timer.periodic(_pollInterval, (_) => unawaited(_check()));
+    _visibility = listenAppContentVisibleOf(context, _onVisibilityChanged);
 
     // The same-room case: partners playing together answer within
     // seconds, and bouncing them to the chat only to tap back in would be
     // worse than a brief wait. Past this window they are not in the same
     // room, so the chat card takes over.
     _grace = Timer(_graceWindow, _leaveToChat);
+    if (!_visible) _grace?.cancel(); // starts on the return instead
+  }
+
+  /// Away: the grace window stops, so a short call does not come back to
+  /// the chat instead of the wait. Back: one read at once (the partner may
+  /// have answered meanwhile) and the whole window again, as a person back
+  /// from a call is in the room again.
+  void _onVisibilityChanged(bool visible) {
+    if (_revealed || _left) return;
+    if (!visible) {
+      _grace?.cancel();
+      return;
+    }
+    _grace?.cancel();
+    _grace = Timer(_graceWindow, _leaveToChat);
+    unawaited(_check());
   }
 
   @override
   void dispose() {
+    _visibility?.close();
     _poll?.cancel();
     _grace?.cancel();
     super.dispose();
   }
 
   Future<void> _check() async {
+    if (!_visible) return;
     final repository = widget._repository ?? SessionGameRepository();
     try {
       final round = await repository.fetchRevealedRound(widget.roundId);

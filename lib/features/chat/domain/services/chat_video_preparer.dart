@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:attune/features/chat/domain/services/chat_image_preparer.dart';
 import 'package:attune/features/chat/domain/services/mp4_location_stripper.dart';
+import 'package:attune/features/chat/utils/chat_log.dart';
 import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
@@ -54,7 +55,21 @@ class ChatVideoRejected implements Exception {
 /// viable Flutter-compatible server-side transcoding option exists for
 /// Supabase Edge Functions).
 class ChatVideoPreparer {
-  const ChatVideoPreparer();
+  const ChatVideoPreparer({this.boundaryTolerance, this.oversizeRetryQuality});
+
+  /// Opt-in (stories only; chat and streaks pass nothing and are
+  /// byte-identical). A camera take that overshoots [maxDuration] by up to
+  /// this much (stop latency) is clamped to exactly the max, an untrimmed
+  /// source is exported whole instead of through a whole-second window,
+  /// and `durationMs` is the exported length capped at the max (01 #4, #16).
+  final Duration? boundaryTolerance;
+
+  /// Opt-in (stories only; null keeps chat and streaks byte-identical: one
+  /// 720p encode, refused when over the byte ceiling). A 1080p story take
+  /// can encode past 25 MB at 720p, the server's ceiling too, so when the
+  /// first output is over the limit it is deleted and the source encoded
+  /// once more at this quality; only then is the take refused.
+  final VideoQuality? oversizeRetryQuality;
 
   static const int maxBytes = 25 * 1024 * 1024; // post-transcode output ceiling
   static const int maxSourceBytes =
@@ -157,6 +172,73 @@ class ChatVideoPreparer {
   @visibleForTesting
   static int debugResolveMaxBytes(int? override) => override ?? maxBytes;
 
+  /// The part of the source to export. [whole] is true when that is the
+  /// entire source: untrimmed (or trimmed to its full length), and, with
+  /// [boundaryTolerance], a take up to that much over [maxDuration] (stop
+  /// latency), whose window is clamped to exactly the max for the duration
+  /// checks and reporting while the file itself is exported whole.
+  @visibleForTesting
+  static ({Duration start, Duration end, bool whole}) debugExportWindow({
+    required Duration source,
+    Duration? trimStart,
+    Duration? trimEnd,
+    required Duration maxDuration,
+    Duration? boundaryTolerance,
+  }) {
+    final start = trimStart ?? Duration.zero;
+    final end = trimEnd ?? source;
+    final untrimmed = trimStart == null && trimEnd == null;
+    if (boundaryTolerance != null &&
+        untrimmed &&
+        source > maxDuration &&
+        source <= maxDuration + boundaryTolerance) {
+      return (start: Duration.zero, end: maxDuration, whole: true);
+    }
+    return (start: start, end: end, whole: start <= Duration.zero && end >= source);
+  }
+
+  /// video_compress 3.1.4's `startTime` / `duration` (whole seconds) for an
+  /// export window. A whole source passes neither: on Android the plugin
+  /// hands `duration` to Transcoder's TrimDataSource as the time cut from
+  /// the END (VideoCompressPlugin.kt:145), so the old always-passed full
+  /// length cut almost everything; on iOS a zero duration is an empty range
+  /// (01 #16). A real trim starts on the whole second at or before the
+  /// window and is rounded so the export always covers the window: iOS
+  /// takes the length (rounded up), Android the seconds to cut from the end
+  /// (rounded down, so start + cut stays under the source and
+  /// TrimDataSource does not throw). The Android export can therefore run
+  /// up to about a second longer at each end than the window; prepare()
+  /// reports the exported length there.
+  @visibleForTesting
+  static ({int? startTime, int? duration}) debugCompressArgs({
+    required Duration source,
+    required Duration start,
+    required Duration end,
+    required bool whole,
+    required bool android,
+  }) {
+    if (whole) return (startTime: null, duration: null);
+    final startTime = start.inSeconds;
+    if (android) {
+      final cut = end >= source ? Duration.zero : source - end;
+      return (startTime: startTime, duration: cut.inSeconds);
+    }
+    final fromStart = end - Duration(seconds: startTime);
+    return (startTime: startTime, duration: (fromStart.inMilliseconds / 1000).ceil());
+  }
+
+  @visibleForTesting
+  static int debugReportedDurationMs({
+    required Duration window,
+    double? exportedMs,
+    required Duration maxDuration,
+    required bool precise,
+  }) {
+    if (!precise) return window.inMilliseconds;
+    final actual = exportedMs?.round() ?? window.inMilliseconds;
+    return actual < maxDuration.inMilliseconds ? actual : maxDuration.inMilliseconds;
+  }
+
   Future<PreparedChatVideo> prepare({
     required String localPath,
     Duration? trimStart,
@@ -209,9 +291,22 @@ class ChatVideoPreparer {
     }
     final sourceDuration = Duration(milliseconds: sourceDurationMs);
 
-    final effectiveStart = trimStart ?? Duration.zero;
-    final effectiveEnd = trimEnd ?? sourceDuration;
-    final effectiveDuration = effectiveEnd - effectiveStart;
+    final window = debugExportWindow(
+      source: sourceDuration,
+      trimStart: trimStart,
+      trimEnd: trimEnd,
+      maxDuration: effectiveMaxDuration,
+      boundaryTolerance: boundaryTolerance,
+    );
+    final effectiveStart = window.start;
+    final effectiveDuration = window.end - window.start;
+    final args = debugCompressArgs(
+      source: sourceDuration,
+      start: window.start,
+      end: window.end,
+      whole: window.whole,
+      android: defaultTargetPlatform == TargetPlatform.android,
+    );
 
     // Window-estimate size guard runs BEFORE the duration-bounds check
     // (rather than after, as a naive top-to-bottom reading of the flow might
@@ -256,7 +351,17 @@ class ChatVideoPreparer {
       }
       final rawThumbPath = await _tempTargetPath('raw_thumb', 'jpg');
       await File(rawThumbPath).writeAsBytes(thumbnailBytes, flush: true);
-      preparedThumbnail = await const ChatImagePreparer().prepare(rawThumbPath);
+      try {
+        preparedThumbnail = await const ChatImagePreparer().prepare(
+          rawThumbPath,
+        );
+      } finally {
+        // The raw frame is only the preparer's input (it always writes a new
+        // file): never leave a full-quality plaintext frame in tmp/.
+        try {
+          await File(rawThumbPath).delete();
+        } catch (_) {}
+      }
     } on ChatImageRejected {
       throw const ChatVideoRejected('thumbnail_failed');
     }
@@ -277,7 +382,6 @@ class ChatVideoPreparer {
     // [maxBytes] (25MB, enforced below) is the real, authoritative backstop
     // against oversized output — resolution/quality-enum choice is a
     // best-effort input to staying under that ceiling, not a guarantee.
-    final MediaInfo? compressed;
     // video_compress reports progress (0-100) on a broadcast-style
     // ObservableBuilder<double> (VideoCompress.compressProgress$), separate
     // from the compressVideo() future itself — subscribe around the call and
@@ -285,36 +389,66 @@ class ChatVideoPreparer {
     // the subscription can't outlive this call or fire after prepare()
     // returns/throws (compressProgress$ is a singleton on the plugin
     // instance, shared across calls).
-    final progressSubscription =
-        onProgress == null
-            ? null
-            : VideoCompress.compressProgress$.subscribe((value) {
-              onProgress(value);
-            });
-    try {
-      compressed = await VideoCompress.compressVideo(
-        localPath,
-        quality: VideoQuality.Res1280x720Quality,
-        startTime: effectiveStart.inSeconds,
-        duration: effectiveDuration.inSeconds,
-        includeAudio: true,
-        deleteOrigin: false,
-      );
-    } catch (_) {
-      throw const ChatVideoRejected('media_compress_failed');
-    } finally {
-      progressSubscription?.unsubscribe();
-    }
-    if (compressed?.file == null) {
-      throw const ChatVideoRejected('media_compress_failed');
+    Future<({MediaInfo info, File file, int size})> encode(
+      VideoQuality quality,
+    ) async {
+      final MediaInfo? compressed;
+      final progressSubscription =
+          onProgress == null
+              ? null
+              : VideoCompress.compressProgress$.subscribe((value) {
+                onProgress(value);
+              });
+      try {
+        compressed = await VideoCompress.compressVideo(
+          localPath,
+          quality: quality,
+          startTime: args.startTime,
+          duration: args.duration,
+          includeAudio: true,
+          deleteOrigin: false,
+        );
+      } catch (_) {
+        throw const ChatVideoRejected('media_compress_failed');
+      } finally {
+        progressSubscription?.unsubscribe();
+      }
+      if (compressed?.file == null) {
+        throw const ChatVideoRejected('media_compress_failed');
+      }
+
+      final outFile = compressed!.file!;
+      // Where it was recorded stays on the phone (couple map spec §7): the
+      // transcode keeps the source's location atoms; neutralise them in
+      // place.
+      await Mp4LocationStripper.strip(outFile);
+      return (info: compressed, file: outFile, size: await outFile.length());
     }
 
-    final outFile = compressed!.file!;
-    // Where it was recorded stays on the phone (couple map spec §7): the
-    // transcode keeps the source's location atoms; neutralise them in place.
-    await Mp4LocationStripper.strip(outFile);
-    final outSize = await outFile.length();
+    var encoded = await encode(VideoQuality.Res1280x720Quality);
+    // Opted in (stories): one more encode, one quality step down, before an
+    // oversize take is refused. The oversize output is deleted first (the
+    // Android plugin names outputs by the second, so a quick second encode
+    // could reuse the path).
+    final retryQuality = oversizeRetryQuality;
+    if (encoded.size > effectiveMaxBytes && retryQuality != null) {
+      ChatLog.diagnostic('video over limit, re-encoding', '${encoded.size}B');
+      try {
+        await encoded.file.delete();
+      } catch (_) {}
+      encoded = await encode(retryQuality);
+    }
+    final compressed = encoded.info;
+    final outFile = encoded.file;
+    final outSize = encoded.size;
     if (outSize <= 0 || outSize > effectiveMaxBytes) {
+      // Opted in: the refused encode is not left in the plugin's folder
+      // (never cleared on Android; batch-6 review #6). Chat is unchanged.
+      if (retryQuality != null) {
+        try {
+          await outFile.delete();
+        } catch (_) {}
+      }
       throw const ChatVideoRejected('media_compress_failed');
     }
 
@@ -340,7 +474,18 @@ class ChatVideoPreparer {
       file: outFile,
       mimeType: 'video/mp4',
       byteSize: outSize,
-      durationMs: effectiveDuration.inMilliseconds,
+      durationMs: debugReportedDurationMs(
+        window: effectiveDuration,
+        exportedMs: compressed.duration,
+        maxDuration: effectiveMaxDuration,
+        // A real trim on Android is rounded outward (debugCompressArgs), so
+        // the exported length is reported, not the window (review #7). iOS
+        // keeps the window: its plugin ignores the range with audio (C1,
+        // owner decision).
+        precise:
+            boundaryTolerance != null ||
+            (!window.whole && defaultTargetPlatform == TargetPlatform.android),
+      ),
       thumbnailFile: preparedThumbnail.file,
       thumbnailMimeType: preparedThumbnail.mimeType,
       thumbnailByteSize: preparedThumbnail.byteSize,

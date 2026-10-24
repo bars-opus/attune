@@ -142,6 +142,11 @@ GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public
 -- seen_shown). After the stories replay above, which grants the whole table.
 \i supabase/migrations/20261017140100_story_items_column_grants.sql
 
+-- Stories Wave 5 (05 #8): story_places is SELECT-only for clients. Replayed
+-- after the blanket grant above, which would otherwise hand authenticated
+-- INSERT/UPDATE/DELETE and anon SELECT, and turn story_places_contracts red.
+\i supabase/migrations/20261024100000_story_places_grants.sql
+
 -- Spec 1a (Task 7): private Pulse scores are SELECT-only for their author;
 -- the recompute limit table is server-only.
 \i supabase/migrations/20261017150100_pulse_privacy_table_grants.sql

@@ -6,7 +6,8 @@
   local-device-residue concern in CHAT_SYSTEM_SPEC Sections 4.4 and 14.
   Also excludes chat's staged photo picks and prepared uploads (chat_picks/,
   chat_prepared/ in filesDir), and the home-screen widgets' data (Together
-  and the distance widget; widget spec §4.4).
+  and the distance widget; widget spec §4.4), and the story outbox and its
+  queued captures (STORIES.md §6.1).
 -->
 <full-backup-content>
     <exclude domain="file" path="attune_chat_cache.sqlite" />
@@ -14,6 +15,10 @@
     <exclude domain="file" path="attune_chat_cache.sqlite-shm" />
     <exclude domain="file" path="chat_picks/" />
     <exclude domain="file" path="chat_prepared/" />
+    <exclude domain="file" path="attune_story_outbox.sqlite" />
+    <exclude domain="file" path="attune_story_outbox.sqlite-wal" />
+    <exclude domain="file" path="attune_story_outbox.sqlite-shm" />
+    <exclude domain="file" path="story_outbox/" />
     <exclude domain="sharedpref" path="HomeWidgetPreferences.xml" />
     <exclude domain="file" path="home_widget/" />
     <exclude domain="sharedpref" path="FlutterSecureStorage.xml" />

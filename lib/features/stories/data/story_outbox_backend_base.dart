@@ -28,6 +28,9 @@ abstract class StoryOutboxBackend {
 
   Future<void> clearAll();
 
+  /// Account switch: every row whose user is not [keepUserId] goes.
+  Future<void> removeOtherUsers(String keepUserId);
+
   /// Closes the backend's connection, if it holds one. The `dart:io`
   /// backend closes its Drift/SQLite connection; the in-memory stub is a
   /// no-op. Exists so a durability test can close-and-reopen a real

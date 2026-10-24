@@ -88,4 +88,30 @@ void main() {
       );
     }
   });
+
+  test('backups never carry the story outbox or its queued captures', () {
+    for (final path in [
+      'android/app/src/main/res/xml/backup_rules.xml',
+      'android/app/src/main/res/xml/data_extraction_rules.xml',
+    ]) {
+      final xml = File(path).readAsStringSync();
+      final sections = path.contains('extraction')
+          ? [
+              xml.substring(xml.indexOf('<cloud-backup>'), xml.indexOf('</cloud-backup>')),
+              xml.substring(xml.indexOf('<device-transfer>'), xml.indexOf('</device-transfer>')),
+            ]
+          : [xml];
+      for (final section in sections) {
+        for (final entry in [
+          'attune_story_outbox.sqlite',
+          'attune_story_outbox.sqlite-wal',
+          'attune_story_outbox.sqlite-shm',
+          'story_outbox/',
+        ]) {
+          expect(section, contains('<exclude domain="file" path="$entry" />'),
+              reason: '$path must exclude $entry');
+        }
+      }
+    }
+  });
 }

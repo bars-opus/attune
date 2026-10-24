@@ -13,22 +13,29 @@
 // The three brief-mandated tests (task-2-brief.md Step 1) are:
 //   - a signal bump invalidates the ring summary and the visible reel
 //   - paging uses the last item as the cursor, never an offset
-//   - a signed URL is minted per request and never cached past its TTL
+//   - the gateway signs fresh on every call; the provider reuses a URL
+//     per storage key, in memory, only while it is under 540 s old
+//     (STORIES.md §4.1 as amended, Wave 4)
 // These are covered below, plus supporting coverage of the ring-summary
 // map shape (the brief's "absence of a row is not 'do not draw my ring'"
 // contract) and the day-items/day-counts reads.
 
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:attune/features/auth/providers/auth_provider.dart';
 import 'package:attune/features/stories/data/story_read_repository.dart';
+import 'package:attune/features/stories/data/story_signed_url_cache.dart';
 import 'package:attune/features/stories/data/story_repository.dart'
     show StoryApiError;
 import 'package:attune/features/stories/presentation/providers/story_providers.dart';
+import 'package:clock/clock.dart';
 import 'package:flutter/widgets.dart' show AppLifecycleState;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:http/http.dart' as http;
+import 'package:http/testing.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 const _userId = 'user-1';
@@ -68,7 +75,8 @@ StoryItem _item({
 
 /// Records every call so tests can assert both outcome and call shape —
 /// in particular, that paging is driven by (created_at, id) cursors, that
-/// signMediaUrl is invoked once per request with no internal caching, and
+/// the fake signs on every call (it keeps no URLs of its own, so any reuse
+/// a test sees is the provider's per-key cache), and
 /// that the change-signal stream never carries the signal row's payload.
 ///
 /// **Fix round 1 (task-2-review.md): completer-based control for
@@ -114,6 +122,9 @@ class _FakeStoryReadGateway implements StoryReadGateway {
 
   final List<StoryItemPage> dayItemsScript = [];
   final List<StoryPageCursor?> dayItemsCursorsRequested = [];
+
+  /// The author each `listDayItems` call asked for (Wave 5), in call order.
+  final dayAuthorIds = <String?>[];
 
   final List<StoryDayCount> dayCountsScript = [];
 
@@ -179,7 +190,9 @@ class _FakeStoryReadGateway implements StoryReadGateway {
     required DateTime occurredOn,
     StoryPageCursor? after,
     int limit = 50,
+    String? authorId,
   }) async {
+    dayAuthorIds.add(authorId);
     dayItemsCursorsRequested.add(after);
     final index = dayItemsCursorsRequested.length - 1;
     return dayItemsScript[index];
@@ -206,9 +219,8 @@ class _FakeStoryReadGateway implements StoryReadGateway {
   Future<String?> signMediaUrl(String storageKey) async {
     signMediaUrlCallCount++;
     signMediaUrlKeysRequested.add(storageKey);
-    // A fresh, distinguishable URL every call — if anything ever cached
-    // and reused this return value, a test asserting on distinct URLs
-    // per call would catch it.
+    // A fresh, distinguishable URL every call, so a test can tell the
+    // provider's in-memory reuse (same URL) from a re-sign (a new one).
     return 'https://signed.example/$storageKey?call=$signMediaUrlCallCount';
   }
 
@@ -266,6 +278,7 @@ class _ThrowingStoryReadGateway implements StoryReadGateway {
     required DateTime occurredOn,
     StoryPageCursor? after,
     int limit = 50,
+    String? authorId,
   }) => throw _error;
 
   @override
@@ -1031,44 +1044,40 @@ void main() {
 
   group('signed URLs', () {
     test(
-      'a signed URL is minted per request and never cached past its TTL '
-      '— two requests for the same key each reach the gateway',
+      'a signed URL is reused for the same key while under 540 s old, then '
+      'minted again (STORIES.md §4.1 as amended, Wave 4)',
       () async {
-        final gateway = _FakeStoryReadGateway();
-        final container = _buildContainer(gateway);
-        addTearDown(container.dispose);
-
-        final first = await container.read(
-          storyMediaSignedUrlProvider('story-media/x.jpg').future,
-        );
-        // Force Riverpod to actually re-invoke the provider a second
-        // time (rather than reusing its cached AsyncValue) by disposing
-        // and re-reading — this simulates a screen re-mounting or
-        // re-watching after the provider's own cache lifetime, which is
-        // the only path through which this app ever asks for the same
-        // key twice.
-        container.invalidate(storyMediaSignedUrlProvider('story-media/x.jpg'));
-        final second = await container.read(
-          storyMediaSignedUrlProvider('story-media/x.jpg').future,
-        );
-
-        expect(gateway.signMediaUrlCallCount, 2);
-        expect(gateway.signMediaUrlKeysRequested, [
-          'story-media/x.jpg',
-          'story-media/x.jpg',
-        ]);
-        // Each call minted a DIFFERENT url (the fake encodes the call
-        // count into it) — proving nothing cached and replayed the
-        // first result.
-        expect(first, isNot(equals(second)));
+        var now = DateTime.utc(2026, 10, 24, 9);
+        await withClock(Clock(() => now), () async {
+          final gateway = _FakeStoryReadGateway();
+          final container = _buildContainer(gateway);
+          addTearDown(container.dispose);
+          const key = 'story-media/x.jpg';
+          final first = await container.read(
+            storyMediaSignedUrlProvider(key).future,
+          );
+          container.invalidate(storyMediaSignedUrlProvider(key));
+          final reused = await container.read(
+            storyMediaSignedUrlProvider(key).future,
+          );
+          expect(gateway.signMediaUrlCallCount, 1);
+          expect(reused, first);
+          now = now.add(kStoryUrlReuseWindow);
+          container.invalidate(storyMediaSignedUrlProvider(key));
+          final second = await container.read(
+            storyMediaSignedUrlProvider(key).future,
+          );
+          expect(gateway.signMediaUrlCallCount, 2);
+          expect(second, isNot(equals(first)));
+        });
       },
     );
 
     test(
       'the PRODUCTION repository has no cache map for signed URLs, unlike '
-      "chat's createSignedMediaUrl — a deliberate divergence from the "
-      'brief, since the design spec (binding authority) requires minting '
-      'per request and never storing/caching (spec §4.1/§4.5)',
+      "chat's createSignedMediaUrl: it signs fresh on every call, and reuse "
+      'lives only in the in-memory per-key cache above it (spec §4.1 as '
+      'amended, §4.5)',
       () {
         // story_repository_test.dart's own house pattern: assert against
         // the source rather than mocking SupabaseClient, since its
@@ -1481,5 +1490,180 @@ void main() {
         );
       },
     );
+  });
+
+  group('day reads by author (Wave 5, 04 #4)', () {
+    late List<Map<String, dynamic>> bodies;
+
+    StoryReadRepository repoAnswering(List<http.Response> answers) {
+      bodies = [];
+      final queue = [...answers];
+      final supabase = SupabaseClient(
+        'https://x.supabase.co',
+        'anon-key',
+        authOptions: const AuthClientOptions(autoRefreshToken: false),
+        httpClient: MockClient((request) async {
+          bodies.add(jsonDecode(request.body) as Map<String, dynamic>);
+          final answer = queue.removeAt(0);
+          return http.Response(
+            answer.body,
+            answer.statusCode,
+            headers: answer.headers,
+            request: request,
+          );
+        }),
+      );
+      addTearDown(supabase.dispose);
+      return StoryReadRepository(supabase);
+    }
+
+    http.Response empty() =>
+        http.Response('[]', 200, headers: {'content-type': 'application/json'});
+    http.Response missing() => http.Response(
+      jsonEncode({
+        'code': 'PGRST202',
+        'message': 'Could not find the function',
+        'details': null,
+        'hint': null,
+      }),
+      404,
+      headers: {'content-type': 'application/json'},
+    );
+
+    test('p_author_id is sent only when an author is asked for', () async {
+      final repo = repoAnswering([empty(), empty()]);
+      final day = DateTime(2026, 10, 21);
+      await repo.listDayItems(
+        relationshipId: 'r1',
+        occurredOn: day,
+        authorId: 'b',
+      );
+      await repo.listDayItems(relationshipId: 'r1', occurredOn: day);
+      expect(bodies[0]['p_author_id'], 'b');
+      expect(bodies[0]['p_occurred_on'], '2026-10-21');
+      expect(bodies[1].containsKey('p_author_id'), isFalse);
+    });
+
+    test('an older server (PGRST202) is asked again without it, and the '
+        'session remembers', () async {
+      final repo = repoAnswering([missing(), empty(), empty()]);
+      final day = DateTime(2026, 10, 21);
+      final page = await repo.listDayItems(
+        relationshipId: 'r1',
+        occurredOn: day,
+        authorId: 'b',
+      );
+      expect(page.items, isEmpty);
+      expect(bodies, hasLength(2));
+      expect(bodies[1].containsKey('p_author_id'), isFalse);
+      await repo.listDayItems(
+        relationshipId: 'r1',
+        occurredOn: day,
+        authorId: 'b',
+      );
+      expect(bodies, hasLength(3));
+      expect(bodies[2].containsKey('p_author_id'), isFalse);
+    });
+
+    // Fix round 1 (review #5): a client that hit the deploy's schema-reload
+    // window asks with the author again after a while, not only on restart.
+    test('after an older-server answer the author is asked for again ten '
+        'minutes later', () async {
+      var now = DateTime.utc(2026, 10, 24, 12);
+      await withClock(Clock(() => now), () async {
+        final repo = repoAnswering([
+          missing(),
+          empty(),
+          empty(),
+          empty(),
+          empty(),
+        ]);
+        final day = DateTime(2026, 10, 21);
+        Future<void> read() => repo.listDayItems(
+          relationshipId: 'r1',
+          occurredOn: day,
+          authorId: 'b',
+        );
+        await read();
+        expect(bodies, hasLength(2));
+        now = now.add(const Duration(minutes: 9));
+        await read();
+        expect(bodies[2].containsKey('p_author_id'), isFalse);
+        now = now.add(const Duration(minutes: 2));
+        await read();
+        expect(bodies[3]['p_author_id'], 'b', reason: 're-probed');
+        now = now.add(const Duration(minutes: 1));
+        await read();
+        expect(bodies[4]['p_author_id'], 'b', reason: 'the new server stuck');
+      });
+    });
+
+    test('a PGRST202 on the whole-day read is not retried', () async {
+      final repo = repoAnswering([missing()]);
+      await expectLater(
+        repo.listDayItems(relationshipId: 'r1', occurredOn: DateTime(2026, 10, 21)),
+        throwsA(isA<StoryApiError>()),
+      );
+      expect(bodies, hasLength(1));
+    });
+
+    test('day counts read unviewed_count, null from an older server', () {
+      final now = StoryDayCount.fromRow({
+        'occurred_on': '2026-10-21',
+        'author_id': 'b',
+        'item_count': 70,
+        'day_item_count': 70,
+        'newest_thumbnail_key': 'k',
+        'newest_created_at': '2026-10-21T20:00:00Z',
+        'unviewed_count': 61,
+      });
+      expect(now.unviewedCount, 61);
+      final old = StoryDayCount.fromRow({
+        'occurred_on': '2026-10-21',
+        'author_id': 'b',
+        'item_count': 70,
+      });
+      expect(old.unviewedCount, isNull);
+    });
+
+    test('a day key with an author is a different key', () {
+      final day = DateTime(2026, 10, 21);
+      final whole = StoryDayKey(relationshipId: 'r1', occurredOn: day);
+      final mine = StoryDayKey(
+        relationshipId: 'r1',
+        occurredOn: day,
+        authorId: 'a',
+      );
+      expect(whole == mine, isFalse);
+      expect(
+        mine,
+        StoryDayKey(
+          relationshipId: 'r1',
+          occurredOn: DateTime(2026, 10, 21, 13),
+          authorId: 'a',
+        ),
+      );
+      expect(
+        mine.hashCode,
+        StoryDayKey(relationshipId: 'r1', occurredOn: day, authorId: 'a')
+            .hashCode,
+      );
+    });
+
+    test('the day pager passes its author to the gateway', () async {
+      final gateway = _FakeStoryReadGateway()
+        ..dayItemsScript.add(const StoryItemPage(items: [], nextCursor: null));
+      final container = _buildContainer(gateway);
+      addTearDown(container.dispose);
+      final key = StoryDayKey(
+        relationshipId: 'rel-1',
+        occurredOn: DateTime(2026, 10, 21),
+        authorId: 'author-2',
+      );
+      final sub = container.listen(storyDayItemsProvider(key), (_, __) {});
+      addTearDown(sub.close);
+      await Future<void>.delayed(Duration.zero);
+      expect(gateway.dayAuthorIds, ['author-2']);
+    });
   });
 }

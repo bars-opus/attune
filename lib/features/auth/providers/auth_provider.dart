@@ -9,6 +9,7 @@ import 'package:attune/features/chat/data/cache/chat_cache_service.dart';
 import 'package:attune/features/chat/domain/services/chat_image_cache.dart';
 import 'package:attune/features/chat/domain/services/chat_image_picker.dart';
 import 'package:attune/features/chat/domain/services/chat_media_cache.dart';
+import 'package:attune/features/stories/data/story_outbox_wipe.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 // ==================== CORE PROVIDERS ====================
@@ -207,10 +208,21 @@ class AuthOperations {
         }
       }
 
+      Future<void> wipeStories() async {
+        try {
+          // Story outbox rows and queued captures (stories Wave 2, P2):
+          // spec §6.1 "logout/account removal clears them". Bounded by its
+          // owner (3 s); its own try so nothing else is skipped.
+          await ref.read(storyOutboxWiperProvider).wipeAll();
+        } catch (e) {
+          debugPrint('⚠️ [AUTH] story outbox wipe failed on sign-out: ${e.runtimeType}');
+        }
+      }
+
       // Side by side, so the bounds do not add up: each store is wiped on
       // its own and none waits on another.
       Future<void> wipe() =>
-          Future.wait([wipeQueue(), wipeMedia(), wipeImages()]);
+          Future.wait([wipeQueue(), wipeMedia(), wipeImages(), wipeStories()]);
 
       Future<void> release() async {
         // Chat review #18: release this device's push subscription while

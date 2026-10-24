@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:attune/core/services/app_content_visibility.dart';
 import 'package:attune/features/chat/presentation/state/chat_state.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -26,6 +27,9 @@ final partnerActiveInChatProvider = StreamProvider.autoDispose
 
       Future<void> poll() async {
         if (closed) return;
+        // The chat stays mounted behind the privacy cover and the lock
+        // check (stories Wave 3): no RPC while Attune is not on screen.
+        if (!ref.read(appContentVisibleProvider)) return;
         final active = await repository.partnerIsActiveInChat(relationshipId);
         if (closed || controller.isClosed) return;
         controller.add(active);
@@ -39,6 +43,12 @@ final partnerActiveInChatProvider = StreamProvider.autoDispose
       // observed at least twice before it expires: one dropped poll must
       // not flicker the indicator off.
       timer = Timer.periodic(const Duration(seconds: 15), (_) => poll());
+
+      // One catch-up poll as soon as Attune is back on screen, rather than
+      // up to 15 s of a stale line (final review I3).
+      ref.listen<bool>(appContentVisibleProvider, (prev, next) {
+        if (next && prev == false) unawaited(poll());
+      });
 
       ref.onDispose(() {
         closed = true;

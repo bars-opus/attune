@@ -12,6 +12,7 @@ import 'package:attune/features/chat/presentation/state/chat_state.dart';
 import 'package:attune/features/auth/providers/auth_provider.dart';
 import 'package:attune/features/stories/presentation/screens/story_camera_screen.dart';
 import 'package:attune/features/stories/presentation/screens/story_reel_screen.dart';
+import 'package:attune/features/stories/presentation/widgets/story_outbox_notices.dart';
 import 'package:attune/features/stories/presentation/widgets/story_rings_row.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -162,6 +163,10 @@ class ConversationsScreen extends ConsumerWidget {
                             ),
                       ),
                       ),
+                    // 03 M6: a story queued for a previous relationship has
+                    // nowhere else to say it could not post.
+                    if (filtered.isEmpty)
+                      const StoryOrphanedPostsNotice(activeRelationshipId: null),
                     // The current relationship's chat, or the empty-state
                     // prompt to start one — one card, since there's at most one
                     // active conversation to show (see filteredConversationsProvider).

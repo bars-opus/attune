@@ -1,5 +1,7 @@
+import 'dart:async';
 import 'dart:io';
 
+import 'package:attune/core/services/storage/backup_exclusion.dart';
 import 'package:drift/drift.dart';
 import 'package:drift/native.dart';
 import 'package:path/path.dart' as p;
@@ -56,6 +58,15 @@ class _DriftStoryOutboxBackend implements StoryOutboxBackend {
         PRIMARY KEY (user_id, client_story_id)
       )
     ''');
+    // iOS backs up Application Support: keep the queue out of device and
+    // iCloud backups (Android: backup_rules.xml / data_extraction_rules.xml).
+    // Defence in depth — payloads are already AES-GCM encrypted (05 #2).
+    for (final suffix in const ['', '-wal', '-shm']) {
+      final path = '${file.path}$suffix';
+      if (File(path).existsSync()) {
+        unawaited(BackupExclusion.exclude(path, once: false));
+      }
+    }
   }
 
   static Future<File> _defaultFile() async {
@@ -104,6 +115,12 @@ class _DriftStoryOutboxBackend implements StoryOutboxBackend {
   @override
   Future<void> clearAll() =>
       _database.customStatement('DELETE FROM story_outbox');
+
+  @override
+  Future<void> removeOtherUsers(String keepUserId) => _database.customStatement(
+    'DELETE FROM story_outbox WHERE user_id <> ?',
+    [keepUserId],
+  );
 
   @override
   Future<void> close() => _database.close();

@@ -225,13 +225,19 @@ final assistDraftProvider =
 ///    single in-flight request rather than a paginated list.
 class UnderstandResultNotifier
     extends AutoDisposeAsyncNotifier<UnderstandResultModel?> {
+  /// The result on screen was cleared because Attune left the screen
+  /// (inactive or hidden). The sheet stays open behind the privacy cover
+  /// now (stories Wave 3), so it shows "Read it again" instead of an empty
+  /// body. Reset by the next request and by [clear].
+  bool clearedWhileAway = false;
+
   int _requestEpoch = 0;
 
   @override
   Future<UnderstandResultModel?> build() {
     final lifecycleListener = AppLifecycleListener(
-      onInactive: _clearForBackground,
-      onHide: _clearForBackground,
+      onInactive: _clearWhileAway,
+      onHide: _clearWhileAway,
     );
     ref.onDispose(lifecycleListener.dispose);
 
@@ -252,11 +258,17 @@ class UnderstandResultNotifier
     state = const AsyncValue.data(null);
   }
 
+  void _clearWhileAway() {
+    clearedWhileAway = true;
+    _clearForBackground();
+  }
+
   Future<void> requestUnderstand({
     required String requestId,
     required String messageId,
     required int utcOffsetMinutes,
   }) async {
+    clearedWhileAway = false;
     final epoch = ++_requestEpoch;
     state = const AsyncValue.loading();
     final repository = ref.read(aiAssistantRepositoryProvider);
@@ -277,6 +289,7 @@ class UnderstandResultNotifier
   /// Explicit dismiss while the provider stays mounted (see
   /// [AssistDraftNotifier.clear]'s identical reasoning).
   void clear() {
+    clearedWhileAway = false;
     _requestEpoch++;
     state = const AsyncValue.data(null);
   }

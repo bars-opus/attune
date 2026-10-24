@@ -5,6 +5,7 @@ import 'package:attune/app/documentations/user_manual/data/healing_docs.dart';
 import 'package:attune/app/licenses_screen.dart';
 import 'package:attune/core/intro/presentation/widgets/feature_intro_flow_gate.dart';
 import 'package:attune/app/routing/app_route_observer.dart';
+import 'package:attune/app/routing/conversation_extra.dart';
 import 'package:attune/app/routing/routing_notifier.dart';
 import 'package:attune/features/safety/presentation/outside_perspective_screen.dart';
 import 'package:attune/features/appreciation/presentation/appreciation_jar_screen.dart';
@@ -457,7 +458,7 @@ GoRouter createAppRouter(RoutingNotifier routingNotifier) {
         path: RouteNames.profileScreen,
         name: 'profile',
         builder: (context, state) {
-          final currentUserId = state.extra as String? ?? _currentUserId();
+          final currentUserId = routeExtra<String>(state) ?? _currentUserId();
           return ProfileScreen(
             currentUserId: currentUserId,
             profileUserId: currentUserId,
@@ -468,7 +469,7 @@ GoRouter createAppRouter(RoutingNotifier routingNotifier) {
         path: RouteNames.anonymousProfile,
         name: 'anonymousProfile',
         builder: (context, state) {
-          final authorHandle = state.extra as String?;
+          final authorHandle = routeExtra<String>(state);
           if (authorHandle == null) {
             return const Scaffold(
               body: Center(child: Text('Profile unavailable.')),
@@ -481,7 +482,7 @@ GoRouter createAppRouter(RoutingNotifier routingNotifier) {
         path: RouteNames.commentThread,
         name: 'commentThread',
         builder: (context, state) {
-          final opinion = state.extra as OpinionModel?;
+          final opinion = routeExtra<OpinionModel>(state);
           if (opinion == null) {
             return const Scaffold(
               body: Center(child: Text('Opinion unavailable.')),
@@ -494,7 +495,7 @@ GoRouter createAppRouter(RoutingNotifier routingNotifier) {
         path: RouteNames.editOpinion,
         name: 'editOpinion',
         builder: (context, state) {
-          final opinion = state.extra as OpinionModel?;
+          final opinion = routeExtra<OpinionModel>(state);
           if (opinion == null) {
             return const Scaffold(
               body: Center(child: Text('Opinion unavailable.')),
@@ -507,7 +508,7 @@ GoRouter createAppRouter(RoutingNotifier routingNotifier) {
         path: RouteNames.quoteCompose,
         name: 'quoteCompose',
         builder: (context, state) {
-          final opinion = state.extra as OpinionModel?;
+          final opinion = routeExtra<OpinionModel>(state);
           if (opinion == null) {
             return const Scaffold(
               body: Center(child: Text('Opinion unavailable.')),
@@ -522,7 +523,7 @@ GoRouter createAppRouter(RoutingNotifier routingNotifier) {
         builder: (context, state) {
           // Record rather than a bare id: the screen needs to open on
           // whichever count was tapped, so the tab index travels with it.
-          final args = state.extra as ({String opinionId, int initialTab})?;
+          final args = routeExtra<({String opinionId, int initialTab})>(state);
           if (args == null) {
             return const Scaffold(
               body: Center(child: Text('Opinion unavailable.')),
@@ -538,7 +539,7 @@ GoRouter createAppRouter(RoutingNotifier routingNotifier) {
         path: RouteNames.tagBrowse,
         name: 'tagBrowse',
         builder: (context, state) {
-          final tagSlug = state.extra as String?;
+          final tagSlug = routeExtra<String>(state);
           if (tagSlug == null) {
             return const Scaffold(body: Center(child: Text('Tag missing.')));
           }
@@ -574,7 +575,7 @@ GoRouter createAppRouter(RoutingNotifier routingNotifier) {
         path: RouteNames.sideSelection,
         name: 'sideSelection',
         builder: (context, state) {
-          final topic = state.extra as TopicModel?;
+          final topic = routeExtra<TopicModel>(state);
           if (topic == null) {
             return const Scaffold(
               body: Center(child: Text('Topic unavailable.')),
@@ -587,7 +588,7 @@ GoRouter createAppRouter(RoutingNotifier routingNotifier) {
         path: RouteNames.forumInsight,
         name: 'forumInsight',
         builder: (context, state) {
-          final topicId = state.extra as String?;
+          final topicId = routeExtra<String>(state);
           if (topicId == null) {
             return const Scaffold(
               body: Center(child: Text('Topic unavailable.')),
@@ -643,7 +644,7 @@ GoRouter createAppRouter(RoutingNotifier routingNotifier) {
         path: RouteNames.planning,
         name: 'planning',
         builder: (context, state) {
-          final relationshipId = state.extra as String?;
+          final relationshipId = routeExtra<String>(state);
           if (relationshipId == null) {
             return const PlanningUnavailableScreen();
           }
@@ -660,7 +661,7 @@ GoRouter createAppRouter(RoutingNotifier routingNotifier) {
         path: RouteNames.planningEntry,
         name: planningRouteName,
         builder: (context, state) {
-          final target = state.extra as ({String relationshipId, String entryId})?;
+          final target = routeExtra<({String relationshipId, String entryId})>(state);
           if (target == null) {
             return const PlanningUnavailableScreen();
           }
@@ -671,7 +672,7 @@ GoRouter createAppRouter(RoutingNotifier routingNotifier) {
         path: RouteNames.opinionLoader,
         name: 'opinionLoader',
         builder: (context, state) {
-          final opinionId = state.extra as String?;
+          final opinionId = routeExtra<String>(state);
           if (opinionId == null) {
             return const Scaffold(
               body: Center(child: Text('Opinion unavailable.')),
@@ -695,7 +696,7 @@ GoRouter createAppRouter(RoutingNotifier routingNotifier) {
         name: 'chatInsights',
         builder: (context, state) {
           final args =
-              state.extra as ({String relationshipId, String partnerName})?;
+              routeExtra<({String relationshipId, String partnerName})>(state);
           if (args == null) {
             return const Scaffold(
               body: Center(child: Text('Insights unavailable.')),
@@ -711,7 +712,7 @@ GoRouter createAppRouter(RoutingNotifier routingNotifier) {
         path: RouteNames.chatImport,
         name: 'chatImport',
         builder: (context, state) {
-          final conversation = state.extra as Conversation?;
+          final conversation = conversationFromRouteExtra(state.extra);
           if (conversation == null) {
             return const Scaffold(
               body: Center(child: Text('Conversation unavailable.')),
@@ -735,13 +736,13 @@ GoRouter createAppRouter(RoutingNotifier routingNotifier) {
         name: 'logMomentType',
         builder:
             (context, state) =>
-                LogMomentTypeScreen(initialDate: state.extra as DateTime?),
+                LogMomentTypeScreen(initialDate: routeExtra<DateTime>(state)),
       ),
       GoRoute(
         path: RouteNames.quizEntry,
         name: 'quizEntry',
         builder: (context, state) {
-          final quizType = state.extra as String? ?? 'attachment';
+          final quizType = routeExtra<String>(state) ?? 'attachment';
           return QuizEntryScreen(quizType: quizType);
         },
       ),
@@ -749,7 +750,7 @@ GoRouter createAppRouter(RoutingNotifier routingNotifier) {
         path: RouteNames.attachmentQuiz,
         name: 'attachmentQuiz',
         builder: (context, state) {
-          final quizType = state.extra as String? ?? 'attachment';
+          final quizType = routeExtra<String>(state) ?? 'attachment';
           return AttachmentQuizScreen(quizType: quizType);
         },
       ),
@@ -781,7 +782,7 @@ GoRouter createAppRouter(RoutingNotifier routingNotifier) {
         name: 'attachmentQuizResult',
         builder: (context, state) {
           final args =
-              state.extra as ({AttachmentResult result, String quizType})?;
+              routeExtra<({AttachmentResult result, String quizType})>(state);
           if (args == null) {
             return const Scaffold(
               body: Center(child: Text('Result unavailable.')),
@@ -827,7 +828,7 @@ GoRouter createAppRouter(RoutingNotifier routingNotifier) {
         path: RouteNames.conflictStyleResult,
         name: 'conflictStyleResult',
         builder: (context, state) {
-          final result = state.extra as ConflictStyleResult?;
+          final result = routeExtra<ConflictStyleResult>(state);
           if (result == null) {
             return const Scaffold(
               body: Center(child: Text('Result unavailable.')),
@@ -844,14 +845,14 @@ GoRouter createAppRouter(RoutingNotifier routingNotifier) {
         // Spec 5 (R5-5): the editor, from the current answers when changing.
         builder:
             (context, state) => LoveLanguageQuizScreen(
-              initial: state.extra as LoveLanguageResult?,
+              initial: routeExtra<LoveLanguageResult>(state),
             ),
       ),
       GoRoute(
         path: RouteNames.loveLanguageResult,
         name: 'loveLanguageResult',
         builder: (context, state) {
-          final result = state.extra as LoveLanguageResult?;
+          final result = routeExtra<LoveLanguageResult>(state);
           if (result == null) {
             return const Scaffold(
               body: Center(child: Text('Result unavailable.')),
@@ -897,7 +898,7 @@ GoRouter createAppRouter(RoutingNotifier routingNotifier) {
         path: RouteNames.communicationStyleResult,
         name: 'communicationStyleResult',
         builder: (context, state) {
-          final result = state.extra as CommunicationStyleResult?;
+          final result = routeExtra<CommunicationStyleResult>(state);
           if (result == null) {
             return const Scaffold(
               body: Center(child: Text('Result unavailable.')),
@@ -912,7 +913,7 @@ GoRouter createAppRouter(RoutingNotifier routingNotifier) {
         path: RouteNames.partnerQuizResult,
         name: 'partnerQuizResult',
         builder: (context, state) {
-          final args = state.extra as ({String quizType, String partnerId})?;
+          final args = routeExtra<({String quizType, String partnerId})>(state);
           if (args == null) {
             return const Scaffold(
               body: Center(child: Text('Result unavailable.')),
@@ -928,7 +929,7 @@ GoRouter createAppRouter(RoutingNotifier routingNotifier) {
         path: RouteNames.healingStage,
         name: 'healingStage',
         builder: (context, state) {
-          final args = state.extra as ({HealingJourney journey, int stage})?;
+          final args = routeExtra<({HealingJourney journey, int stage})>(state);
           if (args == null) {
             return const Scaffold(
               body: Center(child: Text('Journey unavailable.')),
@@ -956,7 +957,7 @@ GoRouter createAppRouter(RoutingNotifier routingNotifier) {
         path: RouteNames.datingGuidedDate,
         name: 'datingGuidedDate',
         builder: (context, state) {
-          final matchId = state.extra as String?;
+          final matchId = routeExtra<String>(state);
           if (matchId == null) {
             return const Scaffold(
               body: Center(child: Text('Match unavailable.')),
@@ -1021,7 +1022,7 @@ GoRouter createAppRouter(RoutingNotifier routingNotifier) {
         path: RouteNames.thirtySixChapterIntroduction,
         name: 'thirtySixChapterIntroduction',
         builder: (context, state) {
-          final args = state.extra as ({String sessionId, int chapter})?;
+          final args = routeExtra<({String sessionId, int chapter})>(state);
           if (args == null) {
             return const Scaffold(
               body: Center(child: Text('Chapter unavailable.')),
@@ -1037,7 +1038,7 @@ GoRouter createAppRouter(RoutingNotifier routingNotifier) {
         path: RouteNames.thirtySixQuestion,
         name: 'thirtySixQuestion',
         builder: (context, state) {
-          final args = state.extra as ({String sessionId, int chapter})?;
+          final args = routeExtra<({String sessionId, int chapter})>(state);
           if (args == null) {
             return const Scaffold(
               body: Center(child: Text('Chapter unavailable.')),
@@ -1053,7 +1054,7 @@ GoRouter createAppRouter(RoutingNotifier routingNotifier) {
         path: RouteNames.thirtySixChapterCompletion,
         name: 'thirtySixChapterCompletion',
         builder: (context, state) {
-          final args = state.extra as ({String sessionId, int chapter})?;
+          final args = routeExtra<({String sessionId, int chapter})>(state);
           if (args == null) {
             return const Scaffold(
               body: Center(child: Text('Chapter unavailable.')),
@@ -1131,7 +1132,7 @@ GoRouter createAppRouter(RoutingNotifier routingNotifier) {
         path: RouteNames.thirtySixJourneyCompletion,
         name: 'thirtySixJourneyCompletion',
         builder: (context, state) {
-          final sessionId = state.extra as String?;
+          final sessionId = routeExtra<String>(state);
           if (sessionId == null) {
             return const Scaffold(
               body: Center(child: Text('Journey unavailable.')),
@@ -1144,7 +1145,7 @@ GoRouter createAppRouter(RoutingNotifier routingNotifier) {
         path: RouteNames.thirtySixChapterHistory,
         name: 'thirtySixChapterHistory',
         builder: (context, state) {
-          final args = state.extra as ({String sessionId, int chapter})?;
+          final args = routeExtra<({String sessionId, int chapter})>(state);
           if (args == null) {
             return const Scaffold(
               body: Center(child: Text('Chapter unavailable.')),
@@ -1170,7 +1171,7 @@ GoRouter createAppRouter(RoutingNotifier routingNotifier) {
         path: RouteNames.truthOrDareSessionRouter,
         name: 'truthOrDareSessionRouter',
         builder: (context, state) {
-          final sessionId = state.extra as String?;
+          final sessionId = routeExtra<String>(state);
           if (sessionId == null) {
             return const Scaffold(
               body: Center(child: Text('Session unavailable.')),
@@ -1281,7 +1282,7 @@ GoRouter createAppRouter(RoutingNotifier routingNotifier) {
         path: RouteNames.thirtySixJourneyOverview,
         name: 'thirtySixJourneyOverview',
         builder: (context, state) {
-          final journeyId = state.extra as String?;
+          final journeyId = routeExtra<String>(state);
           if (journeyId == null) {
             return const Scaffold(
               body: Center(child: Text('Journey unavailable.')),
@@ -1314,7 +1315,7 @@ GoRouter createAppRouter(RoutingNotifier routingNotifier) {
         path: RouteNames.thisOrThatSessionRouter,
         name: 'thisOrThatSessionRouter',
         builder: (context, state) {
-          final sessionId = state.extra as String?;
+          final sessionId = routeExtra<String>(state);
           if (sessionId == null) {
             return const Scaffold(
               body: Center(child: Text('Session unavailable.')),
@@ -1368,7 +1369,7 @@ GoRouter createAppRouter(RoutingNotifier routingNotifier) {
         path: RouteNames.thisOrThatSessionDetail,
         name: 'thisOrThatSessionDetail',
         builder: (context, state) {
-          final sessionId = state.extra as String?;
+          final sessionId = routeExtra<String>(state);
           if (sessionId == null) {
             return const Scaffold(
               body: Center(child: Text('Session unavailable.')),
@@ -1401,7 +1402,7 @@ GoRouter createAppRouter(RoutingNotifier routingNotifier) {
         path: RouteNames.chatScreen,
         name: 'chatScreen',
         builder: (context, state) {
-          final conversation = state.extra as Conversation?;
+          final conversation = conversationFromRouteExtra(state.extra);
           if (conversation == null) {
             return const Scaffold(
               body: Center(child: Text('Conversation unavailable.')),
@@ -1432,7 +1433,7 @@ GoRouter createAppRouter(RoutingNotifier routingNotifier) {
         path: RouteNames.starredMessages,
         name: 'starredMessages',
         builder: (context, state) {
-          final conversation = state.extra as Conversation?;
+          final conversation = conversationFromRouteExtra(state.extra);
           if (conversation == null) {
             return const Scaffold(
               body: Center(child: Text('Conversation unavailable.')),
@@ -1445,7 +1446,7 @@ GoRouter createAppRouter(RoutingNotifier routingNotifier) {
         path: RouteNames.chatMedia,
         name: 'chatMedia',
         builder: (context, state) {
-          final conversation = state.extra as Conversation?;
+          final conversation = conversationFromRouteExtra(state.extra);
           if (conversation == null) {
             return const Scaffold(
               body: Center(child: Text('Conversation unavailable.')),
@@ -1458,7 +1459,7 @@ GoRouter createAppRouter(RoutingNotifier routingNotifier) {
         path: RouteNames.chatMessageSearch,
         name: 'chatMessageSearch',
         builder: (context, state) {
-          final conversation = state.extra as Conversation?;
+          final conversation = conversationFromRouteExtra(state.extra);
           if (conversation == null) {
             return const Scaffold(
               body: Center(child: Text('Conversation unavailable.')),
@@ -1471,7 +1472,7 @@ GoRouter createAppRouter(RoutingNotifier routingNotifier) {
         path: RouteNames.imageCaption,
         name: 'imageCaption',
         builder: (context, state) {
-          final imagePath = state.extra as String?;
+          final imagePath = routeExtra<String>(state);
           if (imagePath == null) {
             return const Scaffold(
               body: Center(child: Text('Image unavailable.')),
@@ -1484,7 +1485,7 @@ GoRouter createAppRouter(RoutingNotifier routingNotifier) {
         path: RouteNames.videoTrim,
         name: 'videoTrim',
         builder: (context, state) {
-          final args = state.extra as VideoTrimRouteArgs?;
+          final args = routeExtra<VideoTrimRouteArgs>(state);
           if (args == null) {
             return const Scaffold(
               body: Center(child: Text('Video unavailable.')),
@@ -1500,7 +1501,7 @@ GoRouter createAppRouter(RoutingNotifier routingNotifier) {
         path: RouteNames.ephemeralCamera,
         name: 'ephemeralCamera',
         builder: (context, state) {
-          final conversation = state.extra as Conversation?;
+          final conversation = conversationFromRouteExtra(state.extra);
           if (conversation == null) {
             return const Scaffold(
               body: Center(child: Text('Conversation unavailable.')),
@@ -1513,7 +1514,7 @@ GoRouter createAppRouter(RoutingNotifier routingNotifier) {
         path: RouteNames.streakCamera,
         name: 'streakCamera',
         builder: (context, state) {
-          final conversation = state.extra as Conversation?;
+          final conversation = conversationFromRouteExtra(state.extra);
           if (conversation == null) {
             return const Scaffold(
               body: Center(child: Text('Conversation unavailable.')),
@@ -1526,7 +1527,7 @@ GoRouter createAppRouter(RoutingNotifier routingNotifier) {
         path: RouteNames.imageViewer,
         name: 'imageViewer',
         builder: (context, state) {
-          final args = state.extra as ImageViewerRouteArgs?;
+          final args = routeExtra<ImageViewerRouteArgs>(state);
           if (args == null) {
             return const Scaffold(
               body: Center(child: Text('Images unavailable.')),
@@ -1542,7 +1543,7 @@ GoRouter createAppRouter(RoutingNotifier routingNotifier) {
         path: RouteNames.videoViewer,
         name: 'videoViewer',
         builder: (context, state) {
-          final args = state.extra as VideoViewerRouteArgs?;
+          final args = routeExtra<VideoViewerRouteArgs>(state);
           if (args == null) {
             return const Scaffold(
               body: Center(child: Text('Videos unavailable.')),
@@ -1558,7 +1559,7 @@ GoRouter createAppRouter(RoutingNotifier routingNotifier) {
         path: RouteNames.ephemeralVideoViewer,
         name: 'ephemeralVideoViewer',
         builder: (context, state) {
-          final args = state.extra as EphemeralVideoViewerRouteArgs?;
+          final args = routeExtra<EphemeralVideoViewerRouteArgs>(state);
           if (args == null) {
             return const Scaffold(
               body: Center(child: Text('Video unavailable.')),
@@ -1575,7 +1576,7 @@ GoRouter createAppRouter(RoutingNotifier routingNotifier) {
         path: RouteNames.settings,
         name: 'settings',
         builder: (context, state) {
-          final currentUserId = state.extra as String? ?? _currentUserId();
+          final currentUserId = routeExtra<String>(state) ?? _currentUserId();
           return SettingsScreen(currentUserId: currentUserId);
         },
       ),

@@ -1,5 +1,6 @@
 // lib/features/games/thirty_six_questions/presentation/screens/thirty_six_question_screen.dart
 
+import 'package:attune/core/services/app_content_visibility.dart';
 import 'package:attune/core/utils/exports/export_screens.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -9,10 +10,26 @@ class ThirtySixQuestionScreen extends ConsumerStatefulWidget {
   final String sessionId;
   final int chapter;
 
+  /// Test seams (stories Wave 3): the first round this player has not
+  /// answered (null when there is none to show), whether the partner has
+  /// answered a round, and the realtime watch on a round's answers, which
+  /// returns its cancel. Supabase when null.
+  @visibleForTesting
+  final Future<({String id, int number, String text})?> Function()?
+  loadOpenRound;
+  @visibleForTesting
+  final Future<bool> Function(String roundId)? readPartnerAnswered;
+  @visibleForTesting
+  final VoidCallback Function(String roundId, VoidCallback onChange)?
+  watchRound;
+
   const ThirtySixQuestionScreen({
     super.key,
     required this.sessionId,
     required this.chapter,
+    this.loadOpenRound,
+    this.readPartnerAnswered,
+    this.watchRound,
   });
 
   @override
@@ -30,77 +47,106 @@ class _ThirtySixQuestionScreenState
   final int _totalRounds = 12;
   String _questionText = '';
   bool _hasPartnerAnswered = false;
-  RealtimeChannel? _roundChannel;
+  VoidCallback? _unwatchRound;
 
   @override
   void initState() {
     super.initState();
     _loadCurrentRound();
+    // Kept mounted behind the privacy cover (stories Wave 3), so a partner's
+    // answer missed while away (a dropped socket) is re-read on return.
+    ref.listenManual<bool>(appContentVisibleProvider, (prev, next) {
+      final roundId = _roundId;
+      if (next && prev == false && roundId != null) {
+        _checkPartnerAnswered(roundId);
+      }
+    });
   }
 
   @override
   void dispose() {
     _answerController.dispose();
     _focusNode.dispose();
-    final channel = _roundChannel;
-    if (channel != null) {
-      Supabase.instance.client.removeChannel(channel);
-    }
+    _unwatchRound?.call();
     super.dispose();
   }
 
   void _loadCurrentRound() {
+    (widget.loadOpenRound ?? _loadOpenRoundOnSupabase)().then((round) {
+      if (round == null || !mounted) return;
+
+      // This round needs an answer
+      setState(() {
+        _roundId = round.id;
+        _currentRoundNumber = round.number;
+        _questionText = round.text;
+      });
+
+      // Check if partner answered
+      _checkPartnerAnswered(round.id);
+      _subscribeToRound(round.id);
+    });
+  }
+
+  Future<({String id, int number, String text})?>
+  _loadOpenRoundOnSupabase() async {
     final supabase = ref.read(supabaseClientProvider);
     final sessionId = widget.sessionId;
 
     // Get current round
-    supabase
+    final response = await supabase
         .from('game_session_rounds')
         .select('*')
         .eq('session_id', sessionId)
-        .order('round_number', ascending: true)
-        .then((response) async {
-          if (response.isEmpty || !mounted) return;
+        .order('round_number', ascending: true);
+    if (response.isEmpty || !mounted) return null;
 
-          // Find first unanswered round
-          for (final round in response) {
-            final roundId = round['id'];
-            final userId = ref.read(currentUserIdProvider);
-            if (userId == null) return;
+    // Find first unanswered round
+    for (final round in response) {
+      final roundId = round['id'];
+      final userId = ref.read(currentUserIdProvider);
+      if (userId == null) return null;
 
-            // Check if user already answered this round
-            final answer =
-                await supabase
-                    .from('thirty_six_question_answers')
-                    .select('*')
-                    .eq('round_id', roundId)
-                    .eq('user_id', userId)
-                    .maybeSingle();
+      // Check if user already answered this round
+      final answer =
+          await supabase
+              .from('thirty_six_question_answers')
+              .select('*')
+              .eq('round_id', roundId)
+              .eq('user_id', userId)
+              .maybeSingle();
 
-            if (answer == null || answer['is_removed'] == true) {
-              // This round needs an answer
-              setState(() {
-                _roundId = roundId;
-                _currentRoundNumber = round['round_number'];
-                _questionText = round['question_text_snapshot'] ?? '';
-              });
+      if (answer == null || answer['is_removed'] == true) {
+        return (
+          id: roundId as String,
+          number: round['round_number'] as int,
+          text: (round['question_text_snapshot'] as String?) ?? '',
+        );
+      }
+    }
 
-              // Check if partner answered
-              _checkPartnerAnswered(roundId);
-              _subscribeToRound(roundId);
-              return;
-            }
-          }
-
-          // All rounds answered — check if chapter is complete
-          _checkChapterComplete();
-        });
+    // All rounds answered — check if chapter is complete
+    _checkChapterComplete();
+    return null;
   }
 
   Future<void> _checkPartnerAnswered(String roundId) async {
+    final answered = await (widget.readPartnerAnswered ??
+        _readPartnerAnsweredOnSupabase)(roundId);
+    if (answered == null) return;
+
+    if (mounted) {
+      setState(() {
+        _hasPartnerAnswered = answered;
+      });
+    }
+  }
+
+  /// Null when signed out.
+  Future<bool?> _readPartnerAnsweredOnSupabase(String roundId) async {
     final supabase = ref.read(supabaseClientProvider);
     final userId = ref.read(currentUserIdProvider);
-    if (userId == null) return;
+    if (userId == null) return null;
 
     // Get partner ID
     final session =
@@ -131,21 +177,21 @@ class _ThirtySixQuestionScreenState
             .eq('is_removed', false)
             .maybeSingle();
 
-    if (mounted) {
-      setState(() {
-        _hasPartnerAnswered = answer != null;
-      });
-    }
+    return answer != null;
   }
 
   void _subscribeToRound(String roundId) {
-    final supabase = ref.read(supabaseClientProvider);
-    final oldChannel = _roundChannel;
-    if (oldChannel != null) {
-      supabase.removeChannel(oldChannel);
-    }
+    _unwatchRound?.call();
+    _unwatchRound = (widget.watchRound ?? _watchRoundOnSupabase)(roundId, () {
+      // Check if partner answered
+      _checkPartnerAnswered(roundId);
+      _checkBothAnswered(roundId);
+    });
+  }
 
-    _roundChannel =
+  VoidCallback _watchRoundOnSupabase(String roundId, VoidCallback onChange) {
+    final supabase = ref.read(supabaseClientProvider);
+    final channel =
         supabase
             .channel('36q_round_$roundId')
             .onPostgresChanges(
@@ -157,13 +203,10 @@ class _ThirtySixQuestionScreenState
                 column: 'round_id',
                 value: roundId,
               ),
-              callback: (payload) {
-                // Check if partner answered
-                _checkPartnerAnswered(roundId);
-                _checkBothAnswered(roundId);
-              },
+              callback: (payload) => onChange(),
             )
             .subscribe();
+    return () => Supabase.instance.client.removeChannel(channel);
   }
 
   Future<void> _checkBothAnswered(String roundId) async {
@@ -364,59 +407,62 @@ class _ThirtySixQuestionScreenState
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Question
-            Text(
-              _questionText,
-              style: textTheme.headlineSmall?.copyWith(
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-            Gap(Spacing.xl.h),
-            // Answer input
-            Text(
-              'Your answer',
-              style: textTheme.titleSmall?.copyWith(
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-            Gap(Spacing.sm.h),
-            AppTextFormField(
-              controller: _answerController,
-              focusNode: _focusNode,
-              hintText: 'A sentence or two is enough...',
-              maxLines: 5,
-              maxLength: 400,
-              // buildCounter: (context, {required currentLength, required isFocused, maxLength}) =>
-              // null,
-              enabled: !_isSubmitting,
-              label: '',
-            ),
-            Gap(Spacing.sm.h),
-            Row(
-              children: [
-                Text(
-                  '${_answerController.text.length}/400',
-                  style: textTheme.bodySmall?.copyWith(
-                    color: colorScheme.onSurface.withValues(alpha: 0.5),
-                  ),
+            // Scrolls with the keyboard up, so the status and the buttons
+            // below stay on screen above it (final review I4).
+            Expanded(
+              child: SingleChildScrollView(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // Question
+                    Text(
+                      _questionText,
+                      style: textTheme.headlineSmall?.copyWith(
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    Gap(Spacing.xl.h),
+                    // Answer input
+                    Text(
+                      'Your answer',
+                      style: textTheme.titleSmall?.copyWith(
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    Gap(Spacing.sm.h),
+                    AppTextFormField(
+                      controller: _answerController,
+                      focusNode: _focusNode,
+                      hintText: 'A sentence or two is enough...',
+                      maxLines: 5,
+                      maxLength: 400,
+                      // buildCounter: (context, {required currentLength, required isFocused, maxLength}) =>
+                      // null,
+                      enabled: !_isSubmitting,
+                      label: '',
+                    ),
+                    Gap(Spacing.sm.h),
+                    // The field draws its own 0/400 counter (final review M1).
+                    Text(
+                      'A sentence or two is enough.',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: textTheme.bodySmall?.copyWith(
+                        color: colorScheme.onSurface.withValues(alpha: 0.5),
+                      ),
+                    ),
+                    Gap(Spacing.md.h),
+                    Text(
+                      '$partnerName will see your answer after you both submit.',
+                      style: textTheme.bodySmall?.copyWith(
+                        color: colorScheme.onSurface.withValues(alpha: 0.6),
+                      ),
+                    ),
+                  ],
                 ),
-                const Spacer(),
-                Text(
-                  'A sentence or two is enough.',
-                  style: textTheme.bodySmall?.copyWith(
-                    color: colorScheme.onSurface.withValues(alpha: 0.5),
-                  ),
-                ),
-              ],
+              ),
             ),
             Gap(Spacing.md.h),
-            Text(
-              '$partnerName will see your answer after you both submit.',
-              style: textTheme.bodySmall?.copyWith(
-                color: colorScheme.onSurface.withValues(alpha: 0.6),
-              ),
-            ),
-            const Spacer(),
             // Partner status
             Container(
               padding: EdgeInsets.all(Spacing.sm.w),

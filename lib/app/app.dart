@@ -11,6 +11,7 @@ import 'package:attune/core/ui/feedback/sound_service.dart';
 import 'package:attune/core/utils/screen_util_config.dart';
 import 'package:attune/features/chat/presentation/state/chat_outbox_drainer.dart';
 import 'package:attune/features/couple_map/widget/presentation/couple_widget_publisher.dart';
+import 'package:attune/features/stories/presentation/state/story_outbox_triggers.dart';
 import 'package:attune/i10n/generated/app_localizations.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_quill/flutter_quill.dart'
@@ -49,6 +50,12 @@ class _AppState extends ConsumerState<App> {
     Future.microtask(() {
       if (!mounted) return;
       ref.read(chatOutboxDrainerProvider);
+    });
+    // Posts queued stories on resume, reconnect and sign-in, without waiting
+    // for Conversations to mount (stories Wave 2, P1).
+    Future.microtask(() {
+      if (!mounted) return;
+      ref.read(storyOutboxTriggersProvider);
     });
     // The home-screen distance widget: costs nothing unless opted in.
     Future.microtask(() {

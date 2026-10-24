@@ -46,6 +46,11 @@ class _MemoryStoryOutboxBackend implements StoryOutboxBackend {
   }
 
   @override
+  Future<void> removeOtherUsers(String keepUserId) async {
+    _rows.removeWhere((key, _) => !key.startsWith('$keepUserId:'));
+  }
+
+  @override
   Future<void> close() async {}
 }
 

@@ -33,10 +33,14 @@
 // which would never return for a `..repeat()` animation controller.
 
 import 'dart:async';
+import 'dart:math' as math;
 import 'dart:ui' as ui;
 
 import 'package:attune/app/theme/app_theme.dart';
+import 'package:attune/app/theme/design_tokens.dart';
 import 'package:attune/features/auth/providers/auth_provider.dart';
+import 'package:attune/features/chat/data/repositories/chat_media_uploader.dart'
+    show ChatUploadCancelToken;
 import 'package:attune/features/stories/data/story_outbox_backend_stub.dart'
     as stub;
 import 'package:attune/features/stories/data/story_outbox_record.dart';
@@ -46,6 +50,7 @@ import 'package:attune/features/stories/data/story_repository.dart';
 import 'package:attune/features/stories/domain/captured_media.dart';
 import 'package:attune/features/stories/presentation/providers/story_providers.dart';
 import 'package:attune/features/stories/presentation/state/story_outbox_controller.dart';
+import 'package:attune/features/stories/presentation/widgets/story_outbox_notices.dart';
 import 'package:attune/features/stories/presentation/widgets/story_ring.dart';
 import 'package:attune/features/stories/presentation/widgets/story_rings_row.dart';
 import 'package:flutter/material.dart';
@@ -119,6 +124,7 @@ class _FakeRingGateway implements StoryReadGateway {
     required DateTime occurredOn,
     StoryPageCursor? after,
     int limit = 50,
+    String? authorId,
   }) async => const StoryItemPage(items: [], nextCursor: null);
 
   @override
@@ -167,6 +173,8 @@ class _HangingStoryGateway implements StoryGateway {
     required String storageKey,
     required String localPath,
     required String mimeType,
+    void Function(int sent, int total)? onProgress,
+    ChatUploadCancelToken? cancelToken,
   }) => Completer<void>().future;
 
   @override
@@ -180,6 +188,7 @@ class _HangingStoryGateway implements StoryGateway {
     int? durationMs,
     required int utcOffsetMinutes,
     Map<String, dynamic>? place,
+    DateTime? capturedAt,
   }) => Completer<StoryFinalizeResult>().future;
 }
 
@@ -398,6 +407,26 @@ void main() {
         // "greyed ring" implementation might still leave a semantics
         // node behind even with a transparent paint.
         expect(find.textContaining('Alex'), findsNothing);
+      },
+    );
+
+    testWidgets(
+      'a partner StoryRing told it has no stories paints no segmented ring '
+      '(§5.1; batch-1 review #1)',
+      (tester) async {
+        await tester.pumpWidget(
+          const MaterialApp(
+            home: Scaffold(
+              body: StoryRing(
+                key: ValueKey('story-ring-partner'),
+                isMine: false,
+                hasStories: false,
+                semanticLabel: 'x',
+              ),
+            ),
+          ),
+        );
+        expect(_findSegmentedCustomPainter(tester, 'story-ring-partner'), isNull);
       },
     );
 
@@ -671,10 +700,8 @@ void main() {
             noThumbnails: true,
             summary: [
               _summary(authorId: _myId, activeCount: 0, unviewedCount: 0),
-              // 1 of 4 active items unviewed: index 0 (top of the ring,
-              // clockwise from -pi/2) is bright; the rest, including
-              // index 2 (directly opposite, unambiguously past the first
-              // segment+gap), are faded.
+              // 1 of 4 active items unviewed: arc 3 (newest) is bright;
+              // arcs 0–2 are faded.
               _summary(authorId: _partnerId, activeCount: 4, unviewedCount: 1),
             ],
           ),
@@ -716,14 +743,12 @@ void main() {
           );
         }
 
-        // Bright segment: top-center of the ring (the arc starts at
-        // -pi/2, i.e. straight up), where segment 0 (unviewed, bright)
-        // is drawn.
-        final brightPixel = pixelAt(size.width ~/ 2, 2);
-        // Faded segment: bottom-center of the ring (angle +pi/2 from
-        // center, i.e. straight down), well inside a later, faded
-        // segment given 4 segments with ~0.12 rad gaps.
-        final fadedPixel = pixelAt(size.width ~/ 2, size.height.toInt() - 3);
+        // 1 of 4 unviewed: oldest-first clockwise (03 L3), so arcs 0–2 are
+        // the seen ones and arc 3, the newest, is bright.
+        final b = _arcMidpoint(3, 4, size.width);
+        final f = _arcMidpoint(1, 4, size.width);
+        final brightPixel = pixelAt(b.dx.round(), b.dy.round());
+        final fadedPixel = pixelAt(f.dx.round(), f.dy.round());
 
         expect(
           brightPixel.a,
@@ -750,6 +775,52 @@ void main() {
         );
       },
     );
+
+    testWidgets('the seen arcs come first clockwise, as the reel plays (03 L3)', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        await _harness(
+          noThumbnails: true,
+          summary: [
+            _summary(authorId: _myId, activeCount: 0, unviewedCount: 0),
+            _summary(authorId: _partnerId, activeCount: 3, unviewedCount: 1),
+          ],
+        ),
+      );
+      await tester.pumpAndSettle();
+      final painter = _findSegmentedCustomPainter(tester, 'story-ring-partner')!;
+      const size = Size(69, 69);
+      final bytes = await tester.runAsync(() async {
+        final recorder = ui.PictureRecorder();
+        painter.paint(Canvas(recorder), size);
+        final image = await recorder.endRecording().toImage(69, 69);
+        return image.toByteData(format: ui.ImageByteFormat.rawRgba);
+      });
+      int alphaAt(Offset p) =>
+          bytes!.buffer.asUint8List()[(p.dy.round() * 69 + p.dx.round()) * 4 + 3];
+      final oldest = alphaAt(_arcMidpoint(0, 3, 69));
+      final newest = alphaAt(_arcMidpoint(2, 3, 69));
+      expect(oldest, greaterThan(0));
+      expect(oldest, lessThan(newest));
+    });
+
+    testWidgets("the partner ring's label counts what is new (03 L2)", (
+      tester,
+    ) async {
+      final handle = tester.ensureSemantics();
+      await tester.pumpWidget(
+        await _harness(
+          noThumbnails: true,
+          summary: [
+            _summary(authorId: _partnerId, activeCount: 6, unviewedCount: 2),
+          ],
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.bySemanticsLabel("Alex's story, 2 new of 6"), findsOneWidget);
+      handle.dispose();
+    });
   });
 
   group('pending outbox item shows progress on my ring', () {
@@ -1076,6 +1147,110 @@ void main() {
     );
   });
 
+  group('both callbacks wired (07a V10)', () {
+    testWidgets('the photo opens my reel and the + opens the camera', (
+      tester,
+    ) async {
+      var reel = 0;
+      var camera = 0;
+      await tester.pumpWidget(
+        await _harness(
+          noThumbnails: true,
+          summary: [_summary(authorId: _myId, activeCount: 2, unviewedCount: 2)],
+          onOpenMine: () => reel++,
+          onCapture: () => camera++,
+        ),
+      );
+      await tester.pumpAndSettle();
+      final corner = tester.getTopLeft(
+        find.byKey(const ValueKey('story-ring-mine')),
+      );
+      await tester.tapAt(corner + const Offset(34.5, 34.5));
+      expect((reel, camera), (1, 0));
+      await tester.tapAt(corner + const Offset(59, 59));
+      expect((reel, camera), (1, 1));
+    });
+
+    testWidgets('the partner ring stays 85 dp after mine, tops aligned', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        await _harness(
+          noThumbnails: true,
+          summary: [
+            _summary(authorId: _myId, activeCount: 2, unviewedCount: 2),
+            _summary(authorId: _partnerId, activeCount: 1, unviewedCount: 1),
+          ],
+        ),
+      );
+      await tester.pumpAndSettle();
+      final mine = tester.getTopLeft(find.byKey(const ValueKey('story-ring-mine')));
+      final theirs = tester.getTopLeft(
+        find.byKey(const ValueKey('story-ring-partner')),
+      );
+      expect(theirs.dx - mine.dx, 85);
+      expect(theirs.dy, mine.dy);
+    });
+  });
+
+  group('space below the rings (batch-1 review #2)', () {
+    Rect visualOf(WidgetTester tester) => tester.getRect(
+      find.descendant(
+        of: find.byKey(const ValueKey('story-ring-mine')),
+        matching: find.byKey(const ValueKey('story-ring-visual')),
+      ),
+    );
+
+    testWidgets(
+      'with no notice, the row ends kStoryRingPlusOverhang under my ring: '
+      'the + target is the only space below it',
+      (tester) async {
+        await tester.pumpWidget(
+          await _harness(
+            summary: [
+              _summary(authorId: _myId, activeCount: 2, unviewedCount: 2),
+            ],
+          ),
+        );
+        await tester.pumpAndSettle();
+        final row = tester.getRect(find.byType(StoryRingsRow));
+        final visual = visualOf(tester);
+        expect(visual.top - row.top, Spacing.sm);
+        expect(row.bottom - visual.bottom, kStoryRingPlusOverhang);
+      },
+    );
+
+    testWidgets(
+      'a notice sits kStoryRingPlusOverhang under my ring and keeps '
+      'Spacing.sm of its own below it',
+      (tester) async {
+        await tester.pumpWidget(
+          await _harness(
+            summary: [
+              _summary(authorId: _myId, activeCount: 2, unviewedCount: 2),
+            ],
+            outbox: [_pendingRecord(state: StoryOutboxState.failedPermanent)],
+          ),
+        );
+        await tester.pumpAndSettle();
+        final row = tester.getRect(find.byType(StoryRingsRow));
+        final visual = visualOf(tester);
+        final notice = tester.getRect(
+          find
+              .descendant(
+                of: find.byType(StoryFailedNotice),
+                matching: find.byWidgetPredicate(
+                  (w) => w is Semantics && w.properties.liveRegion == true,
+                ),
+              )
+              .first,
+        );
+        expect(notice.top - visual.bottom, kStoryRingPlusOverhang);
+        expect(row.bottom - notice.bottom, Spacing.sm);
+      },
+    );
+  });
+
   group('reduce motion', () {
     testWidgets(
       'a pending ring under reduce-motion renders without an active '
@@ -1146,6 +1321,16 @@ CustomPainter? _findSegmentedCustomPainter(
     }
   }
   return null;
+}
+
+/// The midpoint of arc [index] of [count] (painted clockwise from 12
+/// o'clock with the painter's 0.12 rad gaps), in a [size] square.
+Offset _arcMidpoint(int index, int count, double size) {
+  const gap = 0.12;
+  final per = (2 * math.pi - gap * count) / count;
+  final angle = -math.pi / 2 + index * (per + gap) + per / 2;
+  final r = (size - kStoryRingStrokeWidth) / 2;
+  return Offset(size / 2 + r * math.cos(angle), size / 2 + r * math.sin(angle));
 }
 
 class _TestPainterInfo {

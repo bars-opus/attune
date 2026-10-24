@@ -73,3 +73,27 @@ Deno.test("the zip counts its entries", () => {
   zip.add("a", new Uint8Array([1]));
   assertEquals(zip.count, 1);
 });
+
+Deno.test("the README counts the stories and says where a shortfall is listed (Wave 5)", () => {
+  const text = readme({ relationships: [{ my_stories: [{}, {}, {}] }, { my_stories: [{}] }] });
+  assert(text.includes("media/my_stories/"), text);
+  assert(text.includes("Your stories: 4, each listed in data.json."), text);
+  assert(text.includes("media_not_included.txt"), text);
+  assert(!text.includes("in this download: 4"), "the README is written before anything can be left out (review M4)");
+  assert(readme({ relationships: [] }).includes("Your stories: 0, each listed in data.json."));
+});
+
+Deno.test("the left-out note says how many stories did not fit (Wave 5)", () => {
+  const note = leftOutNote([
+    { file: "media/my_stories/a.mp4", reason: "over_limit" },
+    { file: "media/my_stories/b.jpg", reason: "over_limit" },
+    { file: "media/chat/c.jpg", reason: "over_limit" },
+  ]);
+  // Not additive (review M4): the story count is part of the file count above it.
+  assert(note.includes("3 files were over this download's size limit.\nOf these files, 2 are your stories.\n"), note);
+  assert(!note.includes("2 of your stories are not"), note);
+  const one = leftOutNote([{ file: "media/my_stories/a.jpg", reason: "unavailable" }]);
+  assert(one.includes("Of these files, 1 is one of your stories."), one);
+  const none = leftOutNote([{ file: "media/chat/c.jpg", reason: "too_large" }]);
+  assert(!none.includes("your stor"), none);
+});

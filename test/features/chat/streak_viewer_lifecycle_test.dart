@@ -8,6 +8,7 @@
 // (often only) view on a phone call or a pulled-down notification shade.
 import 'dart:async';
 
+import 'package:attune/core/services/app_content_visibility.dart';
 import 'package:attune/features/chat/data/repositories/streak_repository.dart';
 import 'package:attune/features/chat/presentation/screens/streak_viewer_screen.dart';
 import 'package:attune/features/chat/presentation/state/chat_state.dart'
@@ -315,6 +316,79 @@ void main() {
     await tester.pump(hold - const Duration(seconds: 2, milliseconds: 100));
     expect(find.byType(StreakViewerScreen), findsOneWidget);
     await tester.pump(const Duration(milliseconds: 200));
+    await tester.pumpAndSettle();
+    expect(find.byType(StreakViewerScreen), findsNothing);
+    expect(streaks.spends, 1);
+  });
+
+  testWidgets('an inactive blip alone pauses too: the privacy cover is up '
+      '(stories Wave 3)', (tester) async {
+    final streaks = _StreakRepo([_videoClip]);
+    await open(tester, streaks);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 250));
+    expect(controllerOf(tester).value.isPlaying, isTrue);
+    platform.calls.clear();
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+    await tester.pump();
+    expect(platform.calls, contains('pause'));
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+    await tester.pump();
+    expect(platform.calls, contains('play'));
+    expect(streaks.spends, 1);
+  });
+
+  testWidgets('a return that stops at the Safety lock check stays paused '
+      'until the lock opens (stories Wave 3)', (tester) async {
+    final streaks = _StreakRepo([_videoClip]);
+    await open(tester, streaks);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 250));
+    final container = ProviderScope.containerOf(
+      tester.element(find.byType(StreakViewerScreen)),
+    );
+    platform.calls.clear();
+    await background(tester);
+    container.read(appContentVisibleProvider.notifier).setLockOpen(false);
+    await foreground(tester);
+    expect(platform.calls, isNot(contains('play')));
+    container.read(appContentVisibleProvider.notifier).setLockOpen(true);
+    await tester.pump();
+    expect(platform.calls, contains('play'));
+    expect(find.byType(StreakViewerScreen), findsOneWidget);
+    expect(streaks.spends, 1);
+  });
+
+  testWidgets('a photo that arrives behind the Safety lock check is not '
+      'spent, and its hold does not start, until the lock opens '
+      '(stories Wave 3)', (tester) async {
+    final image = _ControlledImage();
+    final decoded = await tester.runAsync(
+      () => createTestImage(width: 1, height: 1),
+    );
+    final streaks = _StreakRepo([_photoClip]);
+    await open(tester, streaks, imageProviderBuilder: (_) => image);
+    final container = ProviderScope.containerOf(
+      tester.element(find.byType(StreakViewerScreen)),
+    );
+    await background(tester);
+    container.read(appContentVisibleProvider.notifier).setLockOpen(false);
+    await foreground(tester);
+
+    image.bytes.complete(ImageInfo(image: decoded!));
+    await tester.pump(); // first frame, behind the PIN check
+    await tester.pump(); // post-frame
+    await tester.pump(const Duration(seconds: 30));
+    expect(streaks.spends, 0, reason: 'nobody has seen it');
+    expect(find.byType(StreakViewerScreen), findsOneWidget);
+
+    container.read(appContentVisibleProvider.notifier).setLockOpen(true);
+    await tester.pump(); // rebuilt: the frame is shown
+    await tester.pump(); // post-frame: spent, the hold starts
+    expect(streaks.spends, 1);
+    await tester.pump(const Duration(seconds: 4));
+    expect(find.byType(StreakViewerScreen), findsOneWidget);
+    await tester.pump(const Duration(seconds: 2));
     await tester.pumpAndSettle();
     expect(find.byType(StreakViewerScreen), findsNothing);
     expect(streaks.spends, 1);

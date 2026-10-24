@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import '../../helpers/state_probe.dart';
+
 void main() {
   testWidgets('shows no cover while the app is resumed', (tester) async {
     await tester.pumpWidget(
@@ -105,5 +107,157 @@ void main() {
         .handleAppLifecycleStateChanged(AppLifecycleState.inactive);
     await tester.pump();
     expect(find.text('secret content'), findsNothing);
+  });
+
+  group('kept mounted behind the cover (stories Wave 3; 07b G7)', () {
+    const toBackground = [
+      AppLifecycleState.inactive,
+      AppLifecycleState.hidden,
+      AppLifecycleState.paused,
+    ];
+    const toForeground = [
+      AppLifecycleState.hidden,
+      AppLifecycleState.inactive,
+      AppLifecycleState.resumed,
+    ];
+
+    testWidgets('the app keeps its State across inactive -> resumed and a '
+        'full background', (tester) async {
+      await tester.pumpWidget(
+        const MaterialApp(home: AppPrivacyCover(child: StateProbe('APP'))),
+      );
+      await tester.tap(find.text('APP 0'));
+      await tester.pump();
+
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+      await tester.pump();
+      expect(find.text('APP 1'), findsNothing, reason: 'not on screen');
+      expect(
+        find.text('APP 1', skipOffstage: false),
+        findsOneWidget,
+        reason: 'but still mounted',
+      );
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+      await tester.pump();
+      expect(find.text('APP 1'), findsOneWidget, reason: 'same State');
+
+      for (final s in [...toBackground, ...toForeground]) {
+        tester.binding.handleAppLifecycleStateChanged(s);
+        await tester.pump();
+      }
+      expect(find.text('APP 1'), findsOneWidget);
+    });
+
+    testWidgets('while covered the app is not in semantics, not ticking and '
+        'not tappable', (tester) async {
+      final semantics = tester.ensureSemantics();
+      bool? ticking;
+      await tester.pumpWidget(
+        MaterialApp(
+          home: AppPrivacyCover(
+            child: Builder(
+              builder: (context) {
+                ticking = TickerMode.of(context);
+                return const StateProbe('APP');
+              },
+            ),
+          ),
+        ),
+      );
+      expect(ticking, isTrue);
+      expect(semanticLabels(tester).any((l) => l.contains('APP 0')), isTrue);
+
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+      await tester.pump();
+      expect(ticking, isFalse, reason: 'animations stop behind the cover');
+      expect(
+        semanticLabels(tester).any((l) => l.contains('APP')),
+        isFalse,
+        reason: 'a screen reader cannot reach the hidden app',
+      );
+      await tester.tap(find.byKey(const Key('app_privacy_cover_overlay')));
+
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+      await tester.pump();
+      expect(ticking, isTrue);
+      expect(
+        find.text('APP 0'),
+        findsOneWidget,
+        reason: 'a tap on the cover never reaches the app',
+      );
+      semantics.dispose();
+    });
+  });
+
+  group('the keyboard goes down behind the cover (final review I1)', () {
+    Future<void> pumpField(WidgetTester tester) async {
+      await tester.pumpWidget(
+        const MaterialApp(
+          home: AppPrivacyCover(child: Scaffold(body: TextField())),
+        ),
+      );
+    }
+
+    bool focused(WidgetTester tester) => tester
+        .widget<EditableText>(find.byType(EditableText, skipOffstage: false))
+        .focusNode
+        .hasFocus;
+
+    testWidgets('covered: the keyboard (and its predictions) is hidden; '
+        'resumed: it is back with the same text and focus', (tester) async {
+      // The keyboard is up: the view reports its inset.
+      tester.view.viewInsets = const FakeViewPadding(bottom: 300);
+      addTearDown(tester.view.resetViewInsets);
+      await pumpField(tester);
+      await tester.showKeyboard(find.byType(TextField));
+      await tester.enterText(find.byType(TextField), 'I am leaving');
+      expect(tester.testTextInput.isVisible, isTrue);
+
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+      await tester.pump();
+      expect(find.byKey(const Key('app_privacy_cover_overlay')), findsOneWidget);
+      expect(
+        tester.testTextInput.isVisible,
+        isFalse,
+        reason: 'no keyboard or QuickType over the cover',
+      );
+      expect(focused(tester), isTrue, reason: 'focus is kept');
+
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+      await tester.pump();
+      expect(tester.testTextInput.isVisible, isTrue);
+      expect(find.text('I am leaving'), findsOneWidget);
+      expect(focused(tester), isTrue);
+    });
+
+    testWidgets('a field that kept focus with its keyboard already down is '
+        'not given one on return', (tester) async {
+      await pumpField(tester);
+      await tester.showKeyboard(find.byType(TextField));
+      // Dismissed (Android back) with focus kept: no inset.
+      await SystemChannels.textInput.invokeMethod<void>('TextInput.hide');
+      expect(tester.testTextInput.isVisible, isFalse);
+
+      for (final s in [AppLifecycleState.inactive, AppLifecycleState.resumed]) {
+        tester.binding.handleAppLifecycleStateChanged(s);
+        await tester.pump();
+      }
+      expect(tester.testTextInput.isVisible, isFalse);
+      expect(focused(tester), isTrue);
+    });
+
+    testWidgets('a screen with no focused field gets no keyboard', (
+      tester,
+    ) async {
+      tester.view.viewInsets = const FakeViewPadding(bottom: 300);
+      addTearDown(tester.view.resetViewInsets);
+      await pumpField(tester);
+      for (final s in [AppLifecycleState.inactive, AppLifecycleState.resumed]) {
+        tester.binding.handleAppLifecycleStateChanged(s);
+        await tester.pump();
+      }
+      expect(tester.testTextInput.isVisible, isFalse);
+      expect(focused(tester), isFalse);
+    });
   });
 }

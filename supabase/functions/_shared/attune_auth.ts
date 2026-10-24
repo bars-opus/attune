@@ -37,10 +37,27 @@ export function serviceRoleClient() {
   );
 }
 
+/**
+ * Whether [presented] equals [expected], in time that depends only on
+ * [expected]'s length, never on where the two differ (checklist 2.3; stories
+ * review 06 #22, 07b V10). Lengths are compared too, so a prefix never
+ * matches.
+ */
+export function constantTimeEqual(presented: string, expected: string): boolean {
+  const encoder = new TextEncoder();
+  const a = encoder.encode(presented);
+  const b = encoder.encode(expected);
+  let diff = a.length ^ b.length;
+  for (let i = 0; i < b.length; i++) {
+    diff |= (i < a.length ? a[i] : 0) ^ b[i];
+  }
+  return diff === 0;
+}
+
 export function requireServiceRole(req: Request): void {
   const authorization = req.headers.get("Authorization") ?? "";
   const token = authorization.replace(/^Bearer\s+/i, "").trim();
-  if (!token || token !== requireEnv("SUPABASE_SERVICE_ROLE_KEY")) {
+  if (!token || !constantTimeEqual(token, requireEnv("SUPABASE_SERVICE_ROLE_KEY"))) {
     throw new HttpError("Forbidden", 403);
   }
 }

@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:attune/core/services/app_content_visibility.dart';
 import 'package:attune/core/ui/feedback/haptics.dart';
 import 'package:attune/core/ui/feedback/sound_service.dart';
 import 'package:attune/core/ui/motion/reduce_motion.dart';
@@ -65,6 +66,11 @@ class _QuestionScreenState extends ConsumerState<QuestionScreen>
   void initState() {
     super.initState();
     unawaited(_restorePendingAnswer());
+    // Kept mounted behind the privacy cover (stories Wave 3): a queued
+    // pick waits while Attune is not on screen, then retries at once.
+    ref.listenManual<bool>(appContentVisibleProvider, (prev, next) {
+      if (next && prev == false) unawaited(_retryPendingAnswer());
+    });
   }
 
   @override
@@ -165,6 +171,7 @@ class _QuestionScreenState extends ConsumerState<QuestionScreen>
 
   Future<void> _retryPendingAnswer() async {
     if (!mounted || !_queuedOffline || _isSubmitting) return;
+    if (!ref.read(appContentVisibleProvider)) return;
     await _submitAnswer(automatic: true);
   }
 

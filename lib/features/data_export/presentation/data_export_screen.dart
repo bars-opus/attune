@@ -4,6 +4,7 @@ import 'package:attune/core/utils/date_formatter.dart';
 import 'package:attune/core/utils/exports/export_screens.dart';
 import 'package:attune/features/data_export/data/data_export_service.dart';
 import 'package:attune/features/safety/presentation/widgets/confirm_safety_pin.dart';
+import 'package:attune/features/stories/presentation/screens/past_chapter_stories_screen.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 const _intro =
@@ -285,6 +286,9 @@ class _DataExportScreenState extends ConsumerState<DataExportScreen> {
         ),
       ]);
     }
+    // Stories Wave 5 (05 #3): after an ending, an author's own stories can
+    // be deleted from here. Draws nothing for most people.
+    children.add(const PastChapterStoriesEntry());
     return Scaffold(
       appBar: AppBar(title: const Text('Download my data')),
       body: ListView(padding: EdgeInsets.all(Spacing.lg.w), children: children),

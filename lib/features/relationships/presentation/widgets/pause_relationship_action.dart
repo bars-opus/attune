@@ -21,6 +21,7 @@ class PauseRelationshipAction {
         title: 'Pause your shared space?',
         message:
             'Chat becomes read-only for both of you and nothing new is shared. '
+            'Stories and the story calendar are hidden for both of you until you resume. '
             'Either of you can resume or end it within 30 days. '
             // Paint Ball, Word Hunt and Snakes and Ladders are abandoned by
             // their relationship-change triggers; every other game's writes

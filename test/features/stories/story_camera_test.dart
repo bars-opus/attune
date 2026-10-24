@@ -4,14 +4,14 @@
 // StoryCameraScreen EMBEDS CaptureCameraScreen exactly like
 // StreakCameraScreen does (a GlobalKey, onCaptured/onCancelled callbacks) —
 // not a standalone push. CaptureCameraScreen supports both shapes; this
-// adapter uses the embedded one because there is no review step of its own
-// to sit in front of the camera (spec §6.1: the outbox queue itself, with
-// its visible Retry/Discard, is the review). On a captured take, this
-// screen calls confirmSend() itself (the MAIN media policy: 2560px/5MB for
-// an image, 25MB for a video), generates the 400px/q75 JPEG thumbnail (spec
-// §4.3 — thumbnail_key is NOT NULL server-side), builds a
-// StoryOutboxRecord with utcOffsetMinutes read at capture time, enqueues it,
-// and leaves. It must NOT upload inline (spec §6.1: "a capture must not
+// adapter uses the embedded one so its own review (Retake / Share, owner
+// ruling 2026-10-23, STORIES.md §6) can sit over the camera through the
+// module's isReviewing contract. On Share, StoryPostPipeline prepares the
+// take to the MAIN media policy (2560px/5MB for an image, 25MB for a
+// video), generates the 400px/q75 JPEG thumbnail (spec §4.3 —
+// thumbnail_key is NOT NULL server-side), builds a StoryOutboxRecord with
+// utcOffsetMinutes read at capture time, enqueues it, and the screen
+// leaves. `tapShutter` below therefore also taps Share. It must NOT upload inline (spec §6.1: "a capture must not
 // hold the user on a progress screen through a 25MB upload") — that is the
 // outbox's job (Task 6), driven by storyOutboxProvider.
 //
@@ -40,10 +40,13 @@ import 'package:attune/features/couple_map/domain/story_place.dart';
 import 'package:attune/features/couple_map/presentation/providers/story_places_providers.dart';
 import 'package:attune/features/location/presentation/providers/presence_providers.dart';
 import 'package:attune/features/auth/providers/auth_provider.dart';
+import 'package:attune/features/chat/data/repositories/chat_media_uploader.dart'
+    show ChatUploadCancelToken;
 import 'package:attune/features/chat/domain/services/chat_video_preparer.dart';
 import 'package:attune/features/chat/presentation/widgets/streak_record_button.dart';
 import 'package:attune/features/stories/data/story_outbox_backend_stub.dart'
     as stub;
+import 'package:attune/features/stories/data/story_media_vault.dart';
 import 'package:attune/features/stories/data/story_outbox_store.dart';
 import 'package:attune/features/stories/data/story_repository.dart';
 import 'package:attune/features/stories/domain/captured_media.dart';
@@ -56,6 +59,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:image/image.dart' as img;
+import 'package:path/path.dart' as p;
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../couple_map/support/fakes.dart' show MemoryCoupleMapLocalStore, FakeStoryPlaceResolver;
@@ -198,6 +202,8 @@ class _FakeStoryGateway implements StoryGateway {
     required String storageKey,
     required String localPath,
     required String mimeType,
+    void Function(int sent, int total)? onProgress,
+    ChatUploadCancelToken? cancelToken,
   }) async {
     uploadCalls.add({'bucket': bucket, 'storageKey': storageKey});
   }
@@ -213,6 +219,7 @@ class _FakeStoryGateway implements StoryGateway {
     int? durationMs,
     required int utcOffsetMinutes,
     Map<String, dynamic>? place,
+    DateTime? capturedAt,
   }) async {
     finalizeCalls.add({'clientStoryId': clientStoryId});
     return StoryFinalizeResult(
@@ -357,6 +364,7 @@ void main() {
         currentUserProvider.overrideWithValue(_signedInUser),
         storyOutboxStoreProvider.overrideWithValue(store),
         storyGatewayProvider.overrideWithValue(gateway),
+        storyMediaVaultProvider.overrideWithValue(StoryMediaVault(supportDirectory: () async => Directory(p.join(tempDir.path, 'support'))..createSync(recursive: true))),
         ...extra,
       ],
     );
@@ -419,10 +427,17 @@ void main() {
     await gesture.up();
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 50));
+    // Owner ruling 1: the shutter opens a review; Share posts.
+    final share = find.byKey(const ValueKey('story-review-share'));
+    if (share.evaluate().isNotEmpty) {
+      await tester.tap(share);
+      await tester.pump();
+    }
     // Let the image-prepare + thumbnail-generate + enqueue chain settle.
-    await tester.runAsync(
-      () => Future<void>.delayed(const Duration(milliseconds: 50)),
-    );
+    for (var i = 0; i < 30; i++) {
+      await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 15)));
+      await tester.pump();
+    }
     await tester.pump(const Duration(milliseconds: 50));
     await tester.pump(const Duration(milliseconds: 50));
   }
@@ -517,7 +532,11 @@ void main() {
     await tester.pump(const Duration(milliseconds: 50));
     expect(find.text('Pin to our map'), findsNothing);
     gate.complete();
-    await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 50)));
+    // The vault move is several real file operations (Task 17 harness).
+    for (var i = 0; i < 30; i++) {
+      await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 15)));
+      await tester.pump();
+    }
     await tester.pump(const Duration(milliseconds: 50));
 
     final queued = await h.store.readAll(_userId);
@@ -567,7 +586,11 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 50));
     gate.complete();
-    await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 50)));
+    // The rejected take's cleanup is real file I/O (Task 17 harness).
+    for (var i = 0; i < 30; i++) {
+      await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 15)));
+      await tester.pump();
+    }
     await tester.pump(const Duration(milliseconds: 100));
     expect(find.text('Near Osu, Accra'), findsOneWidget, reason: 'the pill is back, same state');
     expect(resolver.calls, 1, reason: 'no second lookup or prompt');
@@ -758,7 +781,7 @@ void main() {
     // calls have needed (see the header comment and _FakeCaptureImagePreparer's
     // sync-I/O note for the two other places this exact class of hang
     // showed up during development).
-    final thumbFile = File(record.localThumbnailPath);
+    final thumbFile = File(p.join(tempDir.path, 'support', record.localThumbnailPath));
     final exists = await tester.runAsync(() => thumbFile.exists());
     expect(
       exists,

@@ -65,7 +65,7 @@ class StoryOutboxStore {
            : (cipher ?? ChatCacheCipher.forTesting());
 
   final StoryOutboxBackend _backend;
-  bool _initialized = false;
+  Future<void>? _initFuture;
 
   /// Test-only: forces the keystore-failure path (see [forTesting]).
   final bool _cipherUnavailable;
@@ -85,12 +85,19 @@ class StoryOutboxStore {
   /// time either file changes, rather than as a drive-by here.
   ChatCacheCipher? _cipher;
 
-  Future<void> _ensureInitialized() async {
-    if (_initialized) return;
+  /// Memoized: concurrent first callers (the sign-in wipe beside the
+  /// controller at cold start) share one open, so one connection and one
+  /// keystore round trip. A failed open is cleared so the next call retries.
+  Future<void> _ensureInitialized() =>
+      _initFuture ??= _init().catchError((Object e, StackTrace s) {
+        _initFuture = null;
+        return Future<void>.error(e, s);
+      });
+
+  Future<void> _init() async {
     await _backend.init();
     if (_cipherUnavailable) {
       _cipher = null;
-      _initialized = true;
       return;
     }
     // Fail-closed on privacy, same as ChatCacheService.init(): if key
@@ -101,7 +108,6 @@ class StoryOutboxStore {
     } catch (_) {
       _cipher = null;
     }
-    _initialized = true;
   }
 
   String? _encrypt(String plaintext) => _cipher?.encryptString(plaintext);
@@ -131,6 +137,27 @@ class StoryOutboxStore {
     return records;
   }
 
+  /// Every record id for [userId], or null when any row could not be read
+  /// (no cipher, an undecryptable or corrupt row). For the orphan sweep: a
+  /// caller deleting files because they have "no row" must never act on a
+  /// partial answer (final review #3c).
+  Future<Set<String>?> readIdsOrNull(String userId) async {
+    await _ensureInitialized();
+    if (_cipher == null) return null;
+    final ids = <String>{};
+    for (final row in await _backend.readAll(userId)) {
+      final raw = _decrypt(row);
+      if (raw == null) return null;
+      try {
+        final json = jsonDecode(raw) as Map;
+        ids.add(json['clientStoryId'] as String);
+      } catch (_) {
+        return null;
+      }
+    }
+    return ids;
+  }
+
   /// Insert-or-replace keyed on `(userId, clientStoryId)`. Enqueueing a
   /// new capture and updating an existing record's state/attempts both
   /// go through this — [StoryOutboxRecord.clientStoryId] is what makes
@@ -143,10 +170,20 @@ class StoryOutboxStore {
   /// data-loss bug: the camera popped, the user believed the story was
   /// posted, and nothing was ever queued. Callers must react to false
   /// rather than discard it (spec §6.1, "it never silently disappears").
-  Future<bool> put(String userId, StoryOutboxRecord record) async {
+  ///
+  /// [expectEpoch]: also refuses (false) when a wipe has run since the
+  /// caller read [epoch].
+  Future<bool> put(
+    String userId,
+    StoryOutboxRecord record, {
+    int? expectEpoch,
+  }) async {
     await _ensureInitialized();
     final payload = _encrypt(jsonEncode(record.toJson()));
     if (payload == null) return false;
+    // A caller that captured the epoch before a wipe (a story prepared
+    // while its author signed out) must not write the row back.
+    if (expectEpoch != null && expectEpoch != _epoch) return false;
     await _backend.put(
       userId,
       record.clientStoryId,
@@ -174,6 +211,28 @@ class StoryOutboxStore {
   Future<void> clearAll() async {
     await _ensureInitialized();
     await _backend.clearAll();
+  }
+
+  int _epoch = 0;
+
+  /// Bumped by every wipe. A drive that started before a wipe compares its
+  /// captured epoch before each write, so a sign-out mid-upload can never
+  /// write the previous person's row back (01 #11, Review Focus 2).
+  int get epoch => _epoch;
+
+  /// Every row of every user, gone. Used by sign-out and quick exit.
+  Future<void> wipeAll() async {
+    _epoch++;
+    await clearAll();
+  }
+
+  /// Account switch: every row not belonging to [keepUserId] goes.
+  Future<void> removeOtherUsers(String keepUserId) async {
+    // Bump first, as [wipeAll] does: a slow open must not let the current
+    // person's drive start under the old epoch and then halt mid-drive.
+    _epoch++;
+    await _ensureInitialized();
+    await _backend.removeOtherUsers(keepUserId);
   }
 
   /// Closes the backend's connection. Production holds this store for

@@ -379,9 +379,9 @@ class _PlanningHomeScreenState extends ConsumerState<PlanningHomeScreen> {
                   content:
                       'Everything here is shared: either of you can add, edit or delete any plan, and you both see every change. For thoughts just for you, use your Reflection Journal — only you can see it.',
                   icon: Icons.people_outline,
-                  backgroundColor: colorScheme.primary.withValues(alpha: 0.1),
-                  borderColor: colorScheme.primary,
-                  iconColor: colorScheme.primary,
+                  backgroundColor: colorScheme.warning.withValues(alpha: 0.1),
+                  borderColor: colorScheme.warning,
+                  iconColor: colorScheme.warning,
                   textTheme: Theme.of(context).textTheme,
                 ),
                 const Gap(Spacing.md),

@@ -10,8 +10,11 @@ import 'package:go_router/go_router.dart';
 /// Everything MaterialApp.router's builder wraps around every route (Spec 2).
 /// Above the Navigator, so it covers every route, dialog and sheet.
 ///   ShareIntakeListener  -- outside: a share can arrive while covered.
-///   SafetyLockGate       -- replaces everything while the PIN is required.
-///   AppPrivacyCover      -- neutral cover while inactive.
+///   SafetyLockGate       -- replaces everything while the PIN is required;
+///                          while a return is checked it hides the app but
+///                          keeps it mounted (stories Wave 3).
+///   AppPrivacyCover      -- neutral cover while not resumed; the app stays
+///                          mounted, offstage, behind it (stories Wave 3).
 ///   QuickExitZone        -- the triple-tap target, on top of everything.
 ///   NewDeviceNotice      -- the "a new device signed in" banner.
 ///   RelationshipLifecycleWatcher -- after a pause or an ending, clears this

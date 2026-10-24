@@ -10,6 +10,7 @@ import 'package:attune/app/documentations/user_manual/data/quiet_states_docs.dar
 import 'package:attune/app/documentations/user_manual/data/relationship_lifecycle_docs.dart';
 import 'package:attune/app/documentations/user_manual/data/safety_check_docs.dart';
 import 'package:attune/app/documentations/user_manual/data/share_a_win_docs.dart';
+import 'package:attune/app/documentations/user_manual/data/streaks_docs.dart';
 import 'package:attune/app/documentations/user_manual/data/together_docs.dart';
 import 'package:attune/app/documentations/user_manual/data/attachment_style_quiz_docs.dart';
 import 'package:attune/app/documentations/user_manual/data/chat_docs.dart';
@@ -52,6 +53,7 @@ class DocumentationRegistry {
     'safetyCheck': [ChatFeatureFlags.privateSafetyCheck],
     'appreciation': [ChatFeatureFlags.appreciationNotes],
     'shareAWin': [ChatFeatureFlags.shareAWin],
+    'streaks': [ChatFeatureFlags.ephemeralVideo, ChatFeatureFlags.videoSharing],
     'quietStates': [ChatFeatureFlags.quietStates],
     'coupleMap': [ChatFeatureFlags.coupleMap],
     // These two reflections wait for clinical sign-off.
@@ -77,7 +79,7 @@ class DocumentationRegistry {
       case 'safety':
         return const ['safetyCheck', 'privacyData', 'relationshipLifecycle'];
       case 'chat':
-        return const ['hardMoment', 'appreciation', 'privacyData'];
+        return const ['hardMoment', 'appreciation', 'streaks', 'privacyData'];
       case 'pulse':
         return const ['safetyCheck', 'privacyData'];
       case 'hardMoment':
@@ -141,6 +143,7 @@ class DocumentationRegistry {
       HardMomentDocs(),
       AppreciationDocs(),
       ShareAWinDocs(),
+      StreaksDocs(),
       QuietStatesDocs(),
       CouplesJournalDocs(),
       PlanningDocs(),

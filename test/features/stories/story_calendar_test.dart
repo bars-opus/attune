@@ -33,7 +33,10 @@ import 'dart:async';
 
 import 'package:attune/app/theme/app_theme.dart';
 import 'package:attune/features/auth/providers/auth_provider.dart';
+import 'package:attune/features/chat/data/repositories/chat_media_uploader.dart'
+    show ChatUploadCancelToken;
 import 'package:attune/features/chat/domain/entities/conversation.dart';
+import 'package:attune/features/chat/domain/services/chat_image_cache.dart';
 import 'package:attune/features/chat/presentation/screens/conversations_screen.dart';
 import 'package:attune/features/chat/presentation/state/chat_state.dart';
 import 'package:attune/features/reflection_journal/data/models/journal_entry.dart';
@@ -54,6 +57,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+
+import 'support/reel_test_kit.dart' show kitInstantImage;
+import 'support/ring_test_kit.dart' show NoopImageCache;
 
 const _myId = 'me-1';
 const _partnerId = 'partner-1';
@@ -126,6 +132,7 @@ class _FakeCalendarGateway implements StoryReadGateway {
     required DateTime occurredOn,
     StoryPageCursor? after,
     int limit = 50,
+    String? authorId,
   }) async => StoryItemPage(items: List.of(_dayItems), nextCursor: null);
 
   @override
@@ -195,6 +202,8 @@ Widget _reelHarness(_FakeCalendarGateway gateway, {DateTime? occurredOn}) {
     overrides: [
       currentUserProvider.overrideWithValue(_signedInUser),
       storyReadGatewayProvider.overrideWithValue(gateway),
+      // A delete evicts the story's media (Wave 4).
+      chatImageCacheProvider.overrideWithValue(NoopImageCache()),
     ],
     child: MaterialApp(
       theme: AppTheme.lightTheme,
@@ -206,10 +215,12 @@ Widget _reelHarness(_FakeCalendarGateway gateway, {DateTime? occurredOn}) {
                   ? StoryReelScreen.forDay(
                       relationshipId: _relationshipId,
                       occurredOn: occurredOn,
+                      imageProviderBuilder: kitInstantImage,
                     )
                   : StoryReelScreen(
                       relationshipId: _relationshipId,
                       authorId: _partnerId,
+                      imageProviderBuilder: kitInstantImage,
                     ),
             ),
           ),
@@ -518,11 +529,9 @@ void main() {
       expect(find.byKey(const ValueKey('story-reel-delete')), findsNothing);
     });
 
-    testWidgets('author-mode (the ring/reel, not day mode) never shows '
-        'delete at all, even for the author\'s own reel', (tester) async {
-      // Deletion lives in the calendar's day view only (spec §5.3) — this
-      // proves the author-mode reel (occurredOn == null) does not grow a
-      // delete button just because isOwnReel is true.
+    testWidgets('my own reel offers delete on my story (owner ruling '
+        '2026-10-23: delete from your own reel, after R1)', (tester) async {
+      // Owner ruling 2 (docs/reviews/2026-10-23-stories-robustness-review.md).
       final day = DateTime.utc(2026, 9, 2);
       final myItem = _item(
         id: 'mine-active',
@@ -537,6 +546,7 @@ void main() {
           overrides: [
             currentUserProvider.overrideWithValue(_signedInUser),
             storyReadGatewayProvider.overrideWithValue(gateway),
+            chatImageCacheProvider.overrideWithValue(NoopImageCache()),
           ],
           child: MaterialApp(
             theme: AppTheme.lightTheme,
@@ -552,7 +562,7 @@ void main() {
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 50));
 
-      expect(find.byKey(const ValueKey('story-reel-delete')), findsNothing);
+      expect(find.byKey(const ValueKey('story-reel-delete')), findsOneWidget);
     });
 
     testWidgets('tapping delete warns it is permanent before calling '
@@ -667,9 +677,18 @@ void main() {
   });
 
   group('the ring tap opens the reel for the correct author', () {
+    // Wave 4 (batch-2 review #3): a mounted ring's signed URL schedules its
+    // re-sign at 540 s, so a test must unmount and dispose this container
+    // in its body; the pending-timer check runs before tear-downs.
+    late ProviderContainer container;
+    Future<void> disposeHarness(WidgetTester tester) async {
+      await tester.pumpWidget(const SizedBox());
+      container.dispose();
+    }
+
     Future<Widget> harness(StoryReadGateway gateway) async {
       final store = StoryOutboxStore.forTesting(stub.createStoryOutboxBackend());
-      final container = ProviderContainer(
+      container = ProviderContainer(
         overrides: [
           currentUserProvider.overrideWithValue(_signedInUser),
           storyReadGatewayProvider.overrideWithValue(gateway),
@@ -753,6 +772,7 @@ void main() {
       );
       expect(screen.authorId, _partnerId);
       expect(screen.isOwnReel, isFalse);
+      await disposeHarness(tester);
     });
 
     testWidgets('tapping my own ring (with an active story) opens '
@@ -811,6 +831,7 @@ void main() {
       );
       expect(screen.authorId, _myId);
       expect(screen.isOwnReel, isTrue);
+      await disposeHarness(tester);
     });
   });
 }
@@ -869,6 +890,8 @@ class _HangingStoryGateway implements StoryGateway {
     required String storageKey,
     required String localPath,
     required String mimeType,
+    void Function(int sent, int total)? onProgress,
+    ChatUploadCancelToken? cancelToken,
   }) => Completer<void>().future;
 
   @override
@@ -882,6 +905,7 @@ class _HangingStoryGateway implements StoryGateway {
     int? durationMs,
     required int utcOffsetMinutes,
     Map<String, dynamic>? place,
+    DateTime? capturedAt,
   }) => Completer<StoryFinalizeResult>().future;
 }
 
@@ -933,11 +957,13 @@ class _CalendarGatewayWithRingSummary implements StoryReadGateway {
     required DateTime occurredOn,
     StoryPageCursor? after,
     int limit = 50,
+    String? authorId,
   }) => _inner.listDayItems(
     relationshipId: relationshipId,
     occurredOn: occurredOn,
     after: after,
     limit: limit,
+    authorId: authorId,
   );
 
   @override

@@ -282,6 +282,56 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  // Stories Wave 3: the shell keeps this screen mounted behind the privacy
+  // cover; the retry waits for Attune to be on screen, as the remount did.
+  testWidgets('a queued pick does not retry while Attune is covered; it '
+      'retries at once on return', (tester) async {
+    _usePhoneViewport(tester);
+    final outbox = _MemoryAnswerOutbox();
+    var offline = true;
+    var attempts = 0;
+    var submitted = false;
+    when(
+      () => repository.submitAnswer(
+        roundId: any(named: 'roundId'),
+        userId: any(named: 'userId'),
+        choice: any(named: 'choice'),
+        isPartnerA: any(named: 'isPartnerA'),
+      ),
+    ).thenAnswer((_) async {
+      attempts++;
+      if (offline) throw const SocketException('offline');
+    });
+
+    await tester.pumpWidget(
+      _wrap(
+        child: _question(onSubmitted: () => submitted = true),
+        repository: repository,
+        answerOutbox: outbox,
+      ),
+    );
+    await tester.pump();
+    await tester.tap(find.text('THIS'));
+    await tester.pump();
+    await tester.tap(find.text('Lock in This'));
+    await tester.pump();
+    await tester.pump();
+    expect(attempts, 1);
+
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+    await tester.pump();
+    offline = false;
+    await tester.pump(const Duration(seconds: 65));
+    expect(attempts, 1, reason: 'no retry while covered');
+
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+    await tester.pump();
+    await tester.pump();
+    expect(attempts, 2);
+    expect(submitted, isTrue);
+    expect(outbox.pending, isEmpty);
+  });
+
   testWidgets('waiting hands off to the chat instead of spinning forever', (
     tester,
   ) async {

@@ -1,4 +1,5 @@
 import 'package:attune/app/theme/design_tokens.dart';
+import 'package:attune/core/services/app_content_visibility.dart';
 import 'package:gap/gap.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
@@ -184,6 +185,13 @@ class _YouTubeLinkState extends ConsumerState<_YouTubeLink> {
 
   @override
   Widget build(BuildContext context) {
+    // The note stays mounted behind the privacy cover and the lock check
+    // (stories Wave 3), and the web view has no lifecycle pause of its own:
+    // leaving the screen closes the player (its dispose closes the
+    // controller), and only a tap plays it again (final review I2).
+    ref.listen<bool>(appContentVisibleProvider, (_, visible) {
+      if (!visible && _playing) setState(() => _playing = false);
+    });
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
     final preview = widget.block.linkPreview;

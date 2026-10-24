@@ -107,6 +107,7 @@ class _FakeGateway implements StoryReadGateway {
     required DateTime occurredOn,
     StoryPageCursor? after,
     int limit = 50,
+    String? authorId,
   }) async => StoryItemPage(items: List.of(_dayItems), nextCursor: null);
 
   @override
@@ -652,6 +653,28 @@ void main() {
       expect(find.text('Our first trip'), findsOneWidget);
       expect(find.text('Lisbon'), findsOneWidget);
       expect(find.byIcon(Icons.favorite), findsOneWidget);
+    });
+
+    testWidgets('my ring on a past day draws no + (a capture would post today)', (
+      tester,
+    ) async {
+      final handle = tester.ensureSemantics();
+      final gateway = _FakeGateway(dayItems: [_item(id: 's1', authorId: _myId)]);
+      await tester.pumpWidget(
+        _wrap(
+          CalendarDaySheet(
+            relationshipId: _relationshipId,
+            date: _day,
+            events: const [],
+            reminders: const [],
+            planningEntries: const [],
+          ),
+          gateway,
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.bySemanticsLabel('Add to your story'), findsNothing);
+      handle.dispose();
     });
   });
 }

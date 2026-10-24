@@ -1,4 +1,5 @@
 import 'package:attune/features/safety/domain/services/quick_exit_service.dart';
+import 'package:attune/features/stories/data/story_device_wipe.dart';
 import 'package:attune/features/together/data/together_widget_sync.dart';
 import 'package:attune/features/together/domain/together_widget.dart';
 import 'package:attune/features/together/presentation/together_providers.dart';
@@ -23,6 +24,10 @@ void main() {
     store = FakeWidgetStore();
     TogetherWidgetSync.store = store;
     SharedPreferences.setMockInitialValues({});
+    // The story wipe's real image cache arms a 3 s bound under fake time
+    // (stories Wave 4 Task 9); this suite tests Together's part.
+    QuickExitService.clearStories = () async {};
+    addTearDown(() => QuickExitService.clearStories = clearStoryDeviceCaches);
   });
 
   test('off by default; turning it off clears what the widget shows', () async {

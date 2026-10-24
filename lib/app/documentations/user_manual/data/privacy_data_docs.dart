@@ -169,6 +169,13 @@ class PrivacyDataDocs implements DocumentationModule {
           content:
               'One download is prepared at a time, and you can ask for a new one 24 hours after the last one was ready. If you set a Safety PIN, Attune asks for it before preparing or downloading.',
         ),
+        ManualContent(
+          id: 'privacy_export_past_stories',
+          title: 'Your stories from past chapters',
+          numberPrefix: '4',
+          content:
+              'If a shared space is paused or has ended, the stories you posted there show up on Download my data, under "Your stories from past chapters", by date and kind, for you alone. Delete them one by one or all at once.',
+        ),
       ],
     ),
   ];

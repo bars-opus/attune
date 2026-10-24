@@ -24,6 +24,8 @@
 import 'dart:io';
 
 import 'package:attune/features/auth/providers/auth_provider.dart';
+import 'package:attune/features/chat/data/repositories/chat_media_uploader.dart'
+    show ChatUploadCancelToken;
 import 'package:attune/features/stories/data/story_outbox_backend_stub.dart'
     as stub;
 import 'package:attune/features/stories/data/story_outbox_record.dart';
@@ -108,6 +110,8 @@ class _FakeStoryGateway implements StoryGateway {
     required String storageKey,
     required String localPath,
     required String mimeType,
+    void Function(int sent, int total)? onProgress,
+    ChatUploadCancelToken? cancelToken,
   }) async {
     final failure = failUploadWith;
     if (failure != null) throw failure;
@@ -130,6 +134,7 @@ class _FakeStoryGateway implements StoryGateway {
     int? durationMs,
     required int utcOffsetMinutes,
     Map<String, dynamic>? place,
+    DateTime? capturedAt,
   }) async {
     finalizeCalls.add({
       'relationshipId': relationshipId,
@@ -496,7 +501,7 @@ void main() {
   });
 
   test(
-    'a permanent failure is reached after a bounded number of retryable '
+    'a permanent failure is reached after a bounded number of unknown-shape '
     'failures, not an unbounded spin',
     () async {
       final h = harness();
@@ -509,7 +514,7 @@ void main() {
       );
 
       // Every intent call fails with a retryable network error.
-      h.gateway.failIntentWith = StoryApiError.network();
+      h.gateway.failIntentWith = const StoryApiError(code: 'server_error', message: 'boom', retryable: false);
 
       await h.controller.enqueue(record);
       await h.controller.flush();
@@ -557,7 +562,7 @@ void main() {
 
       // Drive it to failedPermanent by exhausting automatic attempts on a
       // retryable error.
-      h.gateway.failIntentWith = StoryApiError.network();
+      h.gateway.failIntentWith = const StoryApiError(code: 'server_error', message: 'boom', retryable: false);
       await h.controller.enqueue(record);
       await h.controller.flush();
       for (var i = 0; i < 10; i++) {
@@ -588,7 +593,7 @@ void main() {
         reason: 'retry() did not restart the attempt count — one more '
             'failure after Retry landed straight back at failedPermanent',
       );
-      expect(rows.single.attempts, lessThan(5));
+      expect(rows.single.strikes, lessThan(5));
 
       // Force one more explicit failure and confirm it still isn't
       // permanent — proving there is real headroom, not a fluke of

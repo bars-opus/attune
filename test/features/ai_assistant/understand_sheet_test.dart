@@ -398,5 +398,36 @@ void main() {
         await tester.pump(const Duration(milliseconds: 30));
       },
     );
+
+    testWidgets('the sheet stays open behind the cover and, on return, '
+        'offers to read it again instead of a blank body (stories Wave 3)', (
+      tester,
+    ) async {
+      final gateway = _FakeAiAssistantGateway()
+        ..nextInvokeResult = _okResponse();
+      await _pumpSheet(tester, gateway: gateway);
+      expect(find.text('They might be tired.'), findsOneWidget);
+
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+      await tester.pump();
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+      await tester.pump();
+
+      expect(find.byType(UnderstandSheet), findsOneWidget);
+      expect(find.text('They might be tired.'), findsNothing);
+      expect(find.text('Read it again'), findsOneWidget);
+      expect(
+        gateway.invokeCallCount,
+        1,
+        reason: 'nothing is asked again on its own',
+      );
+
+      await tester.tap(find.text('Read it again'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 30));
+      expect(gateway.invokeCallCount, 2);
+      expect(find.text('They might be tired.'), findsOneWidget);
+      expect(find.text('Read it again'), findsNothing);
+    });
   });
 }

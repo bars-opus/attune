@@ -84,7 +84,8 @@ String? _playableLocalPath(String? path) {
 /// and day mode is the ONLY constructor that includes expired items
 /// (`storyDayItemsProvider`'s own contract) — the author-scoped reel
 /// would silently show nothing for exactly the case this exists to
-/// handle.
+/// handle. Starts at the quoted story itself (`initialStoryItemId`), not
+/// the day's first item.
 ///
 /// Reads the provider container directly (`ProviderScope.containerOf`,
 /// the same one-shot-read-from-a-tap-callback pattern already used by
@@ -118,6 +119,7 @@ Future<void> _openStoryQuote(BuildContext context, String storyItemId) async {
           (_) => StoryReelScreen.forDay(
             relationshipId: target!.relationshipId,
             occurredOn: target.occurredOn,
+            initialStoryItemId: storyItemId,
           ),
     ),
   );

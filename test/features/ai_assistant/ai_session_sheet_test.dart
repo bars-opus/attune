@@ -2418,6 +2418,47 @@ void main() {
       },
     );
 
+    // Stories Wave 3: the shell keeps the sheet mounted behind the privacy
+    // cover, so the poll no longer ends with a teardown on every leave.
+    testWidgets(
+      'no read_state while Attune is covered; one at once on return, then '
+      'the 5-second cadence again',
+      (tester) async {
+        var reads = 0;
+        final gateway = _FakeSessionGateway({
+          'prepare': (_) => _prepareResponse(),
+          'review_context': (_) => _reviewResponse(),
+          'approve': (_) => _approveResponse(activated: true),
+          'read': (_) => <String, dynamic>{'turns': <dynamic>[]},
+          'read_state': (_) {
+            reads++;
+            return _readStateResponse(revision: 1, state: 'active');
+          },
+        });
+        final container = _container(gateway);
+        final controller = container.read(
+          aiSessionControllerProvider.notifier,
+        );
+        await _activateUnderFakeAsync(tester, controller);
+        controller.startPolling();
+        tester.binding.handleAppLifecycleStateChanged(
+          AppLifecycleState.inactive,
+        );
+        await tester.pump(const Duration(seconds: 15));
+        await tester.pump(const Duration(milliseconds: 100));
+        expect(reads, 0, reason: 'nobody can see the sheet');
+        tester.binding.handleAppLifecycleStateChanged(
+          AppLifecycleState.resumed,
+        );
+        await tester.pump(const Duration(milliseconds: 100));
+        expect(reads, 1, reason: 'caught up at once on return');
+        await tester.pump(const Duration(seconds: 5));
+        await tester.pump(const Duration(milliseconds: 100));
+        expect(reads, 2, reason: 'and polling again');
+        controller.stopPolling();
+      },
+    );
+
     testWidgets(
       'ticks do not overlap: a slow round trip is not joined by a '
       'second request on the next interval',

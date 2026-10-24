@@ -702,6 +702,17 @@ class _ChatTextFieldState extends State<ChatTextField>
   VoiceRecordingStage _stage = VoiceRecordingStage.held;
   bool _isPaused = false;
 
+  /// Leaving the screen pauses a recording in progress (stories Wave 3).
+  late final AppLifecycleListener _lifecycle;
+
+  /// A real leave (hidden/paused) landed while start() was still running:
+  /// pause the recording as soon as it has started.
+  bool _awayDuringStart = false;
+
+  /// This leave already locked and paused the recording: the rest of an
+  /// inactive -> hidden -> paused burst does nothing (and buzzes nothing).
+  bool _awayPausing = false;
+
   /// How far the finger has travelled toward the lock (0.0-1.0), driving
   /// the lock pill's fill/rise.
   double _lockProgress = 0.0;
@@ -780,6 +791,23 @@ class _ChatTextFieldState extends State<ChatTextField>
   void initState() {
     super.initState();
     widget.controller.addListener(_onChanged);
+    _lifecycle = AppLifecycleListener(
+      onStateChange: (state) {
+        if (state == AppLifecycleState.resumed) {
+          _awayPausing = false;
+          _awayDuringStart = false;
+          return;
+        }
+        // Only a real leave: the first-use microphone alert is an
+        // `inactive` alone, and must not cut a recording still starting.
+        if (_startInFlight &&
+            (state == AppLifecycleState.hidden ||
+                state == AppLifecycleState.paused)) {
+          _awayDuringStart = true;
+        }
+        _onAppAway();
+      },
+    );
     _scrimController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 260),
@@ -858,6 +886,7 @@ class _ChatTextFieldState extends State<ChatTextField>
   @override
   void dispose() {
     widget.controller.removeListener(_onChanged);
+    _lifecycle.dispose();
     _elapsedTicker?.cancel();
     // Removed directly, not via _hideScrim: an overlay entry outlives this
     // State unless taken down here, and awaiting a reverse during dispose
@@ -1106,6 +1135,8 @@ class _ChatTextFieldState extends State<ChatTextField>
     });
 
     _startInFlight = false;
+    final awayDuringStart = _awayDuringStart;
+    _awayDuringStart = false;
 
     // The finger came up while start() was still awaiting permission or the
     // plugin. Without this the end handler already returned (it saw
@@ -1114,6 +1145,13 @@ class _ChatTextFieldState extends State<ChatTextField>
     if (_releasedDuringStart) {
       _releasedDuringStart = false;
       await _finishRecording();
+      return;
+    }
+    // Attune left while this was starting (fix round 1): no microphone
+    // behind the cover.
+    if (awayDuringStart &&
+        WidgetsBinding.instance.lifecycleState != AppLifecycleState.resumed) {
+      _onAppAway();
     }
   }
 
@@ -1183,9 +1221,9 @@ class _ChatTextFieldState extends State<ChatTextField>
 
   /// Promotes a held recording to the locked stage: the finger can lift
   /// and recording continues under the bar's delete/pause/send controls.
-  void _lockRecording() {
+  void _lockRecording({bool haptic = true}) {
     if (_stage == VoiceRecordingStage.locked) return;
-    widget.haptics.medium();
+    if (haptic) widget.haptics.medium();
     setState(() {
       _stage = VoiceRecordingStage.locked;
       _isCancelling = false;
@@ -1292,9 +1330,42 @@ class _ChatTextFieldState extends State<ChatTextField>
     }
   }
 
+  /// Stories Wave 3: the chat stays mounted behind the privacy cover now,
+  /// so leaving Attune no longer disposes, and loses, a recording. One in
+  /// progress is locked (if still held) and paused instead -- kept for the
+  /// person to resume, send or delete -- and the microphone stops. A
+  /// recording still starting is left alone: the first-use microphone
+  /// alert is itself an `inactive`.
+  void _onAppAway() {
+    if (!_isRecording || _startInFlight || _awayPausing) return;
+    // Silent (fix round 1): nobody feels a buzz behind the cover, and a
+    // burst of states would otherwise buzz once per state.
+    _awayPausing = true;
+    if (_stage != VoiceRecordingStage.locked) _lockRecording(haptic: false);
+    if (!(_recorder?.isPaused ?? true)) {
+      unawaited(_togglePause(haptic: false));
+    }
+  }
+
+  /// The system took the touch (a Control Centre pull, an Android swipe
+  /// home, a call) -- not the person lifting their finger. A held
+  /// recording is locked and kept for the bar's controls, never sent; the
+  /// leave that follows pauses it (fix round 1). A start still in flight
+  /// or a slide-to-cancel keeps the release path.
+  void _onRecordPointerCancel() {
+    if (_isRecording &&
+        !_startInFlight &&
+        _stage == VoiceRecordingStage.held &&
+        !_isCancelling) {
+      _lockRecording();
+      return;
+    }
+    unawaited(_onRecordDragEnd());
+  }
+
   /// Locked-stage pause/resume. A failure here leaves the recording
   /// running rather than desyncing the UI from the recorder's real state.
-  Future<void> _togglePause() async {
+  Future<void> _togglePause({bool haptic = true}) async {
     final recorder = _recorder;
     if (recorder == null) return;
     try {
@@ -1310,6 +1381,7 @@ class _ChatTextFieldState extends State<ChatTextField>
       setState(() => _isPaused = recorder.isPaused);
       _syncScrim();
     }
+    if (!haptic) return;
     if (recorder.isPaused) {
       widget.haptics.medium();
     } else {
@@ -1372,7 +1444,7 @@ class _ChatTextFieldState extends State<ChatTextField>
         onPointerDown: (_) => unawaited(_startRecording()),
         onPointerMove: (event) => _onRecordPointerMove(event.delta),
         onPointerUp: (_) => unawaited(_onRecordDragEnd()),
-        onPointerCancel: (_) => unawaited(_onRecordDragEnd()),
+        onPointerCancel: (_) => _onRecordPointerCancel(),
         behavior: HitTestBehavior.opaque,
         child: Opacity(
           opacity: widget.enabled ? 1.0 : 0.38,

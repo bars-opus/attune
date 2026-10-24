@@ -37,6 +37,7 @@ class FakeStoryReadGateway implements StoryReadGateway {
     required DateTime occurredOn,
     StoryPageCursor? after,
     int limit = 50,
+    String? authorId,
   }) async => const StoryItemPage(items: [], nextCursor: null);
 
   @override

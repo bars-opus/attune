@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:attune/core/services/app_content_visibility.dart';
 import 'package:attune/core/utils/timezone_utils.dart';
 import 'package:attune/features/chat/domain/services/chat_feature_flags.dart';
 import 'package:attune/features/games/presentation/providers/games_hub_providers.dart'
@@ -51,9 +52,10 @@ final presenceReadsProvider =
       return c;
     });
 
-/// The couple map's presence, refreshed on open, on app resume and every
-/// 15 minutes. Samples ONLY while I'm sharing and not paused: someone who
-/// never opted in is never sampled or prompted.
+/// The couple map's presence, refreshed on open, on each return to the
+/// screen (once the lock is open) and every 15 minutes. Samples ONLY while
+/// I'm sharing and not paused: someone who never opted in is never sampled
+/// or prompted.
 final coupleMapPresenceProvider = StreamProvider.autoDispose.family<
   CoupleMapPresence,
   String
@@ -65,6 +67,11 @@ final coupleMapPresenceProvider = StreamProvider.autoDispose.family<
 
   Future<void> refresh() async {
     if (closed || running) return;
+    // Never while Attune is not on screen: the map tab stays mounted
+    // behind the privacy cover (stories Wave 3), so the 15-minute tick
+    // must not sample a fix or record while covered, backgrounded or
+    // before the Safety lock opens on a return.
+    if (!ref.read(appContentVisibleProvider)) return;
     running = true;
     try {
       var p = await repo.fetchMapPresence(relationshipId);
@@ -89,11 +96,13 @@ final coupleMapPresenceProvider = StreamProvider.autoDispose.family<
 
   unawaited(refresh());
   final timer = Timer.periodic(PresenceConfig.refreshEvery, (_) => refresh());
-  final lifecycle = AppLifecycleListener(onResume: () => unawaited(refresh()));
+  // "On app resume" means once Attune is on screen again, after the lock.
+  ref.listen<bool>(appContentVisibleProvider, (prev, next) {
+    if (next && prev == false) unawaited(refresh());
+  });
   ref.onDispose(() {
     closed = true;
     timer.cancel();
-    lifecycle.dispose();
     unawaited(controller.close());
   });
   return controller.stream;

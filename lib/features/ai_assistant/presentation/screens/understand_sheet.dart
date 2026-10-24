@@ -34,6 +34,9 @@
 // (Task 5) rather than a modal bottom sheet.
 library;
 
+import 'dart:async';
+
+import 'package:attune/app/theme/design_tokens.dart';
 import 'package:attune/features/ai_assistant/presentation/widgets/assistant_notice_card.dart';
 import 'package:attune/features/safety/presentation/outside_perspective_screen.dart';
 import 'package:flutter/material.dart';
@@ -106,6 +109,18 @@ class _UnderstandSheetState extends ConsumerState<UnderstandSheet> {
     Navigator.of(context).pop();
   }
 
+  void _readAgain() {
+    unawaited(
+      ref
+          .read(understandResultProvider.notifier)
+          .requestUnderstand(
+            requestId: _requestId,
+            messageId: widget.message.id,
+            utcOffsetMinutes: DateTime.now().timeZoneOffset.inMinutes,
+          ),
+    );
+  }
+
   String _errorMessageFor(Object error) {
     return switch (error) {
       AssistantRateLimitedError(retryAfterSeconds: final seconds) =>
@@ -160,6 +175,13 @@ class _UnderstandSheetState extends ConsumerState<UnderstandSheet> {
                   _ErrorNotice(message: _errorMessageFor(error)),
               data: (result) {
                 if (result == null) {
+                  // Cleared when Attune left the screen; the sheet now stays
+                  // open behind the privacy cover (stories Wave 3).
+                  if (ref
+                      .read(understandResultProvider.notifier)
+                      .clearedWhileAway) {
+                    return _ClearedNotice(onReadAgain: _readAgain);
+                  }
                   return const SizedBox.shrink();
                 }
                 return switch (result) {
@@ -187,6 +209,33 @@ class _UnderstandSheetState extends ConsumerState<UnderstandSheet> {
           ],
         ),
       ),
+    );
+  }
+}
+
+/// The read was cleared when Attune left the screen. Nothing is asked again
+/// on its own: the person may have handed the phone over.
+class _ClearedNotice extends StatelessWidget {
+  const _ClearedNotice({required this.onReadAgain});
+
+  final VoidCallback onReadAgain;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'This read was cleared when you left Attune, to keep it private.',
+          style: theme.textTheme.bodyMedium,
+        ),
+        const SizedBox(height: Spacing.md),
+        OutlinedButton(
+          onPressed: onReadAgain,
+          child: const Text('Read it again'),
+        ),
+      ],
     );
   }
 }

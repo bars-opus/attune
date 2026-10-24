@@ -3,6 +3,7 @@ import 'dart:math' as math;
 
 import 'package:attune/app/routing/app_route_observer.dart';
 import 'package:attune/app/theme/chat_color_scheme.dart';
+import 'package:attune/core/services/app_content_visibility.dart';
 import 'package:attune/core/ui/feedback/haptics.dart';
 import 'package:attune/core/ui/feedback/sound_service.dart';
 import 'package:attune/core/ui/layout/measure_size.dart';
@@ -30,6 +31,8 @@ import 'package:attune/features/conflict_toolkit/presentation/pause_timer_card.d
 import 'package:attune/features/conflict_toolkit/presentation/repair_tray.dart';
 import 'package:attune/features/conflict_toolkit/presentation/start_conversation_sheet.dart';
 import 'package:attune/features/chat/presentation/widgets/chat_date_chip.dart';
+import 'package:attune/features/chat/presentation/widgets/chat_empty_state.dart';
+import 'package:attune/app/documentations/user_manual/data/documentation_flags.dart';
 import 'package:attune/core/ui/motion/settle_in.dart';
 import 'package:attune/core/ui/motion/shimmer.dart';
 import 'package:attune/core/ui/presence/breathing_dots.dart';
@@ -206,6 +209,14 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
     scheduleMicrotask(
       () => unawaited(playback.stopIfOwnedByAnother(ownerId)),
     );
+    // Stories Wave 3: the shell keeps this screen mounted behind the privacy
+    // cover and the Safety lock check, so presence and read receipts also
+    // wait for the lock to open (a return that ends at the PIN screen must
+    // not mark anything read).
+    ref.listenManual<bool>(
+      appContentVisibleProvider,
+      (_, __) => _syncViewActive(),
+    );
     WidgetsBinding.instance.addObserver(this);
     _controller.addListener(_onDraftChanged);
     Future.microtask(_restoreDraft);
@@ -368,7 +379,11 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
             appRouteObserver.lastPushedRoute is PopupRoute);
     ref
         .read(chatControllerProvider(widget.conversation).notifier)
-        .setViewActive(_isForeground && isCurrentRoute);
+        .setViewActive(
+          _isForeground &&
+              isCurrentRoute &&
+              ref.read(appContentVisibleProvider),
+        );
   }
 
   void _onDraftChanged() {
@@ -4064,10 +4079,20 @@ class _MessageListState extends ConsumerState<_MessageList>
     }
 
     if (state.messages.isEmpty) {
-      return const Center(
-        child: Text(
-          'No messages yet. Start the conversation when you are ready.',
-        ),
+      // An empty chat greets the partner and shows what the chat can do,
+      // one card per feature that is switched on. Gone with the first
+      // message.
+      // Cards wait for the feature flags, so they appear together rather
+      // than the always-on ones first and the rest a moment later.
+      final flags = ref.watch(documentationFlagsProvider).valueOrNull;
+      return ChatEmptyState(
+        // The partner's profile name (the same source "Replying to" uses),
+        // then the conversation's; never the "Partner" placeholder.
+        partnerName:
+            realPartnerName(ref.watch(gamePartnerNameProvider).valueOrNull) ??
+            realPartnerName(state.conversation.partnerName),
+        modules: flags == null ? const [] : chatEmptyStateModules(flags),
+        bottomInset: _bottomReserve,
       );
     }
 

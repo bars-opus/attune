@@ -18,7 +18,7 @@ void main() {
     test('chat links to the hard-moment tools, notes and privacy', () {
       expect(
         DocumentationRegistry.getRelatedModuleIds('chat'),
-        ['hardMoment', 'appreciation', 'privacyData'],
+        ['hardMoment', 'appreciation', 'streaks', 'privacyData'],
       );
     });
 

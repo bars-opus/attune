@@ -3,15 +3,16 @@
 ///
 /// [CaptureCameraScreen] (`lib/features/chat/presentation/screens/
 /// capture_camera_screen.dart`) owns everything destination-neutral:
-/// permissions, camera switching, the tap/hold gesture split, transcode
-/// and the main-media size ceilings.
+/// permissions, camera switching, the tap/hold gesture split and the
+/// lifecycle. Preparing a take to the main-media ceilings is
+/// [StoryPostPipeline]'s job, on Share.
 ///
 /// **Embedded, not pushed — mirrors [StreakCameraScreen] exactly.**
 /// [CaptureCameraScreen] supports two shapes (see its own doc comment):
 /// pushed standalone, where it transcodes and pops itself with the
 /// result; or embedded via a [GlobalKey] with [onCaptured]/[onCancelled]
-/// callbacks, where the embedder decides when to call [confirmSend]
-/// itself. This screen uses the SECOND shape, the one
+/// callbacks, where the embedder receives the RAW take and decides what
+/// to do with it. This screen uses the SECOND shape, the one
 /// `StreakCameraScreen` already ships with — [CaptureCameraScreen] owns
 /// its `context.pop(prepared)` on the standalone path, which only
 /// resolves for whatever pushed it; embedding sidesteps that seam
@@ -21,69 +22,52 @@
 /// and fixed by switching shapes, not by swapping which `pop` API is
 /// called elsewhere).
 ///
-/// This screen's own job, mirroring what [StreakCameraScreen] does for
-/// streaks (spec §6: "two thin adapters consume it"):
-///  1. Generate the REQUIRED thumbnail (spec §4.3): 400px long edge, JPEG,
-///     quality 75. `thumbnail_key` is `NOT NULL` server-side, so a story
-///     without one can never be finalized — this runs before enqueue, not
-///     after, so a queued record is never missing one.
-///  2. Build a [StoryOutboxRecord], minting its [newClientStoryId] exactly
-///     once (never regenerated — that is what makes a retry after a lost
-///     finalize response safe, per `StoryOutboxController`'s own doc
-///     comment).
-///  3. Enqueue through [storyOutboxProvider] and leave. The upload and its
-///     retries belong to the outbox controller (Task 6) — spec §6.1: "a
-///     capture must not hold the user on a progress screen through a
-///     25MB upload." This screen never calls [StoryGateway] directly.
-///  4. Pop back to wherever the story camera was opened from — but ONLY
-///     on a successful enqueue. A failed prepare (rejected transcode or
-///     thumbnail) shows a snackbar and returns the camera to a live
-///     viewfinder instead, matching the streak adapter's own posture on
-///     a rejected transcode rather than discarding the take.
+/// This screen's own job (owner ruling 1, overriding spec §6.1's "the
+/// outbox is the review"):
+///  1. Shutter → review. The embedded camera reports the RAW take through
+///     [CaptureCameraScreen.onCaptured]; this screen shows it full bleed
+///     ([StoryReviewLayer]) with Retake and Share, and sets
+///     [CaptureCameraScreen.isReviewing] so the camera hides its own
+///     controls. Nothing is prepared or queued yet.
+///  2. Retake deletes the take and returns to a live viewfinder. Close (or
+///     back) asks before discarding it.
+///  3. Share hands the take to [StoryPostPipeline] (a provider, so it
+///     survives this screen unmounting mid-prepare, 01 #14): prepare to
+///     the main-media policy, build the required thumbnail (spec §4.3),
+///     read the pin (bounded at 3 s), move both files into the vault and
+///     enqueue. The upload and its retries belong to the outbox. While
+///     sharing, Close is hidden and back is blocked.
+///  4. Queued → pop. A take rejected for itself (too long, unreadable)
+///     says why and returns to the live camera; a transient failure (an
+///     interrupted export) or a keystore refusal stays on the review so
+///     Share can be tried again.
 library;
+
+export 'package:attune/features/stories/presentation/state/story_post_pipeline.dart'
+    show StoryThumbnailFailed;
 
 import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:attune/app/theme/design_tokens.dart';
+import 'package:attune/core/services/app_content_visibility.dart';
+import 'package:attune/core/services/media/visible_only_playback.dart';
 import 'package:attune/features/chat/domain/services/chat_video_preparer.dart';
 import 'package:attune/features/chat/presentation/screens/capture_camera_screen.dart';
 import 'package:attune/features/chat/utils/chat_log.dart';
 import 'package:attune/features/couple_map/presentation/camera/story_pin_controller.dart';
 import 'package:attune/features/couple_map/presentation/camera/story_pin_toggle.dart';
-import 'package:attune/features/stories/data/story_outbox_record.dart';
 import 'package:attune/features/stories/domain/captured_media.dart';
 import 'package:attune/features/stories/domain/services/capture_image_preparer.dart';
-import 'package:attune/features/stories/presentation/state/story_outbox_controller.dart';
+import 'package:attune/features/stories/domain/story_post_copy.dart';
+import 'package:attune/features/stories/presentation/state/story_post_pipeline.dart';
+import 'package:attune/features/stories/presentation/widgets/story_review_layer.dart';
+import 'package:camera/camera.dart' show ResolutionPreset;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import 'package:path/path.dart' as p;
-import 'package:path_provider/path_provider.dart';
-import 'package:video_thumbnail/video_thumbnail.dart' as video_thumb;
-
-/// The story thumbnail policy (spec §4.3): 400px long edge, JPEG, quality
-/// 75 — distinct from [CaptureImagePreparer]'s default MAIN image policy
-/// (2560px/5MB, spec §4.2), which Task 3's tests pin and which this
-/// screen must not disturb. 800KB is the server's own ceiling for a
-/// thumbnail object (spec §4.2's table); nothing at 400px/q75 JPEG comes
-/// remotely close to it in practice, but the preparer still enforces a
-/// real ceiling rather than trusting the quality setting alone.
-const int _thumbnailMaxDimension = 400;
-const int _thumbnailQuality = 75;
-const int _thumbnailMaxBytes = 800 * 1024;
-
-/// Raised when a thumbnail cannot be produced at all (e.g. a corrupt
-/// capture, or the video frame-grab failing). Mirrors
-/// [CaptureImageRejected]'s shape: a coarse, content-free code.
-class StoryThumbnailFailed implements Exception {
-  const StoryThumbnailFailed(this.code);
-  final String code;
-
-  @override
-  String toString() => 'StoryThumbnailFailed($code)';
-}
+import 'package:video_player/video_player.dart';
 
 class StoryCameraScreen extends ConsumerStatefulWidget {
   const StoryCameraScreen({
@@ -101,15 +85,17 @@ class StoryCameraScreen extends ConsumerStatefulWidget {
   /// this is the only routing information the adapter needs.
   final String relationshipId;
 
-  /// Test seam, forwarded verbatim to the embedded [CaptureCameraScreen].
+  /// Test seam for the video prepare step, passed to [StoryPostPipeline]
+  /// (and forwarded to the embedded [CaptureCameraScreen], which does not
+  /// prepare in the embedded shape). Null uses
+  /// [StoryPostPipeline.storyVideoPreparer].
   final ChatVideoPreparer Function()? videoPreparerFactory;
 
-  /// Test seam, forwarded verbatim to the embedded [CaptureCameraScreen]
-  /// for the MAIN image prepare step (2560px/5MB, spec §4.2). The
-  /// thumbnail step below always builds its own dedicated
-  /// [CaptureImagePreparer] instance at the 400px/q75 policy — this
-  /// factory is never reused for it, so overriding one never silently
-  /// changes the other's numbers.
+  /// Test seam for the MAIN image prepare step (2560px/5MB, spec §4.2),
+  /// passed to [StoryPostPipeline]. The thumbnail step always builds its
+  /// own [CaptureImagePreparer] at the 400px/q75 policy — this factory is
+  /// never reused for it, so overriding one never silently changes the
+  /// other's numbers.
   final CaptureImagePreparer Function()? imagePreparerFactory;
 
   /// Test seam for the thumbnail-policy [CaptureImagePreparer] itself
@@ -118,8 +104,8 @@ class StoryCameraScreen extends ConsumerStatefulWidget {
   /// with the thumbnail policy.
   final CaptureImagePreparer Function()? thumbnailPreparerFactory;
 
-  /// Test seam for the video frame-grab this screen uses to build a
-  /// video's thumbnail source frame. `video_thumbnail`'s platform channel
+  /// Test seam for the video frame grab [StoryPostPipeline] uses to build
+  /// a video's thumbnail source frame. `video_thumbnail`'s platform channel
   /// has no implementation on a test host (the same gap
   /// [ChatVideoPreparer]'s own `VideoThumbnail.thumbnailData` call hits),
   /// so a widget test cannot exercise the real grab — this seam lets one
@@ -148,193 +134,206 @@ class _StoryCameraScreenState extends ConsumerState<StoryCameraScreen> {
   final GlobalKey<CaptureCameraScreenState> _captureKey =
       GlobalKey<CaptureCameraScreenState>();
 
-  /// Guards against a double-enqueue: [CaptureCameraScreen] reports a
-  /// capture exactly once per take, but a story that posts twice from one
-  /// capture is exactly the failure mode the outbox's idempotency key
-  /// exists to prevent, so this is worth being certain about too.
-  bool _handled = false;
-
   /// The couple map's "Pin to our map" switch, when the map is enabled.
   StoryPinController? _pin;
 
-  /// Hides the pin switch once the take is on its way, so it never looks
-  /// changeable after the shutter.
-  bool _enqueuing = false;
+  /// The raw take on review (not yet prepared or queued), if any.
+  CapturedMedia? _review;
 
-  /// Called by the embedded [CaptureCameraScreen] once a take is
-  /// captured. Unlike the streak adapter, there is no review sheet here
-  /// (spec §6.1: the outbox queue itself, with its visible Retry/Discard,
-  /// is the review) — [CaptureCameraScreen] has already prepared the
-  /// media by the time this fires: a video through [ChatVideoPreparer]
-  /// (25MB ceiling) if it came from a hold, straight off [takePicture] if
-  /// a tap, and either way `raw` here is what
-  /// [CaptureCameraScreenState.confirmSend] would themselves resize for
-  /// an image, so this calls it explicitly to reach that same prepared
-  /// state before building the outbox record.
-  void _onCaptured(CapturedMedia raw) {
-    unawaited(_prepareAndEnqueue(raw));
+  /// A looping preview of a video take; null for a photo or until it opens.
+  VideoPlayerController? _preview;
+
+  /// The preview loops only while Attune is on screen (stories Wave 3).
+  late final VisibleOnlyPlayback _previewPlayback = VisibleOnlyPlayback(
+    isVisible: () => ref.read(appContentVisibleProvider),
+  );
+
+  @override
+  void initState() {
+    super.initState();
+    ref.listenManual<bool>(
+      appContentVisibleProvider,
+      (_, visible) => _previewPlayback.onVisibility(visible),
+    );
   }
 
-  /// Called by the embedded [CaptureCameraScreen] when a take is
-  /// discarded outright, or the user closes the camera without capturing
-  /// anything.
+  /// Share was tapped and the pipeline is running: Close hidden, back
+  /// blocked, a second Share ignored (Review Focus 5).
+  bool _posting = false;
+
+  /// Called by the embedded [CaptureCameraScreen] with the RAW take.
+  void _onCaptured(CapturedMedia raw) {
+    // One take at a time (Review Focus 5): a second report while a review
+    // is up is dropped and its file deleted, never leaked.
+    if (_review != null || _posting || !mounted) {
+      unawaited(_deleteQuietly(raw.path));
+      return;
+    }
+    setState(() => _review = raw);
+    unawaited(_startPreview(raw));
+  }
+
+  /// Called by the embedded [CaptureCameraScreen] when the user closes the
+  /// camera without a take.
   void _onCaptureCancelled() {
     if (mounted) context.pop();
   }
 
-  Future<void> _prepareAndEnqueue(CapturedMedia raw) async {
-    if (_handled) return;
-    _handled = true;
-    // Captured before the pill hides (it stays mounted offstage now, but
-    // this keeps the read independent of the overlay's lifecycle); the place
-    // is read only after the prepare below.
-    final pin = _pin;
-    if (mounted) setState(() => _enqueuing = true);
-
+  Future<void> _startPreview(CapturedMedia raw) async {
+    if (raw.type != CapturedMediaType.video) return;
+    final controller = VideoPlayerController.file(File(raw.path));
     try {
-      // confirmSend transcodes/prepares to the MAIN media policy — video
-      // through ChatVideoPreparer's 25MB ceiling, image through
-      // CaptureImagePreparer's 2560px/5MB ceiling (spec §4.2). This is
-      // the exact call StreakCameraScreen._send makes at send-tap time
-      // (not capture-completion time, deliberately — see
-      // CaptureCameraScreen.confirmSend's own doc comment); the story
-      // adapter has no separate "send tap" of its own, so this runs
-      // immediately once the take is captured.
-      final prepared = await _captureKey.currentState!.confirmSend(raw);
-      if (!mounted) return;
-
-      final utcOffsetMinutes =
-          (widget.utcOffsetMinutesReader ?? _defaultUtcOffsetMinutesReader)();
-      final thumbnailPath = await _buildThumbnail(prepared);
-      // Waits for a place lookup still in flight, so a story posted while
-      // "Finding this place…" is still pinned.
-      final place = await pin?.placeForPost();
-
-      final record = StoryOutboxRecord(
-        clientStoryId: newClientStoryId(),
-        relationshipId: widget.relationshipId,
-        localMediaPath: prepared.path,
-        localThumbnailPath: thumbnailPath,
-        mediaType: prepared.type,
-        mimeType: _mimeTypeFor(prepared.type),
-        width: prepared.width,
-        height: prepared.height,
-        durationMs: prepared.durationMs,
-        utcOffsetMinutes: utcOffsetMinutes,
-        createdAt: DateTime.now(),
-        place: place,
-      );
-
-      // Enqueue and leave: the upload (and its retries) belong entirely
-      // to the outbox controller from here (spec §6.1). This screen
-      // deliberately does NOT await the upload — that would hold the user
-      // on this screen for exactly the thing the spec says never to block
-      // on. But it DOES await the queue write itself, which is local and
-      // fast, because `enqueue` returns false when the keystore is
-      // unavailable and the capture was never queued at all. Popping on
-      // that would tell the user their story was posted when nothing
-      // exists and nothing will retry.
-      final queued = await ref
-          .read(storyOutboxProvider.notifier)
-          .enqueueLocally(record);
-      if (!queued) {
-        await _stayOnCameraAfterFailure(
-          message: 'That could not be saved. Try again.',
-        );
-        return;
-      }
-      // Pop only on the success path -- a failed prepare leaves the user
-      // on a live viewfinder to retry (see the catch blocks below), the
-      // same posture the shipped streak adapter takes on a rejected
-      // transcode (streak_camera_screen.dart's own _openReview: "Cancel
-      // means not that take, not leave the camera").
-      if (mounted) context.pop();
-    } on ChatVideoRejected catch (rejected) {
-      ChatLog.diagnostic('story video prepare rejected', rejected);
-      await _stayOnCameraAfterFailure();
-    } on CaptureImageRejected catch (rejected) {
-      ChatLog.diagnostic('story image prepare rejected', rejected);
-      await _stayOnCameraAfterFailure();
-    } catch (error, stack) {
-      ChatLog.diagnostic('story capture failed', '$error\n$stack');
-      await _stayOnCameraAfterFailure();
+      await controller.initialize();
+      await controller.setLooping(true);
+    } catch (error) {
+      // The review still offers Share with a placeholder.
+      ChatLog.diagnostic('story review preview failed', error);
+      await controller.dispose();
+      return;
     }
+    if (!mounted || !identical(_review, raw)) {
+      await controller.dispose();
+      return;
+    }
+    setState(() => _preview = controller);
+    _previewPlayback.start(controller);
   }
 
-  /// A failed prepare/thumbnail shows a snackbar and returns the camera
-  /// to a live, ready-to-retry viewfinder rather than discarding the take
-  /// and leaving (spec §6.1's "it never silently disappears" posture,
-  /// matched to the streak adapter's own failure behaviour — see F5/F6 of
-  /// this task's review). `_handled` MUST be reset here: it exists to
-  /// stop a SECOND capture from double-enqueuing while this one is still
-  /// in flight, not to permanently disable the screen after a failure —
-  /// leaving it `true` after this method returns would silently swallow
-  /// every retry the user makes, which is exactly the kind of dropped
-  /// capture this whole feature exists to avoid.
-  Future<void> _stayOnCameraAfterFailure({
-    String message = 'That could not be posted.',
-  }) async {
-    if (mounted) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text(message)));
-    }
-    _handled = false;
-    if (mounted) setState(() => _enqueuing = false);
+  Future<void> _disposePreview() async {
+    _previewPlayback.clear();
+    final controller = _preview;
+    _preview = null;
+    await controller?.dispose();
+  }
+
+  Future<void> _retake() async {
+    final raw = _review;
+    if (raw == null || _posting) return;
+    await _disposePreview();
+    await _deleteQuietly(raw.path);
+    if (!mounted) return;
+    setState(() => _review = null);
     await _captureKey.currentState?.reset();
   }
 
-  /// Spec §4.3: "for a video this is a frame grab; for an image a
-  /// downscaled rendition." Both target 400px long edge, JPEG, quality 75
-  /// — the same numbers `process-chat-media` already uses for chat
-  /// thumbnails.
-  Future<String> _buildThumbnail(CapturedMedia prepared) async {
-    if (prepared.type == CapturedMediaType.image) {
-      final thumb = await _thumbnailPreparer().prepare(prepared.path);
-      return thumb.file.path;
+  /// Close or back during review: the take has not been shared, so ask.
+  Future<void> _closeFromReview() async {
+    final raw = _review;
+    if (raw == null || _posting) return;
+    final noun = raw.type == CapturedMediaType.image ? 'photo' : 'video';
+    final discard = await showDialog<bool>(
+      context: context,
+      builder:
+          (context) => AlertDialog(
+            title: Text('Discard this $noun?'),
+            content: const Text("It hasn't been shared."),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(false),
+                child: const Text('Keep'),
+              ),
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(true),
+                style: TextButton.styleFrom(
+                  foregroundColor: Theme.of(context).colorScheme.error,
+                ),
+                child: const Text('Discard'),
+              ),
+            ],
+          ),
+    );
+    // A Share that started while the dialog was up wins.
+    if (discard != true || !mounted || _posting || !identical(_review, raw)) {
+      return;
     }
-
-    // Video: grab a frame, then run it through the SAME 400px/q75 image
-    // preparer used for the photo case, so both media types produce a
-    // thumbnail meeting the identical contract.
-    final grabber = widget.thumbnailGrabber ?? _defaultThumbnailGrabber;
-    final frameBytes = await grabber(prepared.path);
-    if (frameBytes == null) {
-      throw const StoryThumbnailFailed('thumbnail_frame_failed');
-    }
-    final rawFramePath = await _tempTargetPath('story_thumb_frame', 'jpg');
-    await File(rawFramePath).writeAsBytes(frameBytes, flush: true);
-
-    try {
-      final thumb = await _thumbnailPreparer().prepare(rawFramePath);
-      return thumb.file.path;
-    } finally {
-      await _deleteQuietly(rawFramePath);
-    }
+    await _disposePreview();
+    await _deleteQuietly(raw.path);
+    if (!mounted) return;
+    setState(() => _review = null);
+    context.pop();
   }
 
-  /// The 400px/q75 thumbnail policy (spec §4.3), always its own
-  /// [CaptureImagePreparer] instance — never [widget.imagePreparerFactory],
-  /// which is the MAIN image policy forwarded to [CaptureCameraScreen].
-  CaptureImagePreparer _thumbnailPreparer() =>
-      (widget.thumbnailPreparerFactory ??
-          () => const CaptureImagePreparer(
-            maxDimension: _thumbnailMaxDimension,
-            maxBytes: _thumbnailMaxBytes,
-            // A single fixed quality, not the main-image ladder: the
-            // spec's thumbnail policy is one number (q75), and at 400px a
-            // JPEG comes in far under 800KB at that quality regardless,
-            // so there is no need to hunt down the ladder.
-            qualityLadder: [_thumbnailQuality],
-            fallbackQuality: _thumbnailQuality,
-          ))();
-
-  Future<Uint8List?> _defaultThumbnailGrabber(String videoPath) {
-    return video_thumb.VideoThumbnail.thumbnailData(
-      video: videoPath,
-      timeMs: 0,
-      quality: 90,
-    );
+  Future<void> _share() async {
+    final raw = _review;
+    if (raw == null || _posting) return; // Review Focus 5
+    // Captured before the first await: the camera may unmount below.
+    final pipeline = ref.read(storyPostPipelineProvider);
+    final messenger = ScaffoldMessenger.of(context);
+    final pin = _pin;
+    setState(() => _posting = true);
+    StoryPostOutcome outcome;
+    try {
+      outcome = await pipeline.post(
+        StoryPostRequest(
+          raw: raw,
+          relationshipId: widget.relationshipId,
+          utcOffsetMinutes:
+              (widget.utcOffsetMinutesReader ??
+                  _defaultUtcOffsetMinutesReader)(),
+          place: pin?.placeForPost,
+          videoPreparer: widget.videoPreparerFactory,
+          imagePreparer: widget.imagePreparerFactory,
+          thumbnailPreparer: widget.thumbnailPreparerFactory,
+          thumbnailGrabber: widget.thumbnailGrabber,
+        ),
+        callerListening: () => mounted,
+      );
+    } catch (error, stack) {
+      // The pipeline reports its own failures; this only keeps the screen
+      // from being stuck with back blocked if something unexpected escapes.
+      ChatLog.diagnostic('story share failed', '$error\n$stack');
+      outcome = const StoryPostRejected('capture_failed');
+    }
+    if (!mounted) {
+      // The pipeline already queued it or raised a notice. A take it kept
+      // for another Share (NotSaved, a retryable rejection: the camera was
+      // still listening when it decided) has nobody to show it now: delete
+      // it, never leave raw plaintext in tmp/ (final review #1).
+      unawaited(_deleteQuietly(raw.path));
+      return;
+    }
+    switch (outcome) {
+      case StoryPostQueued(:final placeDropped):
+        await _disposePreview();
+        if (!mounted) return;
+        setState(() {
+          _review = null;
+          _posting = false;
+        });
+        context.pop();
+        if (placeDropped) {
+          messenger.showSnackBar(
+            const SnackBar(
+              content: Text(
+                "Shared without a place. We couldn't find where you are in time.",
+              ),
+            ),
+          );
+        }
+      case StoryPostNotSaved():
+        setState(() => _posting = false);
+        messenger.showSnackBar(
+          const SnackBar(content: Text('That could not be saved. Try again.')),
+        );
+      case StoryPostRejected(retryable: true):
+        // Not about the take (an interrupted export, say): it was kept, so
+        // the review stays up with Share ready (batch-7 review I3).
+        setState(() => _posting = false);
+        messenger.showSnackBar(
+          SnackBar(content: Text(storyPrepareRetryMessage(raw.type))),
+        );
+      case StoryPostRejected(:final code):
+        messenger.showSnackBar(
+          SnackBar(content: Text(storyPrepareFailureMessage(code, raw.type))),
+        );
+        await _disposePreview();
+        if (!mounted) return;
+        setState(() {
+          _review = null;
+          _posting = false;
+        });
+        await _captureKey.currentState?.reset();
+    }
   }
 
   /// utcOffsetMinutes comes from the device at capture time (the brief,
@@ -343,75 +342,95 @@ class _StoryCameraScreenState extends ConsumerState<StoryCameraScreen> {
   int _defaultUtcOffsetMinutesReader() =>
       DateTime.now().timeZoneOffset.inMinutes;
 
-  String _mimeTypeFor(CapturedMediaType type) => switch (type) {
-    CapturedMediaType.image => 'image/jpeg',
-    CapturedMediaType.video => 'video/mp4',
-  };
-
-  Future<String> _tempTargetPath(String prefix, String extension) async {
-    Directory dir;
-    try {
-      dir = await getTemporaryDirectory();
-    } catch (_) {
-      dir = Directory.systemTemp;
-    }
-    final name =
-        '${prefix}_${DateTime.now().microsecondsSinceEpoch}.$extension';
-    return p.join(dir.path, name);
-  }
-
   Future<void> _deleteQuietly(String path) async {
     try {
       final file = File(path);
       if (await file.exists()) await file.delete();
     } catch (_) {
-      // Best-effort cleanup of the raw frame-grab; not worth failing the
-      // post over.
+      // Best-effort cleanup of a discarded take.
     }
   }
 
   @override
+  void dispose() {
+    _preview?.dispose();
+    // Torn down without Close or Share (quick exit, a sign-out redirect, a
+    // route replaced): the take on the review is raw plaintext in tmp/, so
+    // it goes with the screen (final review #1). While posting, the
+    // pipeline owns the file (its callerListening check deletes it once
+    // this screen is gone), and _share's unmounted branch covers a take it
+    // kept.
+    final raw = _review;
+    if (raw != null && !_posting) unawaited(_deleteQuietly(raw.path));
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
-    // Embedded exactly like StreakCameraScreen: CaptureCameraScreen owns
-    // the whole viewfinder, permissions, gestures and its own busy state
-    // while confirmSend runs (isSending, driven from inside that screen).
-    // There is no preview/review layer to stack on top of it here — the
-    // outbox queue is the review (spec §6.1).
-    return Stack(
-      children: [
-        Positioned.fill(
-          child: CaptureCameraScreen(
-            key: _captureKey,
-            allow: CaptureKinds.photoAndVideo,
-            videoPreparerFactory: widget.videoPreparerFactory,
-            imagePreparerFactory: widget.imagePreparerFactory,
-            onCaptured: _onCaptured,
-            onCancelled: _onCaptureCancelled,
+    final review = _review;
+    return PopScope(
+      canPop: review == null && !_posting,
+      onPopInvokedWithResult: (didPop, _) {
+        if (didPop || _posting) return;
+        unawaited(_closeFromReview());
+      },
+      child: Stack(
+        children: [
+          Positioned.fill(
+            child: CaptureCameraScreen(
+              key: _captureKey,
+              allow: CaptureKinds.photoAndVideo,
+              // Stories show full screen: 640×480 (`medium`) is visibly soft.
+              resolutionPreset: ResolutionPreset.veryHigh,
+              // A refused microphone still leaves photos (01 #6).
+              microphoneOptional: true,
+              copy: CaptureCameraCopy.story,
+              // The shared camera hides its controls under the review.
+              isReviewing: review != null,
+              videoPreparerFactory: widget.videoPreparerFactory,
+              imagePreparerFactory: widget.imagePreparerFactory,
+              onCaptured: _onCaptured,
+              onCancelled: _onCaptureCancelled,
+            ),
           ),
-        ),
-        // Couple map: "Pin to our map", between the close and flip buttons
-        // (both at the top corners). Renders nothing with the map off.
-        // Kept mounted while a take is on its way (hidden and inert), so a
-        // failed post brings back the same switch — no second lookup or
-        // permission prompt.
-        Positioned(
-          top: Spacing.xxl,
-          left: 64,
-          right: 64,
-          child: Offstage(
-            offstage: _enqueuing,
-            child: IgnorePointer(
-              ignoring: _enqueuing,
-              child: Center(
-                child: StoryPinToggle(
-                  relationshipId: widget.relationshipId,
-                  onController: (c) => _pin = c,
+          if (review != null)
+            Positioned.fill(
+              child: StoryReviewLayer(
+                media: review,
+                videoController: _preview,
+                posting: _posting,
+                onShare: () => unawaited(_share()),
+                onRetake: () => unawaited(_retake()),
+                onClose: () => unawaited(_closeFromReview()),
+              ),
+            ),
+          // "Pin to our map" (couple map): on the live camera and on the
+          // review, read when Share is tapped. Renders nothing with the map
+          // off. Kept mounted while sharing (hidden and inert), so a failed
+          // share brings back the same switch with no second lookup or
+          // prompt. Keyed: the review slot above appears and goes, and an
+          // unkeyed pill would be rebuilt fresh (a second lookup, its state
+          // lost) every time it shifts position in this Stack.
+          Positioned(
+            key: const ValueKey('story-pin-slot'),
+            top: Spacing.xxl,
+            left: 64,
+            right: 64,
+            child: Offstage(
+              offstage: _posting,
+              child: IgnorePointer(
+                ignoring: _posting,
+                child: Center(
+                  child: StoryPinToggle(
+                    relationshipId: widget.relationshipId,
+                    onController: (c) => _pin = c,
+                  ),
                 ),
               ),
             ),
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 }

@@ -20,7 +20,8 @@
 /// Four states, verbatim from spec §5.1:
 ///   - Mine, empty            -> empty ring, a `+` in the middle.
 ///   - Mine, has stories      -> newest thumbnail fills the circle, a `+`
-///                               badge bottom-right.
+///                               badge at the bottom end, whose 48 dp
+///                               target hangs outside the ring (07a V10).
 ///   - Partner's, empty       -> renders NOTHING (handled by the caller,
 ///                               which simply does not place this widget
 ///                               in the row at all — see StoryRingsRow).
@@ -34,12 +35,17 @@
 /// unviewed, faded once seen").
 library;
 
+import 'dart:async';
 import 'dart:io';
 import 'dart:math' as math;
+import 'dart:typed_data';
 
 import 'package:attune/core/ui/motion/reduce_motion.dart';
+import 'package:attune/features/stories/domain/story_ring_copy.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
+import 'package:flutter_cache_manager/flutter_cache_manager.dart';
 
 /// Diameter of the thumbnail circle itself, excluding the segmented ring
 /// stroke and its padding. Matches the app's other avatar-scale circular
@@ -63,6 +69,47 @@ const double kStoryRingGap = 3;
 /// read as a solid circle anyway").
 const int kStoryRingMaxSegments = 12;
 
+/// The ring's own square: the photo, the gap and the stroke on each side.
+const double kStoryRingOuterDiameter =
+    kStoryRingThumbnailDiameter + 2 * (kStoryRingGap + kStoryRingStrokeWidth);
+
+/// The drawn corner `+` on my ring.
+const double kStoryRingBadgeDiameter = 20;
+
+/// Within this distance of the badge's centre a tap is the badge's, even
+/// over the photo: the drawn `+` and 4 dp.
+const double kStoryRingBadgeSlop = kStoryRingBadgeDiameter / 2 + 4;
+
+/// How far my ring's box reaches past the ring on the end and bottom
+/// sides, so the `+`'s 48 dp target (centred on the drawn badge) lies
+/// mostly outside the photo (07a V10).
+const double kStoryRingPlusOverhang =
+    kMinInteractiveDimension / 2 - kStoryRingBadgeDiameter / 2;
+
+/// The square my ring occupies when it draws the `+`.
+const double kStoryRingMineExtent =
+    kStoryRingOuterDiameter + kStoryRingPlusOverhang;
+
+/// Whether [local], a point in the `+` target's own 48 dp box, belongs to
+/// the `+` (07a V10). On the drawn badge it always does; over the photo it
+/// does not, so the photo opens the reel; elsewhere in the box it does.
+bool storyPlusTargetContains(Offset local, {required TextDirection direction}) {
+  const box = kMinInteractiveDimension;
+  if (local.dx < 0 || local.dy < 0 || local.dx > box || local.dy > box) {
+    return false;
+  }
+  const badge = Offset(box / 2, box / 2);
+  if ((local - badge).distance <= kStoryRingBadgeSlop) return true;
+  // The target starts 35 dp into the ring on both axes, so the photo's
+  // centre sits half a dp before the box (mirrored right to left).
+  const inset = kStoryRingOuterDiameter / 2 - (kStoryRingMineExtent - box);
+  final photo = Offset(
+    direction == TextDirection.ltr ? inset : box - inset,
+    inset,
+  );
+  return (local - photo).distance > kStoryRingThumbnailDiameter / 2;
+}
+
 class StoryRing extends StatelessWidget {
   const StoryRing({
     super.key,
@@ -71,10 +118,13 @@ class StoryRing extends StatelessWidget {
     this.segmentCount = 0,
     this.unviewedCount = 0,
     this.thumbnailUrl,
+    this.thumbnailCacheKey,
     this.localThumbnailPath,
+    this.localThumbnailBytes,
     this.pendingProgress,
     this.onTap,
     this.onTapPlus,
+    this.showPlusBadge = true,
     required this.semanticLabel,
   }) : assert(
          segmentCount >= 0,
@@ -88,7 +138,8 @@ class StoryRing extends StatelessWidget {
        );
 
   /// True for the current user's own ring. Drives the `+` affordance —
-  /// present regardless of [hasStories] — and which corner it sits in.
+  /// drawn whenever [showPlusBadge] is true, with or without [hasStories]:
+  /// centred on the empty outline, or at the trailing bottom corner.
   final bool isMine;
 
   /// Whether there is a thumbnail to show. The caller decides this; see
@@ -112,11 +163,22 @@ class StoryRing extends StatelessWidget {
   /// server has not produced a thumbnail yet).
   final String? thumbnailUrl;
 
+  /// The thumbnail's storage key: what its bytes are cached under, so a
+  /// re-signed URL never re-downloads (E), and what is drawn from disk when
+  /// there is no URL yet or signing failed.
+  final String? thumbnailCacheKey;
+
   /// A local file path for a pending outbox capture's thumbnail (spec
   /// §6.1 — "the capture is visible before it is posted"). Takes
   /// priority over [thumbnailUrl] when both are set, since a pending
   /// local capture is more current than any server-known thumbnail.
   final String? localThumbnailPath;
+
+  /// The thumbnail of a story that just posted (03 M1), in memory: its
+  /// local file is already deleted and the summary may not know it yet.
+  /// With [thumbnailCacheKey] it is the stand-in until the disk copy is
+  /// found (batch-4 review #1).
+  final Uint8List? localThumbnailBytes;
 
   /// 0..1 upload progress for a pending outbox item. When non-null, an
   /// indeterminate-look progress ring replaces the segmented-view ring
@@ -133,10 +195,15 @@ class StoryRing extends StatelessWidget {
   /// when [isMine].
   final VoidCallback? onTapPlus;
 
+  /// Draws my `+` (only when [isMine]). The calendar passes false: a past
+  /// day's ring has no camera, and a drawn `+` that does nothing misleads.
+  final bool showPlusBadge;
+
   /// Full accessible description read for the ring as a whole. The `+`
-  /// affordance gets its own nested Semantics so it stays reachable and
-  /// separately labelled as a button, per the brief's accessibility
-  /// requirement.
+  /// affordance is a separate, sibling Semantics node (not nested in the
+  /// ring's), so it stays reachable and separately labelled as a button,
+  /// per the brief's accessibility requirement. Mine-empty has no ring
+  /// node at all: the `+` is the whole control.
   final String semanticLabel;
 
   int get _cappedSegments => math.min(segmentCount, kStoryRingMaxSegments);
@@ -146,82 +213,24 @@ class StoryRing extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
-    final outerDiameter =
-        kStoryRingThumbnailDiameter +
-        2 * (kStoryRingGap + kStoryRingStrokeWidth);
+    final reduceMotion = reduceMotionOf(context);
 
-    final ring = SizedBox(
-      width: outerDiameter,
-      height: outerDiameter,
-      child: Stack(
-        alignment: Alignment.center,
-        children: [
-          if (pendingProgress != null)
-            _PendingRing(
-              progress: pendingProgress!,
-              diameter: outerDiameter,
-              strokeWidth: kStoryRingStrokeWidth,
-              color: colorScheme.primary,
-              reduceMotion: reduceMotionOf(context),
-            )
-          else if (hasStories)
-            CustomPaint(
-              size: Size.square(outerDiameter),
-              painter: _SegmentedRingPainter(
-                segmentCount: _cappedSegments,
-                unviewedCount: math.min(unviewedCount, _cappedSegments),
-                solid: _solid,
-                brightColor: colorScheme.primary,
-                // 0.4 rather than something lower: checked against a
-                // rendered golden in BOTH themes — light mode's primary
-                // green washes out against a near-white background well
-                // before dark mode's contrast problem shows up, so the
-                // value is picked for the harder (light) case. Still
-                // clearly dimmer than the full-opacity bright arcs next
-                // to it in both themes.
-                fadedColor: colorScheme.primary.withValues(alpha: 0.4),
-                strokeWidth: kStoryRingStrokeWidth,
-              ),
-            ),
-          _Thumbnail(
-            diameter: kStoryRingThumbnailDiameter,
-            hasStories: hasStories,
-            thumbnailUrl: thumbnailUrl,
-            localThumbnailPath: localThumbnailPath,
-            isMine: isMine,
-            colorScheme: colorScheme,
-          ),
-          if (isMine)
-            Positioned(
-              right: 0,
-              bottom: 0,
-              child: _PlusBadge(
-                // Mine-empty puts the + dead-center over an empty ring
-                // (spec §5.1); mine-with-stories is a corner badge. Both
-                // are the same widget at two different Alignments so the
-                // tap target/semantics logic lives in one place.
-                filled: hasStories,
-                colorScheme: colorScheme,
-                onTap: onTapPlus,
-              ),
-            ),
-        ],
-      ),
-    );
-
-    // mine-empty centers the + INSIDE the ring instead of badge-corner —
-    // rebuild that one layout case rather than branching the Stack above
-    // for a single positional difference.
-    final content = isMine && !hasStories
-        ? SizedBox(
-            width: outerDiameter,
-            height: outerDiameter,
+    // Mine, empty: the outline (or the posting sweep) with the `+` in the
+    // middle. The `+` is the whole control, so there is no ring button to
+    // label (a second node with the same label read it twice).
+    if (isMine && !hasStories) {
+      return SizedBox.square(
+        dimension: showPlusBadge ? kStoryRingMineExtent : kStoryRingOuterDiameter,
+        child: Align(
+          alignment: AlignmentDirectional.topStart,
+          child: SizedBox.square(
+            dimension: kStoryRingOuterDiameter,
             child: Stack(
               alignment: Alignment.center,
               children: [
                 if (pendingProgress == null)
                   CustomPaint(
-                    size: Size.square(outerDiameter),
+                    size: const Size.square(kStoryRingOuterDiameter),
                     painter: _EmptyRingPainter(
                       color: colorScheme.outline,
                       strokeWidth: kStoryRingStrokeWidth,
@@ -230,48 +239,89 @@ class StoryRing extends StatelessWidget {
                 else
                   _PendingRing(
                     progress: pendingProgress!,
-                    diameter: outerDiameter,
+                    diameter: kStoryRingOuterDiameter,
                     strokeWidth: kStoryRingStrokeWidth,
                     color: colorScheme.primary,
-                    reduceMotion: reduceMotionOf(context),
+                    reduceMotion: reduceMotion,
                   ),
-                _PlusBadge(
-                  filled: true,
-                  centered: true,
-                  colorScheme: colorScheme,
-                  onTap: onTapPlus,
-                ),
+                if (showPlusBadge)
+                  _PlusBadge(
+                    centered: true,
+                    colorScheme: colorScheme,
+                    onTap: onTapPlus,
+                  ),
               ],
             ),
-          )
-        : ring;
+          ),
+        ),
+      );
+    }
 
-    // Mine-empty has no outer tap target at all — the `+` badge (already
-    // its own Semantics(button: true)) IS the entire interactive surface,
-    // so wrapping it in a second Semantics with the same label here would
-    // merge into one node with the label duplicated ("Add to your
-    // story\nAdd to your story"), which is what actually happened before
-    // this guard existed — caught by story_rings_test.dart's `+`
-    // reachability assertion doing an exact bySemanticsLabel match.
-    if (isMine && !hasStories) return content;
-
-    return Semantics(
-      // container + explicitChildNodes stop this label from merging with
-      // the `+` badge's own nested Semantics node below (finding F3): the
-      // badge is a distinct control (opens the camera) from the ring
-      // itself (opens the reel), and without a boundary here Flutter
-      // collapses adjacent Semantics into one node — worse, non-
-      // deterministically, only once `onTap` becomes non-null (i.e. once
-      // Task 4 wires `onOpenMine`), which is exactly the "silent
-      // regression on the next task" the review flagged.
+    final ring = Semantics(
       container: true,
-      explicitChildNodes: true,
       label: semanticLabel,
       button: onTap != null,
       child: GestureDetector(
         onTap: onTap,
         behavior: HitTestBehavior.opaque,
-        child: content,
+        child: SizedBox.square(
+          key: const ValueKey('story-ring-visual'),
+          dimension: kStoryRingOuterDiameter,
+          child: Stack(
+            alignment: Alignment.center,
+            children: [
+              if (pendingProgress != null)
+                _PendingRing(
+                  progress: pendingProgress!,
+                  diameter: kStoryRingOuterDiameter,
+                  strokeWidth: kStoryRingStrokeWidth,
+                  color: colorScheme.primary,
+                  reduceMotion: reduceMotion,
+                )
+              else if (hasStories)
+                CustomPaint(
+                  size: const Size.square(kStoryRingOuterDiameter),
+                  painter: _SegmentedRingPainter(
+                    segmentCount: _cappedSegments,
+                    unviewedCount: math.min(unviewedCount, _cappedSegments),
+                    solid: _solid,
+                    brightColor: colorScheme.primary,
+                    // 0.4: checked against rendered goldens in both themes
+                    // (light mode's green washes out first).
+                    fadedColor: colorScheme.primary.withValues(alpha: 0.4),
+                    strokeWidth: kStoryRingStrokeWidth,
+                  ),
+                ),
+              _Thumbnail(
+                diameter: kStoryRingThumbnailDiameter,
+                thumbnailUrl: thumbnailUrl,
+                thumbnailCacheKey: thumbnailCacheKey,
+                localThumbnailPath: localThumbnailPath,
+                localThumbnailBytes: localThumbnailBytes,
+                colorScheme: colorScheme,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+    if (!isMine || !showPlusBadge) return ring;
+
+    // My ring with the corner `+`: the ring at the leading top, the `+`'s
+    // 48 dp target at the trailing bottom, hanging [kStoryRingPlusOverhang]
+    // past the ring. The target refuses taps over the photo
+    // ([storyPlusTargetContains]); those fall through to the ring.
+    return SizedBox.square(
+      dimension: kStoryRingMineExtent,
+      child: Stack(
+        children: [
+          PositionedDirectional(start: 0, top: 0, child: ring),
+          PositionedDirectional(
+            end: 0,
+            bottom: 0,
+            child: _PlusBadge(colorScheme: colorScheme, onTap: onTapPlus),
+          ),
+        ],
       ),
     );
   }
@@ -280,83 +330,220 @@ class StoryRing extends StatelessWidget {
 class _Thumbnail extends StatelessWidget {
   const _Thumbnail({
     required this.diameter,
-    required this.hasStories,
     required this.thumbnailUrl,
+    required this.thumbnailCacheKey,
     required this.localThumbnailPath,
-    required this.isMine,
+    required this.localThumbnailBytes,
     required this.colorScheme,
   });
 
   final double diameter;
-  final bool hasStories;
   final String? thumbnailUrl;
+  final String? thumbnailCacheKey;
   final String? localThumbnailPath;
-  final bool isMine;
+  final Uint8List? localThumbnailBytes;
   final ColorScheme colorScheme;
 
   @override
   Widget build(BuildContext context) {
-    // Mine-empty: no thumbnail circle at all, just the outline ring and
-    // the + drawn by the parent — nothing to clip/fill here.
-    if (isMine && !hasStories) return const SizedBox.shrink();
-
+    final neutral = ColoredBox(color: colorScheme.surfaceContainerHighest);
+    // Decoded at the size shown, not the 400 px file (03 L5).
+    final decodeWidth = storyThumbnailDecodeWidth(
+      diameter,
+      MediaQuery.maybeDevicePixelRatioOf(context) ?? 3,
+    );
     final localPath = localThumbnailPath;
+    final bytes = localThumbnailBytes;
+    final memory = bytes == null
+        ? null
+        : Image.memory(
+            bytes,
+            fit: BoxFit.cover,
+            cacheWidth: decodeWidth,
+            gaplessPlayback: true,
+            errorBuilder: (_, __, ___) => neutral,
+          );
     final url = thumbnailUrl;
-    Widget image;
+    final key = thumbnailCacheKey;
+    final Widget image;
     if (localPath != null && localPath.isNotEmpty) {
-      // A pending outbox capture: the file is on-disk app-private
-      // storage, never a network URL (spec §6.1).
+      // A pending capture: app-private storage, never a URL (spec §6.1).
       image = Image.file(
         File(localPath),
         fit: BoxFit.cover,
-        errorBuilder: (_, __, ___) =>
-            ColoredBox(color: colorScheme.surfaceContainerHighest),
+        cacheWidth: decodeWidth,
+        errorBuilder: (_, __, ___) => neutral,
       );
+    } else if (key != null && key.isNotEmpty) {
+      // One widget whether or not the URL has landed, so the copy found on
+      // disk stays up until the network image is ready (no grey blink on a
+      // cold start; batch-2 review #4), and is what shows when signing
+      // failed (03 M5). A just-posted story's bytes stand in until then
+      // (batch-4 review #1).
+      image = StoryKeyCachedImage(
+        storageKey: key,
+        imageUrl: url,
+        decodeWidth: decodeWidth,
+        fallback: memory ?? neutral,
+      );
+    } else if (memory != null) {
+      image = memory;
     } else if (url != null && url.isNotEmpty) {
       image = CachedNetworkImage(
         imageUrl: url,
+        memCacheWidth: decodeWidth,
         fit: BoxFit.cover,
         fadeInDuration: const Duration(milliseconds: 150),
-        placeholder: (_, __) =>
-            ColoredBox(color: colorScheme.surfaceContainerHighest),
-        errorWidget: (_, __, ___) =>
-            ColoredBox(color: colorScheme.surfaceContainerHighest),
+        placeholder: (_, __) => neutral,
+        errorWidget: (_, __, ___) => neutral,
       );
     } else {
-      image = ColoredBox(color: colorScheme.surfaceContainerHighest);
+      image = neutral;
     }
-
     return ClipOval(
       child: SizedBox(width: diameter, height: diameter, child: image),
     );
   }
 }
 
+/// The decode width for a story thumbnail drawn [diameter] dp wide, sized
+/// for [BoxFit.cover] up to 16:9: a landscape thumbnail (400 x 225) fills
+/// the circle from its short edge, so its decoded height, not just its
+/// width, must reach the circle's pixel size, or it upscales blurry. A
+/// decode never upscales (ResizeImage.allowUpscaling is false), so a
+/// portrait thumbnail stays at its native 225 px width.
+int storyThumbnailDecodeWidth(double diameter, double devicePixelRatio) =>
+    (diameter * devicePixelRatio * 16 / 9).ceil();
+
+/// Finds a thumbnail already in the shared image cache under its storage
+/// key. Never throws: on a host with no cache store it answers null.
+Future<File?> storyCachedThumbnailOnDisk(String storageKey) {
+  final found = Completer<File?>();
+  runZonedGuarded(
+    () async {
+      final info = await DefaultCacheManager().getFileFromCache(storageKey);
+      if (!found.isCompleted) {
+        found.complete(info == null ? null : File(info.file.path));
+      }
+    },
+    (_, __) {
+      if (!found.isCompleted) found.complete(null);
+    },
+  );
+  return found.future;
+}
+
+/// What [StoryKeyCachedImage] uses to look up the disk. Tests replace it.
+@visibleForTesting
+Future<File?> Function(String storageKey) debugStoryCachedThumbnail =
+    storyCachedThumbnailOnDisk;
+
+/// A story thumbnail by its storage key: the network image at [imageUrl]
+/// (its bytes cached under [storageKey], never the URL; STORIES.md §4.1)
+/// once there is one, and until it is ready, or when there is no URL, the
+/// copy already on disk, else [fallback].
+class StoryKeyCachedImage extends StatefulWidget {
+  const StoryKeyCachedImage({
+    super.key,
+    required this.storageKey,
+    this.imageUrl,
+    required this.decodeWidth,
+    required this.fallback,
+    this.fadeInDuration = const Duration(milliseconds: 150),
+  });
+
+  final String storageKey;
+  final String? imageUrl;
+  final int decodeWidth;
+  final Widget fallback;
+  final Duration fadeInDuration;
+
+  @override
+  State<StoryKeyCachedImage> createState() => _StoryKeyCachedImageState();
+}
+
+class _StoryKeyCachedImageState extends State<StoryKeyCachedImage> {
+  File? _file;
+  int _lookup = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _find();
+  }
+
+  @override
+  void didUpdateWidget(StoryKeyCachedImage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.storageKey != widget.storageKey) {
+      _file = null;
+      _find();
+    }
+  }
+
+  void _find() {
+    final ticket = ++_lookup;
+    debugStoryCachedThumbnail(widget.storageKey).then((file) {
+      if (mounted && ticket == _lookup && file != null) {
+        setState(() => _file = file);
+      }
+    }, onError: (Object _) {});
+  }
+
+  Widget _onDisk() {
+    final file = _file;
+    if (file == null) return widget.fallback;
+    return Image.file(
+      file,
+      fit: BoxFit.cover,
+      cacheWidth: widget.decodeWidth,
+      gaplessPlayback: true,
+      errorBuilder: (_, __, ___) => widget.fallback,
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final url = widget.imageUrl;
+    if (url == null || url.isEmpty) return _onDisk();
+    return CachedNetworkImage(
+      imageUrl: url,
+      cacheKey: widget.storageKey,
+      useOldImageOnUrlChange: true,
+      memCacheWidth: widget.decodeWidth,
+      fit: BoxFit.cover,
+      fadeInDuration: widget.fadeInDuration,
+      // The disk copy, already decoded at this size, paints in the same
+      // frame, so the swap from it never blinks to the neutral fill.
+      placeholder: (_, __) => _onDisk(),
+      errorWidget: (_, __, ___) => _onDisk(),
+    );
+  }
+}
+
 class _PlusBadge extends StatelessWidget {
   const _PlusBadge({
-    required this.filled,
     this.centered = false,
     required this.colorScheme,
     this.onTap,
   });
 
-  final bool filled;
   final bool centered;
   final ColorScheme colorScheme;
   final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
-    final visualSize = centered ? 28.0 : 20.0;
+    final visualSize = centered ? 28.0 : kStoryRingBadgeDiameter;
     final visual = Container(
+      key: const ValueKey('story-ring-plus-visual'),
       width: visualSize,
       height: visualSize,
       decoration: BoxDecoration(
         color: colorScheme.primary,
         shape: BoxShape.circle,
-        border: centered
-            ? null
-            : Border.all(color: colorScheme.surface, width: 2),
+        border:
+            centered ? null : Border.all(color: colorScheme.surface, width: 2),
       ),
       child: Icon(
         Icons.add,
@@ -364,39 +551,57 @@ class _PlusBadge extends StatelessWidget {
         color: colorScheme.onPrimary,
       ),
     );
-
-    // The visible badge is 20-28dp, well under the 44dp (iOS HIG) / 48dp
-    // (Material) minimum tap target (finding F3). Rather than growing the
-    // circle itself (which would blow past the corner badge's intended
-    // visual scale), the hit area is a separate, larger, transparent box
-    // with the small visual centered inside it — the same pattern
-    // Material's own IconButton uses for a small icon inside a
-    // kMinInteractiveDimension hit box. For the corner badge this box is
-    // bottom-right anchored so the extra hit area does not creep over the
-    // ring's own gesture detector any more than necessary; for the
-    // mine-empty centered case it is simply centered like the visual.
-    const hitSize = kMinInteractiveDimension; // 48dp
-    final hitArea = SizedBox(
-      width: hitSize,
-      height: hitSize,
-      child: centered
-          ? Center(child: visual)
-          : Align(alignment: Alignment.bottomRight, child: visual),
-    );
-
-    return Semantics(
-      // Its own boundary (see StoryRing's outer Semantics comment) so
-      // this node never merges with the ring's — it is a distinct
-      // control (camera) from the ring (reel).
-      container: true,
-      label: 'Add to your story',
-      button: true,
-      child: GestureDetector(
-        onTap: onTap,
-        behavior: HitTestBehavior.opaque,
-        child: hitArea,
+    // Material's 48 dp minimum target with the small badge centred in it,
+    // the IconButton pattern. Its own semantics node, separate from the
+    // ring's (the camera is a different control from the reel).
+    final button = GestureDetector(
+      onTap: onTap,
+      behavior: HitTestBehavior.opaque,
+      child: SizedBox.square(
+        key: const ValueKey('story-ring-plus-target'),
+        dimension: kMinInteractiveDimension,
+        child: Center(child: visual),
       ),
     );
+    return Semantics(
+      container: true,
+      label: storyRingAddLabel,
+      button: true,
+      child: centered
+          ? button
+          : _PlusHitShape(direction: Directionality.of(context), child: button),
+    );
+  }
+}
+
+/// Lets the `+` target refuse the photo's taps (07a V10).
+class _PlusHitShape extends SingleChildRenderObjectWidget {
+  const _PlusHitShape({required this.direction, required super.child});
+
+  final TextDirection direction;
+
+  @override
+  RenderObject createRenderObject(BuildContext context) =>
+      _RenderPlusHitShape(direction);
+
+  @override
+  void updateRenderObject(
+    BuildContext context,
+    covariant _RenderPlusHitShape renderObject,
+  ) {
+    renderObject.direction = direction;
+  }
+}
+
+class _RenderPlusHitShape extends RenderProxyBox {
+  _RenderPlusHitShape(this.direction);
+
+  TextDirection direction;
+
+  @override
+  bool hitTest(BoxHitTestResult result, {required Offset position}) {
+    if (!storyPlusTargetContains(position, direction: direction)) return false;
+    return super.hitTest(result, position: position);
   }
 }
 
@@ -545,9 +750,10 @@ class _EmptyRingPainter extends CustomPainter {
 /// [kStoryRingMaxSegments]; beyond the cap the caller passes `solid:
 /// true` and this paints one unbroken stroke instead of drawing more and
 /// more arcs that would just look like a circle anyway. The newest
-/// [unviewedCount] segments (drawn first, at the top, going clockwise)
-/// paint in [brightColor]; the rest paint in [fadedColor] — faded, never
-/// omitted, per spec §5.1's "bright for unviewed, faded once seen."
+/// [unviewedCount] segments (drawn last, ending at the top: arcs run
+/// oldest first clockwise) paint in [brightColor]; the rest paint in
+/// [fadedColor] — faded, never omitted, per spec §5.1's "bright for
+/// unviewed, faded once seen."
 class _SegmentedRingPainter extends CustomPainter {
   _SegmentedRingPainter({
     required this.segmentCount,
@@ -610,8 +816,11 @@ class _SegmentedRingPainter extends CustomPainter {
     final perSegment = (2 * math.pi - totalGap) / segmentCount;
     var start = -math.pi / 2;
 
+    // Oldest first, clockwise from 12 o'clock, like the reel's bars: the
+    // seen (older) arcs first, then the new ones (03 L3, 06 #20).
+    final seen = segmentCount - unviewedCount;
     for (var i = 0; i < segmentCount; i++) {
-      final paint = i < unviewedCount ? brightPaint : fadedPaint;
+      final paint = i < seen ? fadedPaint : brightPaint;
       canvas.drawArc(rect, start, perSegment, false, paint);
       start += perSegment + _gapRadians;
     }

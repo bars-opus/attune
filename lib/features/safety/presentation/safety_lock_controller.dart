@@ -114,8 +114,8 @@ bool canReplayNotificationTap({
     );
 
 /// Whether Attune may show itself (Spec 2; research 06 §3 F2). Decided at
-/// cold start and on every return from the background, in a provider:
-/// AppPrivacyCover unmounts the app's subtree whenever it goes inactive.
+/// cold start and on every return from the background, in a provider, so
+/// the decision lives outside everything the gate hides or replaces.
 /// Every failure fails closed: signed out, or locked (review C2, I1).
 class SafetyLockController extends Notifier<SafetyLockState> {
   SafetyLockDeps get _deps => ref.read(safetyLockDepsProvider);
@@ -203,6 +203,15 @@ class SafetyLockController extends Notifier<SafetyLockState> {
     } catch (_) {
       await _signOutThenOpen();
     }
+  }
+
+  /// Attune left the screen (hidden): the return will be checked, so from
+  /// now on the lock reads `checking`, not a stale `open`. A notification
+  /// tap the OS delivers before `resumed` then waits like one during the
+  /// check, and is replayed when the lock opens (stories Wave 3 final
+  /// review M5). Locked stays locked.
+  void onHidden() {
+    if (state == SafetyLockState.open) state = SafetyLockState.checking;
   }
 
   Future<({PinCheck result, DateTime? retryAt})> unlock(String pin) async {

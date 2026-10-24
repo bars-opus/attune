@@ -642,7 +642,10 @@ class VoicePlaybackController extends StateNotifier<VoicePlaybackState>
   // `state` is the notifier's own state here.
   // ignore: avoid_renaming_method_parameters
   void didChangeAppLifecycleState(AppLifecycleState lifecycle) {
-    if (lifecycle == AppLifecycleState.paused &&
+    // Any state but resumed (stories Wave 3): the privacy cover is up from
+    // `inactive` on and the chat stays mounted behind it, so nothing else
+    // stops a note playing to a covered screen. It does not resume itself.
+    if (lifecycle != AppLifecycleState.resumed &&
         (state.isPlaying || state.isLoading)) {
       unawaited(pause());
     }

@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:attune/core/services/app_content_visibility.dart';
 import 'package:attune/features/auth/providers/auth_provider.dart';
 import 'package:attune/features/chat/data/repositories/chat_repository.dart';
 import 'package:attune/features/chat/presentation/state/chat_state.dart';
@@ -19,6 +20,12 @@ class TypingController extends StateNotifier<TypingState> {
     _repository = ref.read(chatRepositoryProvider);
     _myId = ref.read(currentUserProvider)?.id;
     _sub = _repository.watchTyping(relationshipId).listen(_onPartnerEvent);
+    // The chat stays mounted behind the privacy cover (stories Wave 3),
+    // composer focused: leaving Attune stops "typing" at once; the next
+    // keystroke after the return starts it again.
+    ref.listen<bool>(appContentVisibleProvider, (_, visible) {
+      if (!visible && _composing) onSent();
+    });
   }
 
   final Ref ref;
@@ -41,6 +48,8 @@ class TypingController extends StateNotifier<TypingState> {
   static const _inactivity = Duration(seconds: 5);
 
   void onComposingChanged(bool hasText) {
+    // Never "typing" while nobody can see Attune.
+    if (hasText && !ref.read(appContentVisibleProvider)) return;
     if (hasText) {
       _lastKeystroke = DateTime.now();
       if (!_composing) {

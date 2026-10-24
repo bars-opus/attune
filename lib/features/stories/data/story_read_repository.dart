@@ -20,19 +20,17 @@
 ///    only correct reaction is to re-read through the RPCs below, which
 ///    remain the sole authority (spec §5.5, "Realtime is a refetch signal,
 ///    not a second source of truth").
-/// 3. **Signed URLs are minted per request and never cached.** Unlike
-///    `supabase_chat_repository.dart`'s `createSignedMediaUrl`, which
-///    deliberately caches within a safety margin, [signMediaUrl] here
-///    calls `createSignedUrl` fresh every time and stores nothing. The
-///    spec is explicit that a cached story URL can outlive the deletion
-///    it is supposed to respect (§4.5's whole point is that the TTL is
-///    the ONLY thing bounding an already-issued URL) — caching would
-///    silently widen that bound. This is a deliberate divergence from the
-///    brief's "reuse `createSignedMediaUrl`'s caching shape" instruction:
-///    the design spec is binding authority above the brief (task
-///    preamble), and the spec's global constraint ("mint per request,
-///    NEVER store or cache") directly contradicts caching. Only the
-///    bucket-name/TTL-constant SHAPE is reused, not the cache map.
+/// 3. **This repository signs fresh on every call and stores nothing.**
+///    Unlike `supabase_chat_repository.dart`'s `createSignedMediaUrl`,
+///    which keeps a cache map, [signMediaUrl] here calls
+///    `createSignedUrl` every time. Reuse lives above it, in memory only:
+///    the reel's screen-local reuse (Wave 1) and, since Wave 4, the
+///    per-storage-key `StorySignedUrlCache` the rings and the calendar
+///    share (STORIES.md §4.1 as amended). Both reuse a URL only while its
+///    request is under 540 s old, never write it to disk, and forget it on
+///    sign-out, quick exit, a relationship's pause or end, and delete, so
+///    the 600 s TTL still bounds every issued URL (§4.5). Only the
+///    bucket-name/TTL-constant SHAPE of chat's code is reused here.
 ///
 /// Follows `story_repository.dart`'s conventions: an abstract gateway
 /// interface (so tests can fake it instead of mocking the final,
@@ -46,8 +44,14 @@ library;
 import 'dart:async';
 
 import 'package:attune/features/stories/data/story_repository.dart';
+import 'package:clock/clock.dart';
 import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+
+/// How long a story stays in the reel: `expires_at = created_at + 24h` is a
+/// CHECK on the table (STORIES.md §3.2). Used only to schedule a re-read
+/// or to drop stale cached rows, never to decide expiry.
+const Duration kStoryLifetime = Duration(hours: 24);
 
 /// One row of `get_story_ring_summary` — spec §5.5 / the RPC's own
 /// doc-comment (`20260938080000_stories_read_rpcs.sql`).
@@ -69,6 +73,8 @@ class StoryRingSummary {
     required this.unviewedCount,
     required this.newestThumbnailKey,
     required this.newestCreatedAt,
+    this.nextExpiresAt,
+    this.serverNow,
   });
 
   factory StoryRingSummary.fromRow(Map<String, dynamic> row) {
@@ -78,6 +84,12 @@ class StoryRingSummary {
       unviewedCount: (row['unviewed_count'] as num).toInt(),
       newestThumbnailKey: '${row['newest_thumbnail_key']}',
       newestCreatedAt: DateTime.parse('${row['newest_created_at']}'),
+      nextExpiresAt: row['next_expires_at'] == null
+          ? null
+          : DateTime.parse('${row['next_expires_at']}'),
+      serverNow: row['server_now'] == null
+          ? null
+          : DateTime.parse('${row['server_now']}'),
     );
   }
 
@@ -97,6 +109,28 @@ class StoryRingSummary {
 
   final String newestThumbnailKey;
   final DateTime newestCreatedAt;
+
+  /// The soonest `expires_at` among this author's active stories, once the
+  /// server returns it (Wave 5); null before.
+  final DateTime? nextExpiresAt;
+
+  /// The server's clock when this summary was read (Wave 5; null from an
+  /// older server). Used only to correct the expiry timer for a phone clock
+  /// that is off (Wave 4 M-6); never stored by [toRow], so the last-known
+  /// snapshot is not rewritten by a clock change alone.
+  final DateTime? serverNow;
+
+  /// The RPC row shape, for this phone's last-known snapshot (keys, never
+  /// URLs).
+  Map<String, Object?> toRow() => {
+    'author_id': authorId,
+    'active_count': activeCount,
+    'unviewed_count': unviewedCount,
+    'newest_thumbnail_key': newestThumbnailKey,
+    'newest_created_at': newestCreatedAt.toUtc().toIso8601String(),
+    if (nextExpiresAt != null)
+      'next_expires_at': nextExpiresAt!.toUtc().toIso8601String(),
+  };
 }
 
 /// One row from `story_items` as returned by `list_active_story_items` /
@@ -244,6 +278,7 @@ class StoryDayCount {
     int? dayItemCount,
     this.newestThumbnailKey,
     this.newestCreatedAt,
+    this.unviewedCount,
   }) : dayItemCount = dayItemCount ?? itemCount;
 
   factory StoryDayCount.fromRow(Map<String, dynamic> row) {
@@ -264,6 +299,7 @@ class StoryDayCount {
       newestCreatedAt: newestCreatedAt == null
           ? null
           : DateTime.parse('$newestCreatedAt'),
+      unviewedCount: (row['unviewed_count'] as num?)?.toInt(),
     );
   }
 
@@ -286,6 +322,11 @@ class StoryDayCount {
   final String? newestThumbnailKey;
 
   final DateTime? newestCreatedAt;
+
+  /// The caller's unviewed stories of [authorId] on [occurredOn] (Wave 5;
+  /// always 0 on the caller's own rows). Null from an older server: the day
+  /// sheet then counts the loaded items instead.
+  final int? unviewedCount;
 }
 
 /// Every server call the READ side of stories makes.
@@ -321,6 +362,10 @@ abstract class StoryReadGateway {
     required DateTime occurredOn,
     StoryPageCursor? after,
     int limit = 50,
+
+    /// Only this author's stories (Wave 5); null is the whole day. An older
+    /// server ignores it, so callers keep their own author filter.
+    String? authorId,
   });
 
   /// `mark_story_viewed`.
@@ -342,10 +387,11 @@ abstract class StoryReadGateway {
   /// posture as the insert trigger's one generic message).
   Future<StoryReplyTarget?> getReplyTarget({required String storyItemId});
 
-  /// Mints a FRESH 600-second signed URL for [storageKey] — never cached,
-  /// never reused across calls. Returns null if signing fails (mirrors
-  /// `supabase_chat_repository.dart`'s `createSignedMediaUrl`, which
-  /// treats a signing failure as "no url" rather than throwing).
+  /// Mints a FRESH 600-second signed URL for [storageKey] on every call;
+  /// the gateway itself keeps nothing (in-memory reuse, at most 540 s, is
+  /// `StorySignedUrlCache`'s job, §4.1). Returns null if signing fails
+  /// (mirrors `supabase_chat_repository.dart`'s `createSignedMediaUrl`,
+  /// which treats a signing failure as "no url" rather than throwing).
   Future<String?> signMediaUrl(String storageKey);
 
   /// Emits `void` — never the row's payload — whenever the caller's
@@ -384,6 +430,15 @@ class StoryReadRepository implements StoryReadGateway {
 
   final Map<String, RealtimeChannel> _channels = {};
   final Map<String, StreamController<void>> _signalControllers = {};
+
+  /// When the server last answered as one that predates p_author_id
+  /// (PGRST202). Null: send the author.
+  DateTime? _dayItemsWithoutAuthorAt;
+
+  /// How long a PGRST202 is believed before asking with the author again,
+  /// so a client that hit a deploy's schema-reload window recovers without
+  /// a restart (one extra call per 10 minutes against a truly old server).
+  static const _dayItemsAuthorReprobe = Duration(minutes: 10);
 
   Map<String, dynamic> _unwrap(Object? response) {
     final data = Map<String, dynamic>.from(response! as Map);
@@ -484,12 +539,13 @@ class StoryReadRepository implements StoryReadGateway {
     required DateTime occurredOn,
     StoryPageCursor? after,
     int limit = 50,
+    String? authorId,
   }) => _guard(() async {
     String dateOnly(DateTime d) =>
         '${d.year.toString().padLeft(4, '0')}-'
         '${d.month.toString().padLeft(2, '0')}-'
         '${d.day.toString().padLeft(2, '0')}';
-    final rows = await _supabase.rpc(
+    Future<dynamic> call({required bool withAuthor}) => _supabase.rpc(
       'list_story_day_items',
       params: {
         'p_relationship_id': relationshipId,
@@ -497,11 +553,31 @@ class StoryReadRepository implements StoryReadGateway {
         'p_after_created_at': after?.createdAt.toIso8601String(),
         'p_after_id': after?.id,
         'p_limit': limit,
+        if (withAuthor) 'p_author_id': authorId,
       },
     );
+    final since = _dayItemsWithoutAuthorAt;
+    final withAuthor =
+        authorId != null &&
+        (since == null ||
+            clock.now().difference(since) >= _dayItemsAuthorReprobe);
+    dynamic rows;
+    try {
+      rows = await call(withAuthor: withAuthor);
+      if (withAuthor) _dayItemsWithoutAuthorAt = null;
+    } on PostgrestException catch (e) {
+      // An older server has only the 5-argument function. Ask again for
+      // the whole day (callers filter by author themselves) and stop
+      // sending the author for a while.
+      if (!withAuthor || e.code != 'PGRST202') rethrow;
+      _dayItemsWithoutAuthorAt = clock.now();
+      rows = await call(withAuthor: false);
+    }
     final items = (rows as List)
         .map((row) => StoryItem.fromRow(Map<String, dynamic>.from(row as Map)))
         .toList(growable: false);
+    // A short page from either server (the whole day or one author)
+    // means there is nothing more.
     return StoryItemPage(
       items: items,
       nextCursor: _nextCursorFor(items, limit),
