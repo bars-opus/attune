@@ -11,3 +11,23 @@ verify_jwt = true
 
 [functions.calendar-feed]
 verify_jwt = false
+
+# Spec 1 W2c: called by the app before sign-in; per-IP and per-number caps
+# live in otp_record_intent.
+[functions.otp-delivery-intent]
+verify_jwt = false
+
+# Spec 1 W2c: called by Supabase Auth (Send SMS Hook) with a Standard
+# Webhooks signature (SEND_SMS_HOOK_SECRET), not a user JWT.
+[functions.send-sms-hook]
+verify_jwt = false
+
+# Spec 1 W2c: the Send SMS Hook is switched on per project in the dashboard
+# (owner deploy checklist), never from this file: enabled here, every
+# `supabase start` (CI included) would need SEND_SMS_HOOK_SECRET set, and a
+# `supabase config push` would carry it to the project. To try it on a local
+# stack, uncomment and export the secret first:
+# [auth.hook.send_sms]
+# enabled = true
+# uri = "http://host.docker.internal:54321/functions/v1/send-sms-hook"
+# secrets = "env(SEND_SMS_HOOK_SECRET)"

@@ -34,6 +34,20 @@ class PublicAppConfig {
     datingOpenCountries: [],
   );
 
+  /// A read that failed with nothing cached (Spec 1 final review I-1):
+  /// [off], except flow_signin_v2, which keeps the build's default. §5.3's
+  /// "until the first fetch" means a successful one, so a weak network never
+  /// moves the router from the new sign-in back to today's mid-session.
+  factory PublicAppConfig.unread({required bool flowSignInV2}) =>
+      PublicAppConfig(
+        flowSignInV2: flowSignInV2,
+        platformAgeSignals: false,
+        supportResourcesV2: false,
+        textScaleV2: false,
+        ageSignalStorefronts: const [],
+        datingOpenCountries: const [],
+      );
+
   final bool flowSignInV2;
   final bool platformAgeSignals;
   final bool supportResourcesV2;
@@ -160,13 +174,21 @@ final publicAppConfigGatewayProvider = Provider<PublicAppConfigGateway>(
   (ref) => SupabasePublicAppConfigGateway(Supabase.instance.client),
 );
 
+/// flow_signin_v2 for this build ([Environment.flowV2Default]): before the
+/// first answer, and after a failed read with nothing cached (final review
+/// I-1). A provider only so tests can run either build.
+final flowV2BuildDefaultProvider = Provider<bool>(
+  (ref) => Environment.flowV2Default,
+);
+
 /// The cached copy, read synchronously at first use.
 final cachedPublicAppConfigProvider = Provider<PublicAppConfig?>(
   (ref) => PublicAppConfigCache(ref.watch(sharedPreferencesProvider)).read(),
 );
 
 /// The live config. A failed read keeps the cached copy, else everything is
-/// off. Re-read on resume and on a change of user (FeatureFlagRefresher).
+/// off but flow_signin_v2, which keeps the build default (I-1). Re-read on
+/// resume and on a change of user (FeatureFlagRefresher).
 final publicAppConfigProvider = FutureProvider<PublicAppConfig>((ref) async {
   final cache = PublicAppConfigCache(ref.read(sharedPreferencesProvider));
   final PublicAppConfig config;
@@ -176,7 +198,10 @@ final publicAppConfigProvider = FutureProvider<PublicAppConfig>((ref) async {
     );
   } catch (error) {
     debugPrint('[public-config] read failed: ${error.runtimeType}');
-    return cache.read() ?? PublicAppConfig.off;
+    return cache.read() ??
+        PublicAppConfig.unread(
+          flowSignInV2: ref.read(flowV2BuildDefaultProvider),
+        );
   }
   // Fire-and-forget (batch 6 review #2): a failed prefs write never costs
   // the fresh answer; the next good read writes it again.
@@ -196,7 +221,7 @@ final flowSignInV2Provider = Provider<bool>((ref) {
   final live = ref.watch(publicAppConfigProvider).valueOrNull;
   if (live != null) return live.flowSignInV2;
   return ref.watch(cachedPublicAppConfigProvider)?.flowSignInV2 ??
-      Environment.flowV2Default;
+      ref.watch(flowV2BuildDefaultProvider);
 });
 
 /// The Dating open-country list (D15): the Welcome preview, A6 and the Me

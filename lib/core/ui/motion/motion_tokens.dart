@@ -1,3 +1,4 @@
+import 'package:flutter/material.dart' show Durations;
 import 'package:flutter/widgets.dart';
 
 /// Tween fallbacks for widgets that use an implicit/explicit tween rather than a
@@ -45,3 +46,26 @@ const int kCascadeStepExpressiveMs = 70;
 /// game, or backgrounded) is simply there — iMessage never replays an arrival
 /// minutes late under your finger.
 const Duration kArrivalAnimationWindow = Duration(milliseconds: 1500);
+
+/// Spec 1 §2.2 (W2): the sign-in and onboarding steps. Material 3 durations;
+/// every step stays inside the 150–320 ms band.
+const Duration kStepForwardDuration = Durations.medium2; // 300 ms
+const Duration kStepBackDuration = Durations.medium1; // 250 ms
+
+/// The outgoing step has faded out by this point of either step.
+const Duration kStepFadeOutDuration = Duration(milliseconds: 90);
+
+/// Replaces every step (and the preview sheet) when reduce motion is on.
+const Duration kReducedMotionFade = Durations.short3; // 150 ms
+
+/// An option being selected: state layer and check.
+const Duration kSelectionDuration = Durations.short3; // 150 ms
+
+/// A correct code: the check fades in, holds, then the flow moves on.
+const Duration kCodeAcceptedHold = Duration(milliseconds: 400);
+
+/// The ceiling for the one calm celebration per path.
+const Duration kCelebrationMaxDuration = Durations.long4; // 600 ms
+
+/// The shared-axis slide distance in logical pixels, negated right to left.
+const double kSharedAxisOffset = 30;

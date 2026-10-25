@@ -2412,6 +2412,798 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Ultra Luxury'**
   String get luxuryLevelUltraLuxury;
+
+  /// No description provided for @flow_continue.
+  ///
+  /// In en, this message translates to:
+  /// **'Continue'**
+  String get flow_continue;
+
+  /// No description provided for @flow_close.
+  ///
+  /// In en, this message translates to:
+  /// **'Close'**
+  String get flow_close;
+
+  /// No description provided for @flow_back.
+  ///
+  /// In en, this message translates to:
+  /// **'Back'**
+  String get flow_back;
+
+  /// No description provided for @flow_listTwo.
+  ///
+  /// In en, this message translates to:
+  /// **'{first} and {second}'**
+  String flow_listTwo(String first, String second);
+
+  /// No description provided for @flow_countryUk.
+  ///
+  /// In en, this message translates to:
+  /// **'the UK'**
+  String get flow_countryUk;
+
+  /// No description provided for @flow_countryUs.
+  ///
+  /// In en, this message translates to:
+  /// **'the US'**
+  String get flow_countryUs;
+
+  /// No description provided for @flow_welcomeTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Love, dating and you, in one calm place.'**
+  String get flow_welcomeTitle;
+
+  /// No description provided for @flow_pathRelationshipTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'In a relationship'**
+  String get flow_pathRelationshipTitle;
+
+  /// No description provided for @flow_pathRelationshipLine.
+  ///
+  /// In en, this message translates to:
+  /// **'A private space for you and your partner.'**
+  String get flow_pathRelationshipLine;
+
+  /// No description provided for @flow_pathDatingTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Single and open to dating'**
+  String get flow_pathDatingTitle;
+
+  /// No description provided for @flow_pathDatingLine.
+  ///
+  /// In en, this message translates to:
+  /// **'A few introductions a day. Only when it\'s mutual.'**
+  String get flow_pathDatingLine;
+
+  /// No description provided for @flow_pathJustMeTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Just for me'**
+  String get flow_pathJustMeTitle;
+
+  /// No description provided for @flow_pathJustMeLine.
+  ///
+  /// In en, this message translates to:
+  /// **'Your journal, quizzes and Healing.'**
+  String get flow_pathJustMeLine;
+
+  /// No description provided for @flow_welcomeCardSemantics.
+  ///
+  /// In en, this message translates to:
+  /// **'{title}. {line} Opens a preview.'**
+  String flow_welcomeCardSemantics(String title, String line);
+
+  /// No description provided for @flow_welcomeGetStarted.
+  ///
+  /// In en, this message translates to:
+  /// **'Get started'**
+  String get flow_welcomeGetStarted;
+
+  /// No description provided for @flow_welcomeHaveAccount.
+  ///
+  /// In en, this message translates to:
+  /// **'I already have an account'**
+  String get flow_welcomeHaveAccount;
+
+  /// No description provided for @flow_welcomeHaveInvite.
+  ///
+  /// In en, this message translates to:
+  /// **'I have an invite'**
+  String get flow_welcomeHaveInvite;
+
+  /// No description provided for @flow_welcomeReadOpinions.
+  ///
+  /// In en, this message translates to:
+  /// **'Read Opinions first'**
+  String get flow_welcomeReadOpinions;
+
+  /// No description provided for @flow_welcomeFooter.
+  ///
+  /// In en, this message translates to:
+  /// **'Attune is for adults (18+) and uses your phone number to sign in.'**
+  String get flow_welcomeFooter;
+
+  /// No description provided for @flow_linkTerms.
+  ///
+  /// In en, this message translates to:
+  /// **'Terms'**
+  String get flow_linkTerms;
+
+  /// No description provided for @flow_linkPrivacy.
+  ///
+  /// In en, this message translates to:
+  /// **'Privacy'**
+  String get flow_linkPrivacy;
+
+  /// No description provided for @flow_previewRelationshipTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'A space for the two of you'**
+  String get flow_previewRelationshipTitle;
+
+  /// No description provided for @flow_previewRelationshipLine1.
+  ///
+  /// In en, this message translates to:
+  /// **'Chat, plans and memories only you two can see.'**
+  String get flow_previewRelationshipLine1;
+
+  /// No description provided for @flow_previewRelationshipLine2.
+  ///
+  /// In en, this message translates to:
+  /// **'Your journal stays yours. Your partner never sees it.'**
+  String get flow_previewRelationshipLine2;
+
+  /// No description provided for @flow_previewRelationshipLine3.
+  ///
+  /// In en, this message translates to:
+  /// **'Invite your partner with a link or a code.'**
+  String get flow_previewRelationshipLine3;
+
+  /// No description provided for @flow_previewDatingTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Introductions, not swiping'**
+  String get flow_previewDatingTitle;
+
+  /// No description provided for @flow_previewDatingLine1.
+  ///
+  /// In en, this message translates to:
+  /// **'Up to 3 introductions a day, chosen for what you both want.'**
+  String get flow_previewDatingLine1;
+
+  /// No description provided for @flow_previewDatingLine2.
+  ///
+  /// In en, this message translates to:
+  /// **'A match only when you both say yes.'**
+  String get flow_previewDatingLine2;
+
+  /// No description provided for @flow_previewDatingLine3.
+  ///
+  /// In en, this message translates to:
+  /// **'A live video selfie checks your age before your first introduction.'**
+  String get flow_previewDatingLine3;
+
+  /// No description provided for @flow_previewDatingCountries.
+  ///
+  /// In en, this message translates to:
+  /// **'Dating is open in {countries}. More countries later.'**
+  String flow_previewDatingCountries(String countries);
+
+  /// No description provided for @flow_previewJustMeTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'A private space for you'**
+  String get flow_previewJustMeTitle;
+
+  /// No description provided for @flow_previewJustMeLine1.
+  ///
+  /// In en, this message translates to:
+  /// **'A journal only you can read.'**
+  String get flow_previewJustMeLine1;
+
+  /// No description provided for @flow_previewJustMeLine2.
+  ///
+  /// In en, this message translates to:
+  /// **'Short quizzes about how you connect.'**
+  String get flow_previewJustMeLine2;
+
+  /// No description provided for @flow_previewJustMeLine3.
+  ///
+  /// In en, this message translates to:
+  /// **'Healing, after a breakup or a loss.'**
+  String get flow_previewJustMeLine3;
+
+  /// No description provided for @flow_previewJustMeLine4.
+  ///
+  /// In en, this message translates to:
+  /// **'Single, partnered or in between.'**
+  String get flow_previewJustMeLine4;
+
+  /// No description provided for @flow_guestAgeTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'What year were you born?'**
+  String get flow_guestAgeTitle;
+
+  /// No description provided for @flow_guestAgeHint.
+  ///
+  /// In en, this message translates to:
+  /// **'We ask everyone. It stays on this phone.'**
+  String get flow_guestAgeHint;
+
+  /// No description provided for @flow_guestAgeLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Year'**
+  String get flow_guestAgeLabel;
+
+  /// No description provided for @flow_guestAgeSemantics.
+  ///
+  /// In en, this message translates to:
+  /// **'Year you were born, 4 digits'**
+  String get flow_guestAgeSemantics;
+
+  /// No description provided for @flow_yearFourDigits.
+  ///
+  /// In en, this message translates to:
+  /// **'Enter the year with 4 digits, like 1994.'**
+  String get flow_yearFourDigits;
+
+  /// No description provided for @flow_yearFuture.
+  ///
+  /// In en, this message translates to:
+  /// **'That year is in the future.'**
+  String get flow_yearFuture;
+
+  /// No description provided for @flow_yearCheck.
+  ///
+  /// In en, this message translates to:
+  /// **'Check the year.'**
+  String get flow_yearCheck;
+
+  /// No description provided for @flow_ageStopTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Attune is for adults'**
+  String get flow_ageStopTitle;
+
+  /// No description provided for @flow_ageStopBody.
+  ///
+  /// In en, this message translates to:
+  /// **'You need to be 18 or older to use Attune. We haven\'t saved anything you entered.'**
+  String get flow_ageStopBody;
+
+  /// No description provided for @flow_ageStopServerLead.
+  ///
+  /// In en, this message translates to:
+  /// **'We couldn\'t create your account.'**
+  String get flow_ageStopServerLead;
+
+  /// No description provided for @flow_ageStopYouthLink.
+  ///
+  /// In en, this message translates to:
+  /// **'Support for young people'**
+  String get flow_ageStopYouthLink;
+
+  /// No description provided for @flow_inviteTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'You\'ve been invited to Attune'**
+  String get flow_inviteTitle;
+
+  /// No description provided for @flow_inviteBody.
+  ///
+  /// In en, this message translates to:
+  /// **'Someone invited you to a private space on Attune. Create your account to see who it is and to join.'**
+  String get flow_inviteBody;
+
+  /// No description provided for @flow_inviteCreate.
+  ///
+  /// In en, this message translates to:
+  /// **'Create an account'**
+  String get flow_inviteCreate;
+
+  /// No description provided for @flow_inviteCodeTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Enter your invite code'**
+  String get flow_inviteCodeTitle;
+
+  /// No description provided for @flow_inviteCodeLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Invite code'**
+  String get flow_inviteCodeLabel;
+
+  /// No description provided for @flow_inviteCodeError.
+  ///
+  /// In en, this message translates to:
+  /// **'Codes have 6 letters and numbers. Check it with the person who sent it.'**
+  String get flow_inviteCodeError;
+
+  /// No description provided for @flow_tryAgain.
+  ///
+  /// In en, this message translates to:
+  /// **'Try again'**
+  String get flow_tryAgain;
+
+  /// No description provided for @flow_nameTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'What should we call you?'**
+  String get flow_nameTitle;
+
+  /// No description provided for @flow_nameHint.
+  ///
+  /// In en, this message translates to:
+  /// **'This is the name your partner sees. Opinions never shows it.'**
+  String get flow_nameHint;
+
+  /// No description provided for @flow_nameLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Your name'**
+  String get flow_nameLabel;
+
+  /// No description provided for @flow_nameNeedsLetter.
+  ///
+  /// In en, this message translates to:
+  /// **'Add a name with at least one letter.'**
+  String get flow_nameNeedsLetter;
+
+  /// No description provided for @flow_nameTooLong.
+  ///
+  /// In en, this message translates to:
+  /// **'Use 40 characters or fewer.'**
+  String get flow_nameTooLong;
+
+  /// No description provided for @flow_dobTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'What\'s your date of birth?'**
+  String get flow_dobTitle;
+
+  /// No description provided for @flow_dobHint.
+  ///
+  /// In en, this message translates to:
+  /// **'We only ever show your age, never your birthday.'**
+  String get flow_dobHint;
+
+  /// No description provided for @flow_dobExample.
+  ///
+  /// In en, this message translates to:
+  /// **'For example, {example}'**
+  String flow_dobExample(String example);
+
+  /// No description provided for @flow_dobDay.
+  ///
+  /// In en, this message translates to:
+  /// **'Day'**
+  String get flow_dobDay;
+
+  /// No description provided for @flow_dobMonth.
+  ///
+  /// In en, this message translates to:
+  /// **'Month'**
+  String get flow_dobMonth;
+
+  /// No description provided for @flow_dobYear.
+  ///
+  /// In en, this message translates to:
+  /// **'Year'**
+  String get flow_dobYear;
+
+  /// No description provided for @flow_dobDaySemantics.
+  ///
+  /// In en, this message translates to:
+  /// **'Day of birth'**
+  String get flow_dobDaySemantics;
+
+  /// No description provided for @flow_dobMonthSemantics.
+  ///
+  /// In en, this message translates to:
+  /// **'Month of birth'**
+  String get flow_dobMonthSemantics;
+
+  /// No description provided for @flow_dobYearSemantics.
+  ///
+  /// In en, this message translates to:
+  /// **'Year of birth'**
+  String get flow_dobYearSemantics;
+
+  /// No description provided for @flow_dobDayRange.
+  ///
+  /// In en, this message translates to:
+  /// **'Day must be between 1 and 31.'**
+  String get flow_dobDayRange;
+
+  /// No description provided for @flow_dobMonthRange.
+  ///
+  /// In en, this message translates to:
+  /// **'Month must be between 1 and 12.'**
+  String get flow_dobMonthRange;
+
+  /// No description provided for @flow_dobYearDigits.
+  ///
+  /// In en, this message translates to:
+  /// **'Year must have 4 digits.'**
+  String get flow_dobYearDigits;
+
+  /// No description provided for @flow_dobNoSuchDate.
+  ///
+  /// In en, this message translates to:
+  /// **'That date doesn\'t exist. Check the day and month.'**
+  String get flow_dobNoSuchDate;
+
+  /// No description provided for @flow_dobFuture.
+  ///
+  /// In en, this message translates to:
+  /// **'That date is in the future.'**
+  String get flow_dobFuture;
+
+  /// No description provided for @flow_dobCheckYear.
+  ///
+  /// In en, this message translates to:
+  /// **'Check the year.'**
+  String get flow_dobCheckYear;
+
+  /// No description provided for @flow_dobAge.
+  ///
+  /// In en, this message translates to:
+  /// **'that makes you {age}.'**
+  String flow_dobAge(int age);
+
+  /// No description provided for @flow_phoneTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'What\'s your phone number?'**
+  String get flow_phoneTitle;
+
+  /// No description provided for @flow_phoneHint.
+  ///
+  /// In en, this message translates to:
+  /// **'We\'ll text you a code to sign in. We never show your number to anyone.'**
+  String get flow_phoneHint;
+
+  /// No description provided for @flow_phoneLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Phone number'**
+  String get flow_phoneLabel;
+
+  /// No description provided for @flow_phoneCountrySemantics.
+  ///
+  /// In en, this message translates to:
+  /// **'Country, {country}, {code}'**
+  String flow_phoneCountrySemantics(String country, String code);
+
+  /// No description provided for @flow_phoneChooseCountry.
+  ///
+  /// In en, this message translates to:
+  /// **'Choose your country'**
+  String get flow_phoneChooseCountry;
+
+  /// No description provided for @flow_phoneSend.
+  ///
+  /// In en, this message translates to:
+  /// **'Text me a code'**
+  String get flow_phoneSend;
+
+  /// No description provided for @flow_phoneTerms.
+  ///
+  /// In en, this message translates to:
+  /// **'By continuing you agree to the Terms and Privacy Policy.'**
+  String get flow_phoneTerms;
+
+  /// No description provided for @flow_phoneTooShort.
+  ///
+  /// In en, this message translates to:
+  /// **'Check the number. It looks too short.'**
+  String get flow_phoneTooShort;
+
+  /// No description provided for @flow_phoneTooLong.
+  ///
+  /// In en, this message translates to:
+  /// **'Check the number. It looks too long.'**
+  String get flow_phoneTooLong;
+
+  /// No description provided for @flow_phoneWrongCountry.
+  ///
+  /// In en, this message translates to:
+  /// **'That doesn\'t look like a {country} number. Check the country.'**
+  String flow_phoneWrongCountry(String country);
+
+  /// No description provided for @flow_sending.
+  ///
+  /// In en, this message translates to:
+  /// **'Sending your code…'**
+  String get flow_sending;
+
+  /// No description provided for @flow_sendFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'We couldn\'t send a code. Try again or try WhatsApp.'**
+  String get flow_sendFailed;
+
+  /// No description provided for @flow_sendFailedSms.
+  ///
+  /// In en, this message translates to:
+  /// **'We couldn\'t send a code. Try again.'**
+  String get flow_sendFailedSms;
+
+  /// No description provided for @flow_tooManyCodes.
+  ///
+  /// In en, this message translates to:
+  /// **'{minutes, plural, =1{Too many codes. Try again in 1 minute.} other{Too many codes. Try again in {minutes} minutes.}}'**
+  String flow_tooManyCodes(int minutes);
+
+  /// No description provided for @flow_tooManyTries.
+  ///
+  /// In en, this message translates to:
+  /// **'Too many tries. Try again in a few minutes.'**
+  String get flow_tooManyTries;
+
+  /// No description provided for @flow_accountChecking.
+  ///
+  /// In en, this message translates to:
+  /// **'Checking your account…'**
+  String get flow_accountChecking;
+
+  /// No description provided for @flow_accountCheckFailedTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'We couldn\'t check your account'**
+  String get flow_accountCheckFailedTitle;
+
+  /// No description provided for @flow_accountCheckFailedBody.
+  ///
+  /// In en, this message translates to:
+  /// **'Check your connection and try again.'**
+  String get flow_accountCheckFailedBody;
+
+  /// No description provided for @flow_phoneUnavailable.
+  ///
+  /// In en, this message translates to:
+  /// **'Phone sign-in is unavailable right now. Please try again later.'**
+  String get flow_phoneUnavailable;
+
+  /// No description provided for @flow_codeTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Enter the code'**
+  String get flow_codeTitle;
+
+  /// No description provided for @flow_codeSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'We sent a 6-digit code to {number}.'**
+  String flow_codeSubtitle(String number);
+
+  /// No description provided for @flow_codeChangeNumber.
+  ///
+  /// In en, this message translates to:
+  /// **'Wrong number? Change it'**
+  String get flow_codeChangeNumber;
+
+  /// No description provided for @flow_codeResendIn.
+  ///
+  /// In en, this message translates to:
+  /// **'Send a new code in {time}'**
+  String flow_codeResendIn(String time);
+
+  /// No description provided for @flow_codeResend.
+  ///
+  /// In en, this message translates to:
+  /// **'Send a new code'**
+  String get flow_codeResend;
+
+  /// No description provided for @flow_codeNewest.
+  ///
+  /// In en, this message translates to:
+  /// **'Use the newest code.'**
+  String get flow_codeNewest;
+
+  /// No description provided for @flow_codeSemantics.
+  ///
+  /// In en, this message translates to:
+  /// **'Verification code, 6 digits'**
+  String get flow_codeSemantics;
+
+  /// No description provided for @flow_codeWrong.
+  ///
+  /// In en, this message translates to:
+  /// **'That code didn\'t work. Check it and try again.'**
+  String get flow_codeWrong;
+
+  /// No description provided for @flow_codeExpired.
+  ///
+  /// In en, this message translates to:
+  /// **'That code has expired. Send a new one.'**
+  String get flow_codeExpired;
+
+  /// No description provided for @flow_codeAccepted.
+  ///
+  /// In en, this message translates to:
+  /// **'Code accepted'**
+  String get flow_codeAccepted;
+
+  /// No description provided for @flow_codeCheckFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'We couldn\'t check the code right now. Try again.'**
+  String get flow_codeCheckFailed;
+
+  /// No description provided for @flow_consentTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Before you start'**
+  String get flow_consentTitle;
+
+  /// No description provided for @flow_consentUpdatedTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'We\'ve updated our terms'**
+  String get flow_consentUpdatedTitle;
+
+  /// No description provided for @flow_consentAdults.
+  ///
+  /// In en, this message translates to:
+  /// **'Attune is for adults. Everyone here is 18 or older.'**
+  String get flow_consentAdults;
+
+  /// No description provided for @flow_consentAi.
+  ///
+  /// In en, this message translates to:
+  /// **'Some Attune features use AI to give you private suggestions. In a shared space they can read your chat with your partner, and only after you both agree. What it suggests to one of you is never shown to the other.'**
+  String get flow_consentAi;
+
+  /// No description provided for @flow_consentData.
+  ///
+  /// In en, this message translates to:
+  /// **'You can download everything you\'ve added, and delete your account, any time.'**
+  String get flow_consentData;
+
+  /// No description provided for @flow_consentTermsLink.
+  ///
+  /// In en, this message translates to:
+  /// **'Terms of use'**
+  String get flow_consentTermsLink;
+
+  /// No description provided for @flow_consentPrivacyLink.
+  ///
+  /// In en, this message translates to:
+  /// **'Privacy policy'**
+  String get flow_consentPrivacyLink;
+
+  /// No description provided for @flow_consentAiLink.
+  ///
+  /// In en, this message translates to:
+  /// **'More about AI in Attune'**
+  String get flow_consentAiLink;
+
+  /// No description provided for @flow_consentAgree.
+  ///
+  /// In en, this message translates to:
+  /// **'Agree and continue'**
+  String get flow_consentAgree;
+
+  /// No description provided for @flow_consentNotNow.
+  ///
+  /// In en, this message translates to:
+  /// **'Not now'**
+  String get flow_consentNotNow;
+
+  /// No description provided for @flow_signupPhoneRequired.
+  ///
+  /// In en, this message translates to:
+  /// **'Phone sign-in is unavailable right now.'**
+  String get flow_signupPhoneRequired;
+
+  /// No description provided for @flow_saveFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'We couldn\'t save that. Try again.'**
+  String get flow_saveFailed;
+
+  /// No description provided for @flow_noAccountTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'We couldn\'t find an Attune account for this number'**
+  String get flow_noAccountTitle;
+
+  /// No description provided for @flow_noAccountBody.
+  ///
+  /// In en, this message translates to:
+  /// **'You can create one now.'**
+  String get flow_noAccountBody;
+
+  /// No description provided for @flow_noAccountCreate.
+  ///
+  /// In en, this message translates to:
+  /// **'Create an account'**
+  String get flow_noAccountCreate;
+
+  /// No description provided for @flow_noAccountOtherNumber.
+  ///
+  /// In en, this message translates to:
+  /// **'Use a different number'**
+  String get flow_noAccountOtherNumber;
+
+  /// No description provided for @flow_welcomeBack.
+  ///
+  /// In en, this message translates to:
+  /// **'Welcome back, {name}.'**
+  String flow_welcomeBack(String name);
+
+  /// No description provided for @flow_welcomeBackNoName.
+  ///
+  /// In en, this message translates to:
+  /// **'Welcome back.'**
+  String get flow_welcomeBackNoName;
+
+  /// No description provided for @flow_joinTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Join Attune'**
+  String get flow_joinTitle;
+
+  /// No description provided for @flow_joinBody.
+  ///
+  /// In en, this message translates to:
+  /// **'A private space for couples, a few introductions a day for singles, and a journal just for you.'**
+  String get flow_joinBody;
+
+  /// No description provided for @flow_phoneWhatsApp.
+  ///
+  /// In en, this message translates to:
+  /// **'Send by WhatsApp instead'**
+  String get flow_phoneWhatsApp;
+
+  /// No description provided for @flow_whatsAppTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Is WhatsApp on {number}?'**
+  String flow_whatsAppTitle(String number);
+
+  /// No description provided for @flow_whatsAppBody.
+  ///
+  /// In en, this message translates to:
+  /// **'We\'ll send the code to WhatsApp on this number. If WhatsApp is on a different number, we\'ll text you instead.'**
+  String get flow_whatsAppBody;
+
+  /// No description provided for @flow_whatsAppYes.
+  ///
+  /// In en, this message translates to:
+  /// **'Yes, send it to WhatsApp'**
+  String get flow_whatsAppYes;
+
+  /// No description provided for @flow_whatsAppNo.
+  ///
+  /// In en, this message translates to:
+  /// **'No, text me'**
+  String get flow_whatsAppNo;
+
+  /// No description provided for @flow_codeTryWhatsApp.
+  ///
+  /// In en, this message translates to:
+  /// **'Try WhatsApp'**
+  String get flow_codeTryWhatsApp;
+
+  /// No description provided for @flow_codeCallMe.
+  ///
+  /// In en, this message translates to:
+  /// **'Call me with the code'**
+  String get flow_codeCallMe;
+
+  /// No description provided for @flow_codeCalling.
+  ///
+  /// In en, this message translates to:
+  /// **'We\'re calling {number} now. The code is read out twice.'**
+  String flow_codeCalling(String number);
 }
 
 class _AppLocalizationsDelegate extends LocalizationsDelegate<AppLocalizations> {

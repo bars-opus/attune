@@ -7,7 +7,9 @@
   Also excludes chat's staged photo picks and prepared uploads (chat_picks/,
   chat_prepared/ in filesDir), and the home-screen widgets' data (Together
   and the distance widget; widget spec §4.4), and the story outbox and its
-  queued captures (STORIES.md §6.1).
+  queued captures (STORIES.md §6.1), and the guest's birth year (Spec 1
+  §3.2, attune_age_gate). The under-18 block is meant to be backed up and
+  lives in the default prefs file, which is not excluded.
 -->
 <full-backup-content>
     <exclude domain="file" path="attune_chat_cache.sqlite" />
@@ -24,4 +26,5 @@
     <exclude domain="sharedpref" path="FlutterSecureStorage.xml" />
     <exclude domain="sharedpref" path="FlutterSecureKeyStorage.xml" />
     <exclude domain="sharedpref" path="attune_safety.xml" />
+    <exclude domain="sharedpref" path="attune_age_gate.xml" />
 </full-backup-content>

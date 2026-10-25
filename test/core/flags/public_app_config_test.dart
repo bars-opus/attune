@@ -98,12 +98,14 @@ void main() {
     },
   );
 
+  // Final review I-1: everything but flow_signin_v2, which keeps the build
+  // default (a weak network never flips the router mid-session).
   test('a failed read keeps the cached copy, else everything is off', () async {
     final none = container(_Gateway(() async => throw Exception('offline')));
     final off = await none.read(publicAppConfigProvider.future);
-    expect(off.flowSignInV2, isFalse);
+    expect(off.flowSignInV2, Environment.flowV2Default);
     expect(off.datingOpenCountries, isEmpty);
-    expect(none.read(flowSignInV2Provider), isFalse);
+    expect(none.read(flowSignInV2Provider), Environment.flowV2Default);
 
     await PublicAppConfigCache(prefs).write(PublicAppConfig.fromJson(_server));
     final cached = container(_Gateway(() async => throw Exception('offline')));
@@ -144,7 +146,44 @@ void main() {
     };
     expect(PublicAppConfig.off.toJson(), allOff);
     final none = container(_Gateway(() async => throw Exception('offline')));
-    expect((await none.read(publicAppConfigProvider.future)).toJson(), allOff);
+    expect((await none.read(publicAppConfigProvider.future)).toJson(), {
+      ...allOff,
+      'flags': {
+        ...allOff['flags']!,
+        'flow_signin_v2': Environment.flowV2Default,
+      },
+    });
+  });
+
+  test('final review I-1: a failed read with nothing cached keeps the build '
+      'default for flow_signin_v2 only', () async {
+    final c = ProviderContainer(
+      overrides: [
+        sharedPreferencesProvider.overrideWithValue(prefs),
+        publicAppConfigGatewayProvider.overrideWithValue(
+          _Gateway(() async => throw Exception('offline')),
+        ),
+        flowV2BuildDefaultProvider.overrideWithValue(true),
+      ],
+    );
+    addTearDown(c.dispose);
+    final config = await c.read(publicAppConfigProvider.future);
+    expect(config.toJson(), {
+      'flags': {
+        'flow_signin_v2': true,
+        'platform_age_signals': false,
+        'support_resources_v2': false,
+        'text_scale_v2': false,
+      },
+      'config': {'age_signal_storefronts': [], 'dating_open_countries': []},
+    });
+    expect(c.read(flowSignInV2Provider), isTrue);
+    expect(c.read(datingOpenCountriesProvider), isEmpty);
+    expect(
+      PublicAppConfigCache(prefs).read(),
+      isNull,
+      reason: 'an unread config is never cached',
+    );
   });
 
   test('the public config is re-read on resume and on a change of user', () {

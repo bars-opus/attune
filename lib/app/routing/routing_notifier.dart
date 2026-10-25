@@ -1,6 +1,8 @@
 // lib/core/routing/routing_notifier.dart
 import 'dart:async';
 
+import 'package:attune/features/auth/sign_up/data/age_gate_store.dart';
+import 'package:attune/features/auth/sign_up/data/sign_up_draft_store.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -15,10 +17,97 @@ class RoutingNotifier extends ChangeNotifier {
 
   final SharedPreferences? _prefs;
 
-  RoutingNotifier({SharedPreferences? prefs, bool isFirstLaunch = false})
-    : _prefs = prefs,
-      _isFirstLaunch = isFirstLaunch {
+  RoutingNotifier({
+    SharedPreferences? prefs,
+    bool isFirstLaunch = false,
+    bool flowV2 = false,
+    bool guestAgeOk = false,
+    bool underAgeBlocked = false,
+    String? Function()? currentUserId,
+    DateTime Function()? now,
+  }) : _prefs = prefs,
+       _isFirstLaunch = isFirstLaunch,
+       _flowV2 = flowV2,
+       _guestAgeOk = guestAgeOk,
+       _underAgeBlocked = underAgeBlocked,
+       _currentUserId = currentUserId ?? _supabaseUserId,
+       _now = now ?? DateTime.now {
     _isRecoveryMode = prefs?.getBool(_kRecoveryModeKey) ?? false;
+  }
+
+  // ==================== SPEC 1 SIGN-IN (W2) ====================
+  //
+  // Read synchronously at boot (main.dart) and kept current by their
+  // owners: flowV2 by App's listener on the public config, guestAgeOk by
+  // G1, underAgeBlocked by X1. All false by default, so a notifier built
+  // without them routes exactly as before.
+
+  bool _flowV2;
+  bool _guestAgeOk;
+  bool _underAgeBlocked;
+  final String? Function() _currentUserId;
+
+  /// The clock the block and the sign-up draft are read against.
+  final DateTime Function() _now;
+
+  /// flow_signin_v2, effective: Welcome and the v2 sign-up instead of
+  /// IntroScreen and LoginScreen.
+  bool get flowV2 => _flowV2;
+
+  /// G1 was passed on this install.
+  bool get guestAgeOk => _guestAgeOk;
+
+  /// X1's 30-day device block is in force: set by X1, or found in prefs
+  /// (ruling C9: the replay's under-18 stop writes only there, and its
+  /// block holds in this session too).
+  bool get underAgeBlocked {
+    final prefs = _prefs;
+    return _underAgeBlocked ||
+        (prefs != null && AgeGateStore.readBlocked(prefs, _now()));
+  }
+
+  /// The signed-in account, read live (the router's own user field is not
+  /// kept in step with Auth).
+  String? get currentUserId => _currentUserId();
+
+  bool get isSignedIn => currentUserId != null;
+
+  /// A sign-up this phone should go back to (Spec 1 §3.3): signed out with
+  /// a code on its way (A4), or signed in as the account A4 just verified
+  /// and not yet through A5. Read from the draft at each redirect.
+  bool get signUpToResume {
+    final prefs = _prefs;
+    if (prefs == null) return false;
+    final draft = SignUpDraftStore.readFrom(prefs, _now());
+    if (draft == null) return false;
+    final userId = currentUserId;
+    return userId == null ? draft.awaitingCode : draft.verifiedUserId == userId;
+  }
+
+  void setFlowV2(bool value) {
+    if (_flowV2 == value) return;
+    _flowV2 = value;
+    notifyListeners();
+  }
+
+  void setGuestAgeOk(bool value) {
+    if (_guestAgeOk == value) return;
+    _guestAgeOk = value;
+    notifyListeners();
+  }
+
+  void setUnderAgeBlocked(bool value) {
+    if (_underAgeBlocked == value) return;
+    _underAgeBlocked = value;
+    notifyListeners();
+  }
+
+  static String? _supabaseUserId() {
+    try {
+      return Supabase.instance.client.auth.currentUser?.id;
+    } catch (_) {
+      return null;
+    }
   }
 
   User? _user;

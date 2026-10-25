@@ -3,15 +3,13 @@ import 'dart:async';
 import 'package:app_links/app_links.dart';
 import 'package:attune/app/app.dart';
 import 'package:attune/app/routing/app_router.dart';
-import 'package:attune/app/routing/routing_notifier.dart';
+import 'package:attune/app/routing/sign_in_boot.dart';
 import 'package:attune/core/config/env.dart';
 import 'package:attune/core/notifications/config/feature/notification_config.dart';
 import 'package:attune/core/notifications/config/notification_config.dart';
 import 'package:attune/core/notifications/services/onesignal_service.dart';
 import 'package:attune/core/providers/routing_providers.dart';
 import 'package:attune/core/providers/shared_prefs_provider.dart';
-import 'package:attune/core/services/shared_preferences_service.dart'
-    hide preferencesServiceProvider;
 import 'package:attune/features/auth/providers/auth_provider.dart'
     show SignOutHooks, signOutHooksProvider;
 import 'package:attune/features/chat/data/cache/chat_cache_service.dart';
@@ -23,6 +21,7 @@ import 'package:attune/features/planning/presentation/planning_providers.dart'
     show currentRelationshipIdProvider;
 import 'package:attune/features/planning/presentation/screens/planning_home_screen.dart'
     show PlanningHomeTab;
+import 'package:attune/features/auth/sign_up/data/age_gate_store.dart';
 import 'package:attune/features/onboarding/data/onboarding_store.dart';
 import 'package:flutter/material.dart';
 import 'package:attune/features/safety/data/safety_pin_store.dart';
@@ -57,10 +56,17 @@ Future<void> main() async {
   }
 
   final prefs = await SharedPreferences.getInstance();
-  final routingNotifier = RoutingNotifier(
-    prefs: prefs,
-    isFirstLaunch: PreferencesService(prefs).isFirstLaunch,
-  );
+  // Spec 1 W2a (§3.6): an under-18 block the iOS Keychain kept across a
+  // reinstall is copied back before the router reads it. Bounded: the
+  // keystore must never hold the first frame.
+  try {
+    await AgeGateStore.restoreBlock(prefs).timeout(const Duration(seconds: 1));
+  } catch (error) {
+    debugPrint('[startup] age block restore skipped: ${error.runtimeType}');
+  }
+  // Spec 1 §5.3: first launch, the flag (last public config read, else the
+  // build default), the guest gate and the under-18 block.
+  final routingNotifier = bootRoutingNotifier(prefs);
   final appRouter = createAppRouter(routingNotifier);
   final safetyLockSeed = await _safetyLockSeed();
 
@@ -226,11 +232,10 @@ Future<void> _navigateToOnboardingWhenReady() async {
   // way IntroScreen's own "Get Started" button does: persist via
   // PreferencesService, then flip RoutingNotifier synchronously so the
   // very next redirect check already sees isFirstLaunch=false.
-  final container = ProviderScope.containerOf(context, listen: false);
-  await container.read(preferencesServiceProvider).setFirstLaunchCompleted();
-  if (!context.mounted) return;
-  container.read(routingNotifierProvider).completeFirstLaunch();
-  GoRouter.of(context).go(RouteNames.onboarding);
+  // Spec 1 W2a (§5.2, R3): sign_in_boot.dart clears first launch as above,
+  // then opens RI-1 for a signed-out invitee under flow_signin_v2, today's
+  // /onboarding otherwise.
+  await openInviteLanding(context);
 }
 
 /// The distance widget's tap (widget spec §6.5): Planning → Map, once the

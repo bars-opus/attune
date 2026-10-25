@@ -1,4 +1,6 @@
+import 'package:attune/features/onboarding/data/onboarding_store.dart';
 import 'package:flutter/foundation.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 /// Records and reads EULA acceptance, so the agreement is presented once per
@@ -9,9 +11,18 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 /// SECURITY DEFINER and scoped to auth.uid(), so a caller can only ever read
 /// or write their own acceptance.
 class EulaAcceptanceService {
-  EulaAcceptanceService({SupabaseClient? client}) : _client = client;
+  EulaAcceptanceService({SupabaseClient? client, this.version = currentVersion})
+    : _client = client;
 
   final SupabaseClient? _client;
+
+  /// The version this check asks for and records: [currentVersion] with
+  /// flow_signin_v2 off, [v2Version] with it on (EulaGate picks).
+  final String version;
+
+  /// Spec 1 W2b (§3.3 A5, §5.2): the EULA v2 that A5 shows. Counsel
+  /// approves its text before flow_signin_v2 is on in production.
+  static const v2Version = '2';
 
   static const timeout = Duration(seconds: 15);
 
@@ -37,13 +48,18 @@ class EulaAcceptanceService {
   /// letting someone through without agreeing is not.
   Future<bool> needsAcceptance() async {
     final client = _safeClient;
-    if (client == null || client.auth.currentUser == null) return true;
+    final user = client?.auth.currentUser;
+    if (client == null || user == null) return true;
+
+    // Spec 1 W2b: A5's consent is queued for the server (PendingSignUp) —
+    // given already, so today's onboarding never asks a second time.
+    if (await _consentQueued(user.id)) return false;
 
     try {
       final accepted = await client
           .rpc('get_eula_acceptance')
           .timeout(timeout);
-      return accepted != currentVersion;
+      return needsFor(stored: accepted, version: version);
     } catch (error) {
       debugPrint('[eula] acceptance check failed: ${error.runtimeType}');
       return true;
@@ -60,7 +76,29 @@ class EulaAcceptanceService {
     }
 
     await client
-        .rpc('record_eula_acceptance', params: {'p_version': currentVersion})
+        .rpc('record_eula_acceptance', params: {'p_version': version})
         .timeout(timeout);
+  }
+
+  /// A stored version at or above [version] needs nothing, compared as
+  /// numbers: an account that accepted v2 is never asked to step down to v1.
+  /// No version, or one that isn't a number, asks.
+  static bool needsFor({required Object? stored, required String version}) {
+    final accepted = int.tryParse('${stored ?? ''}');
+    final wanted = int.tryParse(version) ?? 0;
+    return accepted == null || accepted < wanted;
+  }
+
+  static Future<bool> _consentQueued(String userId) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      return OnboardingStore(
+            prefs,
+            scope: '${OnboardingStore.userScopePrefix}.$userId',
+          ).pendingSignUp !=
+          null;
+    } catch (_) {
+      return false;
+    }
   }
 }

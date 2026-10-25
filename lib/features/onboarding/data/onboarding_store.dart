@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:attune/features/auth/sign_up/domain/sign_up_draft.dart';
 import 'package:attune/features/onboarding/domain/onboarding_models.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -54,6 +55,34 @@ class PendingOnboardingSubmission {
   }
 }
 
+/// A5's complete_sign_up, queued when the phone was offline (Spec 1 §3.3,
+/// §3.14) and replayed by OnboardingSyncService. The consent it carries is
+/// already given; the date of birth leaves the phone only in the replay.
+class PendingSignUp {
+  const PendingSignUp({required this.displayName, required this.birthDate});
+
+  final String displayName;
+
+  /// A UTC date.
+  final DateTime birthDate;
+
+  Map<String, dynamic> toJson() => {
+    'display_name': displayName,
+    'birth_date': SignUpDraft.dateOnly(birthDate),
+  };
+
+  static PendingSignUp? fromJson(Object? json) {
+    if (json is! Map) return null;
+    final name = json['display_name'];
+    final date = DateTime.tryParse(json['birth_date'] as String? ?? '');
+    if (name is! String || name.isEmpty || date == null) return null;
+    return PendingSignUp(
+      displayName: name,
+      birthDate: DateTime.utc(date.year, date.month, date.day),
+    );
+  }
+}
+
 DateTime _systemNow() => DateTime.now();
 
 class OnboardingStore {
@@ -76,6 +105,7 @@ class OnboardingStore {
   static const _modeKey = 'mode';
   static const _displayNameKey = 'display_name';
   static const _pendingSubmissionKey = 'pending_submission';
+  static const _pendingSignUpKey = 'pending_sign_up';
 
   /// The legacy unscoped invite key: read once, moved to the anonymous slot,
   /// deleted (Spec 1 §5.5, W1c).
@@ -169,6 +199,29 @@ class OnboardingStore {
   Future<void> clearPendingSubmission() {
     return _prefs.remove(_key(_pendingSubmissionKey));
   }
+
+  /// Spec 1 W2b: A5's call, owed to the server (this account's scope).
+  PendingSignUp? get pendingSignUp {
+    final raw = _prefs.getString(_key(_pendingSignUpKey));
+    if (raw == null || raw.isEmpty) return null;
+    try {
+      return PendingSignUp.fromJson(jsonDecode(raw));
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<void> savePendingSignUp(PendingSignUp pending) => _prefs.setString(
+    _key(_pendingSignUpKey),
+    jsonEncode(pending.toJson()),
+  );
+
+  Future<void> clearPendingSignUp() => _prefs.remove(_key(_pendingSignUpKey));
+
+  /// Spec 1 W2b: the name A1 took (or the account already had), so today's
+  /// onboarding doesn't ask for it again (see OnboardingFlow.initState).
+  Future<void> rememberDisplayName(String name) =>
+      _prefs.setString(_key(_displayNameKey), name);
 
   OnboardingMode? get mode {
     final value = _prefs.getString(_key(_modeKey));
@@ -310,6 +363,7 @@ class OnboardingStore {
     await _prefs.remove(_key(_modeKey));
     await _prefs.remove(_key(_displayNameKey));
     await _prefs.remove(_key(_pendingSubmissionKey));
+    await _prefs.remove(_key(_pendingSignUpKey));
     await _prefs.remove(_key(_pendingInviteKey));
     await _prefs.remove(pendingInviteCodeKey);
   }

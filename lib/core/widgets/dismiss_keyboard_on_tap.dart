@@ -12,6 +12,9 @@ class DismissKeyboardOnTap extends StatelessWidget {
   @override
   Widget build(BuildContext context) => GestureDetector(
         behavior: HitTestBehavior.opaque,
+        // Not an action for a screen reader: an unnamed tap on the whole
+        // sheet fails labeledTapTargetGuideline (review B8 I-1).
+        excludeFromSemantics: true,
         onTap: () => FocusScope.of(context).unfocus(),
         child: child,
       );

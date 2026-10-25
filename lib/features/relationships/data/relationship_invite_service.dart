@@ -92,6 +92,14 @@ class RelationshipInviteService {
       if (error is FunctionException && error.status == 409) {
         final details = error.details;
         final message = details is Map ? details['error'] as String? : null;
+        // Spec 1 W2 interim guard (review I-5): no account yet. The code is
+        // never shown; finishing sign-up resolves it.
+        if (message == kSignUpIncompleteError) {
+          throw const RelationshipInviteException(
+            'Could not create invite.',
+            signUpIncomplete: true,
+          );
+        }
         // Two distinct 409s share this status: the spec's 3-concurrent-
         // pending-invites cap, and the newer already-active-relationship
         // guard (create-relationship-invite's own comment explains why
@@ -186,6 +194,14 @@ class RelationshipInviteService {
 /// server keeps fixed (supabase/functions/accept-invite/index.test.ts).
 const kAlreadyInRelationshipPrefix = "You're already in a relationship";
 
+/// Both invite functions' 409 for a signed-in caller with no account yet
+/// under flow_signin_v2 (supabase/functions/_shared/sign_up_guard.ts).
+const kSignUpIncompleteError = 'signup:incomplete';
+
+/// Their 503 when the server can't read flow_signin_v2 (the guard fails
+/// closed): retryable, and never shown.
+const kFlagsUnavailableError = 'flags:unavailable';
+
 /// What a failed acceptInvite call means. accept-invite's handleError
 /// always replies with {"error": "<message>"} plus a real status: 400 bad
 /// code, 404 invalid, 409 self-accept/already-accepted/already in a
@@ -196,6 +212,23 @@ RelationshipInviteException inviteAcceptFailure(Object error) {
   if (error is FunctionException) {
     final details = error.details;
     final message = details is Map ? details['error'] as String? : null;
+    // Spec 1 W2 interim guard (review I-5): no account yet. Retryable, so
+    // the stored invite is kept and accepted once sign-up is finished (an
+    // unfinished account goes on from /home to /onboarding, whose consent
+    // step sends it to /signup under flow_signin_v2).
+    if (error.status == 409 && message == kSignUpIncompleteError) {
+      return const RelationshipInviteException(
+        'Could not accept invite.',
+        retryable: true,
+        signUpIncomplete: true,
+      );
+    }
+    if (message == kFlagsUnavailableError) {
+      return const RelationshipInviteException(
+        'Could not accept invite.',
+        retryable: true,
+      );
+    }
     return RelationshipInviteException(
       message ?? 'Could not accept invite.',
       retryable: error.status >= 500,
@@ -216,6 +249,7 @@ class RelationshipInviteException implements Exception {
     this.retryable = false,
     this.alreadyActiveRelationship = false,
     this.alreadyInRelationship = false,
+    this.signUpIncomplete = false,
   });
 
   final String message;
@@ -239,6 +273,11 @@ class RelationshipInviteException implements Exception {
   /// or paused relationship: tell them (showOpenRelationshipNotice) rather
   /// than drop the link silently.
   final bool alreadyInRelationship;
+
+  /// True for either invite function's 409 signup:incomplete (Spec 1 W2
+  /// interim guard, review I-5): under flow_signin_v2 the caller is signed
+  /// in but has no account yet, which only finishing sign-up resolves.
+  final bool signUpIncomplete;
 
   @override
   String toString() => message;

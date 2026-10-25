@@ -1,5 +1,6 @@
 package com.barsopus.attune
 
+import android.content.Context
 import android.content.Intent
 import android.database.ContentObserver
 import android.net.Uri
@@ -7,6 +8,7 @@ import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.provider.MediaStore
+import android.telephony.TelephonyManager
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
@@ -98,6 +100,23 @@ class MainActivity : FlutterActivity() {
                 else -> result.notImplemented()
             }
         }
+
+        // Spec 1 W2b (§3.3 A3): the SIM's country, for the phone step's
+        // default. Needs no permission; nothing is stored or sent.
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "attune/device")
+            .setMethodCallHandler { call, result ->
+                when (call.method) {
+                    "simCountryIso" -> {
+                        val telephony =
+                            getSystemService(Context.TELEPHONY_SERVICE) as? TelephonyManager
+                        val iso = telephony?.simCountryIso
+                        result.success(
+                            if (iso != null && iso.length == 2) iso.uppercase() else null,
+                        )
+                    }
+                    else -> result.notImplemented()
+                }
+            }
 
         // Quick exit (Spec 2; research 06 §3 F3 (2)): leave AND drop the
         // task, so Attune is not left in Recents. The only method on this

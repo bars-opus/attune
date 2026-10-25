@@ -5,6 +5,7 @@ import {
   serviceRoleClient,
 } from "../_shared/attune_auth.ts";
 import { enqueuePush } from "../_shared/push_queue.ts";
+import { ensureInviteAccount } from "../_shared/sign_up_guard.ts";
 
 // Sync audit I-8: shown as is wherever the invite was entered by hand.
 const ALREADY_IN_RELATIONSHIP =
@@ -22,7 +23,10 @@ Deno.serve(async (req) => {
     if (!inviteCode) throw new HttpError("Invite code is required", 400);
 
     const supabase = serviceRoleClient();
-    await ensureUserRow(supabase, user);
+    // Spec 1 W2 interim guard (review I-5, until W4a): under flow_signin_v2
+    // no users row is created here; a caller without one gets 409
+    // signup:incomplete before anything is read or written.
+    await ensureInviteAccount(supabase, user.id, () => ensureUserRow(supabase, user));
 
     const inviteCodeHash = await sha256Hex(inviteCode);
     const { data: accepted } = await supabase

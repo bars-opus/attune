@@ -1253,4 +1253,432 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get luxuryLevelUltraLuxury => 'Ultra Luxury';
+
+  @override
+  String get flow_continue => 'Continue';
+
+  @override
+  String get flow_close => 'Close';
+
+  @override
+  String get flow_back => 'Back';
+
+  @override
+  String flow_listTwo(String first, String second) {
+    return '$first and $second';
+  }
+
+  @override
+  String get flow_countryUk => 'the UK';
+
+  @override
+  String get flow_countryUs => 'the US';
+
+  @override
+  String get flow_welcomeTitle => 'Love, dating and you, in one calm place.';
+
+  @override
+  String get flow_pathRelationshipTitle => 'In a relationship';
+
+  @override
+  String get flow_pathRelationshipLine => 'A private space for you and your partner.';
+
+  @override
+  String get flow_pathDatingTitle => 'Single and open to dating';
+
+  @override
+  String get flow_pathDatingLine => 'A few introductions a day. Only when it\'s mutual.';
+
+  @override
+  String get flow_pathJustMeTitle => 'Just for me';
+
+  @override
+  String get flow_pathJustMeLine => 'Your journal, quizzes and Healing.';
+
+  @override
+  String flow_welcomeCardSemantics(String title, String line) {
+    return '$title. $line Opens a preview.';
+  }
+
+  @override
+  String get flow_welcomeGetStarted => 'Get started';
+
+  @override
+  String get flow_welcomeHaveAccount => 'I already have an account';
+
+  @override
+  String get flow_welcomeHaveInvite => 'I have an invite';
+
+  @override
+  String get flow_welcomeReadOpinions => 'Read Opinions first';
+
+  @override
+  String get flow_welcomeFooter => 'Attune is for adults (18+) and uses your phone number to sign in.';
+
+  @override
+  String get flow_linkTerms => 'Terms';
+
+  @override
+  String get flow_linkPrivacy => 'Privacy';
+
+  @override
+  String get flow_previewRelationshipTitle => 'A space for the two of you';
+
+  @override
+  String get flow_previewRelationshipLine1 => 'Chat, plans and memories only you two can see.';
+
+  @override
+  String get flow_previewRelationshipLine2 => 'Your journal stays yours. Your partner never sees it.';
+
+  @override
+  String get flow_previewRelationshipLine3 => 'Invite your partner with a link or a code.';
+
+  @override
+  String get flow_previewDatingTitle => 'Introductions, not swiping';
+
+  @override
+  String get flow_previewDatingLine1 => 'Up to 3 introductions a day, chosen for what you both want.';
+
+  @override
+  String get flow_previewDatingLine2 => 'A match only when you both say yes.';
+
+  @override
+  String get flow_previewDatingLine3 => 'A live video selfie checks your age before your first introduction.';
+
+  @override
+  String flow_previewDatingCountries(String countries) {
+    return 'Dating is open in $countries. More countries later.';
+  }
+
+  @override
+  String get flow_previewJustMeTitle => 'A private space for you';
+
+  @override
+  String get flow_previewJustMeLine1 => 'A journal only you can read.';
+
+  @override
+  String get flow_previewJustMeLine2 => 'Short quizzes about how you connect.';
+
+  @override
+  String get flow_previewJustMeLine3 => 'Healing, after a breakup or a loss.';
+
+  @override
+  String get flow_previewJustMeLine4 => 'Single, partnered or in between.';
+
+  @override
+  String get flow_guestAgeTitle => 'What year were you born?';
+
+  @override
+  String get flow_guestAgeHint => 'We ask everyone. It stays on this phone.';
+
+  @override
+  String get flow_guestAgeLabel => 'Year';
+
+  @override
+  String get flow_guestAgeSemantics => 'Year you were born, 4 digits';
+
+  @override
+  String get flow_yearFourDigits => 'Enter the year with 4 digits, like 1994.';
+
+  @override
+  String get flow_yearFuture => 'That year is in the future.';
+
+  @override
+  String get flow_yearCheck => 'Check the year.';
+
+  @override
+  String get flow_ageStopTitle => 'Attune is for adults';
+
+  @override
+  String get flow_ageStopBody => 'You need to be 18 or older to use Attune. We haven\'t saved anything you entered.';
+
+  @override
+  String get flow_ageStopServerLead => 'We couldn\'t create your account.';
+
+  @override
+  String get flow_ageStopYouthLink => 'Support for young people';
+
+  @override
+  String get flow_inviteTitle => 'You\'ve been invited to Attune';
+
+  @override
+  String get flow_inviteBody => 'Someone invited you to a private space on Attune. Create your account to see who it is and to join.';
+
+  @override
+  String get flow_inviteCreate => 'Create an account';
+
+  @override
+  String get flow_inviteCodeTitle => 'Enter your invite code';
+
+  @override
+  String get flow_inviteCodeLabel => 'Invite code';
+
+  @override
+  String get flow_inviteCodeError => 'Codes have 6 letters and numbers. Check it with the person who sent it.';
+
+  @override
+  String get flow_tryAgain => 'Try again';
+
+  @override
+  String get flow_nameTitle => 'What should we call you?';
+
+  @override
+  String get flow_nameHint => 'This is the name your partner sees. Opinions never shows it.';
+
+  @override
+  String get flow_nameLabel => 'Your name';
+
+  @override
+  String get flow_nameNeedsLetter => 'Add a name with at least one letter.';
+
+  @override
+  String get flow_nameTooLong => 'Use 40 characters or fewer.';
+
+  @override
+  String get flow_dobTitle => 'What\'s your date of birth?';
+
+  @override
+  String get flow_dobHint => 'We only ever show your age, never your birthday.';
+
+  @override
+  String flow_dobExample(String example) {
+    return 'For example, $example';
+  }
+
+  @override
+  String get flow_dobDay => 'Day';
+
+  @override
+  String get flow_dobMonth => 'Month';
+
+  @override
+  String get flow_dobYear => 'Year';
+
+  @override
+  String get flow_dobDaySemantics => 'Day of birth';
+
+  @override
+  String get flow_dobMonthSemantics => 'Month of birth';
+
+  @override
+  String get flow_dobYearSemantics => 'Year of birth';
+
+  @override
+  String get flow_dobDayRange => 'Day must be between 1 and 31.';
+
+  @override
+  String get flow_dobMonthRange => 'Month must be between 1 and 12.';
+
+  @override
+  String get flow_dobYearDigits => 'Year must have 4 digits.';
+
+  @override
+  String get flow_dobNoSuchDate => 'That date doesn\'t exist. Check the day and month.';
+
+  @override
+  String get flow_dobFuture => 'That date is in the future.';
+
+  @override
+  String get flow_dobCheckYear => 'Check the year.';
+
+  @override
+  String flow_dobAge(int age) {
+    return 'that makes you $age.';
+  }
+
+  @override
+  String get flow_phoneTitle => 'What\'s your phone number?';
+
+  @override
+  String get flow_phoneHint => 'We\'ll text you a code to sign in. We never show your number to anyone.';
+
+  @override
+  String get flow_phoneLabel => 'Phone number';
+
+  @override
+  String flow_phoneCountrySemantics(String country, String code) {
+    return 'Country, $country, $code';
+  }
+
+  @override
+  String get flow_phoneChooseCountry => 'Choose your country';
+
+  @override
+  String get flow_phoneSend => 'Text me a code';
+
+  @override
+  String get flow_phoneTerms => 'By continuing you agree to the Terms and Privacy Policy.';
+
+  @override
+  String get flow_phoneTooShort => 'Check the number. It looks too short.';
+
+  @override
+  String get flow_phoneTooLong => 'Check the number. It looks too long.';
+
+  @override
+  String flow_phoneWrongCountry(String country) {
+    return 'That doesn\'t look like a $country number. Check the country.';
+  }
+
+  @override
+  String get flow_sending => 'Sending your code…';
+
+  @override
+  String get flow_sendFailed => 'We couldn\'t send a code. Try again or try WhatsApp.';
+
+  @override
+  String get flow_sendFailedSms => 'We couldn\'t send a code. Try again.';
+
+  @override
+  String flow_tooManyCodes(int minutes) {
+    String _temp0 = intl.Intl.pluralLogic(
+      minutes,
+      locale: localeName,
+      other: 'Too many codes. Try again in $minutes minutes.',
+      one: 'Too many codes. Try again in 1 minute.',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get flow_tooManyTries => 'Too many tries. Try again in a few minutes.';
+
+  @override
+  String get flow_accountChecking => 'Checking your account…';
+
+  @override
+  String get flow_accountCheckFailedTitle => 'We couldn\'t check your account';
+
+  @override
+  String get flow_accountCheckFailedBody => 'Check your connection and try again.';
+
+  @override
+  String get flow_phoneUnavailable => 'Phone sign-in is unavailable right now. Please try again later.';
+
+  @override
+  String get flow_codeTitle => 'Enter the code';
+
+  @override
+  String flow_codeSubtitle(String number) {
+    return 'We sent a 6-digit code to $number.';
+  }
+
+  @override
+  String get flow_codeChangeNumber => 'Wrong number? Change it';
+
+  @override
+  String flow_codeResendIn(String time) {
+    return 'Send a new code in $time';
+  }
+
+  @override
+  String get flow_codeResend => 'Send a new code';
+
+  @override
+  String get flow_codeNewest => 'Use the newest code.';
+
+  @override
+  String get flow_codeSemantics => 'Verification code, 6 digits';
+
+  @override
+  String get flow_codeWrong => 'That code didn\'t work. Check it and try again.';
+
+  @override
+  String get flow_codeExpired => 'That code has expired. Send a new one.';
+
+  @override
+  String get flow_codeAccepted => 'Code accepted';
+
+  @override
+  String get flow_codeCheckFailed => 'We couldn\'t check the code right now. Try again.';
+
+  @override
+  String get flow_consentTitle => 'Before you start';
+
+  @override
+  String get flow_consentUpdatedTitle => 'We\'ve updated our terms';
+
+  @override
+  String get flow_consentAdults => 'Attune is for adults. Everyone here is 18 or older.';
+
+  @override
+  String get flow_consentAi => 'Some Attune features use AI to give you private suggestions. In a shared space they can read your chat with your partner, and only after you both agree. What it suggests to one of you is never shown to the other.';
+
+  @override
+  String get flow_consentData => 'You can download everything you\'ve added, and delete your account, any time.';
+
+  @override
+  String get flow_consentTermsLink => 'Terms of use';
+
+  @override
+  String get flow_consentPrivacyLink => 'Privacy policy';
+
+  @override
+  String get flow_consentAiLink => 'More about AI in Attune';
+
+  @override
+  String get flow_consentAgree => 'Agree and continue';
+
+  @override
+  String get flow_consentNotNow => 'Not now';
+
+  @override
+  String get flow_signupPhoneRequired => 'Phone sign-in is unavailable right now.';
+
+  @override
+  String get flow_saveFailed => 'We couldn\'t save that. Try again.';
+
+  @override
+  String get flow_noAccountTitle => 'We couldn\'t find an Attune account for this number';
+
+  @override
+  String get flow_noAccountBody => 'You can create one now.';
+
+  @override
+  String get flow_noAccountCreate => 'Create an account';
+
+  @override
+  String get flow_noAccountOtherNumber => 'Use a different number';
+
+  @override
+  String flow_welcomeBack(String name) {
+    return 'Welcome back, $name.';
+  }
+
+  @override
+  String get flow_welcomeBackNoName => 'Welcome back.';
+
+  @override
+  String get flow_joinTitle => 'Join Attune';
+
+  @override
+  String get flow_joinBody => 'A private space for couples, a few introductions a day for singles, and a journal just for you.';
+
+  @override
+  String get flow_phoneWhatsApp => 'Send by WhatsApp instead';
+
+  @override
+  String flow_whatsAppTitle(String number) {
+    return 'Is WhatsApp on $number?';
+  }
+
+  @override
+  String get flow_whatsAppBody => 'We\'ll send the code to WhatsApp on this number. If WhatsApp is on a different number, we\'ll text you instead.';
+
+  @override
+  String get flow_whatsAppYes => 'Yes, send it to WhatsApp';
+
+  @override
+  String get flow_whatsAppNo => 'No, text me';
+
+  @override
+  String get flow_codeTryWhatsApp => 'Try WhatsApp';
+
+  @override
+  String get flow_codeCallMe => 'Call me with the code';
+
+  @override
+  String flow_codeCalling(String number) {
+    return 'We\'re calling $number now. The code is read out twice.';
+  }
 }

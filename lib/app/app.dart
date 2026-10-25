@@ -6,6 +6,7 @@ import 'package:attune/app/theme/app_theme.dart';
 import 'package:attune/core/notifications/services/onesignal_service.dart';
 import 'package:attune/core/providers/locale_provider.dart';
 import 'package:attune/core/providers/routing_providers.dart';
+import 'package:attune/features/auth/sign_up/presentation/sign_up_flags.dart';
 import 'package:attune/core/providers/theme_provider.dart';
 import 'package:attune/core/ui/feedback/sound_service.dart';
 import 'package:attune/core/utils/screen_util_config.dart';
@@ -71,6 +72,9 @@ class _AppState extends ConsumerState<App> {
 
   @override
   Widget build(BuildContext context) {
+    // Spec 1 W2a (§5.3, §5.4): the router's sign-in flow follows the live
+    // public config once it has been read.
+    ref.watch(routingFlowV2SyncProvider);
     final router = ref.watch(appRouterProvider);
     final themeMode = ref.watch(themeModeProvider);
     final locale = ref.watch(currentLocaleProvider);

@@ -5,15 +5,17 @@ import 'package:share_plus/share_plus.dart';
 import 'package:attune/app/documentations/user_manual/data/manual_documentation_registry.dart';
 import 'package:attune/app/documentations/user_manual/models/documentation_model.dart';
 import 'package:attune/features/auth/intro/widgets/intro_guide_widget.dart';
+import 'package:attune/features/auth/sign_up/presentation/sign_up_flags.dart';
+import 'package:attune/features/auth/sign_up/presentation/widgets/join_attune_panel.dart';
 
-class LoginProfile extends StatefulWidget {
+class LoginProfile extends ConsumerStatefulWidget {
   const LoginProfile({super.key});
 
   @override
-  State<LoginProfile> createState() => _LoginProfileState();
+  ConsumerState<LoginProfile> createState() => _LoginProfileState();
 }
 
-class _LoginProfileState extends State<LoginProfile> {
+class _LoginProfileState extends ConsumerState<LoginProfile> {
   late ScrollController _scrollController;
   List<DocumentationModule> modules = [];
 
@@ -70,6 +72,9 @@ class _LoginProfileState extends State<LoginProfile> {
     final loc = AppLocalizations.of(context)!;
 
     final overview = loc.authGuestOverview(AppConstants.appName);
+    // Spec 1 W2b (§3.2 G2): under flow_signin_v2 this tab is "Join Attune"
+    // with the three ways in; the topic cards and the legal link stay.
+    final flowV2 = ref.watch(signInFlowV2Provider);
 
     return Material(
       color: colorScheme.neutral,
@@ -93,6 +98,9 @@ class _LoginProfileState extends State<LoginProfile> {
                         onPressed: () => context.push('/settings'),
                       ),
                     ),
+                    if (flowV2)
+                      const JoinAttunePanel()
+                    else ...[
                     Gap(Spacing.lg.h),
                     Center(
                       child: Text(
@@ -192,6 +200,7 @@ class _LoginProfileState extends State<LoginProfile> {
                       textColor: colorScheme.onSurface,
                     ),
 
+                    ],
                     // Gap(Spacing.xl.h),
                     Gap(Spacing.xxl.h),
                     SizedBox(

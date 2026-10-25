@@ -14,6 +14,13 @@ import 'package:attune/core/moderation/presentation/screens/blocked_accounts_scr
 import 'package:attune/features/opinions/presentation/screen/muted_authors_screen.dart';
 import 'package:attune/features/auth/intro/intro_screen.dart';
 import 'package:attune/features/auth/log_in/presentation/screens/login_screen.dart';
+import 'package:attune/app/routing/sign_in_redirect.dart';
+import 'package:attune/features/auth/sign_up/presentation/screens/guest_age_gate_screen.dart';
+import 'package:attune/features/auth/sign_up/domain/sign_up_draft.dart';
+import 'package:attune/features/auth/sign_up/presentation/screens/invite_landing_screen.dart';
+import 'package:attune/features/auth/sign_up/presentation/screens/sign_up_flow.dart';
+import 'package:attune/features/auth/sign_up/presentation/screens/under_age_stop_screen.dart';
+import 'package:attune/features/auth/sign_up/presentation/screens/welcome_screen.dart';
 import 'package:attune/features/dating/presentation/screens/dating_dashboard_screen.dart';
 import 'package:attune/features/games/paint_ball/presentation/screens/paint_ball_battle_screen.dart';
 import 'package:attune/features/games/paint_ball/presentation/screens/paint_ball_history_screen.dart';
@@ -139,6 +146,12 @@ import 'package:attune/features/chat/presentation/screens/streak_camera_screen.d
 
 class RouteNames {
   static const String intro = '/intro';
+  // Spec 1 W2 (§5.4): the v2 sign-in, all behind flow_signin_v2.
+  static const String welcome = '/welcome';
+  static const String signUp = '/signup';
+  static const String guestAge = '/guest-age';
+  static const String invite = '/invite';
+  static const String ageStop = '/age-stop';
   static const String home = '/home';
   static const String settings = '/settings';
   static const String language = '/language';
@@ -405,20 +418,14 @@ GoRouter createAppRouter(RoutingNotifier routingNotifier) {
     debugLogDiagnostics: kDebugMode,
     initialLocation: '/_invisible',
     refreshListenable: routingNotifier,
-    redirect: (context, state) {
-      if (state.matchedLocation == '/_invisible') {
-        return routingNotifier.isFirstLaunch
-            ? RouteNames.intro
-            : RouteNames.home;
-      }
-
-      if (routingNotifier.isFirstLaunch &&
-          state.matchedLocation != RouteNames.intro) {
-        return RouteNames.intro;
-      }
-
-      return null;
-    },
+    // Spec 1 W2: the first-launch rules and the v2 sign-in rules live in
+    // sign_in_redirect.dart (flag off: today's rule, unchanged).
+    redirect:
+        (context, state) => appRedirect(
+          routingNotifier,
+          state.matchedLocation,
+          entry: state.uri.queryParameters['entry'],
+        ),
     routes: [
       GoRoute(
         path: '/_invisible',
@@ -433,6 +440,48 @@ GoRouter createAppRouter(RoutingNotifier routingNotifier) {
         path: RouteNames.home,
         name: 'home',
         builder: (context, state) => const HomeScreen(),
+      ),
+      // Spec 1 W2 (§5.4): the v2 sign-in routes, reached only under
+      // flow_signin_v2 (the redirect above sends a stray visit home).
+      GoRoute(
+        path: RouteNames.welcome,
+        name: 'welcome',
+        builder: (context, state) => const WelcomeScreen(),
+      ),
+      GoRoute(
+        path: RouteNames.signUp,
+        name: 'signUp',
+        builder:
+            (context, state) => SignUpFlow(
+              entry: SignUpEntry.fromWire(state.uri.queryParameters['entry']),
+              backTo: state.uri.queryParameters['back'],
+            ),
+      ),
+      GoRoute(
+        path: RouteNames.guestAge,
+        name: 'guestAge',
+        builder: (context, state) => const GuestAgeGateScreen(),
+      ),
+      GoRoute(
+        path: RouteNames.invite,
+        name: 'invite',
+        // A fresh key per invite link (main.dart), so a link that lands on
+        // RI-2 shows RI-1.
+        builder:
+            (context, state) =>
+                InviteLandingScreen(key: ValueKey<Object?>(state.extra)),
+      ),
+      GoRoute(
+        path: RouteNames.ageStop,
+        name: 'ageStop',
+        // Never animated (§2.2): no route transition either.
+        pageBuilder:
+            (context, state) => NoTransitionPage(
+              key: state.pageKey,
+              child: UnderAgeStopScreen(
+                serverRefused: state.uri.queryParameters['from'] == 'server',
+              ),
+            ),
       ),
       GoRoute(
         path: RouteNames.login,

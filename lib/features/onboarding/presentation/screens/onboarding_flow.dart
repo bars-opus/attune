@@ -73,6 +73,14 @@ class _OnboardingFlowState extends State<OnboardingFlow> {
     if (widget.acceptedPendingInvite) {
       _mode = OnboardingMode.couples;
     }
+    // Spec 1 W2b: a v2 sign-up already took the name (any script, A1), so
+    // the name step is skipped; its ASCII-only rule would refuse many
+    // names A1 accepts. Only a v2 sign-up writes this before onboarding.
+    final knownName = widget.store.displayName;
+    if (knownName != null && knownName.trim().isNotEmpty) {
+      _nameController.text = knownName;
+      _step = widget.acceptedPendingInvite ? _anchorsStep + 1 : _modeStep;
+    }
   }
 
   @override

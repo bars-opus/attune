@@ -915,5 +915,208 @@
 
   "luxuryLevelModerate": "Moderate",
   "luxuryLevelLuxury": "Luxury",
-  "luxuryLevelUltraLuxury": "Ultra Luxury"
+  "luxuryLevelUltraLuxury": "Ultra Luxury",
+
+  "flow_continue": "Continue",
+  "flow_close": "Close",
+  "flow_back": "Back",
+  "flow_listTwo": "{first} and {second}",
+  "@flow_listTwo": {
+    "placeholders": {
+      "first": {"type": "String"},
+      "second": {"type": "String"}
+    }
+  },
+  "flow_countryUk": "the UK",
+  "flow_countryUs": "the US",
+  "flow_welcomeTitle": "Love, dating and you, in one calm place.",
+  "flow_pathRelationshipTitle": "In a relationship",
+  "flow_pathRelationshipLine": "A private space for you and your partner.",
+  "flow_pathDatingTitle": "Single and open to dating",
+  "flow_pathDatingLine": "A few introductions a day. Only when it's mutual.",
+  "flow_pathJustMeTitle": "Just for me",
+  "flow_pathJustMeLine": "Your journal, quizzes and Healing.",
+  "flow_welcomeCardSemantics": "{title}. {line} Opens a preview.",
+  "@flow_welcomeCardSemantics": {
+    "placeholders": {
+      "title": {"type": "String"},
+      "line": {"type": "String"}
+    }
+  },
+  "flow_welcomeGetStarted": "Get started",
+  "flow_welcomeHaveAccount": "I already have an account",
+  "flow_welcomeHaveInvite": "I have an invite",
+  "flow_welcomeReadOpinions": "Read Opinions first",
+  "flow_welcomeFooter": "Attune is for adults (18+) and uses your phone number to sign in.",
+  "flow_linkTerms": "Terms",
+  "flow_linkPrivacy": "Privacy",
+  "flow_previewRelationshipTitle": "A space for the two of you",
+  "flow_previewRelationshipLine1": "Chat, plans and memories only you two can see.",
+  "flow_previewRelationshipLine2": "Your journal stays yours. Your partner never sees it.",
+  "flow_previewRelationshipLine3": "Invite your partner with a link or a code.",
+  "flow_previewDatingTitle": "Introductions, not swiping",
+  "flow_previewDatingLine1": "Up to 3 introductions a day, chosen for what you both want.",
+  "flow_previewDatingLine2": "A match only when you both say yes.",
+  "flow_previewDatingLine3": "A live video selfie checks your age before your first introduction.",
+  "flow_previewDatingCountries": "Dating is open in {countries}. More countries later.",
+  "@flow_previewDatingCountries": {
+    "placeholders": {
+      "countries": {"type": "String"}
+    }
+  },
+  "flow_previewJustMeTitle": "A private space for you",
+  "flow_previewJustMeLine1": "A journal only you can read.",
+  "flow_previewJustMeLine2": "Short quizzes about how you connect.",
+  "flow_previewJustMeLine3": "Healing, after a breakup or a loss.",
+  "flow_previewJustMeLine4": "Single, partnered or in between.",
+  "flow_guestAgeTitle": "What year were you born?",
+  "flow_guestAgeHint": "We ask everyone. It stays on this phone.",
+  "flow_guestAgeLabel": "Year",
+  "flow_guestAgeSemantics": "Year you were born, 4 digits",
+  "flow_yearFourDigits": "Enter the year with 4 digits, like 1994.",
+  "flow_yearFuture": "That year is in the future.",
+  "flow_yearCheck": "Check the year.",
+  "flow_ageStopTitle": "Attune is for adults",
+  "flow_ageStopBody": "You need to be 18 or older to use Attune. We haven't saved anything you entered.",
+  "flow_ageStopServerLead": "We couldn't create your account.",
+  "flow_ageStopYouthLink": "Support for young people",
+  "flow_inviteTitle": "You've been invited to Attune",
+  "flow_inviteBody": "Someone invited you to a private space on Attune. Create your account to see who it is and to join.",
+  "flow_inviteCreate": "Create an account",
+  "flow_inviteCodeTitle": "Enter your invite code",
+  "flow_inviteCodeLabel": "Invite code",
+  "flow_inviteCodeError": "Codes have 6 letters and numbers. Check it with the person who sent it.",
+
+  "flow_tryAgain": "Try again",
+  "flow_nameTitle": "What should we call you?",
+  "flow_nameHint": "This is the name your partner sees. Opinions never shows it.",
+  "flow_nameLabel": "Your name",
+  "flow_nameNeedsLetter": "Add a name with at least one letter.",
+  "flow_nameTooLong": "Use 40 characters or fewer.",
+  "flow_dobTitle": "What's your date of birth?",
+  "flow_dobHint": "We only ever show your age, never your birthday.",
+  "flow_dobExample": "For example, {example}",
+  "@flow_dobExample": {
+    "placeholders": {
+      "example": {"type": "String"}
+    }
+  },
+  "flow_dobDay": "Day",
+  "flow_dobMonth": "Month",
+  "flow_dobYear": "Year",
+  "flow_dobDaySemantics": "Day of birth",
+  "flow_dobMonthSemantics": "Month of birth",
+  "flow_dobYearSemantics": "Year of birth",
+  "flow_dobDayRange": "Day must be between 1 and 31.",
+  "flow_dobMonthRange": "Month must be between 1 and 12.",
+  "flow_dobYearDigits": "Year must have 4 digits.",
+  "flow_dobNoSuchDate": "That date doesn't exist. Check the day and month.",
+  "flow_dobFuture": "That date is in the future.",
+  "flow_dobCheckYear": "Check the year.",
+  "flow_dobAge": "that makes you {age}.",
+  "@flow_dobAge": {
+    "placeholders": {
+      "age": {"type": "int"}
+    }
+  },
+  "flow_phoneTitle": "What's your phone number?",
+  "flow_phoneHint": "We'll text you a code to sign in. We never show your number to anyone.",
+  "flow_phoneLabel": "Phone number",
+  "flow_phoneCountrySemantics": "Country, {country}, {code}",
+  "@flow_phoneCountrySemantics": {
+    "placeholders": {
+      "country": {"type": "String"},
+      "code": {"type": "String"}
+    }
+  },
+  "flow_phoneChooseCountry": "Choose your country",
+  "flow_phoneSend": "Text me a code",
+  "flow_phoneTerms": "By continuing you agree to the Terms and Privacy Policy.",
+  "flow_phoneTooShort": "Check the number. It looks too short.",
+  "flow_phoneTooLong": "Check the number. It looks too long.",
+  "flow_phoneWrongCountry": "That doesn't look like a {country} number. Check the country.",
+  "@flow_phoneWrongCountry": {
+    "placeholders": {
+      "country": {"type": "String"}
+    }
+  },
+  "flow_sending": "Sending your code…",
+  "flow_sendFailed": "We couldn't send a code. Try again or try WhatsApp.",
+  "flow_sendFailedSms": "We couldn't send a code. Try again.",
+  "flow_tooManyCodes": "{minutes, plural, =1{Too many codes. Try again in 1 minute.} other{Too many codes. Try again in {minutes} minutes.}}",
+  "@flow_tooManyCodes": {
+    "placeholders": {
+      "minutes": {"type": "int"}
+    }
+  },
+  "flow_tooManyTries": "Too many tries. Try again in a few minutes.",
+  "flow_accountChecking": "Checking your account…",
+  "flow_accountCheckFailedTitle": "We couldn't check your account",
+  "flow_accountCheckFailedBody": "Check your connection and try again.",
+  "flow_phoneUnavailable": "Phone sign-in is unavailable right now. Please try again later.",
+  "flow_codeTitle": "Enter the code",
+  "flow_codeSubtitle": "We sent a 6-digit code to {number}.",
+  "@flow_codeSubtitle": {
+    "placeholders": {
+      "number": {"type": "String"}
+    }
+  },
+  "flow_codeChangeNumber": "Wrong number? Change it",
+  "flow_codeResendIn": "Send a new code in {time}",
+  "@flow_codeResendIn": {
+    "placeholders": {
+      "time": {"type": "String"}
+    }
+  },
+  "flow_codeResend": "Send a new code",
+  "flow_codeNewest": "Use the newest code.",
+  "flow_codeSemantics": "Verification code, 6 digits",
+  "flow_codeWrong": "That code didn't work. Check it and try again.",
+  "flow_codeExpired": "That code has expired. Send a new one.",
+  "flow_codeAccepted": "Code accepted",
+  "flow_codeCheckFailed": "We couldn't check the code right now. Try again.",
+  "flow_consentTitle": "Before you start",
+  "flow_consentUpdatedTitle": "We've updated our terms",
+  "flow_consentAdults": "Attune is for adults. Everyone here is 18 or older.",
+  "flow_consentAi": "Some Attune features use AI to give you private suggestions. In a shared space they can read your chat with your partner, and only after you both agree. What it suggests to one of you is never shown to the other.",
+  "flow_consentData": "You can download everything you've added, and delete your account, any time.",
+  "flow_consentTermsLink": "Terms of use",
+  "flow_consentPrivacyLink": "Privacy policy",
+  "flow_consentAiLink": "More about AI in Attune",
+  "flow_consentAgree": "Agree and continue",
+  "flow_consentNotNow": "Not now",
+  "flow_signupPhoneRequired": "Phone sign-in is unavailable right now.",
+  "flow_saveFailed": "We couldn't save that. Try again.",
+  "flow_noAccountTitle": "We couldn't find an Attune account for this number",
+  "flow_noAccountBody": "You can create one now.",
+  "flow_noAccountCreate": "Create an account",
+  "flow_noAccountOtherNumber": "Use a different number",
+  "flow_welcomeBack": "Welcome back, {name}.",
+  "@flow_welcomeBack": {
+    "placeholders": {
+      "name": {"type": "String"}
+    }
+  },
+  "flow_welcomeBackNoName": "Welcome back.",
+  "flow_joinTitle": "Join Attune",
+  "flow_joinBody": "A private space for couples, a few introductions a day for singles, and a journal just for you.",
+
+  "flow_phoneWhatsApp": "Send by WhatsApp instead",
+  "flow_whatsAppTitle": "Is WhatsApp on {number}?",
+  "@flow_whatsAppTitle": {
+    "placeholders": {
+      "number": {"type": "String"}
+    }
+  },
+  "flow_whatsAppBody": "We'll send the code to WhatsApp on this number. If WhatsApp is on a different number, we'll text you instead.",
+  "flow_whatsAppYes": "Yes, send it to WhatsApp",
+  "flow_whatsAppNo": "No, text me",
+  "flow_codeTryWhatsApp": "Try WhatsApp",
+  "flow_codeCallMe": "Call me with the code",
+  "flow_codeCalling": "We're calling {number} now. The code is read out twice.",
+  "@flow_codeCalling": {
+    "placeholders": {
+      "number": {"type": "String"}
+    }
+  }
 }

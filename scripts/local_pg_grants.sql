@@ -259,3 +259,7 @@ GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public
 
 -- Spec 1 W1c: identity health and the unfinished sign-up list, service role only.
 \i supabase/migrations/20261025100510_identity_health_grants.sql
+
+-- Spec 1 W2c: phone-code delivery is server-only; the two decisions are the
+-- edge functions' (service role).
+\i supabase/migrations/20261025110010_otp_delivery_grants.sql
