@@ -239,3 +239,23 @@ GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public
 
 -- Chat W4 Task 5b: view-once streak hardening (spend ledger is server-only).
 \i supabase/migrations/20261019140110_streak_view_once_hardening_grants.sql
+
+-- Spec 1 W1a: users column grants (no client INSERT; UPDATE of name, avatar
+-- and time zone only) and migration 1's function grants.
+\i supabase/migrations/20261025100010_identity_users_lockdown_grants.sql
+
+-- Spec 1 W1b: metric tables and the report are closed to clients.
+\i supabase/migrations/20261025100110_metric_counters_grants.sql
+
+-- Spec 1 W1b: birth dates and holds are server-only; the sign-up RPCs.
+\i supabase/migrations/20261025100210_account_birthdates_and_holds_grants.sql
+
+-- Spec 1 W1b: the path writer and both seams are server-only; the home RPCs.
+\i supabase/migrations/20261025100310_paths_and_home_state_grants.sql
+
+-- Spec 1 W1c: the environment helpers and the flag gate are server-only;
+-- get_public_app_config is the one anon read.
+\i supabase/migrations/20261025100410_spec1_flags_and_public_config_grants.sql
+
+-- Spec 1 W1c: identity health and the unfinished sign-up list, service role only.
+\i supabase/migrations/20261025100510_identity_health_grants.sql

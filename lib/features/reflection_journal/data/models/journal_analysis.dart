@@ -1,7 +1,8 @@
 import 'package:equatable/equatable.dart';
 
 class JournalAnalysis extends Equatable {
-  final String status; // 'pending' | 'completed' | 'insufficient_evidence' | 'failed'
+  // 'pending' | 'completed' | 'insufficient_evidence' | 'failed' | 'paused'
+  final String status;
   final String? tone;
   final String? observation;
   final String? confidence; // 'high' | 'medium' | 'low' | 'none'
@@ -25,6 +26,11 @@ class JournalAnalysis extends Equatable {
   bool get isComplete => status == 'completed';
   bool get isPending => status == 'pending';
   bool get isInsufficientEvidence => status == 'insufficient_evidence';
+
+  /// Spec 1 W1c (D12): insights are paused (journal_ai_insights off). The
+  /// entry screen shows a reflection only when [isComplete], so a paused
+  /// answer shows nothing.
+  bool get isPaused => status == 'paused';
 
   @override
   List<Object?> get props => [status, tone, observation, confidence];

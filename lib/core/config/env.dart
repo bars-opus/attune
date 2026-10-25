@@ -65,4 +65,10 @@ class Environment {
 
   static const bool isDebug =
       String.fromEnvironment('DEBUG', defaultValue: 'false') == 'true';
+
+  /// Spec 1 §5.3: the value of flow_signin_v2 for the first frame, until
+  /// get_public_app_config has answered once (or its cached copy is read).
+  /// `FLOW_V2_DEFAULT` is true in development builds and unset (false) in
+  /// production builds.
+  static const bool flowV2Default = bool.fromEnvironment('FLOW_V2_DEFAULT');
 }

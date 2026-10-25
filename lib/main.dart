@@ -181,10 +181,16 @@ void _handleDeepLink(Uri uri) {
 
 Future<void> _storePendingInviteCode(String code) async {
   final prefs = await SharedPreferences.getInstance();
-  await OnboardingStore(
-    prefs,
-    scope: OnboardingStore.anonymousScope,
-  ).storePendingInviteCode(code);
+  // Spec 1 §5.5 (W1c): signed out, the code waits in the anonymous slot and
+  // the next sign-in claims it within 24 h; signed in, it goes straight to
+  // this account's slot.
+  String? userId;
+  try {
+    userId = Supabase.instance.client.auth.currentUser?.id;
+  } catch (_) {
+    userId = null;
+  }
+  await OnboardingStore.storeInviteFromLink(prefs, code, userId: userId);
 
   // Storing the code alone was previously the entire handler — nothing
   // ever navigated, so scanning the invite QR only did something useful if

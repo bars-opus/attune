@@ -142,21 +142,18 @@ async function ensureUserRow(
   supabase: ReturnType<typeof serviceRoleClient>,
   user: { id: string; email: string | null; phone: string | null },
 ) {
-  const displayName = user.phone ?? user.email?.split("@")[0] ??
-    `user-${user.id.slice(0, 8)}`;
-
-  // public.users has no `email` column (20260606133000_phone_only_auth.sql
-  // dropped it — launch auth is phone OTP only). ignoreDuplicates so this
-  // only ever INSERTs a missing row; it must never overwrite an existing
-  // user's `mode` on every invite creation.
+  // Spec 1 W1a: users.mode is retired, so it is never written, and the name
+  // is left empty for onboarding to fill: a phone number is never a display
+  // name. ignoreDuplicates so this only ever INSERTs a missing row. The
+  // phone passed is GoTrue getUser's, confirmed or not; the users insert
+  // guard (users_phone_from_auth) stores the verified Auth phone or NULL.
   const { error } = await supabase
     .from("users")
     .upsert(
       {
         id: user.id,
         phone: user.phone,
-        display_name: displayName,
-        mode: "couples",
+        display_name: "",
       },
       { onConflict: "id", ignoreDuplicates: true },
     );

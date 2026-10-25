@@ -2,6 +2,7 @@
 import { serve } from "https://deno.land/std@0.177.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { callGeminiJson, STATIC_PROHIBITED_PATTERNS } from "../_shared/gemini_json.ts";
+import { journalInsightsPaused, PAUSED_BODY } from "./journal_pause.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -57,6 +58,11 @@ serve(async (req) => {
     }
 
     const body = await req.json();
+    // Spec 1 W1c (D12): paused until the self_disclosure check runs first
+    // (W9c). Off means no provider call for either action.
+    if (await journalInsightsPaused(adminClient)) {
+      return json(PAUSED_BODY);
+    }
     if (body.action === "get_patterns") {
       return await handleGetPatterns(adminClient, user.id);
     }

@@ -19,3 +19,18 @@ Deno.test("create-relationship-invite refuses a paused person too", () => {
     throw new Error("create-relationship-invite still checks active only");
   }
 });
+
+// Spec 1 W1a (D3, §4.5): the service-role safety net that creates a missing
+// users row never writes the retired users.mode and never uses a phone
+// number as a display name.
+Deno.test("ensureUserRow writes no users.mode and no phone as a name", () => {
+  for (const [name, source] of [["accept-invite", accept], ["create-relationship-invite", create]]) {
+    const start = source.indexOf("async function ensureUserRow(");
+    if (start < 0) throw new Error(`${name}: ensureUserRow is missing`);
+    const body = source.slice(start, source.indexOf("\n}\n", start));
+    if (/\bmode\s*:/.test(body)) throw new Error(`${name}: ensureUserRow still writes users.mode`);
+    if (!/display_name:\s*""/.test(body)) throw new Error(`${name}: ensureUserRow must write an empty display_name`);
+    if (/user\.phone\s*\?\?|displayName/.test(body)) throw new Error(`${name}: ensureUserRow still derives a name from the phone`);
+    if (!body.includes("ignoreDuplicates: true")) throw new Error(`${name}: ensureUserRow must only insert a missing row`);
+  }
+});

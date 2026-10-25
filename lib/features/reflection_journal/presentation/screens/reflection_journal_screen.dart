@@ -206,6 +206,15 @@ class _PatternsTab extends ConsumerWidget {
                 'Once you\'ve written a few entries, patterns across them will show up here.',
           );
         }
+        // Spec 1 W1c (D12): insights are paused (journal_ai_insights off);
+        // say so rather than showing a blank page.
+        if (patterns.status == 'paused') {
+          return EmptyStateWidget(
+            icon: Icons.pattern,
+            title: 'Patterns are paused for now',
+            subtitle: 'Your entries are saved and stay private to you.',
+          );
+        }
 
         return Padding(
           padding: EdgeInsets.all(Spacing.md.w),

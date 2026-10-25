@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:attune/features/onboarding/domain/onboarding_models.dart';
@@ -53,11 +54,19 @@ class PendingOnboardingSubmission {
   }
 }
 
+DateTime _systemNow() => DateTime.now();
+
 class OnboardingStore {
-  const OnboardingStore(this._prefs, {required String scope}) : _scope = scope;
+  const OnboardingStore(
+    this._prefs, {
+    required String scope,
+    DateTime Function() now = _systemNow,
+  }) : _scope = scope,
+       _now = now;
 
   final SharedPreferences _prefs;
   final String _scope;
+  final DateTime Function() _now;
 
   static const userScopePrefix = 'user';
   static const previewScope = 'preview';
@@ -67,7 +76,15 @@ class OnboardingStore {
   static const _modeKey = 'mode';
   static const _displayNameKey = 'display_name';
   static const _pendingSubmissionKey = 'pending_submission';
+
+  /// The legacy unscoped invite key: read once, moved to the anonymous slot,
+  /// deleted (Spec 1 §5.5, W1c).
   static const pendingInviteCodeKey = 'attune.onboarding.pending_invite_code';
+  static const _pendingInviteKey = 'pending_invite';
+
+  /// How long a code opened while signed out may be claimed by the next
+  /// account that signs in on this phone (spec §5.5).
+  static const inviteClaimWindow = Duration(hours: 24);
 
   bool get isComplete => _prefs.getBool(_key(_completedKey)) ?? false;
 
@@ -164,15 +181,100 @@ class OnboardingStore {
 
   String? get displayName => _prefs.getString(_key(_displayNameKey));
 
-  String? get pendingInviteCode => _prefs.getString(pendingInviteCodeKey);
-
-  Future<void> storePendingInviteCode(String code) {
-    return _prefs.setString(pendingInviteCodeKey, code);
+  /// The invite code waiting for THIS scope (Spec 1 §5.5, W1c, unconditional).
+  ///
+  /// A link opened while signed out lands in the anonymous slot as
+  /// `{code, stored_at}`; the first signed-in read claims it into this
+  /// account's slot only while it is under 24 hours old, and the anonymous
+  /// slot is cleared either way, so a second account on the same phone never
+  /// inherits it. SharedPreferences updates its cache synchronously, so the
+  /// claim is visible at once; the writes persist in the background.
+  String? get pendingInviteCode {
+    _moveLegacyInviteCode();
+    _claimAnonymousInvite();
+    _dropExpiredAnonymousInvite();
+    return _readInvite(_key(_pendingInviteKey))?.code;
   }
 
-  Future<void> clearPendingInviteCode() {
-    return _prefs.remove(pendingInviteCodeKey);
+  Future<void> storePendingInviteCode(String code) =>
+      _prefs.setString(_key(_pendingInviteKey), _encodeInvite(code, _now()));
+
+  Future<void> clearPendingInviteCode() async {
+    await _prefs.remove(_key(_pendingInviteKey));
+    await _prefs.remove(pendingInviteCodeKey);
   }
+
+  /// main.dart's deep-link handler: signed out → the anonymous slot;
+  /// signed in → straight to that account's slot.
+  static Future<void> storeInviteFromLink(
+    SharedPreferences prefs,
+    String code, {
+    String? userId,
+    DateTime Function() now = _systemNow,
+  }) {
+    final scope = userId == null || userId.isEmpty
+        ? anonymousScope
+        : '$userScopePrefix.$userId';
+    return OnboardingStore(prefs, scope: scope, now: now)
+        .storePendingInviteCode(code);
+  }
+
+  String get _anonymousInviteKey =>
+      'attune.onboarding.$anonymousScope.$_pendingInviteKey';
+
+  void _moveLegacyInviteCode() {
+    final legacy = _prefs.getString(pendingInviteCodeKey);
+    if (legacy == null) return;
+    if (_readInvite(_anonymousInviteKey) == null && legacy.isNotEmpty) {
+      unawaited(_prefs.setString(_anonymousInviteKey, _encodeInvite(legacy, _now())));
+    }
+    unawaited(_prefs.remove(pendingInviteCodeKey));
+  }
+
+  void _claimAnonymousInvite() {
+    if (!_scope.startsWith('$userScopePrefix.')) return;
+    if (!_prefs.containsKey(_anonymousInviteKey)) return;
+    final anonymous = _readInvite(_anonymousInviteKey);
+    unawaited(_prefs.remove(_anonymousInviteKey));
+    if (anonymous == null) return;
+    if (_now().difference(anonymous.storedAt) >= inviteClaimWindow) return;
+    unawaited(
+      _prefs.setString(
+        _key(_pendingInviteKey),
+        _encodeInvite(anonymous.code, anonymous.storedAt),
+      ),
+    );
+  }
+
+  /// A signed-out code past the claim window can never be claimed, so an
+  /// anonymous read drops it too (batch 6 review #5).
+  void _dropExpiredAnonymousInvite() {
+    if (_scope != anonymousScope) return;
+    final anonymous = _readInvite(_anonymousInviteKey);
+    if (anonymous == null) return;
+    if (_now().difference(anonymous.storedAt) < inviteClaimWindow) return;
+    unawaited(_prefs.remove(_anonymousInviteKey));
+  }
+
+  ({String code, DateTime storedAt})? _readInvite(String key) {
+    final raw = _prefs.getString(key);
+    if (raw == null || raw.isEmpty) return null;
+    try {
+      final json = jsonDecode(raw);
+      if (json is! Map) return null;
+      final code = json['code'];
+      final storedAt = DateTime.tryParse(json['stored_at'] as String? ?? '');
+      if (code is! String || code.isEmpty || storedAt == null) return null;
+      return (code: code, storedAt: storedAt);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  static String _encodeInvite(String code, DateTime storedAt) => jsonEncode({
+    'code': code,
+    'stored_at': storedAt.toUtc().toIso8601String(),
+  });
 
   Future<void> complete({
     required OnboardingMode mode,
@@ -208,6 +310,7 @@ class OnboardingStore {
     await _prefs.remove(_key(_modeKey));
     await _prefs.remove(_key(_displayNameKey));
     await _prefs.remove(_key(_pendingSubmissionKey));
+    await _prefs.remove(_key(_pendingInviteKey));
     await _prefs.remove(pendingInviteCodeKey);
   }
 

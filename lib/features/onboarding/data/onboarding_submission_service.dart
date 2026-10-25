@@ -33,19 +33,18 @@ class OnboardingSubmissionService {
     final phone = user.phone;
     if (phone == null) return;
 
-    final modeName = mode.remoteModeName;
     final relationshipStatus = _relationshipStatusForMode(mode);
     final now = DateTime.now().toUtc().toIso8601String();
+    final name = clampDisplayName(displayName);
 
     try {
+      // Spec 1 W1a: the client may update only its name (users.phone is
+      // copied from auth.users, users.mode is retired, and the row itself is
+      // created by record_eula_acceptance, which the EULA gate runs first).
       await client
           .from('users')
-          .upsert({
-            'id': user.id,
-            'phone': phone,
-            'display_name': displayName,
-            'mode': modeName,
-          }, onConflict: 'id')
+          .update({'display_name': name})
+          .eq('id', user.id)
           .timeout(timeout);
 
       // The wider shipped app still reads from the legacy `profiles` surface
@@ -55,7 +54,7 @@ class OnboardingSubmissionService {
           .from('profiles')
           .upsert({
             'id': user.id,
-            'display_name': displayName,
+            'display_name': name,
             'relationship_status': relationshipStatus,
             'updated_at': now,
           }, onConflict: 'id')
@@ -64,8 +63,8 @@ class OnboardingSubmissionService {
       await client
           .from('onboarding_profiles')
           .upsert({
+            // Spec 1 W1b: onboarding_profiles.mode is dropped with this release.
             'user_id': user.id,
-            'mode': modeName,
             'attachment_answers': attachmentAnswers,
             'anchors': anchors,
             'completed_at': now,
@@ -75,6 +74,41 @@ class OnboardingSubmissionService {
       debugPrint('[onboarding] remote submit failed: ${error.runtimeType}');
       rethrow;
     }
+  }
+
+  /// The characters a display name never keeps (final review M-1, as
+  /// corrected): U+200B, U+200E, U+200F, U+202A to U+202E (bidi embeddings
+  /// and overrides), U+2060 to U+2064, U+2066 to U+2069 (bidi isolates) and
+  /// U+FEFF. Left in, a partner sees a blank or a spoofed name. ZWNJ
+  /// (U+200C) and ZWJ (U+200D) stay: Persian and Indic names and emoji
+  /// sequences need them. The same set as the server's
+  /// private.strip_name_controls.
+  static final _invisibleNameChars = RegExp(
+    '[\u200B\u200E\u200F\u202A-\u202E\u2060-\u2064\u2066-\u2069\uFEFF]',
+  );
+
+  /// What is left of a name once spaces, ZWNJ and ZWJ are set aside; a name
+  /// with nothing left has nothing visible (the server's
+  /// private.name_is_blank).
+  static final _blankNameChars = RegExp('[\\s\u200C\u200D]');
+
+  /// users.display_name holds at most 40 characters (the CHECK
+  /// users_display_name_length, counted in code points like Postgres'
+  /// char_length). The legacy name step has no limit, so the name is clamped
+  /// here rather than failing the write and replaying it forever. Whole code
+  /// points only: an emoji is never split. The controls go first and
+  /// whitespace runs collapse, as on the server, and a name with nothing
+  /// visible left is empty.
+  @visibleForTesting
+  static String clampDisplayName(String value) {
+    final cleaned = value
+        .replaceAll(_invisibleNameChars, '')
+        .replaceAll(RegExp(r'\s+'), ' ')
+        .trim();
+    if (cleaned.replaceAll(_blankNameChars, '').isEmpty) return '';
+    final runes = cleaned.runes;
+    if (runes.length <= 40) return cleaned;
+    return String.fromCharCodes(runes.take(40)).trimRight();
   }
 
   String _relationshipStatusForMode(OnboardingMode mode) {
