@@ -8,8 +8,14 @@
 //   7 d on       keep waiting / on my own for now / invite someone else
 //                (and Continue, where there is a next step)
 // Shared by the onboarding waiting step and the locked Chat screen.
+//
+// Spec 1 W4b (§3.8 R3, Q7): with [v2] (R3 under flow_couples_v2) the words
+// are the spec's, the partner is named, and day 7 offers "Send a new
+// invite" (withdraws the old code, mints a new one, opens the share step)
+// instead of "Invite someone else". Without it, nothing changes.
 
 import 'package:attune/core/utils/exports/export_screens.dart';
+import 'package:attune/features/auth/sign_up/presentation/widgets/flow_buttons.dart';
 import 'package:attune/features/onboarding/presentation/widgets/onboarding_info_tile.dart';
 
 class PendingInviteGuide extends StatelessWidget {
@@ -22,6 +28,9 @@ class PendingInviteGuide extends StatelessWidget {
     required this.onInviteSomeoneElse,
     this.onContinue,
     this.busy = false,
+    this.v2 = false,
+    this.partnerName,
+    this.onSendNewInvite,
   });
 
   static const reflectAfter = Duration(hours: 48);
@@ -38,8 +47,18 @@ class PendingInviteGuide extends StatelessWidget {
   final VoidCallback? onContinue;
   final bool busy;
 
+  /// R3's words and day 7 (Spec 1 W4b).
+  final bool v2;
+
+  /// The invited partner's first name (R1's, this phone only), or null.
+  final String? partnerName;
+
+  /// Day 7's "Send a new invite" (v2 only).
+  final VoidCallback? onSendNewInvite;
+
   @override
   Widget build(BuildContext context) {
+    if (v2) return _buildV2(context);
     final colorScheme = Theme.of(context).colorScheme;
     final waited = age ?? Duration.zero;
     final buttonHeight = OnboardingTokens.actionButtonHeight.h;
@@ -133,5 +152,78 @@ class PendingInviteGuide extends StatelessWidget {
         ],
       ],
     );
+  }
+
+  Widget _buildV2(BuildContext context) {
+    final loc = AppLocalizations.of(context)!;
+    final theme = Theme.of(context);
+    final text = theme.textTheme.bodyMedium?.copyWith(
+      color: theme.colorScheme.onSurface,
+    );
+    final title = theme.textTheme.titleMedium?.copyWith(
+      color: theme.colorScheme.onSurface,
+      fontWeight: FontWeight.w600,
+    );
+    final waited = age ?? Duration.zero;
+    final name = partnerName?.trim();
+    final named = name != null && name.isNotEmpty;
+
+    if (waited >= pivotAfter) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Semantics(
+            header: true,
+            child: Text(loc.flow_guideWeekTitle, style: title),
+          ),
+          const SizedBox(height: Spacing.xs),
+          Text(
+            named
+                ? loc.flow_guideWeekBody(name)
+                : loc.flow_guideWeekBodyUnnamed,
+            style: text,
+          ),
+          const SizedBox(height: Spacing.smMd),
+          FlowSecondaryButton(
+            label: loc.flow_guideKeepWaiting,
+            onPressed: busy ? null : onKeepWaiting,
+          ),
+          const SizedBox(height: Spacing.sm),
+          FlowPrimaryButton(
+            label: loc.flow_guideSendNew,
+            busy: busy,
+            onPressed: onSendNewInvite ?? onInviteSomeoneElse,
+          ),
+          const SizedBox(height: Spacing.xs),
+          Text(loc.flow_guideSendNewHelper, style: text),
+          const SizedBox(height: Spacing.sm),
+          FlowSecondaryButton(
+            label: loc.flow_guideOnMyOwn,
+            onPressed: busy ? null : onUseAlone,
+          ),
+        ],
+      );
+    }
+
+    if (waited >= reflectAfter) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Semantics(
+            header: true,
+            child: Text(loc.flow_guideReflectTitle, style: title),
+          ),
+          const SizedBox(height: Spacing.xs),
+          Text(loc.flow_guideReflectBody, style: text),
+          const SizedBox(height: Spacing.smMd),
+          FlowSecondaryButton(
+            label: loc.flow_guideOpenJournal,
+            onPressed: onReflect,
+          ),
+        ],
+      );
+    }
+
+    return Text(loc.flow_guideWaitLine, style: text);
   }
 }

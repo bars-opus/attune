@@ -30,6 +30,7 @@ class FlowTextField extends StatefulWidget {
     this.onSubmitted,
     this.onChanged,
     this.textCapitalization = TextCapitalization.none,
+    this.labelAbove = false,
   });
 
   final TextEditingController controller;
@@ -51,11 +52,31 @@ class FlowTextField extends StatefulWidget {
   final ValueChanged<String>? onChanged;
   final TextCapitalization textCapitalization;
 
+  /// Spec 1 W4b: the label as a line of text above the field, for a label
+  /// too long to sit inside the border at large text sizes (it wraps there
+  /// instead of overlapping the border); still read as the field's name.
+  final bool labelAbove;
+
   @override
   State<FlowTextField> createState() => _FlowTextFieldState();
 }
 
 class _FlowTextFieldState extends State<FlowTextField> {
+  /// With [FlowTextField.labelAbove] and no node from the screen: the node
+  /// the label above focuses (batch-4 review #3). The default field keeps
+  /// its own, as before.
+  FocusNode? _ownFocus;
+
+  FocusNode? get _focusNode =>
+      widget.focusNode ??
+      (widget.labelAbove ? _ownFocus ??= FocusNode() : null);
+
+  @override
+  void dispose() {
+    _ownFocus?.dispose();
+    super.dispose();
+  }
+
   @override
   void didUpdateWidget(covariant FlowTextField oldWidget) {
     super.didUpdateWidget(oldWidget);
@@ -84,9 +105,9 @@ class _FlowTextFieldState extends State<FlowTextField> {
                 : colorScheme.onSurfaceVariant,
       ),
     );
-    return TextField(
+    final field = TextField(
       controller: widget.controller,
-      focusNode: widget.focusNode,
+      focusNode: _focusNode,
       autofocus: widget.autofocus,
       keyboardType: widget.keyboardType,
       textInputAction: widget.textInputAction,
@@ -96,10 +117,13 @@ class _FlowTextFieldState extends State<FlowTextField> {
       onSubmitted: widget.onSubmitted,
       onChanged: widget.onChanged,
       decoration: InputDecoration(
-        label: Semantics(
-          label: widget.semanticsLabel ?? widget.label,
-          child: ExcludeSemantics(child: Text(widget.label)),
-        ),
+        label:
+            widget.labelAbove
+                ? null
+                : Semantics(
+                  label: widget.semanticsLabel ?? widget.label,
+                  child: ExcludeSemantics(child: Text(widget.label)),
+                ),
         labelStyle: labelStyle,
         floatingLabelStyle: labelStyle,
         hintText: widget.hintText,
@@ -117,6 +141,36 @@ class _FlowTextFieldState extends State<FlowTextField> {
           borderRadius: BorderRadiusTokens.mdAll,
           borderSide: BorderSide(color: accent, width: 2),
         ),
+      ),
+    );
+    if (!widget.labelAbove) return field;
+    // One node: the label above is the text field's name.
+    return MergeSemantics(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Semantics(
+            label: widget.semanticsLabel ?? widget.label,
+            child: ExcludeSemantics(
+              // Tapping the label focuses the field, as the label inside
+              // the border does (the field's own node already has the tap).
+              child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                excludeFromSemantics: true,
+                onTap: () => _focusNode?.requestFocus(),
+                child: Text(
+                  widget.label,
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    color: colorScheme.onSurface,
+                  ),
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(height: Spacing.xs),
+          field,
+        ],
       ),
     );
   }

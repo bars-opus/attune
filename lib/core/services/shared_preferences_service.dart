@@ -1,8 +1,10 @@
 import 'package:attune/core/flags/public_app_config.dart';
 import 'package:attune/core/flags/signed_in_flow_flags.dart';
+import 'package:attune/core/platform/install_referrer_keys.dart';
 import 'package:attune/core/providers/shared_prefs_provider.dart';
 import 'package:attune/core/utils/constants.dart';
 import 'package:attune/features/auth/sign_up/data/age_gate_store.dart';
+import 'package:attune/features/relationships/data/invite_device_store.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -47,13 +49,21 @@ class PreferencesService {
     // Spec 1 W3 (preflight F-2): the signed-in flags are app config too
     // (no Dating value, D20); kept for the same reason.
     FlowFlagsCache.key,
+    // Spec 1 W4b: the Install Referrer is read once per install, so a
+    // sign-out never stores its invite code again.
+    kInstallReferrerReadKey,
     // Add any other app settings you want to preserve
   };
 
   /// Key prefixes [clearUserData] keeps. Per-account device baseline
   /// (Spec 2): keyed by user id, so keeping it shows no one anything, and
   /// dropping it hides a new device.
-  static const keptPrefixes = {'account_known_sessions:'};
+  static const keptPrefixes = {
+    'account_known_sessions:',
+    // Spec 1 W4b (§3.8 R4): the linked moment, once per phone per
+    // relationship; keyed by account and relationship, no name.
+    InviteDeviceStore.linkedMomentPrefix,
+  };
 
   /// Clears only user-specific data, keeps app settings
   Future<void> clearUserData() async {

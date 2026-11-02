@@ -105,5 +105,11 @@
 		<string>With Free time together on, Attune reads only when you're busy in your calendar (never titles, places or people) to show when you're both free. With Copy our plans on, it keeps a calendar called Plans with the plans you're in.</string>
 		<key>AppGroupId</key>
 		<string>group.com.barsopus.attune</string>
+		<!-- Spec 1 W4b (§3.8 R1): "Send on WhatsApp" shows only when
+		     whatsapp:// can open. -->
+		<key>LSApplicationQueriesSchemes</key>
+		<array>
+			<string>whatsapp</string>
+		</array>
 	</dict>
 </plist>

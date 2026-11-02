@@ -45,15 +45,45 @@ import 'package:go_router/go_router.dart';
 /// `/onboarding` (Spec 1 §5.2): the v2 gate under flow_paths_v2, today's
 /// OnboardingGate otherwise (and for the debug preview).
 class OnboardingEntry extends ConsumerWidget {
-  const OnboardingEntry({super.key, this.previewOnboarding = false});
+  const OnboardingEntry({
+    super.key,
+    this.previewOnboarding = false,
+    this.held = false,
+  });
 
   final bool previewOnboarding;
+
+  /// RI-3's accept was refused with account:hold (W4b): the v2 gate's H1
+  /// path ([OnboardingGateV2.held]).
+  final bool held;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final preview = kDebugMode && previewOnboarding;
+    // Batch-5 review I-1 (D9): neither gate (both can accept a stored
+    // invite) until the signed-in flags are known; unknown is not off. The
+    // read is bounded by its gateway (10 s); a failed read is the gate's
+    // offline step, whose Try again reads them again.
+    if (!preview &&
+        ref.read(homeAuthProvider).currentUser != null &&
+        !ref.watch(flowFlagsKnownProvider)) {
+      if (ref.watch(flowFlagsProvider).isLoading) {
+        return Scaffold(
+          body: Center(
+            child: CircularProgressIndicator(
+              semanticsLabel:
+                  AppLocalizations.of(context)!.flow_accountChecking,
+            ),
+          ),
+        );
+      }
+      return CheckOfflineStep(
+        onRetry: () => ref.invalidate(flowFlagsProvider),
+        onSignOut: () => ref.read(catchUpSignOutProvider)(),
+      );
+    }
     if (!preview && ref.watch(flowPathsV2Provider)) {
-      return const OnboardingGateV2();
+      return OnboardingGateV2(held: held);
     }
     return OnboardingGate(previewOnboarding: previewOnboarding);
   }
@@ -86,6 +116,11 @@ enum _Step {
   joined,
 }
 
+/// [OnboardingGateV2.heldExtra]'s type.
+class OnboardingHeld {
+  const OnboardingHeld();
+}
+
 /// The v2 gate (Spec 1 §3.7, §3.15): shows only what the account lacks, in
 /// order (A5c "We've updated our terms", A2 "Add your date of birth", A1,
 /// A6), then R1 for a new Relationship. A hold opens H1; a need this build
@@ -93,7 +128,14 @@ enum _Step {
 /// back to sign-up (W2 final review M-5). Every launch with `consent` in
 /// `needs` comes here before home (M-3): HomeScreen's latch sends it.
 class OnboardingGateV2 extends ConsumerStatefulWidget {
-  const OnboardingGateV2({super.key});
+  const OnboardingGateV2({super.key, this.held = false});
+
+  /// The server just refused an invite with account:hold (RI-3, W4b): if
+  /// the first read fails, that refusal is its last answer (H1).
+  final bool held;
+
+  /// `/onboarding`'s route extra for [held]: never from a link.
+  static const heldExtra = OnboardingHeld();
 
   @override
   ConsumerState<OnboardingGateV2> createState() => _OnboardingGateV2State();
@@ -126,10 +168,14 @@ class _OnboardingGateV2State extends ConsumerState<OnboardingGateV2> {
 
   HomeStateService get _service => ref.read(homeStateServiceProvider);
 
+  /// flow_couples_v2, effective: a stored invite is joined only from RI-3
+  /// (`/join-invite`), after an explicit tap (D9, W4b).
+  bool get _couplesV2 => ref.read(flowCouplesV2Provider);
+
   @override
   void initState() {
     super.initState();
-    unawaited(_resolve());
+    unawaited(_resolve(held: widget.held));
   }
 
   void _show(_Step step, {String? error}) {
@@ -167,6 +213,13 @@ class _OnboardingGateV2State extends ConsumerState<OnboardingGateV2> {
   String _inviteMessage(RelationshipInviteException error) {
     final loc = AppLocalizations.of(context)!;
     if (error.alreadyInRelationship) return loc.flow_inviteCodeAlreadyIn;
+    // W4a: past the attempt limit (429 invite:try_later), kept for later.
+    if (error.kind == InviteRefusalKind.tryLater) return loc.flow_joinTryLater;
+    // Batch-3 review #5: the server answered (503 invite:try_again, a 5xx):
+    // the person is online.
+    if (error.retryable && error.serverError) {
+      return loc.flow_inviteCodeServerError;
+    }
     if (error.retryable) return loc.flow_inviteCodeOffline;
     return loc.flow_inviteCodeRefused;
   }
@@ -178,8 +231,10 @@ class _OnboardingGateV2State extends ConsumerState<OnboardingGateV2> {
   }
 
   /// Replays what the phone owes, reads the server, then shows the next
-  /// step (or goes home).
-  Future<void> _resolve() async {
+  /// step (or goes home). [held]: the server just refused an invite with
+  /// account:hold, so if the read fails that refusal is its last answer:
+  /// H1, never A6 with nothing said (batch-3 review #4).
+  Future<void> _resolve({bool held = false}) async {
     final userId = _userId;
     if (userId == null) {
       await _go(RouteNames.login);
@@ -195,6 +250,7 @@ class _OnboardingGateV2State extends ConsumerState<OnboardingGateV2> {
     } catch (_) {}
     final answer = await home.refresh();
     if (!mounted) return;
+    if (held && answer == null) return _showHold();
     await _next(userId, answer: answer);
   }
 
@@ -203,12 +259,7 @@ class _OnboardingGateV2State extends ConsumerState<OnboardingGateV2> {
     final store = _store(userId);
     final live = answer ?? snapshot.server;
     final queuedSignUp = store.pendingSignUp != null;
-    if (snapshot.hold) {
-      // H1 first: it never waits on the keystore (review I-2).
-      _show(_Step.hold);
-      unawaited(_blockForAgeHold());
-      return;
-    }
+    if (snapshot.hold) return _showHold();
     if (live == null && !snapshot.known && !queuedSignUp) {
       return _show(_Step.offline);
     }
@@ -222,6 +273,12 @@ class _OnboardingGateV2State extends ConsumerState<OnboardingGateV2> {
     if (needs.isEmpty) {
       if (_relationshipChosen) return _show(_Step.invitePartner);
       if (_joined) return _show(_Step.joined);
+      if (_couplesV2 &&
+          store.pendingInviteCode != null &&
+          !_accountPending(userId)) {
+        await _go(RouteNames.joinInvite);
+        return;
+      }
       await _go(RouteNames.home);
       return;
     }
@@ -245,6 +302,10 @@ class _OnboardingGateV2State extends ConsumerState<OnboardingGateV2> {
         if (!_inviteTried &&
             store.pendingInviteCode != null &&
             !_accountPending(userId)) {
+          if (_couplesV2) {
+            await _go(RouteNames.joinInvite);
+            return;
+          }
           return _acceptStoredInvite(userId);
         }
         return _show(_Step.path);
@@ -304,6 +365,9 @@ class _OnboardingGateV2State extends ConsumerState<OnboardingGateV2> {
     } on RelationshipInviteException catch (error) {
       if (!error.retryable) await store.clearPendingInviteCode();
       if (!mounted) return;
+      // W4a (ruling I-3): the acceptor's own hold (account:hold) is H1,
+      // from the server's answer.
+      if (error.kind == InviteRefusalKind.hold) return _resolve(held: true);
       _show(
         typed ? _Step.inviteCode : _Step.path,
         error: _inviteMessage(error),
@@ -360,6 +424,15 @@ class _OnboardingGateV2State extends ConsumerState<OnboardingGateV2> {
         debugPrint('[gate] queue not cleared: ${error.runtimeType}');
       }
     };
+  }
+
+  /// H1, and this phone's block (ruling N-2): the one H1 path, for a hold
+  /// the server says and for a hold refusal whose read then failed
+  /// (batch-4 review #2). H1 first: it never waits on the keystore (review
+  /// I-2).
+  void _showHold() {
+    _show(_Step.hold);
+    unawaited(_blockForAgeHold());
   }
 
   /// Ruling N-2: H1 for an age hold also blocks this phone, as F-8 does: a
@@ -505,6 +578,10 @@ class _OnboardingGateV2State extends ConsumerState<OnboardingGateV2> {
     if (_accountPending(userId)) {
       return _queueFirstChoice(userId, AppPath.relationship);
     }
+    if (_couplesV2) {
+      await _go(RouteNames.joinInvite);
+      return;
+    }
     _inviteTried = false;
     await _acceptStoredInvite(userId, typed: true);
   }
@@ -557,6 +634,7 @@ class _OnboardingGateV2State extends ConsumerState<OnboardingGateV2> {
       ),
       _Step.invitePartner => InvitePartnerScreen(
         onDone: () => unawaited(_go(RouteNames.home)),
+        onAlreadyInvited: () => unawaited(_go(RouteNames.joinInvite)),
       ),
       // Today's "You are connected" card, in the deck it was built for.
       _Step.joined => Scaffold(

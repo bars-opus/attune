@@ -1,5 +1,6 @@
 import 'package:attune/features/auth/data/passwordless_auth_service.dart';
 import 'package:attune/features/onboarding/domain/home_state.dart';
+import 'package:attune/features/onboarding/presentation/providers/flow_flags.dart';
 import 'package:attune/features/onboarding/presentation/providers/home_state_providers.dart';
 import 'package:attune/features/opinions/presentation/screen/opinions_tab.dart';
 import 'package:attune/home/widgets/home_tab_two.dart';
@@ -36,9 +37,14 @@ final homeOpinionsTabProvider = Provider<Widget>((ref) => const OpinionsTab());
 typedef HomeTabTwoBuilder =
     Widget Function(AppTab tab, HomeSnapshot home, VoidCallback onInviteSent);
 
-/// Tab 2 under flow_paths_v2, replaceable in the shell's tests.
+/// Tab 2 under flow_paths_v2, replaceable in the shell's tests. W4b: R4
+/// under flow_couples_v2, read when Tab 2 is built.
 final homeTabTwoBuilderProvider = Provider<HomeTabTwoBuilder>(
   (ref) =>
-      (tab, home, onInviteSent) =>
-          HomeTabTwo(tab: tab, home: home, onInviteSent: onInviteSent),
+      (tab, home, onInviteSent) => HomeTabTwo(
+        tab: tab,
+        home: home,
+        onInviteSent: onInviteSent,
+        couplesV2: ref.read(flowCouplesV2Provider),
+      ),
 );

@@ -214,9 +214,8 @@ void main() {
     tester,
   ) async {
     final semantics = tester.ensureSemantics();
-    // Today's InviteCard (W4b replaces it) shows the code as SelectableText,
-    // which the tap-target guideline flags; the rest of the pending space
-    // is checked with the code unavailable.
+    // The space without the card (the code unavailable); with the card,
+    // test/features/onboarding/w4/invite_card_screens_a11y_test.dart (P-8).
     for (final state in ['pending', 'none']) {
       await _pump(
         tester,

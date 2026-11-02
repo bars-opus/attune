@@ -9,6 +9,7 @@ import 'package:attune/core/config/env.dart';
 import 'package:attune/core/notifications/config/feature/notification_config.dart';
 import 'package:attune/core/notifications/config/notification_config.dart';
 import 'package:attune/core/notifications/services/onesignal_service.dart';
+import 'package:attune/core/platform/install_referrer.dart';
 import 'package:attune/core/providers/routing_providers.dart';
 import 'package:attune/core/providers/shared_prefs_provider.dart';
 import 'package:attune/features/auth/providers/auth_provider.dart'
@@ -47,6 +48,18 @@ Future<void> main() async {
   _initializeDeepLinks();
   // Spec 1 §5.8: every feature's sign-out and quick-exit wipes, once.
   registerDeviceWipes();
+  // Spec 1 W4b (§3.8 RI): an invite code in the Play Install Referrer, read
+  // once per install, waits like a link opened while signed out. A session
+  // means an update, not a fresh install: nothing is stored (review I-1);
+  // with no backend to ask, it waits for the next launch.
+  final signedIn = _hasSession();
+  if (signedIn != null) {
+    unawaited(
+      SharedPreferences.getInstance().then(
+        (prefs) => readInstallReferrerInvite(prefs, signedIn: signedIn),
+      ),
+    );
+  }
   final chatCache = ChatCacheService();
   // init() recovers from a corrupt or locked store itself and bounds the
   // keystore read; this outer bound is the last line: a cache can never
@@ -140,6 +153,15 @@ Future<void> _initializeSupabase() async {
     debugPrint(
       '[startup] Supabase initialization failed: ${error.runtimeType}',
     );
+  }
+}
+
+/// Whether a session was restored at boot; null when Supabase isn't up.
+bool? _hasSession() {
+  try {
+    return Supabase.instance.client.auth.currentSession != null;
+  } catch (_) {
+    return null;
   }
 }
 

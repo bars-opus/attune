@@ -267,3 +267,7 @@ GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public
 -- Spec 1 W3c: the journal reminder: own row read, RPC writes, the enqueue is
 -- the cron's.
 \i supabase/migrations/20261026100010_journal_reminders_grants.sql
+
+-- Spec 1 W4a: the accept and the eligibility check are the invite edge
+-- functions' (service role); the preview is the app's.
+\i supabase/migrations/20261102100010_accept_invite_v2_grants.sql

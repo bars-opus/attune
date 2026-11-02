@@ -11,6 +11,7 @@ import 'package:attune/features/relationships/data/relationship_invite_service.d
 import 'package:attune/home/home_seams.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:supabase_flutter/supabase_flutter.dart' show FunctionException;
 
 import '../../../helpers/fake_home_state.dart';
 import '../../../helpers/fake_invites.dart';
@@ -159,13 +160,9 @@ void main() {
     await expectFlowGuidelines(tester);
     await tester.tap(find.text('Create my invite'));
     await tester.pumpAndSettle();
-    // The invite itself is today's InviteCard (P-8, until W4b's
-    // InvitePartnerStep), shared with the Chat tab's locked screen and the
-    // couples waiting step: its Share and Copy link buttons are 41.6 dp
-    // tall, its selectable code and link 32 and 42 dp, and its link and
-    // footer text 3.31:1. Only the labels are checked once it shows
-    // (batch-3 report, concern); R1's own button is checked by hand.
-    await expectLater(tester, meetsGuideline(labeledTapTargetGuideline));
+    // The invite itself is the shared InviteCard, which meets all three
+    // guidelines since W4b (P-8; it used to be checked for labels only).
+    await expectFlowGuidelines(tester);
     expect(
       tester.getSemantics(find.text('Done')),
       matchesSemantics(
@@ -183,5 +180,50 @@ void main() {
       greaterThanOrEqualTo(48),
     );
     semantics.dispose();
+  });
+
+  // W4a (W3 carry M-1, preflight F-4): a failed invite is said in the
+  // app's words, never the server's or the service's English, and never
+  // RI-3's "We couldn't find that invite".
+  testWidgets('a failed invite is the app\'s words, never the server\'s', (
+    tester,
+  ) async {
+    final cases = <RelationshipInviteException, String>{
+      inviteCreateFailure(
+        const FunctionException(
+          status: 409,
+          details: {
+            'error': 'You already have the maximum number of pending invites',
+          },
+        ),
+      ): 'You already have 3 invites waiting. Cancel one before you send '
+          'another.',
+      inviteCreateFailure(const FunctionException(status: 500)):
+          "We couldn't make your invite. Try again.",
+      const RelationshipInviteException(
+        'Unexpected invite response.',
+        retryable: true,
+        kind: InviteRefusalKind.unavailable,
+      ): "We couldn't make your invite. Try again.",
+      inviteCreateFailure(
+        const FunctionException(
+          status: 428,
+          details: {'error': 'invite:age_required'},
+        ),
+      ): 'Add your date of birth first, then send your invite.',
+    };
+    for (final MapEntry(key: error, value: words) in cases.entries) {
+      await tester.pumpWidget(const SizedBox());
+      await _pump(tester, invites: FakeInvites(createError: error));
+      await tester.tap(find.text('Create my invite'));
+      await tester.pumpAndSettle();
+      expect(find.text(words), findsOneWidget, reason: error.message);
+      expect(find.text(error.message), findsNothing, reason: error.message);
+      expect(
+        find.textContaining("We couldn't find that invite"),
+        findsNothing,
+        reason: error.message,
+      );
+    }
   });
 }

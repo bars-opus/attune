@@ -1,17 +1,22 @@
+import 'package:attune/app/routing/app_router.dart' show RouteNames;
 import 'package:attune/app/theme/design_tokens.dart';
 import 'package:attune/features/auth/sign_up/presentation/widgets/flow_buttons.dart';
 import 'package:attune/features/auth/sign_up/presentation/widgets/flow_frame.dart';
 import 'package:attune/features/auth/sign_up/presentation/widgets/flow_text_field.dart';
 import 'package:attune/features/onboarding/domain/home_state.dart';
 import 'package:attune/features/onboarding/presentation/path_chooser.dart';
+import 'package:attune/features/onboarding/presentation/providers/flow_flags.dart';
 import 'package:attune/features/onboarding/presentation/providers/home_state_providers.dart';
 import 'package:attune/features/onboarding/presentation/widgets/invite_card.dart';
+import 'package:attune/features/onboarding/presentation/widgets/invite_partner_step.dart';
 import 'package:attune/features/relationships/data/relationship_invite_service.dart';
+import 'package:attune/features/relationships/presentation/invite_error_copy.dart';
 import 'package:attune/home/home_seams.dart';
 import 'package:attune/i10n/generated/app_localizations.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/semantics.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 /// The invite service, replaceable in tests.
 final invitePartnerServiceProvider = Provider<RelationshipInviteService>(
@@ -23,18 +28,24 @@ final invitePartnerServiceProvider = Provider<RelationshipInviteService>(
 /// person taps "Create my invite". From another path ([switchPath]) that
 /// tap is also the switch to Relationship (§3.12: "path set when the
 /// invite is sent"); [pauseConfirmed] says the Dating pause was already
-/// confirmed. W4b's InvitePartnerStep replaces it under flow_couples_v2.
+/// confirmed. Under flow_couples_v2 it is W4b's InvitePartnerStep (the
+/// registers, the share actions, R2), with the same arguments.
 class InvitePartnerScreen extends ConsumerStatefulWidget {
   const InvitePartnerScreen({
     super.key,
     required this.onDone,
     this.switchPath = false,
     this.pauseConfirmed = false,
+    this.onAlreadyInvited,
   });
 
   final VoidCallback onDone;
   final bool switchPath;
   final bool pauseConfirmed;
+
+  /// R1's "My partner already invited me" (flow_couples_v2); by default
+  /// RI-2 and RI-3 (`/join-invite`).
+  final VoidCallback? onAlreadyInvited;
 
   @override
   ConsumerState<InvitePartnerScreen> createState() =>
@@ -98,7 +109,7 @@ class _InvitePartnerScreenState extends ConsumerState<InvitePartnerScreen> {
         widget.onDone();
         return;
       }
-      _fail(error.message);
+      _fail(inviteErrorCopy(loc, error));
     } catch (_) {
       if (mounted) _fail(loc.flow_saveFailed);
     } finally {
@@ -110,6 +121,18 @@ class _InvitePartnerScreenState extends ConsumerState<InvitePartnerScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // Spec 1 W4b (§3.8 R1): the registers and the share step.
+    if (ref.watch(flowCouplesV2Provider)) {
+      return InvitePartnerStep(
+        invites: ref.read(invitePartnerServiceProvider),
+        onDone: widget.onDone,
+        switchPath: widget.switchPath,
+        pauseConfirmed: widget.pauseConfirmed,
+        onAlreadyInvited:
+            widget.onAlreadyInvited ??
+            () => GoRouter.of(context).push(RouteNames.joinInvite),
+      );
+    }
     final loc = AppLocalizations.of(context)!;
     final theme = Theme.of(context);
     final invite = _invite;

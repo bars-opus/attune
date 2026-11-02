@@ -86,6 +86,22 @@ final flowCouplesV2Provider = Provider<bool>((ref) {
   return _current(ref).couplesV2;
 });
 
+/// Batch-5 review I-1 (D9): the signed-in flags are known, from an answer
+/// this phone has had (this run's, whose cache write SharedPreferences
+/// holds in memory at once, or a cached one); a failed read is unknown.
+/// Unknown is not off: until then nothing accepts a stored invite.
+/// flow_paths_v2 on comes only from such an answer.
+///
+/// Task 6 re-review R-1: with flow_signin_v2 off they can turn nothing on
+/// (flow_paths_v2 needs it), so they are known at once and today's legacy
+/// flow runs unchanged, offline included.
+final flowFlagsKnownProvider = Provider<bool>((ref) {
+  if (!ref.watch(signInFlowV2Provider)) return true;
+  if (ref.watch(flowPathsV2Provider)) return true;
+  ref.watch(flowFlagsProvider);
+  return _cached(ref) != null;
+});
+
 /// The live flow_paths_v2, once read (bounded): for code that decides
 /// once, such as the automatic push ask, and must not act on a stale
 /// first-frame value.

@@ -116,7 +116,8 @@ String? flowV2Redirect(
 /// Where main.dart's invite-link handler goes (spec §5.2, R3): under
 /// flow_signin_v2 a signed-out invitee lands on RI-1; anyone signed in, and
 /// everyone with the flag off, keeps today's /onboarding, whose gate
-/// accepts the stored code.
+/// accepts the stored code (under flow_couples_v2 it opens RI-3,
+/// /join-invite, which joins only after a tap: D9).
 String inviteLinkLocation(RoutingNotifier routing) =>
     routing.flowV2 && !routing.isSignedIn
         ? RouteNames.invite

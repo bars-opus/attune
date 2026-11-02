@@ -32,7 +32,11 @@ import 'package:attune/features/games/dots_and_boxes/prototype/dots_boxes_protot
 import 'package:attune/features/games/word_hunt/presentation/screens/word_hunt_game_screen.dart';
 import 'package:attune/features/onboarding/domain/home_state.dart' show AppTab;
 import 'package:attune/features/onboarding/presentation/screens/invite_partner_screen.dart';
+import 'package:attune/features/relationships/presentation/screens/join_invite_screen.dart';
 import 'package:attune/features/onboarding/presentation/screens/onboarding_gate_v2.dart';
+import 'package:attune/features/onboarding/presentation/providers/flow_flags.dart'
+    show flowCouplesV2Provider;
+import 'package:flutter_riverpod/flutter_riverpod.dart' show ProviderScope;
 import 'package:attune/features/opinions/data/models/opinion_model.dart';
 import 'package:attune/features/opinions/presentation/screen/anonymous_profile_screen.dart';
 import 'package:attune/features/opinions/presentation/screen/comment_thread_screen.dart';
@@ -159,6 +163,9 @@ class RouteNames {
 
   /// Spec 1 W3a: R1 until W4b (InvitePartnerScreen).
   static const String invitePartner = '/invite-partner';
+
+  /// Spec 1 W4b: RI-2 (signed in), RI-3 and RI-4 (JoinInviteScreen).
+  static const String joinInvite = '/join-invite';
   static const String home = '/home';
   static const String settings = '/settings';
   static const String language = '/language';
@@ -512,7 +519,11 @@ GoRouter createAppRouter(RoutingNotifier routingNotifier) {
         builder: (context, state) {
           final previewOnboarding = kDebugMode && state.extra == true;
           // Spec 1 W3a: the v2 gate under flow_paths_v2.
-          return OnboardingEntry(previewOnboarding: previewOnboarding);
+          return OnboardingEntry(
+            previewOnboarding: previewOnboarding,
+            // W4b: RI-3's hold refusal (an extra, never from a link).
+            held: state.extra is OnboardingHeld,
+          );
         },
       ),
       // Spec 1 W3a (§3.8 R1, §3.12): the invite screen from Me or Settings;
@@ -531,6 +542,38 @@ GoRouter createAppRouter(RoutingNotifier routingNotifier) {
               pauseConfirmed: state.uri.queryParameters['paused'] == '1',
               onDone:
                   () => GoRouter.of(context).go(homeLocation(tab: AppTab.chat)),
+            ),
+      ),
+      // Spec 1 W4b (§3.8 RI-3, D9): the one place a stored invite is
+      // accepted, after an explicit "Join {name}"; signed-in only.
+      // Final review #6: RI-3 is flow_couples_v2's; with it off (or
+      // unreadable) a typed or deep /join-invite goes home, never RI-3.
+      GoRoute(
+        path: RouteNames.joinInvite,
+        name: 'joinInvite',
+        redirect: (context, state) {
+          if (!routingNotifier.isSignedIn) return RouteNames.login;
+          return _couplesV2(context) ? null : RouteNames.home;
+        },
+        builder:
+            (context, state) => JoinInviteScreen(
+              onDone: () => GoRouter.of(context).go(RouteNames.home),
+              onJoined:
+                  () => GoRouter.of(context).go(homeLocation(tab: AppTab.chat)),
+              onChooseAnotherWay:
+                  (firstChoice) => GoRouter.of(context).go(
+                    firstChoice
+                        ? RouteNames.onboarding
+                        : RouteNames.howYouUseAttune,
+                  ),
+              onNeedsAccount:
+                  () => GoRouter.of(context).go(RouteNames.onboarding),
+              // The acceptor's own hold: the gate's H1 path.
+              onHeld:
+                  () => GoRouter.of(context).go(
+                    RouteNames.onboarding,
+                    extra: OnboardingGateV2.heldExtra,
+                  ),
             ),
       ),
       GoRoute(
@@ -1800,6 +1843,19 @@ GoRouter createAppRouter(RoutingNotifier routingNotifier) {
       ),
     ],
   );
+}
+
+/// flow_couples_v2, effective, from the app's providers; off when they
+/// can't be read (final review #6).
+bool _couplesV2(BuildContext context) {
+  try {
+    return ProviderScope.containerOf(
+      context,
+      listen: false,
+    ).read(flowCouplesV2Provider);
+  } catch (_) {
+    return false;
+  }
 }
 
 String _currentUserId() {

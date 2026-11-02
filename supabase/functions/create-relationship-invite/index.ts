@@ -4,7 +4,8 @@ import {
   requireUser,
   serviceRoleClient,
 } from "../_shared/attune_auth.ts";
-import { ensureInviteAccount } from "../_shared/sign_up_guard.ts";
+import { ensureInviteAccount, requireInviterAge } from "../_shared/sign_up_guard.ts";
+import { createErrorResponse } from "./errors.ts";
 
 const INVITE_TTL_DAYS = 7;
 const INVITE_CODE_LENGTH = 6;
@@ -24,10 +25,13 @@ Deno.serve(async (req) => {
     const user = await requireUser(req);
     const supabase = serviceRoleClient();
 
-    // Spec 1 W2 interim guard (review I-5, until W4a): under flow_signin_v2
-    // no users row is created here; a caller without one gets 409
-    // signup:incomplete before anything is read or written.
-    await ensureInviteAccount(supabase, user.id, () => ensureUserRow(supabase, user));
+    // Spec 1 W4a (§4.5): with flow_signin_v2 off, today's missing-row
+    // insert. On: no users row is ever created here (D8); the inviter needs
+    // an account (409 signup:incomplete), a date of birth (428
+    // invite:age_required) and to be 18 or over (403 invite:not_possible),
+    // before anything is read or written.
+    const eligibility = await ensureInviteAccount(supabase, user.id, () => ensureUserRow(supabase, user));
+    requireInviterAge(eligibility);
 
     // A user already in an active relationship must never be able to mint
     // a fresh pending invite alongside it. The DB's own
@@ -138,7 +142,7 @@ Deno.serve(async (req) => {
 
     throw new HttpError("Could not create invite code", 500);
   } catch (error) {
-    return handleError(error);
+    return createErrorResponse(error);
   }
 });
 
@@ -178,15 +182,4 @@ function isUniqueViolation(error: unknown): boolean {
       "code" in error &&
       (error as { code?: string }).code === "23505",
   );
-}
-
-function handleError(error: unknown): Response {
-  if (error instanceof HttpError) {
-    return jsonResponse({ error: error.message }, error.status);
-  }
-  console.error(
-    "create-relationship-invite failed:",
-    error instanceof Error ? error.stack ?? error.message : JSON.stringify(error),
-  );
-  return jsonResponse({ error: "Could not create relationship invite" }, 500);
 }

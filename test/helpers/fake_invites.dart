@@ -6,6 +6,14 @@ class FakeInvites extends RelationshipInviteService {
 
   RelationshipInviteException? acceptError;
   RelationshipInviteException? createError;
+
+  /// Spec 1 W4b: what previewInvite answers (or throws).
+  InvitePreview preview = const InvitePreview(
+    state: InvitePreviewState.ok,
+    inviterFirstName: 'Yaw',
+  );
+  RelationshipInviteException? previewError;
+  final previewed = <String>[];
   final accepted = <String>[];
   int creates = 0;
   int withdrawals = 0;
@@ -38,6 +46,13 @@ class FakeInvites extends RelationshipInviteService {
 
   @override
   Future<Duration?> inviteAge() async => age;
+
+  @override
+  Future<InvitePreview> previewInvite(String inviteCode) async {
+    previewed.add(inviteCode);
+    if (previewError != null) throw previewError!;
+    return preview;
+  }
 
   @override
   Future<void> withdrawPendingInvites() async => withdrawals++;

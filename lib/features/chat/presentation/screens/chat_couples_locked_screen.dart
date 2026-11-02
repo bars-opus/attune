@@ -9,6 +9,8 @@ import 'package:attune/core/intro/presentation/screens/feature_intro_flow_screen
 import 'package:attune/core/utils/exports/export_screens.dart';
 import 'package:attune/core/utils/relationship_status_display.dart';
 import 'package:attune/core/widgets/animated_circle.dart';
+import 'package:attune/features/onboarding/presentation/screens/invite_partner_screen.dart'
+    show invitePartnerServiceProvider;
 import 'package:attune/features/onboarding/presentation/widgets/invite_card.dart';
 import 'package:attune/features/onboarding/presentation/widgets/pending_invite_guide.dart';
 import 'package:attune/features/opinions/presentation/providers/opinion_providers.dart';
@@ -61,7 +63,11 @@ class ChatCouplesLockedScreen extends ConsumerStatefulWidget {
 
 class _ChatCouplesLockedScreenState
     extends ConsumerState<ChatCouplesLockedScreen> {
-  final _inviteService = RelationshipInviteService();
+  // Spec 1 W4b (P-8): the shared invite service, so a test can show the
+  // card here (the same RelationshipInviteService() in the app).
+  late final RelationshipInviteService _inviteService = ref.read(
+    invitePartnerServiceProvider,
+  );
 
   RelationshipInvite? _invite;
   bool _isCreatingInvite = false;

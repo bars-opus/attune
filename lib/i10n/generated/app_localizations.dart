@@ -3918,6 +3918,486 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Not now'**
   String get flow_notNow;
+
+  /// No description provided for @flow_joinAlreadyIn.
+  ///
+  /// In en, this message translates to:
+  /// **'You\'re already in a relationship on Attune. End it first to join a new one.'**
+  String get flow_joinAlreadyIn;
+
+  /// No description provided for @flow_joinNotPossible.
+  ///
+  /// In en, this message translates to:
+  /// **'We couldn\'t link these accounts. If you think this is wrong, contact support.'**
+  String get flow_joinNotPossible;
+
+  /// No description provided for @flow_joinOwn.
+  ///
+  /// In en, this message translates to:
+  /// **'This is your own invite. Send it to your partner instead.'**
+  String get flow_joinOwn;
+
+  /// No description provided for @flow_joinInvalid.
+  ///
+  /// In en, this message translates to:
+  /// **'We couldn\'t find that invite. Check the code with the person who sent it.'**
+  String get flow_joinInvalid;
+
+  /// No description provided for @flow_joinTryLater.
+  ///
+  /// In en, this message translates to:
+  /// **'You\'ve checked a lot of codes. Try again in a little while.'**
+  String get flow_joinTryLater;
+
+  /// No description provided for @flow_inviteErrorSignUp.
+  ///
+  /// In en, this message translates to:
+  /// **'Finish setting up your account first, then try again.'**
+  String get flow_inviteErrorSignUp;
+
+  /// No description provided for @flow_inviteErrorCap.
+  ///
+  /// In en, this message translates to:
+  /// **'You already have 3 invites waiting. Cancel one before you send another.'**
+  String get flow_inviteErrorCap;
+
+  /// No description provided for @flow_inviteErrorAgeRequired.
+  ///
+  /// In en, this message translates to:
+  /// **'Add your date of birth first, then send your invite.'**
+  String get flow_inviteErrorAgeRequired;
+
+  /// No description provided for @flow_inviteErrorTryAgain.
+  ///
+  /// In en, this message translates to:
+  /// **'We couldn\'t make your invite. Try again.'**
+  String get flow_inviteErrorTryAgain;
+
+  /// No description provided for @flow_inviteMsgSimpleOpen.
+  ///
+  /// In en, this message translates to:
+  /// **'Hi {name}, I\'d like us to try Attune together. It\'s a private space just for the two of us.'**
+  String flow_inviteMsgSimpleOpen(String name);
+
+  /// No description provided for @flow_inviteMsgSimpleOpenNoName.
+  ///
+  /// In en, this message translates to:
+  /// **'Hi, I\'d like us to try Attune together. It\'s a private space just for the two of us.'**
+  String get flow_inviteMsgSimpleOpenNoName;
+
+  /// No description provided for @flow_inviteMsgSimpleGet.
+  ///
+  /// In en, this message translates to:
+  /// **'Get the app: {link}'**
+  String flow_inviteMsgSimpleGet(String link);
+
+  /// No description provided for @flow_inviteMsgCasualOpen.
+  ///
+  /// In en, this message translates to:
+  /// **'Hey {name}! I found an app for couples and thought of us. Private, just you and me.'**
+  String flow_inviteMsgCasualOpen(String name);
+
+  /// No description provided for @flow_inviteMsgCasualOpenNoName.
+  ///
+  /// In en, this message translates to:
+  /// **'Hey! I found an app for couples and thought of us. Private, just you and me.'**
+  String get flow_inviteMsgCasualOpenNoName;
+
+  /// No description provided for @flow_inviteMsgCasualGet.
+  ///
+  /// In en, this message translates to:
+  /// **'Get it here: {link}'**
+  String flow_inviteMsgCasualGet(String link);
+
+  /// No description provided for @flow_inviteMsgPidginOpen.
+  ///
+  /// In en, this message translates to:
+  /// **'{name}, make we try Attune. Na private space for only you and me.'**
+  String flow_inviteMsgPidginOpen(String name);
+
+  /// No description provided for @flow_inviteMsgPidginOpenNoName.
+  ///
+  /// In en, this message translates to:
+  /// **'Make we try Attune. Na private space for only you and me.'**
+  String get flow_inviteMsgPidginOpenNoName;
+
+  /// No description provided for @flow_inviteMsgPidginGet.
+  ///
+  /// In en, this message translates to:
+  /// **'Download am: {link}'**
+  String flow_inviteMsgPidginGet(String link);
+
+  /// No description provided for @flow_inviteMsgOpenCode.
+  ///
+  /// In en, this message translates to:
+  /// **'Open Attune → I have an invite → {code}'**
+  String flow_inviteMsgOpenCode(String code);
+
+  /// No description provided for @flow_inviteMsgFoundMyself.
+  ///
+  /// In en, this message translates to:
+  /// **'I found this myself. I just thought it\'d be nice.'**
+  String get flow_inviteMsgFoundMyself;
+
+  /// No description provided for @flow_inviteCodeServerError.
+  ///
+  /// In en, this message translates to:
+  /// **'Something went wrong on our side. Try again.'**
+  String get flow_inviteCodeServerError;
+
+  /// No description provided for @flow_invitePartnerBodyNamed.
+  ///
+  /// In en, this message translates to:
+  /// **'Send a link. When {name} joins, your private space opens.'**
+  String flow_invitePartnerBodyNamed(String name);
+
+  /// No description provided for @flow_r1NameLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Their first name (optional)'**
+  String get flow_r1NameLabel;
+
+  /// No description provided for @flow_r1NameHelper.
+  ///
+  /// In en, this message translates to:
+  /// **'Used in your message and on this phone only.'**
+  String get flow_r1NameHelper;
+
+  /// No description provided for @flow_r1ToneTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'How should it sound?'**
+  String get flow_r1ToneTitle;
+
+  /// No description provided for @flow_r1ToneGroup.
+  ///
+  /// In en, this message translates to:
+  /// **'Choose one of the message styles'**
+  String get flow_r1ToneGroup;
+
+  /// No description provided for @flow_r1ToneSimple.
+  ///
+  /// In en, this message translates to:
+  /// **'Simple'**
+  String get flow_r1ToneSimple;
+
+  /// No description provided for @flow_r1ToneCasual.
+  ///
+  /// In en, this message translates to:
+  /// **'Casual'**
+  String get flow_r1ToneCasual;
+
+  /// No description provided for @flow_r1TonePidgin.
+  ///
+  /// In en, this message translates to:
+  /// **'Pidgin'**
+  String get flow_r1TonePidgin;
+
+  /// No description provided for @flow_r1FoundMyselfToggle.
+  ///
+  /// In en, this message translates to:
+  /// **'Add: \'I found this myself. I just thought it\'d be nice.\''**
+  String get flow_r1FoundMyselfToggle;
+
+  /// No description provided for @flow_r1PreviewTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'What your partner will see'**
+  String get flow_r1PreviewTitle;
+
+  /// No description provided for @flow_r1PreviewTitleNamed.
+  ///
+  /// In en, this message translates to:
+  /// **'What {name} will see'**
+  String flow_r1PreviewTitleNamed(String name);
+
+  /// No description provided for @flow_r1Making.
+  ///
+  /// In en, this message translates to:
+  /// **'Making your invite'**
+  String get flow_r1Making;
+
+  /// No description provided for @flow_r1CodePending.
+  ///
+  /// In en, this message translates to:
+  /// **'(your code)'**
+  String get flow_r1CodePending;
+
+  /// No description provided for @flow_r1SendWhatsApp.
+  ///
+  /// In en, this message translates to:
+  /// **'Send on WhatsApp'**
+  String get flow_r1SendWhatsApp;
+
+  /// No description provided for @flow_r1ShareOther.
+  ///
+  /// In en, this message translates to:
+  /// **'Share another way'**
+  String get flow_r1ShareOther;
+
+  /// No description provided for @flow_r1ShowQr.
+  ///
+  /// In en, this message translates to:
+  /// **'Show QR code'**
+  String get flow_r1ShowQr;
+
+  /// No description provided for @flow_r1CopyCode.
+  ///
+  /// In en, this message translates to:
+  /// **'Copy code'**
+  String get flow_r1CopyCode;
+
+  /// No description provided for @flow_r1CodeCopied.
+  ///
+  /// In en, this message translates to:
+  /// **'Code copied.'**
+  String get flow_r1CodeCopied;
+
+  /// No description provided for @flow_r1QrTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Your invite code'**
+  String get flow_r1QrTitle;
+
+  /// No description provided for @flow_r1QrSemantics.
+  ///
+  /// In en, this message translates to:
+  /// **'A QR code for your invite link'**
+  String get flow_r1QrSemantics;
+
+  /// No description provided for @flow_inviteCodeSemantics.
+  ///
+  /// In en, this message translates to:
+  /// **'Invite code {code}'**
+  String flow_inviteCodeSemantics(String code);
+
+  /// No description provided for @flow_ri3Title.
+  ///
+  /// In en, this message translates to:
+  /// **'Join {name}?'**
+  String flow_ri3Title(String name);
+
+  /// No description provided for @flow_ri3TitleUnnamed.
+  ///
+  /// In en, this message translates to:
+  /// **'Join your partner?'**
+  String get flow_ri3TitleUnnamed;
+
+  /// No description provided for @flow_ri3Body.
+  ///
+  /// In en, this message translates to:
+  /// **'{name} invited you to a private space on Attune.'**
+  String flow_ri3Body(String name);
+
+  /// No description provided for @flow_ri3BodyUnnamed.
+  ///
+  /// In en, this message translates to:
+  /// **'Your partner invited you to a private space on Attune.'**
+  String get flow_ri3BodyUnnamed;
+
+  /// No description provided for @flow_ri3Button.
+  ///
+  /// In en, this message translates to:
+  /// **'Join {name}'**
+  String flow_ri3Button(String name);
+
+  /// No description provided for @flow_ri3ButtonUnnamed.
+  ///
+  /// In en, this message translates to:
+  /// **'Join'**
+  String get flow_ri3ButtonUnnamed;
+
+  /// No description provided for @flow_joinOtherWay.
+  ///
+  /// In en, this message translates to:
+  /// **'Not what you expected? Choose another way to use Attune'**
+  String get flow_joinOtherWay;
+
+  /// No description provided for @flow_joinEnterAgain.
+  ///
+  /// In en, this message translates to:
+  /// **'Enter the code again'**
+  String get flow_joinEnterAgain;
+
+  /// No description provided for @flow_joinExpiredTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'This invite has expired.'**
+  String get flow_joinExpiredTitle;
+
+  /// No description provided for @flow_joinExpired.
+  ///
+  /// In en, this message translates to:
+  /// **'Ask {name} to send a new one.'**
+  String flow_joinExpired(String name);
+
+  /// No description provided for @flow_joinExpiredUnnamed.
+  ///
+  /// In en, this message translates to:
+  /// **'Ask the person who sent it to send a new one.'**
+  String get flow_joinExpiredUnnamed;
+
+  /// No description provided for @flow_joinAskWhatsApp.
+  ///
+  /// In en, this message translates to:
+  /// **'Ask {name} on WhatsApp'**
+  String flow_joinAskWhatsApp(String name);
+
+  /// No description provided for @flow_joinAskWhatsAppUnnamed.
+  ///
+  /// In en, this message translates to:
+  /// **'Ask on WhatsApp'**
+  String get flow_joinAskWhatsAppUnnamed;
+
+  /// No description provided for @flow_joinExpiredMessage.
+  ///
+  /// In en, this message translates to:
+  /// **'Hi {name}, my Attune invite expired. Could you send me a new one?'**
+  String flow_joinExpiredMessage(String name);
+
+  /// No description provided for @flow_joinExpiredMessageUnnamed.
+  ///
+  /// In en, this message translates to:
+  /// **'Hi, my Attune invite expired. Could you send me a new one?'**
+  String get flow_joinExpiredMessageUnnamed;
+
+  /// No description provided for @flow_joinChecking.
+  ///
+  /// In en, this message translates to:
+  /// **'Checking your invite'**
+  String get flow_joinChecking;
+
+  /// No description provided for @flow_linkedTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Welcome, {couple}'**
+  String flow_linkedTitle(String couple);
+
+  /// No description provided for @flow_linkedBody.
+  ///
+  /// In en, this message translates to:
+  /// **'Your private space with {name} is open.'**
+  String flow_linkedBody(String name);
+
+  /// No description provided for @flow_linkedBodyUnnamed.
+  ///
+  /// In en, this message translates to:
+  /// **'Your private space with your partner is open.'**
+  String get flow_linkedBodyUnnamed;
+
+  /// No description provided for @flow_pushAskR4.
+  ///
+  /// In en, this message translates to:
+  /// **'Get notified when {name} messages you'**
+  String flow_pushAskR4(String name);
+
+  /// No description provided for @flow_pushAskR4Unnamed.
+  ///
+  /// In en, this message translates to:
+  /// **'Get notified when your partner messages you'**
+  String get flow_pushAskR4Unnamed;
+
+  /// No description provided for @flow_inviteErrorNotPossible.
+  ///
+  /// In en, this message translates to:
+  /// **'We couldn\'t make your invite. If you think this is wrong, contact support.'**
+  String get flow_inviteErrorNotPossible;
+
+  /// No description provided for @flow_guideWaitLine.
+  ///
+  /// In en, this message translates to:
+  /// **'We\'ll suggest a private reflection space if this takes a little while.'**
+  String get flow_guideWaitLine;
+
+  /// No description provided for @flow_guideReflectTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'A private space while you wait'**
+  String get flow_guideReflectTitle;
+
+  /// No description provided for @flow_guideReflectBody.
+  ///
+  /// In en, this message translates to:
+  /// **'Your reflections stay private to you.'**
+  String get flow_guideReflectBody;
+
+  /// No description provided for @flow_guideOpenJournal.
+  ///
+  /// In en, this message translates to:
+  /// **'Open your journal'**
+  String get flow_guideOpenJournal;
+
+  /// No description provided for @flow_guideWeekTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'It\'s been a week'**
+  String get flow_guideWeekTitle;
+
+  /// No description provided for @flow_guideWeekBody.
+  ///
+  /// In en, this message translates to:
+  /// **'Your invite to {name} has run its week. What would you like to do?'**
+  String flow_guideWeekBody(String name);
+
+  /// No description provided for @flow_guideWeekBodyUnnamed.
+  ///
+  /// In en, this message translates to:
+  /// **'Your invite to your partner has run its week. What would you like to do?'**
+  String get flow_guideWeekBodyUnnamed;
+
+  /// No description provided for @flow_guideKeepWaiting.
+  ///
+  /// In en, this message translates to:
+  /// **'Keep waiting'**
+  String get flow_guideKeepWaiting;
+
+  /// No description provided for @flow_guideSendNew.
+  ///
+  /// In en, this message translates to:
+  /// **'Send a new invite'**
+  String get flow_guideSendNew;
+
+  /// No description provided for @flow_guideSendNewHelper.
+  ///
+  /// In en, this message translates to:
+  /// **'Send it to the same number or a different one.'**
+  String get flow_guideSendNewHelper;
+
+  /// No description provided for @flow_guideOnMyOwn.
+  ///
+  /// In en, this message translates to:
+  /// **'Use Attune on my own for now'**
+  String get flow_guideOnMyOwn;
+
+  /// No description provided for @flow_day30.
+  ///
+  /// In en, this message translates to:
+  /// **'Want to send {name} a new invite?'**
+  String flow_day30(String name);
+
+  /// No description provided for @flow_day30Unnamed.
+  ///
+  /// In en, this message translates to:
+  /// **'Want to send your partner a new invite?'**
+  String get flow_day30Unnamed;
+
+  /// No description provided for @flow_day30Dismiss.
+  ///
+  /// In en, this message translates to:
+  /// **'Dismiss'**
+  String get flow_day30Dismiss;
+
+  /// No description provided for @flow_r3SendAgain.
+  ///
+  /// In en, this message translates to:
+  /// **'Send again'**
+  String get flow_r3SendAgain;
+
+  /// No description provided for @flow_invitePartnerNamed.
+  ///
+  /// In en, this message translates to:
+  /// **'Invite {name}'**
+  String flow_invitePartnerNamed(String name);
 }
 
 class _AppLocalizationsDelegate extends LocalizationsDelegate<AppLocalizations> {

@@ -108,6 +108,9 @@ dependencies:
   webview_flutter: ^4.4.0
   onesignal_flutter: 5.5.1
   app_links: ^6.0.0
+  # Spec 1 W4b (§3.8 RI): the Play Install Referrer's invite code. 0.5.0:
+  # 0.6.0 needs Dart 3.12.
+  play_install_referrer: 0.5.0
   rename: ^2.0.1
   phone_numbers_parser: ^9.0.23
   countries_utils: ^1.0.1

@@ -19,6 +19,7 @@ import 'package:attune/home/widgets/home_tab_two.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:supabase_flutter/supabase_flutter.dart' show FunctionException;
 
 import '../../helpers/fake_home_state.dart';
 import '../../helpers/fake_invites.dart';
@@ -314,6 +315,44 @@ void main() {
           isA<RelationshipSpaceScreen>(),
         );
       });
+    }
+  });
+
+  // W4a (W3 carry M-1, preflight F-4): R3's failed invite is the app's
+  // words, never the service's English or RI-3's "couldn't find".
+  testWidgets('a failed invite is the app\'s words, never the server\'s', (
+    tester,
+  ) async {
+    final cases = <RelationshipInviteException, String>{
+      inviteCreateFailure(
+        const FunctionException(
+          status: 409,
+          details: {
+            'error': 'You already have the maximum number of pending invites',
+          },
+        ),
+      ): 'You already have 3 invites waiting. Cancel one before you send '
+          'another.',
+      const RelationshipInviteException(
+        'Invites are unavailable right now. Please try again later.',
+        retryable: true,
+        kind: InviteRefusalKind.unavailable,
+      ): "We couldn't make your invite. Try again.",
+      const RelationshipInviteException(
+        'Unexpected invite response.',
+        retryable: true,
+        kind: InviteRefusalKind.unavailable,
+      ): "We couldn't make your invite. Try again.",
+    };
+    for (final MapEntry(key: error, value: words) in cases.entries) {
+      await _pump(tester, _pending, FakeInvites(createError: error));
+      expect(find.text(words), findsOneWidget, reason: error.message);
+      expect(find.text(error.message), findsNothing, reason: error.message);
+      expect(
+        find.textContaining("We couldn't find that invite"),
+        findsNothing,
+        reason: error.message,
+      );
     }
   });
 }

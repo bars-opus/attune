@@ -1094,4 +1094,178 @@ void main() {
       () => CheckOfflineStep(onRetry: () {}, onSignOut: () {}),
     );
   });
+
+  // W4a (batch 3, Task 2's answers): past the attempt limit (429
+  // invite:try_later) says so and keeps the code; never "didn't work".
+  testWidgets('a stored invite past the attempt limit: try later, code kept', (
+    tester,
+  ) async {
+    final g = await _pumpGate(
+      tester,
+      server: homeJson(path: null, needs: ['path']),
+      prefsValues: {
+        'attune.onboarding.user.$_uid.pending_invite':
+            '{"code":"K7P2QM","stored_at":"2099-01-01T00:00:00.000Z"}',
+      },
+      invites: FakeInvites(
+        acceptError: inviteAcceptFailure(
+          const FunctionException(
+            status: 429,
+            details: {'error': 'invite:try_later', 'code': 'invite:try_later'},
+          ),
+        ),
+      ),
+    );
+    expect(g.invites.accepted, ['K7P2QM']);
+    expect(
+      find.text("You've checked a lot of codes. Try again in a little while."),
+      findsOneWidget,
+    );
+    expect(find.textContaining("This code didn't work"), findsNothing);
+    expect(find.textContaining('invite:'), findsNothing);
+    expect(g.store.pendingInviteCode, 'K7P2QM');
+  });
+
+  // W4a (Task 1 ruling I-3): the acceptor's own hold (403 account:hold)
+  // opens H1 from the server's answer; the code is dropped.
+  testWidgets('a stored invite refused for the acceptor\'s hold opens H1', (
+    tester,
+  ) async {
+    late _Gate g;
+    final invites = _OnAccept(
+      inviteAcceptFailure(
+        const FunctionException(
+          status: 403,
+          details: {'error': 'account:hold', 'code': 'account:hold'},
+        ),
+      ),
+      () => g.gateway.state = homeJson(path: null, needs: ['path'], hold: true),
+    );
+    g = await _pumpGate(
+      tester,
+      server: homeJson(path: null, needs: ['name', 'path']),
+      prefsValues: {
+        'attune.onboarding.user.$_uid.pending_invite':
+            '{"code":"K7P2QM","stored_at":"2099-01-01T00:00:00.000Z"}',
+      },
+      invites: invites,
+    );
+    g.gateway.state = homeJson(path: null, needs: ['path']);
+    await tester.enterText(find.byType(TextField), 'Akosua');
+    await tester.tap(find.text('Continue'));
+    await _settle(tester);
+    expect(invites.accepted, ['K7P2QM']);
+    expect(find.text('We need to check your account'), findsOneWidget);
+    expect(find.text('What brings you to Attune?'), findsNothing);
+    expect(find.textContaining('account:'), findsNothing);
+    expect(g.store.pendingInviteCode, isNull);
+    // Batch-3 review #3: H1's device block (ruling N-2) on this path too.
+    expect(g.routing.underAgeBlocked, isTrue);
+  });
+
+  // Batch-3 review #4: the server said account:hold, then the read that
+  // would show H1 failed. The person stays on H1 (the last answer was a
+  // hold), never A6 with nothing said.
+  testWidgets('a hold refusal, then a failed read: still H1, never A6', (
+    tester,
+  ) async {
+    late _Gate g;
+    final invites = _OnAccept(
+      inviteAcceptFailure(
+        const FunctionException(
+          status: 403,
+          details: {'error': 'account:hold', 'code': 'account:hold'},
+        ),
+      ),
+      () => g.gateway.failAlways = Exception('offline'),
+    );
+    g = await _pumpGate(
+      tester,
+      server: homeJson(path: null, needs: ['name', 'path']),
+      prefsValues: {
+        'attune.onboarding.user.$_uid.pending_invite':
+            '{"code":"K7P2QM","stored_at":"2099-01-01T00:00:00.000Z"}',
+      },
+      invites: invites,
+    );
+    g.gateway.state = homeJson(path: null, needs: ['path']);
+    await tester.enterText(find.byType(TextField), 'Akosua');
+    await tester.tap(find.text('Continue'));
+    await _settle(tester);
+    expect(invites.accepted, ['K7P2QM']);
+    expect(find.text('We need to check your account'), findsOneWidget);
+    expect(find.text('What brings you to Attune?'), findsNothing);
+    expect(g.store.pendingInviteCode, isNull);
+    expect(g.routing.underAgeBlocked, isTrue);
+  });
+
+  // Batch-3 review #5: a 503 invite:try_again is the server's own failure
+  // (it answered), so the words never blame the connection; the code is
+  // kept for the next try.
+  testWidgets('a stored invite the server could not finish: neutral retry', (
+    tester,
+  ) async {
+    final g = await _pumpGate(
+      tester,
+      server: homeJson(path: null, needs: ['path']),
+      prefsValues: {
+        'attune.onboarding.user.$_uid.pending_invite':
+            '{"code":"K7P2QM","stored_at":"2099-01-01T00:00:00.000Z"}',
+      },
+      invites: FakeInvites(
+        acceptError: inviteAcceptFailure(
+          const FunctionException(
+            status: 503,
+            details: {'error': 'invite:try_again', 'code': 'invite:try_again'},
+          ),
+        ),
+      ),
+    );
+    expect(g.invites.accepted, ['K7P2QM']);
+    expect(
+      find.text('Something went wrong on our side. Try again.'),
+      findsOneWidget,
+    );
+    expect(find.textContaining('online'), findsNothing);
+    expect(find.textContaining('invite:'), findsNothing);
+    expect(g.store.pendingInviteCode, 'K7P2QM');
+  });
+
+  // ...and a real connection failure still says so.
+  testWidgets('a stored invite that could not reach the server: offline', (
+    tester,
+  ) async {
+    final g = await _pumpGate(
+      tester,
+      server: homeJson(path: null, needs: ['path']),
+      prefsValues: {
+        'attune.onboarding.user.$_uid.pending_invite':
+            '{"code":"K7P2QM","stored_at":"2099-01-01T00:00:00.000Z"}',
+      },
+      invites: FakeInvites(
+        acceptError: inviteAcceptFailure(Exception('socket closed')),
+      ),
+    );
+    expect(g.invites.accepted, ['K7P2QM']);
+    expect(
+      find.text("We couldn't check that code. Try again when you're online."),
+      findsOneWidget,
+    );
+    expect(g.store.pendingInviteCode, 'K7P2QM');
+  });
+}
+
+/// FakeInvites whose accept runs [onAccept] (the server's state changing
+/// with the answer), then refuses with [error].
+class _OnAccept extends FakeInvites {
+  _OnAccept(RelationshipInviteException error, this.onAccept)
+    : super(acceptError: error);
+
+  final void Function() onAccept;
+
+  @override
+  Future<InviteAcceptance> acceptInvite(String inviteCode) {
+    onAccept();
+    return super.acceptInvite(inviteCode);
+  }
 }

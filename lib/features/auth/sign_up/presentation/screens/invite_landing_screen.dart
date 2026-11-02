@@ -1,4 +1,5 @@
 import 'package:attune/app/routing/app_router.dart' show RouteNames;
+import 'package:attune/core/platform/install_referrer_prefill.dart';
 import 'package:attune/core/providers/shared_prefs_provider.dart';
 import 'package:attune/features/auth/sign_up/domain/invite_code.dart';
 import 'package:attune/features/auth/sign_up/presentation/screens/welcome_screen.dart';
@@ -42,6 +43,14 @@ class _InviteLandingScreenState extends ConsumerState<InviteLandingScreen> {
   void initState() {
     super.initState();
     _hasCode = _anonymousStore.pendingInviteCode != null;
+    // Final review #1: a Play Install Referrer code only fills the field;
+    // Continue (the person's tap) is what stores it to join.
+    if (!_hasCode) {
+      final referred = InstallReferrerPrefill.read(
+        ref.read(sharedPreferencesProvider),
+      );
+      if (referred != null) _code.text = referred;
+    }
   }
 
   @override
@@ -59,10 +68,10 @@ class _InviteLandingScreenState extends ConsumerState<InviteLandingScreen> {
       });
       return;
     }
-    await OnboardingStore.storeInviteFromLink(
-      ref.read(sharedPreferencesProvider),
-      code,
-    );
+    final prefs = ref.read(sharedPreferencesProvider);
+    await OnboardingStore.storeInviteFromLink(prefs, code);
+    // Used once: the referrer's prefill goes (final review #1).
+    await InstallReferrerPrefill.clear(prefs);
     if (mounted) {
       setState(() {
         _invalid = false;

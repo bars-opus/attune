@@ -92,6 +92,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
   ProviderSubscription<HomeSnapshot>? _homeSubscription;
   ProviderSubscription<bool>? _pathsSubscription;
 
+  /// Batch-5 review I-1: the signed-in flags becoming known (a fresh
+  /// install's first answer) lets the legacy branch's waiting accept run.
+  ProviderSubscription<bool>? _flagsKnownSubscription;
+
   /// Bumped by each new `/home?tab=` request, so the keyed shell opens Tab 2.
   int _tabRequests = 0;
 
@@ -116,6 +120,14 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
       // the flag off again, today's sync rebuilds it now, not next resume.
       if (!next) _syncRelationshipMode();
     });
+    _flagsKnownSubscription = ref.listenManual<bool>(flowFlagsKnownProvider, (
+      previous,
+      next,
+    ) {
+      // Under flow_paths_v2 the paths listener above reconciles.
+      if (!mounted || previous == true || !next || _pathsV2) return;
+      _reconcileGateData();
+    });
     _reconcileGateData();
 
     // Rebuild (and re-scope the onboarding store) when the user signs in or
@@ -131,6 +143,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
         _gateData = _loadGateDataSync();
       });
       _bindHomeState(previousUserId);
+      // Batch-5 review N-2: the next account's stored code gets its RI-3.
+      _joinOffered = false;
       _reconcileGateData();
       // Signing in is the single most important moment to reconcile the
       // relationship mode, and it used to be the one moment that didn't.
@@ -167,6 +181,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     _authSubscription?.cancel();
     _homeSubscription?.close();
     _pathsSubscription?.close();
+    _flagsKnownSubscription?.close();
     super.dispose();
   }
 
@@ -379,6 +394,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
       if (store.pendingInviteCode != null &&
           store.pendingSignUp == null &&
           ref.read(homeStateProvider(userId)).isComplete) {
+        // Spec 1 W4b (D9): under flow_couples_v2 a stored code is joined
+        // only from RI-3, after an explicit tap; never here.
+        if (ref.read(flowCouplesV2Provider)) {
+          await _openJoinInvite();
+          return;
+        }
         await _acceptPendingInvite(store);
         await _refreshHomeState();
       }
@@ -398,7 +419,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     // arrives already authenticated. Best-effort: a failure just leaves the
     // code for the next load rather than blocking the shell — already not
     // blocking the first paint now that this runs after render, not before.
-    if (store.pendingInviteCode != null) {
+    // Batch-5 review I-1 (D9): never while the signed-in flags are unknown
+    // (unknown is not off); the code waits, and the flags' first answer
+    // reconciles again (_flagsKnownSubscription).
+    if (store.pendingInviteCode != null && ref.read(flowFlagsKnownProvider)) {
       await _acceptPendingInvite(store);
     }
 
@@ -410,6 +434,17 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
         _gateData = _HomeGateData(store: store, isComplete: true);
       });
     }
+  }
+
+  /// RI-3 for a stored code, once per HomeScreen (flow_couples_v2), while
+  /// home is the screen on top.
+  bool _joinOffered = false;
+
+  Future<void> _openJoinInvite() async {
+    if (_joinOffered || !mounted) return;
+    if (!(ModalRoute.of(context)?.isCurrent ?? false)) return;
+    _joinOffered = true;
+    unawaited(GoRouter.of(context).push(RouteNames.joinInvite));
   }
 
   /// Mirrors OnboardingGate's own _acceptPendingInvite — kept as a

@@ -2060,4 +2060,288 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get flow_notNow => 'Not now';
+
+  @override
+  String get flow_joinAlreadyIn => 'You\'re already in a relationship on Attune. End it first to join a new one.';
+
+  @override
+  String get flow_joinNotPossible => 'We couldn\'t link these accounts. If you think this is wrong, contact support.';
+
+  @override
+  String get flow_joinOwn => 'This is your own invite. Send it to your partner instead.';
+
+  @override
+  String get flow_joinInvalid => 'We couldn\'t find that invite. Check the code with the person who sent it.';
+
+  @override
+  String get flow_joinTryLater => 'You\'ve checked a lot of codes. Try again in a little while.';
+
+  @override
+  String get flow_inviteErrorSignUp => 'Finish setting up your account first, then try again.';
+
+  @override
+  String get flow_inviteErrorCap => 'You already have 3 invites waiting. Cancel one before you send another.';
+
+  @override
+  String get flow_inviteErrorAgeRequired => 'Add your date of birth first, then send your invite.';
+
+  @override
+  String get flow_inviteErrorTryAgain => 'We couldn\'t make your invite. Try again.';
+
+  @override
+  String flow_inviteMsgSimpleOpen(String name) {
+    return 'Hi $name, I\'d like us to try Attune together. It\'s a private space just for the two of us.';
+  }
+
+  @override
+  String get flow_inviteMsgSimpleOpenNoName => 'Hi, I\'d like us to try Attune together. It\'s a private space just for the two of us.';
+
+  @override
+  String flow_inviteMsgSimpleGet(String link) {
+    return 'Get the app: $link';
+  }
+
+  @override
+  String flow_inviteMsgCasualOpen(String name) {
+    return 'Hey $name! I found an app for couples and thought of us. Private, just you and me.';
+  }
+
+  @override
+  String get flow_inviteMsgCasualOpenNoName => 'Hey! I found an app for couples and thought of us. Private, just you and me.';
+
+  @override
+  String flow_inviteMsgCasualGet(String link) {
+    return 'Get it here: $link';
+  }
+
+  @override
+  String flow_inviteMsgPidginOpen(String name) {
+    return '$name, make we try Attune. Na private space for only you and me.';
+  }
+
+  @override
+  String get flow_inviteMsgPidginOpenNoName => 'Make we try Attune. Na private space for only you and me.';
+
+  @override
+  String flow_inviteMsgPidginGet(String link) {
+    return 'Download am: $link';
+  }
+
+  @override
+  String flow_inviteMsgOpenCode(String code) {
+    return 'Open Attune → I have an invite → $code';
+  }
+
+  @override
+  String get flow_inviteMsgFoundMyself => 'I found this myself. I just thought it\'d be nice.';
+
+  @override
+  String get flow_inviteCodeServerError => 'Something went wrong on our side. Try again.';
+
+  @override
+  String flow_invitePartnerBodyNamed(String name) {
+    return 'Send a link. When $name joins, your private space opens.';
+  }
+
+  @override
+  String get flow_r1NameLabel => 'Their first name (optional)';
+
+  @override
+  String get flow_r1NameHelper => 'Used in your message and on this phone only.';
+
+  @override
+  String get flow_r1ToneTitle => 'How should it sound?';
+
+  @override
+  String get flow_r1ToneGroup => 'Choose one of the message styles';
+
+  @override
+  String get flow_r1ToneSimple => 'Simple';
+
+  @override
+  String get flow_r1ToneCasual => 'Casual';
+
+  @override
+  String get flow_r1TonePidgin => 'Pidgin';
+
+  @override
+  String get flow_r1FoundMyselfToggle => 'Add: \'I found this myself. I just thought it\'d be nice.\'';
+
+  @override
+  String get flow_r1PreviewTitle => 'What your partner will see';
+
+  @override
+  String flow_r1PreviewTitleNamed(String name) {
+    return 'What $name will see';
+  }
+
+  @override
+  String get flow_r1Making => 'Making your invite';
+
+  @override
+  String get flow_r1CodePending => '(your code)';
+
+  @override
+  String get flow_r1SendWhatsApp => 'Send on WhatsApp';
+
+  @override
+  String get flow_r1ShareOther => 'Share another way';
+
+  @override
+  String get flow_r1ShowQr => 'Show QR code';
+
+  @override
+  String get flow_r1CopyCode => 'Copy code';
+
+  @override
+  String get flow_r1CodeCopied => 'Code copied.';
+
+  @override
+  String get flow_r1QrTitle => 'Your invite code';
+
+  @override
+  String get flow_r1QrSemantics => 'A QR code for your invite link';
+
+  @override
+  String flow_inviteCodeSemantics(String code) {
+    return 'Invite code $code';
+  }
+
+  @override
+  String flow_ri3Title(String name) {
+    return 'Join $name?';
+  }
+
+  @override
+  String get flow_ri3TitleUnnamed => 'Join your partner?';
+
+  @override
+  String flow_ri3Body(String name) {
+    return '$name invited you to a private space on Attune.';
+  }
+
+  @override
+  String get flow_ri3BodyUnnamed => 'Your partner invited you to a private space on Attune.';
+
+  @override
+  String flow_ri3Button(String name) {
+    return 'Join $name';
+  }
+
+  @override
+  String get flow_ri3ButtonUnnamed => 'Join';
+
+  @override
+  String get flow_joinOtherWay => 'Not what you expected? Choose another way to use Attune';
+
+  @override
+  String get flow_joinEnterAgain => 'Enter the code again';
+
+  @override
+  String get flow_joinExpiredTitle => 'This invite has expired.';
+
+  @override
+  String flow_joinExpired(String name) {
+    return 'Ask $name to send a new one.';
+  }
+
+  @override
+  String get flow_joinExpiredUnnamed => 'Ask the person who sent it to send a new one.';
+
+  @override
+  String flow_joinAskWhatsApp(String name) {
+    return 'Ask $name on WhatsApp';
+  }
+
+  @override
+  String get flow_joinAskWhatsAppUnnamed => 'Ask on WhatsApp';
+
+  @override
+  String flow_joinExpiredMessage(String name) {
+    return 'Hi $name, my Attune invite expired. Could you send me a new one?';
+  }
+
+  @override
+  String get flow_joinExpiredMessageUnnamed => 'Hi, my Attune invite expired. Could you send me a new one?';
+
+  @override
+  String get flow_joinChecking => 'Checking your invite';
+
+  @override
+  String flow_linkedTitle(String couple) {
+    return 'Welcome, $couple';
+  }
+
+  @override
+  String flow_linkedBody(String name) {
+    return 'Your private space with $name is open.';
+  }
+
+  @override
+  String get flow_linkedBodyUnnamed => 'Your private space with your partner is open.';
+
+  @override
+  String flow_pushAskR4(String name) {
+    return 'Get notified when $name messages you';
+  }
+
+  @override
+  String get flow_pushAskR4Unnamed => 'Get notified when your partner messages you';
+
+  @override
+  String get flow_inviteErrorNotPossible => 'We couldn\'t make your invite. If you think this is wrong, contact support.';
+
+  @override
+  String get flow_guideWaitLine => 'We\'ll suggest a private reflection space if this takes a little while.';
+
+  @override
+  String get flow_guideReflectTitle => 'A private space while you wait';
+
+  @override
+  String get flow_guideReflectBody => 'Your reflections stay private to you.';
+
+  @override
+  String get flow_guideOpenJournal => 'Open your journal';
+
+  @override
+  String get flow_guideWeekTitle => 'It\'s been a week';
+
+  @override
+  String flow_guideWeekBody(String name) {
+    return 'Your invite to $name has run its week. What would you like to do?';
+  }
+
+  @override
+  String get flow_guideWeekBodyUnnamed => 'Your invite to your partner has run its week. What would you like to do?';
+
+  @override
+  String get flow_guideKeepWaiting => 'Keep waiting';
+
+  @override
+  String get flow_guideSendNew => 'Send a new invite';
+
+  @override
+  String get flow_guideSendNewHelper => 'Send it to the same number or a different one.';
+
+  @override
+  String get flow_guideOnMyOwn => 'Use Attune on my own for now';
+
+  @override
+  String flow_day30(String name) {
+    return 'Want to send $name a new invite?';
+  }
+
+  @override
+  String get flow_day30Unnamed => 'Want to send your partner a new invite?';
+
+  @override
+  String get flow_day30Dismiss => 'Dismiss';
+
+  @override
+  String get flow_r3SendAgain => 'Send again';
+
+  @override
+  String flow_invitePartnerNamed(String name) {
+    return 'Invite $name';
+  }
 }

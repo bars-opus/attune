@@ -35,8 +35,9 @@ BEGIN
     json_build_object('sub', p, 'role', 'authenticated')::text, true);
 END $$;
 
--- 1. The open UPDATE policy is gone and the privileges with it. SELECT and
---    INSERT (the inviter's pending row) stay.
+-- 1. The open UPDATE policy is gone and the privileges with it. SELECT
+--    stays. INSERT went in Spec 1 W4a (20261102100000, re-review N-1):
+--    invites are made by create-relationship-invite (service role).
 DO $$
 BEGIN
   IF EXISTS (SELECT 1 FROM pg_policy
@@ -58,8 +59,8 @@ BEGIN
   IF has_column_privilege('authenticated', 'public.relationships', 'ended_by', 'SELECT') THEN
     RAISE EXCEPTION 'CONTRACT VIOLATED: members can read ended_by';
   END IF;
-  IF NOT has_table_privilege('authenticated', 'public.relationships', 'INSERT') THEN
-    RAISE EXCEPTION 'CONTRACT VIOLATED: the inviter can no longer insert a pending row';
+  IF has_table_privilege('authenticated', 'public.relationships', 'INSERT') THEN
+    RAISE EXCEPTION 'CONTRACT VIOLATED: authenticated holds INSERT on relationships (W4a N-1)';
   END IF;
 END $$;
 

@@ -124,6 +124,11 @@ Future<HomeHarness> pumpHome(
   // needs (B7 review M-1: the shell rebuilds Tab 2 when the layout changes).
   HomeTabTwoBuilder? tabTwo,
   List<Override> overrides = const [],
+  // Spec 1 W4b: routes the shell may open (e.g. /join-invite).
+  List<RouteBase> extraRoutes = const [],
+  // Batch-5 review I-1: the real flow flags (a test's flowFlagsGateway
+  // override answers them) instead of the scripted flow_paths_v2.
+  bool realFlags = false,
 }) async {
   tester.view.physicalSize = const Size(390, 844);
   tester.view.devicePixelRatio = 1;
@@ -156,6 +161,7 @@ Future<HomeHarness> pumpHome(
           return const Scaffold(body: Text('ONBOARDING'));
         },
       ),
+      ...extraRoutes,
     ],
   );
   addTearDown(router.dispose);
@@ -165,7 +171,10 @@ Future<HomeHarness> pumpHome(
       homeAuthProvider.overrideWithValue(auth),
       homeStateServiceProvider.overrideWithValue(HomeStateService(gateway)),
       _pathsV2.overrideWith((_) => pathsV2),
-      flowPathsV2Provider.overrideWith((ref) => ref.watch(_pathsV2)),
+      if (!realFlags) ...[
+        flowPathsV2Provider.overrideWith((ref) => ref.watch(_pathsV2)),
+        flowFlagsKnownProvider.overrideWithValue(true),
+      ],
       signInFlowV2Provider.overrideWithValue(signInV2),
       homeOpinionsTabProvider.overrideWithValue(const Text('OPINIONS')),
       homeTabTwoBuilderProvider.overrideWithValue(
