@@ -1,5 +1,6 @@
 // lib/features/auth/presentation/providers/auth_provider.dart
 
+import 'package:attune/core/device/device_wipe_registry.dart';
 import 'package:attune/core/providers/routing_providers.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/painting.dart';
@@ -219,10 +220,20 @@ class AuthOperations {
         }
       }
 
+      // Spec 1 §5.8 (D19): every feature's sign-out wipes (bounded at 3 s,
+      // never throwing), beside the four above.
+      Future<void> wipeDevice() async {
+        try {
+          await ref.read(deviceWipeRegistryProvider).run(WipeMoment.signOut);
+        } catch (e) {
+          debugPrint('⚠️ [AUTH] device wipe failed on sign-out: ${e.runtimeType}');
+        }
+      }
+
       // Side by side, so the bounds do not add up: each store is wiped on
       // its own and none waits on another.
       Future<void> wipe() =>
-          Future.wait([wipeQueue(), wipeMedia(), wipeImages(), wipeStories()]);
+          Future.wait([wipeQueue(), wipeMedia(), wipeImages(), wipeStories(), wipeDevice()]);
 
       Future<void> release() async {
         // Chat review #18: release this device's push subscription while

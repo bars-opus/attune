@@ -61,8 +61,21 @@ void main() {
       reason: 'a LoginScreen sheet was reachable under flow_signin_v2',
     );
     final reached = results.map((r) => r.$1).toSet();
-    expect(reached, contains('/signup?entry=new&back=%2Fhome'));
-    expect(reached, contains('/signup?entry=returning&back=%2Fhome'));
+    // Spec 1 W3a (W2 B6 m-4): sign-up's Back returns to Tab 2.
+    for (final entry in ['new', 'returning']) {
+      expect(
+        reached.any((location) {
+          final uri = Uri.parse(location);
+          final back = Uri.parse(uri.queryParameters['back'] ?? '');
+          return uri.path == '/signup' &&
+              uri.queryParameters['entry'] == entry &&
+              back.path == '/home' &&
+              back.queryParameters['tab'] == 'chat';
+        }),
+        isTrue,
+        reason: entry,
+      );
+    }
     expect(reached, contains('/invite'));
     // Every other tap stays on the tab (a help or legal sheet) or opens
     // settings; nothing leads to a sign-in screen but sign-up.

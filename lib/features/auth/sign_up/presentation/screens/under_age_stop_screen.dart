@@ -11,9 +11,17 @@ import 'package:go_router/go_router.dart';
 /// cut-off. [serverRefused] is the variant after complete_sign_up refused
 /// (`signup:not_eligible`): the client has already signed out.
 class UnderAgeStopScreen extends StatelessWidget {
-  const UnderAgeStopScreen({super.key, this.serverRefused = false});
+  const UnderAgeStopScreen({
+    super.key,
+    this.serverRefused = false,
+    this.accountHeld = false,
+  });
 
   final bool serverRefused;
+
+  /// Spec 1 W3a: the catch-up date of birth of an existing account was
+  /// under 18; the account is on hold and the client has signed out.
+  final bool accountHeld;
 
   /// Before W7's country list: the international helpline directory.
   static const youthSupportUrl = 'https://findahelpline.com';
@@ -23,7 +31,9 @@ class UnderAgeStopScreen extends StatelessWidget {
     final loc = AppLocalizations.of(context)!;
     final theme = Theme.of(context);
     final body =
-        serverRefused
+        accountHeld
+            ? loc.flow_ageStopAccountBody
+            : serverRefused
             ? '${loc.flow_ageStopServerLead} ${loc.flow_ageStopBody}'
             : loc.flow_ageStopBody;
     return FlowFrame(

@@ -32,10 +32,9 @@ import 'package:attune/features/onboarding/presentation/widgets/invite_qr_code.d
 /// (ConversationsScreen's own card language — CircleAvatar, name, preview,
 /// status pill), with the conversation content itself replaced by a lock
 /// overlay, so a personal-mode user can see what they're missing rather
-/// than reading a bare sentence. Below that, two real actions: invite a
-/// partner (couplesPending track) or open Dating mode (post-launch design,
-/// self-gates via DatingDashboardScreen — this screen just navigates
-/// there, it never decides Dating mode's own availability).
+/// than reading a bare sentence. Below that, one real action: invite a
+/// partner (couplesPending track). Since Spec 1 W3b nothing here leads to
+/// Dating (review R-5).
 class ChatCouplesLockedScreen extends ConsumerStatefulWidget {
   const ChatCouplesLockedScreen({
     super.key,
@@ -95,7 +94,7 @@ class _ChatCouplesLockedScreenState
     super.didUpdateWidget(oldWidget);
     // The same State is reused when the mode sync flips this screen out of
     // pending (Spec 5 final review I-2): a withdrawn invite must not linger
-    // as a card, and the personal-mode entries (Dating, Healing) come back.
+    // as a card, and the personal-mode entry (Healing) comes back.
     if (oldWidget.isPendingCouples && !widget.isPendingCouples) {
       // A rebuild follows didUpdateWidget, so no setState.
       _invite = null;
@@ -362,27 +361,8 @@ class _ChatCouplesLockedScreenState
                             _inviteService.isConfigured ? _createInvite : null,
                       ),
                     ],
-                    // Hidden once an invite exists: get_dating_eligibility()
-                    // already returns reason: 'relationship_active' and
-                    // refuses Dating Mode entirely while the caller has a
-                    // pending relationship (20260703194500_dating_mode_v1_1.sql)
-                    // — a sent invite creates exactly that pending row, so
-                    // this button would just lead to a dead end. Hiding it
-                    // matches the backend's own rule instead of just
-                    // tidying the UI.
-                    if (_invite == null) ...[
-                      Gap(Spacing.smMd.h),
-                      AppButton(
-                        height: 40.h,
-                        animateButton: false,
-                        size: ButtonSize.small,
-                        label: 'Meet someone in Dating mode',
-                        variant: ButtonVariant.outline,
-                        prefixIconColor: colorScheme.primary,
-                        prefixIcon: Icons.favorite_border,
-                        onPressed: () => context.push(RouteNames.datingMode),
-                      ),
-                    ],
+                    // Spec 1 W3b (review R-5): no way into Dating from the
+                    // Chat tab, with flow_paths_v2 on or off.
                     Gap(Spacing.xl.h),
                   ],
                   Gap(Spacing.md.h),
@@ -435,9 +415,7 @@ class _WelcomEntryCard extends StatelessWidget {
     final overview =
         isPendingCouples
             ? 'Once your partner accepts and completes their own onboarding, A private private chat would open for the two of you to start atunning.'
-            : 'Welcome back to Attune. To start bonding with your partner, send them an invite. '
-                'If you\'re not in a relationship but ready to start dating, you can explore your '
-                'options by tapping "Meet someone in Dating mode."';
+            : 'Welcome back to Attune. To start bonding with your partner, send them an invite.';
 
     return Column(
       children: [
@@ -555,7 +533,7 @@ class _ReflectionEntryCard extends StatelessWidget {
   Widget build(BuildContext context) {
     return InfoRowWidget(
       subtitle:
-          'A private space for your own reflection work. This never sends messages to anyone, just reflections to heal after breakup or prepare for dating.',
+          'A private space for your own reflection work. This never sends messages to anyone, just reflections to heal after a breakup or think things through.',
       title: 'Personal reflections',
       icon: Icons.self_improvement_outlined,
       subTitleMaxLines: 5,
@@ -618,7 +596,7 @@ class _LockedConversationPreview extends StatelessWidget {
 
     return InfoRowWidget(
       subtitle:
-          'A shared chat opens once you and a partner are both connected. Invite your lover, or meet someone new in Dating mode.',
+          'A shared chat opens once you and a partner are both connected.',
       title: 'Chat is for couples',
       icon: Icons.chat_bubble_outline,
       iconSize: 25.h,

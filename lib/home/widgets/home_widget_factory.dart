@@ -8,10 +8,12 @@ class HomeWidgetFactory {
   static HomeWidget mobile({
     required List<HomeTab> tabs,
     int initialTabIndex = 0,
+    Object? reselectToken,
   }) {
     return HomeWidget(
       tabs: tabs,
       initialTabIndex: initialTabIndex,
+      reselectToken: reselectToken,
       navigationBarHeight: 65,
       iconSize: 20,
       activeIconSize: 22,
@@ -26,10 +28,12 @@ class HomeWidgetFactory {
     required List<HomeTab> tabs,
     int initialTabIndex = 0,
     Widget? floatingActionButton,
+    Object? reselectToken,
   }) {
     return HomeWidget(
       tabs: tabs,
       initialTabIndex: initialTabIndex,
+      reselectToken: reselectToken,
       navigationBarHeight: 76,
       iconSize: 22,
       activeIconSize: 24,

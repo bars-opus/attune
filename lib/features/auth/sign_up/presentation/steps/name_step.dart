@@ -13,15 +13,24 @@ class NameStep extends StatefulWidget {
   const NameStep({
     super.key,
     required this.onSubmit,
-    required this.onBack,
+    this.onBack,
     this.initialName,
+    this.errorText,
+    this.errorCount = 0,
   });
 
   final String? initialName;
 
   /// The normalised name. The step stays busy until it has finished.
   final FutureOr<void> Function(String name) onSubmit;
-  final VoidCallback onBack;
+
+  /// Null: no back button (Spec 1 W3a's catch-up step, §3.15).
+  final VoidCallback? onBack;
+
+  /// A failed save, shown under the field with its icon (§2.3); raise
+  /// [errorCount] on each failure so it is read out again.
+  final String? errorText;
+  final int errorCount;
 
   @override
   State<NameStep> createState() => _NameStepState();
@@ -66,9 +75,9 @@ class _NameStepState extends State<NameStep> with SubmitOnce {
         errorText: switch (_error) {
           DisplayNameError.needsLetter => loc.flow_nameNeedsLetter,
           DisplayNameError.tooLong => loc.flow_nameTooLong,
-          null => null,
+          null => widget.errorText,
         },
-        errorCount: _errorCount,
+        errorCount: _errorCount + widget.errorCount,
         autofocus: true,
         textCapitalization: TextCapitalization.words,
         autofillHints: const [AutofillHints.givenName],

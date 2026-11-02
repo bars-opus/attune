@@ -15,21 +15,34 @@ import 'package:attune/features/chat/presentation/providers/chat_experience_prov
     show chatConnectivityProvider;
 import 'package:attune/features/chat/presentation/state/chat_state.dart'
     show chatRepositoryProvider;
+import 'package:attune/features/onboarding/presentation/providers/flow_flags.dart';
+import 'package:attune/features/onboarding/presentation/providers/home_state_providers.dart';
 import 'package:attune/features/safety/presentation/safety_lock_controller.dart';
 import 'package:flutter/foundation.dart';
 import 'package:onesignal_flutter/onesignal_flutter.dart';
+import 'package:permission_handler/permission_handler.dart' show openAppSettings;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart' show User;
 
-class OneSignalService {
+class OneSignalService implements PushAsker {
   OneSignalService(
     this._ref, {
     PushSdk? sdk,
     String? platform,
     Future<void> Function(String relationshipId)? ackChatDelivery,
+    Future<void> Function()? openSettings,
   }) : _sdk = sdk ?? OneSignalPushSdk(),
        _platform = platform ?? (Platform.isIOS ? 'ios' : 'android'),
-       _ackChatDelivery = ackChatDelivery;
+       _ackChatDelivery = ackChatDelivery,
+       _openSettings = openSettings ?? _openAppSettings;
+
+  /// Spec 1 W3c: where a contextual ask goes once the OS no longer shows
+  /// its dialog (the person said no before): the app's own settings page.
+  final Future<void> Function() _openSettings;
+
+  static Future<void> _openAppSettings() async {
+    await openAppSettings();
+  }
 
   /// Stamps delivered_at for the partner's undelivered messages in a
   /// relationship. Injected for tests; null means "the chat repository",
@@ -584,7 +597,80 @@ class OneSignalService {
     } catch (_) {}
   }
 
+  /// Spec 1 W3c (§2.4): whether the automatic ask may run at all. Any
+  /// failure to tell keeps today's behaviour.
+  Future<bool> _automaticAskAllowed() async {
+    try {
+      final pathsV2 = await readFlowPathsV2(_ref);
+      if (!pathsV2) return true;
+      final userId = _ref.read(currentUserProvider)?.id;
+      final home = userId == null ? null : _ref.read(homeStateProvider(userId));
+      return automaticPushAskAllowed(
+        pathsV2: true,
+        couplesV2: _ref.read(flowCouplesV2Provider),
+        link: home != null && home.known ? home.link : null,
+      );
+    } catch (_) {
+      return true;
+    }
+  }
+
+  @override
+  bool get permissionGranted {
+    if (!_sdkStarted) return false;
+    try {
+      return _sdk.permissionGranted;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// Spec 1 W3c (§2.4): the ask a person starts from inside a feature (R2,
+  /// R4, J3). Granted: this phone is opted in and registered at once. The
+  /// OS no longer shows its dialog: the app's settings open instead.
+  @override
+  Future<PushAskOutcome> askInContext(PushAskContext context) async {
+    if (!_sdkStarted || _ref.read(currentUserProvider) == null) {
+      return PushAskOutcome.unavailable;
+    }
+    if (permissionGranted) return PushAskOutcome.granted;
+    bool osCanPrompt;
+    try {
+      osCanPrompt = await _sdk.canRequestPermission();
+    } catch (_) {
+      osCanPrompt = false;
+    }
+    if (!osCanPrompt) {
+      try {
+        await _openSettings();
+      } catch (_) {}
+      return PushAskOutcome.openedSettings;
+    }
+    _askedThisRun = true;
+    // B6 review I-1: the OS's answer decides, not the SDK's cached
+    // permission (updated by a separate observer message, maybe later).
+    bool accepted;
+    try {
+      accepted = await _sdk.requestPermission();
+    } catch (_) {
+      accepted = false;
+    }
+    if (!accepted && !permissionGranted) return PushAskOutcome.declined;
+    if (!_sdk.optedIn) {
+      try {
+        await _sdk.optIn();
+      } catch (_) {}
+    }
+    await _syncSubscription();
+    return PushAskOutcome.granted;
+  }
+
   Future<void> _maybeAskForPermission() async {
+    // Nothing to ask (shouldAskForPushPermission would say no too): no
+    // wait on the flags before the sign-in's opt-in and register (B6 M-4).
+    if (_askedThisRun || _sdk.permissionGranted) return;
+    // Spec 1 W3c: under flow_paths_v2 the prompt is asked in context.
+    if (!await _automaticAskAllowed()) return;
     bool osCanPrompt;
     try {
       osCanPrompt = await _sdk.canRequestPermission();
@@ -727,3 +813,13 @@ AppNotification appNotificationFromPushData({
 final oneSignalServiceProvider = Provider<OneSignalService>((ref) {
   return OneSignalService(ref);
 });
+
+/// The contextual push ask (Spec 1 §2.4), as a widget sees it.
+abstract class PushAsker {
+  bool get permissionGranted;
+  Future<PushAskOutcome> askInContext(PushAskContext context);
+}
+
+final pushAskerProvider = Provider<PushAsker>(
+  (ref) => ref.watch(oneSignalServiceProvider),
+);

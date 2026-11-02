@@ -1,4 +1,5 @@
 import 'package:attune/core/utils/exports/export_screens.dart';
+import 'package:attune/features/safety/data/dating_lock_store.dart';
 import 'package:attune/features/safety/data/safety_pin_store.dart';
 import 'package:attune/features/safety/domain/safety_pin.dart';
 import 'package:attune/features/safety/presentation/widgets/pin_keypad.dart';
@@ -120,6 +121,12 @@ class _SafetyPinScreenState extends ConsumerState<SafetyPinScreen> {
             _go(_Step.choose);
           case _CurrentFor.remove:
             await _store.clearAll();
+            // Spec 1 W3b (review M-3): with no PIN the Dating lock would
+            // promise what it can't keep, so it goes off with the PIN.
+            // Never blocks the removal (safety code logs nothing).
+            try {
+              await ref.read(datingLockProvider.notifier).set(false);
+            } catch (_) {}
             await _load();
             _go(_Step.overview);
           case _CurrentFor.everyOpenOff:

@@ -13,6 +13,9 @@ class SettingsDataSource {
     bool quietStatesOn = false,
     bool outsidePerspectiveOn = false,
     SettingsSection? chatFeel,
+    SettingsConfig? datingLock,
+    SettingsConfig? journalReminder,
+    SettingsConfig? howYouUse,
   }) {
     // Access localization for language prefence
     final loc = AppLocalizations.of(context)!;
@@ -58,6 +61,8 @@ SettingsConfig(
               iconColor: Colors.blue,
               order: 3,
             ),
+// Spec 1 W3c (§3.12): how you use Attune (built by the screen).
+if (howYouUse != null) howYouUse,
         ],
       ),
       // How chat feels: sounds, motion, phrasing (built by the screen,
@@ -89,6 +94,8 @@ SettingsConfig(
               iconColor: Colors.green,
               order: 2,
             ),
+// Spec 1 W3c (§3.10 J3): the journal reminder, from anywhere.
+if (journalReminder != null) journalReminder,
         ],
       ),
       if (isAuthenticated)
@@ -116,6 +123,9 @@ SettingsConfig(
             iconColor: Colors.deepOrange,
             order: 2,
           ),
+// Spec 1 W3b (§3.9): the Dating lock, when the path or an enrollment
+// calls for it (built by the screen, which holds the switch).
+if (datingLock != null) datingLock,
 SettingsConfig(
               id: 'blocked',
               title: loc.blockedItemTitle,

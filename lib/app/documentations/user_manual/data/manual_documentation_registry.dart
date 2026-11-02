@@ -4,6 +4,7 @@ import 'package:attune/app/documentations/user_manual/data/appreciation_docs.dar
 import 'package:attune/app/documentations/user_manual/data/couple_map_docs.dart';
 import 'package:attune/app/documentations/user_manual/data/couples_journal_docs.dart';
 import 'package:attune/app/documentations/user_manual/data/hard_moment_docs.dart';
+import 'package:attune/app/documentations/user_manual/data/how_you_use_attune_docs.dart';
 import 'package:attune/app/documentations/user_manual/data/planning_docs.dart';
 import 'package:attune/app/documentations/user_manual/data/privacy_data_docs.dart';
 import 'package:attune/app/documentations/user_manual/data/quiet_states_docs.dart';
@@ -58,14 +59,29 @@ class DocumentationRegistry {
     // These two reflections wait for clinical sign-off.
     'communicationQuiz': [ChatFeatureFlags.quizClinicalSignoff],
     'conflictStyleQuiz': [ChatFeatureFlags.quizClinicalSignoff],
+    // Spec 1 W3c: the paths (flow_paths_v2 needs flow_signin_v2).
+    'howYouUseAttune': ['flow_signin_v2', 'flow_paths_v2'],
   };
 
   static List<String> requiredFlags(String moduleId) =>
       _requiredFlags[moduleId] ?? const [];
 
-  /// Every flag any topic depends on (read once by documentationFlagsProvider).
-  static Set<String> get allRequiredFlags =>
-      {for (final flags in _requiredFlags.values) ...flags};
+  /// Passage id -> the flags that must all be on to show it: a sentence in
+  /// an ungated topic about a feature behind flags (B7 ruling M-3).
+  static const Map<String, List<String>> _passageFlags = {
+    // Spec 1 W3c: the journal reminder (Your space, Settings).
+    'journalReminder': ['flow_signin_v2', 'flow_paths_v2'],
+  };
+
+  static bool passageVisible(String passageId, Set<String> enabledFlags) =>
+      (_passageFlags[passageId] ?? const []).every(enabledFlags.contains);
+
+  /// Every flag any topic or passage depends on (read once by
+  /// documentationFlagsProvider).
+  static Set<String> get allRequiredFlags => {
+    for (final flags in _requiredFlags.values) ...flags,
+    for (final flags in _passageFlags.values) ...flags,
+  };
 
   /// IDs of modules related to [moduleId], shown as a "Related" tab in
   /// DocumentationTabView. One level only: a related module's own related
@@ -147,6 +163,7 @@ class DocumentationRegistry {
       PlanningDocs(),
       TogetherDocs(),
       CoupleMapDocs(),
+      HowYouUseAttuneDocs(),
     ]) {
       registerModule(module);
     }

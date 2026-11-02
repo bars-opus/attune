@@ -34,6 +34,7 @@ void main() {
       OnboardingStore(
         prefs,
         scope: OnboardingStore.anonymousScope,
+        now: clock,
       ).pendingInviteCode,
       'K7P2QM',
     );

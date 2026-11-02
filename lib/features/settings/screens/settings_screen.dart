@@ -3,6 +3,9 @@ import 'package:attune/core/widgets/app_content_width.dart';
 import 'package:attune/features/appreciation/data/appreciation_service.dart';
 import 'package:attune/features/quiet_states/presentation/quiet_state_providers.dart';
 import 'package:attune/features/appreciation/data/thankful_phrasing_preference.dart';
+import 'package:attune/features/me/presentation/widgets/dating_lock_setting.dart';
+import 'package:attune/features/me/presentation/widgets/journal_reminder_row.dart';
+import 'package:attune/features/settings/presentation/screens/how_you_use_attune_screen.dart';
 import 'package:attune/features/settings/data/chat_feel_preference.dart';
 import 'package:attune/features/settings/data/sound_preference.dart';
 import 'package:attune/features/settings/utility/settings_exports.dart';
@@ -169,6 +172,10 @@ class SettingsScreen extends ConsumerWidget {
       // Spec 8 (B10): placeholder content stays closed while its flag is off.
       outsidePerspectiveOn: ref.watch(outsidePerspectiveEnabledProvider),
       chatFeel: chatFeel,
+      datingLock: datingLockSetting(context, ref, currentUserId),
+      journalReminder:
+          currentUserId.isEmpty ? null : journalReminderSetting(context, ref),
+      howYouUse: currentUserId.isEmpty ? null : howYouUseSetting(context, ref),
     );
 
     // Access localization for language prefence

@@ -30,7 +30,9 @@ import 'package:attune/features/games/snakes_and_ladders/presentation/screens/sn
 import 'package:attune/features/games/constellation/prototype/constellation_prototype_screen.dart';
 import 'package:attune/features/games/dots_and_boxes/prototype/dots_boxes_prototype_screen.dart';
 import 'package:attune/features/games/word_hunt/presentation/screens/word_hunt_game_screen.dart';
-import 'package:attune/features/onboarding/presentation/screens/onboarding_gate.dart';
+import 'package:attune/features/onboarding/domain/home_state.dart' show AppTab;
+import 'package:attune/features/onboarding/presentation/screens/invite_partner_screen.dart';
+import 'package:attune/features/onboarding/presentation/screens/onboarding_gate_v2.dart';
 import 'package:attune/features/opinions/data/models/opinion_model.dart';
 import 'package:attune/features/opinions/presentation/screen/anonymous_profile_screen.dart';
 import 'package:attune/features/opinions/presentation/screen/comment_thread_screen.dart';
@@ -137,6 +139,8 @@ import 'package:attune/features/safety/presentation/screens/safety_resources_scr
 import 'package:attune/features/settings/screens/language_screen.dart';
 import 'package:attune/features/settings/screens/settings_screen.dart';
 import 'package:attune/features/settings/screens/theme_screen.dart';
+import 'package:attune/features/settings/presentation/screens/how_you_use_attune_screen.dart';
+import 'package:attune/home/home_location.dart';
 import 'package:attune/home/home_screen.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -152,6 +156,9 @@ class RouteNames {
   static const String guestAge = '/guest-age';
   static const String invite = '/invite';
   static const String ageStop = '/age-stop';
+
+  /// Spec 1 W3a: R1 until W4b (InvitePartnerScreen).
+  static const String invitePartner = '/invite-partner';
   static const String home = '/home';
   static const String settings = '/settings';
   static const String language = '/language';
@@ -161,6 +168,9 @@ class RouteNames {
   static const String licenses = '/licenses';
   static const String safetyResources = SafetyResourcesScreen.routeName;
   static const String safetyPin = '/settings/safety-pin';
+
+  /// Spec 1 W3c (§3.12).
+  static const String howYouUseAttune = '/settings/how-you-use-attune';
   static const String signedInDevices = '/settings/signed-in-devices';
   static const String dataExport = DataExportScreen.routeName;
   static const String quietStates = QuietStatesScreen.routeName;
@@ -439,7 +449,14 @@ GoRouter createAppRouter(RoutingNotifier routingNotifier) {
       GoRoute(
         path: RouteNames.home,
         name: 'home',
-        builder: (context, state) => const HomeScreen(),
+        // Spec 1 W3a (§3.11): /home?tab=chat|me opens Tab 2.
+        builder:
+            (context, state) => HomeScreen(
+              tabRequest:
+                  state.uri.queryParameters.containsKey('tab')
+                      ? state.uri.query
+                      : null,
+            ),
       ),
       // Spec 1 W2 (§5.4): the v2 sign-in routes, reached only under
       // flow_signin_v2 (the redirect above sends a stray visit home).
@@ -480,6 +497,7 @@ GoRouter createAppRouter(RoutingNotifier routingNotifier) {
               key: state.pageKey,
               child: UnderAgeStopScreen(
                 serverRefused: state.uri.queryParameters['from'] == 'server',
+                accountHeld: state.uri.queryParameters['from'] == 'account',
               ),
             ),
       ),
@@ -493,8 +511,27 @@ GoRouter createAppRouter(RoutingNotifier routingNotifier) {
         name: 'onboarding',
         builder: (context, state) {
           final previewOnboarding = kDebugMode && state.extra == true;
-          return OnboardingGate(previewOnboarding: previewOnboarding);
+          // Spec 1 W3a: the v2 gate under flow_paths_v2.
+          return OnboardingEntry(previewOnboarding: previewOnboarding);
         },
+      ),
+      // Spec 1 W3a (§3.8 R1, §3.12): the invite screen from Me or Settings;
+      // `switch=1` makes creating the invite the switch to Relationship,
+      // `paused=1` says the Dating pause was already confirmed.
+      GoRoute(
+        path: RouteNames.invitePartner,
+        name: 'invitePartner',
+        // B3 review #8: for a signed-in account only.
+        redirect:
+            (context, state) =>
+                routingNotifier.isSignedIn ? null : RouteNames.login,
+        builder:
+            (context, state) => InvitePartnerScreen(
+              switchPath: state.uri.queryParameters['switch'] == '1',
+              pauseConfirmed: state.uri.queryParameters['paused'] == '1',
+              onDone:
+                  () => GoRouter.of(context).go(homeLocation(tab: AppTab.chat)),
+            ),
       ),
       GoRoute(
         path: RouteNames.profileScreen,
@@ -1600,6 +1637,11 @@ GoRouter createAppRouter(RoutingNotifier routingNotifier) {
         path: RouteNames.safetyPin,
         name: 'safetyPin',
         builder: (context, state) => const SafetyPinScreen(),
+      ),
+      GoRoute(
+        path: RouteNames.howYouUseAttune,
+        name: 'howYouUseAttune',
+        builder: (context, state) => const HowYouUseAttuneScreen(),
       ),
       GoRoute(
         path: RouteNames.signedInDevices,

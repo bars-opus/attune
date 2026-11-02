@@ -10,14 +10,20 @@ class HomeWidgetResponsive {
     required BuildContext context,
     required List<HomeTab> tabs,
     int initialTabIndex = 0,
+    Object? reselectToken,
   }) {
     final isTablet = MediaQuery.of(context).size.width >= Breakpoints.tablet;
 
     return isTablet
-        ? HomeWidgetFactory.tablet(tabs: tabs, initialTabIndex: initialTabIndex)
+        ? HomeWidgetFactory.tablet(
+          tabs: tabs,
+          initialTabIndex: initialTabIndex,
+          reselectToken: reselectToken,
+        )
         : HomeWidgetFactory.mobile(
           tabs: tabs,
           initialTabIndex: initialTabIndex,
+          reselectToken: reselectToken,
         );
 
     // HomeWidgetFactory.mobile(

@@ -4,6 +4,7 @@ import 'package:attune/features/appreciation/data/appreciation_service.dart';
 import 'package:attune/features/auth/providers/auth_provider.dart';
 import 'package:attune/features/conflict_toolkit/data/pause_service.dart';
 import 'package:attune/features/location/presentation/providers/presence_providers.dart';
+import 'package:attune/features/onboarding/presentation/providers/flow_flags.dart';
 import 'package:attune/features/quiet_states/presentation/quiet_state_providers.dart';
 import 'package:attune/features/quiz/presentation/providers/quiz_providers.dart';
 import 'package:attune/features/safety/self_check/safety_self_check_service.dart';
@@ -25,6 +26,7 @@ final List<ProviderOrFamily> refreshedFlagProviders = [
   conflictToolkitEnabledProvider,
   documentationFlagsProvider,
   publicAppConfigProvider,
+  flowFlagsProvider,
 ];
 
 class FeatureFlagRefresher extends ConsumerStatefulWidget {

@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:attune/features/auth/sign_up/domain/sign_up_draft.dart';
+import 'package:attune/features/onboarding/domain/home_state.dart';
 import 'package:attune/features/onboarding/domain/onboarding_models.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -106,6 +107,8 @@ class OnboardingStore {
   static const _displayNameKey = 'display_name';
   static const _pendingSubmissionKey = 'pending_submission';
   static const _pendingSignUpKey = 'pending_sign_up';
+  static const _pendingPathKey = 'pending_path';
+  static const _pendingPathConfirmedKey = 'pending_path_confirmed';
 
   /// The legacy unscoped invite key: read once, moved to the anonymous slot,
   /// deleted (Spec 1 §5.5, W1c).
@@ -217,6 +220,41 @@ class OnboardingStore {
   );
 
   Future<void> clearPendingSignUp() => _prefs.remove(_key(_pendingSignUpKey));
+
+  /// Spec 1 W3a (§3.7, §3.14): A6's choice, owed to the server
+  /// (set_my_path), replayed by OnboardingSyncService. Relationship or
+  /// Just for me only: a Dating choice is never kept on the phone (D20).
+  AppPath? get pendingPath {
+    final path = AppPath.fromWire(_prefs.getString(_key(_pendingPathKey)));
+    return path == AppPath.dating ? null : path;
+  }
+
+  /// [confirmed]: the person already said yes to set_my_path's
+  /// confirmation (a sheet), so the replay sends it confirmed (B3 #5).
+  Future<void> savePendingPath(AppPath path, {bool confirmed = false}) {
+    if (path == AppPath.dating) {
+      throw ArgumentError.value(path, 'path', 'Dating is never queued (D20)');
+    }
+    return _savePendingPath(path, confirmed);
+  }
+
+  Future<void> _savePendingPath(AppPath path, bool confirmed) async {
+    await _prefs.setString(_key(_pendingPathKey), path.wire);
+    if (confirmed) {
+      await _prefs.setBool(_key(_pendingPathConfirmedKey), true);
+    } else {
+      await _prefs.remove(_key(_pendingPathConfirmedKey));
+    }
+  }
+
+  bool get pendingPathConfirmed =>
+      pendingPath != null &&
+      (_prefs.getBool(_key(_pendingPathConfirmedKey)) ?? false);
+
+  Future<void> clearPendingPath() async {
+    await _prefs.remove(_key(_pendingPathKey));
+    await _prefs.remove(_key(_pendingPathConfirmedKey));
+  }
 
   /// Spec 1 W2b: the name A1 took (or the account already had), so today's
   /// onboarding doesn't ask for it again (see OnboardingFlow.initState).
@@ -364,6 +402,8 @@ class OnboardingStore {
     await _prefs.remove(_key(_displayNameKey));
     await _prefs.remove(_key(_pendingSubmissionKey));
     await _prefs.remove(_key(_pendingSignUpKey));
+    await _prefs.remove(_key(_pendingPathKey));
+    await _prefs.remove(_key(_pendingPathConfirmedKey));
     await _prefs.remove(_key(_pendingInviteKey));
     await _prefs.remove(pendingInviteCodeKey);
   }

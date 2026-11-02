@@ -9,6 +9,7 @@ import 'package:attune/core/metrics/metric_counter.dart';
 import 'package:attune/core/providers/routing_providers.dart';
 import 'package:attune/core/providers/shared_prefs_provider.dart';
 import 'package:attune/core/utils/screen_util_config.dart';
+import 'package:attune/features/me/data/journal_reminder_service.dart';
 import 'package:attune/i10n/generated/app_localizations.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -16,6 +17,8 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+
+import 'fake_reminder_rpc.dart';
 
 class FakePublicConfigGateway implements PublicAppConfigGateway {
   FakePublicConfigGateway({this.openCountries = const []});
@@ -99,6 +102,9 @@ Future<FlowHarness> pumpFlowScreen(
         publicAppConfigGatewayProvider.overrideWithValue(
           FakePublicConfigGateway(openCountries: openCountries),
         ),
+        // B7 review N-2: J3's row never reaches Supabase in a test (a
+        // test's own override below wins: the last override is used).
+        journalReminderRpcProvider.overrideWithValue(FakeReminderRpc().call),
         ...overrides,
       ],
       child: ScreenUtilConfig.builder(

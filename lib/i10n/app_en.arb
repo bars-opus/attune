@@ -1118,5 +1118,194 @@
     "placeholders": {
       "number": {"type": "String"}
     }
-  }
+  },
+
+  "flow_tabMe": "Me",
+  "flow_tabSignIn": "Sign in",
+
+  "flow_pathTitle": "What brings you to Attune?",
+  "flow_pathJustMeLineFull": "Your journal, quizzes and Healing. Single, partnered or in between.",
+  "flow_pathNotOpen": "Not open in {country} yet",
+  "@flow_pathNotOpen": {
+    "placeholders": {
+      "country": {"type": "String"}
+    }
+  },
+  "flow_pathFooter": "You can change this any time. Your journal and quizzes are yours whichever you choose.",
+  "flow_pathAlreadyInvited": "My partner already invited me",
+  "flow_pathGroupSemantics": "Choose one of three",
+  "flow_pathDatingOffline": "Dating needs a connection. Try again when you're online.",
+  "flow_cancel": "Cancel",
+  "flow_cancelInviteTitle": "Cancel your invite?",
+  "flow_cancelInviteBody": "Your invite code will stop working. Your partner won't be told.",
+  "flow_cancelInviteBodyNamed": "Your invite code will stop working. {name} won't be told.",
+  "@flow_cancelInviteBodyNamed": {
+    "placeholders": {
+      "name": {"type": "String"}
+    }
+  },
+  "flow_cancelInviteConfirm": "Cancel invite and switch",
+  "flow_cancelInviteKeep": "Keep invite",
+  "flow_pauseDatingTitle": "Inviting a partner pauses Dating",
+  "flow_pauseDatingBody": "Your introductions stop and your Dating profile is hidden. Nobody is told.",
+  "flow_switchOffline": "You're offline. Try again when you're connected.",
+
+  "flow_dobAddTitle": "Add your date of birth",
+  "flow_holdTitle": "We need to check your account",
+  "flow_holdBody": "You can't use Attune while we do this. If you think this is a mistake, contact support.",
+  "flow_holdContact": "Contact support",
+  "flow_signOut": "Sign out",
+  "flow_updateTitle": "Update Attune to continue",
+  "flow_updateBody": "This version of Attune can't finish setting up your account. Update the app from your app store, then open it again.",
+  "flow_checkOfflineTitle": "We couldn't check your account",
+  "flow_checkOfflineBody": "Check your connection, then try again.",
+  "flow_invitePartnerTitle": "Invite your partner",
+  "flow_invitePartnerBody": "Send a link. When your partner joins, your private space opens.",
+  "flow_invitePartnerCreate": "Create my invite",
+  "flow_invitePartnerLater": "Invite later",
+  "flow_invitePartnerDone": "Done",
+
+  "flow_pathOpenSpace": "You're in a shared space. To use Attune another way, end it or pause it first.",
+  "flow_inviteCodeRefused": "This code didn't work. It may have expired or been used. Ask for a new one.",
+  "flow_inviteCodeAlreadyIn": "You're already in a shared space, so this invite can't be used.",
+  "flow_inviteCodeOffline": "We couldn't check that code. Try again when you're online.",
+  "flow_ageStopAccountBody": "You need to be 18 or older to use Attune. Your account is on hold.",
+
+  "flow_spaceTitle": "Your space",
+  "flow_settingsTooltip": "Settings",
+  "flow_spaceJournal": "Journal",
+  "flow_spaceJournalLine": "Notes only you can read",
+  "flow_spaceQuizzes": "Quizzes",
+  "flow_spaceQuizzesLine": "Short, private, about you",
+  "flow_spaceHealing": "Healing",
+  "flow_spaceHealingLine": "After a breakup or a loss",
+  "flow_firstStartHere": "Start here",
+  "flow_firstWriteNote": "Write your first note",
+  "flow_firstQuiz": "Take a 3-minute look at how you connect",
+  "flow_firstSaved": "Saved, just for you.",
+  "flow_moreWays": "More ways to use Attune",
+  "flow_moreInvite": "Invite a partner",
+  "flow_justMeSheetTitle": "Use Attune just for you?",
+  "flow_justMeSheetBody": "Dating will be paused and hidden. Nobody is told. You can delete your Dating profile from Dating settings.",
+  "flow_justMeSheetSwitch": "Switch",
+
+  "flow_waitWriteNote": "Write a first note",
+  "flow_waitQuiz": "A quiz about you, for you",
+  "flow_waitReceipts": "When your partner joins, read receipts start off. You can each turn them on later.",
+  "flow_inviteMenu": "Invite options",
+  "flow_cancelThisInvite": "Cancel this invite",
+  "flow_cancelThisInviteTitle": "Cancel this invite?",
+  "flow_cancelThisInviteConfirm": "Cancel invite",
+
+  "flow_waitReceiptsNamed": "When your partner joins, read receipts start off. You and {partnerFirstName} can each turn them on later.",
+  "@flow_waitReceiptsNamed": {
+    "placeholders": {
+      "partnerFirstName": {"type": "String"}
+    }
+  },
+
+  "flow_slotDatingTitle": "Dating",
+  "flow_slotDatingBody": "Up to 3 introductions a day. A match only when you both say yes.",
+  "flow_slotSetUp": "Set up Dating",
+  "flow_slotNotReady": "Not ready? Use Attune just for me",
+  "flow_slotNotOpenTitle": "Dating isn't open in {country} yet",
+  "@flow_slotNotOpenTitle": {
+    "placeholders": {
+      "country": {"type": "String"}
+    }
+  },
+  "flow_slotNotOpenBody": "Dating is open in {countries}. We're adding countries one at a time.",
+  "@flow_slotNotOpenBody": {
+    "placeholders": {
+      "countries": {"type": "String"}
+    }
+  },
+  "flow_slotChangeCountry": "Not in {country}? Change",
+  "@flow_slotChangeCountry": {
+    "placeholders": {
+      "country": {"type": "String"}
+    }
+  },
+  "flow_slotChooseCountry": "Choose your country",
+  "flow_slotClosedTitle": "Dating isn't open yet",
+  "flow_slotClosedBody": "It opens one country at a time. Your journal, quizzes and Healing are here meanwhile.",
+  "flow_slotGentleWait": "Dating opens for you on {date}.",
+  "@flow_slotGentleWait": {
+    "placeholders": {
+      "date": {"type": "String"}
+    }
+  },
+  "flow_slotGentleWaitWhy": "This pause is because your relationship ended here. It isn't a judgement about you.",
+  "flow_slotHealing": "Healing is here if you want it",
+  "flow_slotLocked": "Dating is locked",
+  "flow_slotLockedLine": "Enter your Safety PIN to show it",
+  "flow_lockTitle": "Dating lock",
+  "flow_lockSubtitle": "Ask for your Safety PIN before showing Dating.",
+
+  "flow_slotGentleWaitNoDate": "Dating opens for you after a pause.",
+
+  "flow_pushTurnOn": "Turn on",
+  "flow_pushAskR2": "Get a heads-up when your partner joins",
+
+  "flow_pushAskR2Named": "Get a heads-up when {name} joins",
+  "@flow_pushAskR2Named": {
+    "placeholders": {
+      "name": {"type": "String"}
+    }
+  },
+
+  "flow_reminderTitle": "Remind me to write",
+  "flow_reminderOff": "Off",
+  "flow_reminderWhen": "{days} at {time}",
+  "@flow_reminderWhen": {
+    "placeholders": {
+      "days": {"type": "String"},
+      "time": {"type": "String"}
+    }
+  },
+  "flow_weekdaysMon": "Mondays",
+  "flow_weekdaysTue": "Tuesdays",
+  "flow_weekdaysWed": "Wednesdays",
+  "flow_weekdaysThu": "Thursdays",
+  "flow_weekdaysFri": "Fridays",
+  "flow_weekdaysSat": "Saturdays",
+  "flow_weekdaysSun": "Sundays",
+  "flow_weekdayMon": "Mon",
+  "flow_weekdayTue": "Tue",
+  "flow_weekdayWed": "Wed",
+  "flow_weekdayThu": "Thu",
+  "flow_weekdayFri": "Fri",
+  "flow_weekdaySat": "Sat",
+  "flow_weekdaySun": "Sun",
+  "flow_reminderSheetTitle": "When should we remind you?",
+  "flow_reminderDay": "Day",
+  "flow_reminderTime": "Time",
+  "flow_reminderChangeTime": "Change time",
+  "flow_reminderTurnOn": "Turn on",
+  "flow_reminderTurnOff": "Turn off",
+  "flow_reminderNeedsPush": "Reminders need notifications.",
+  "flow_reminderTurnOnPush": "Turn on notifications",
+  "flow_reminderReadFailed": "We couldn't load your reminder. Try again.",
+  "flow_reminderQuietHours": "Reminders can be set from {start} to {end}.",
+  "@flow_reminderQuietHours": {
+    "placeholders": {
+      "start": {"type": "String"},
+      "end": {"type": "String"}
+    }
+  },
+
+  "flow_howTitle": "How you use Attune",
+  "flow_howSubtitle": "In a relationship, dating, or just for you",
+  "flow_howFooter": "Your journal, quizzes and Healing stay yours whichever you choose. Nobody is told when you change this.",
+  "flow_sharedOpenTitle": "You're in a shared space with {name}",
+  "@flow_sharedOpenTitle": {
+    "placeholders": {
+      "name": {"type": "String"}
+    }
+  },
+  "flow_yourPartner": "your partner",
+  "flow_sharedOpenBody": "To use Attune another way, end it first. Pausing keeps it, read-only, for up to 30 days.",
+  "flow_sharedPause": "Pause our shared space",
+  "flow_sharedEnd": "End relationship",
+  "flow_notNow": "Not now"
 }

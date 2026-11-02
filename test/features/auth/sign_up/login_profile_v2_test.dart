@@ -28,10 +28,12 @@ void main() {
     await tester.tap(find.text('Get started'));
     await tester.pumpAndSettle();
     expect(Uri.parse(h.location).path, '/signup');
-    expect(Uri.parse(h.location).queryParameters, {
-      'entry': 'new',
-      'back': '/home',
-    });
+    final query = Uri.parse(h.location).queryParameters;
+    expect(query['entry'], 'new');
+    // Spec 1 W3a (W2 B6 m-4): Back returns to this tab, Tab 2.
+    final back = Uri.parse(query['back']!);
+    expect(back.path, '/home');
+    expect(back.queryParameters['tab'], 'chat');
     semantics.dispose();
   });
 

@@ -1,3 +1,4 @@
+import 'package:attune/core/device/device_wipe_registry.dart';
 import 'package:attune/core/providers/routing_providers.dart';
 import 'package:attune/core/providers/shared_prefs_provider.dart';
 import 'package:attune/core/utils/exports/export_screens.dart';
@@ -41,6 +42,11 @@ Future<void> safetySignOut(Ref ref) async {
     // The AuthOperations path above may have been refused (busy); wipe the
     // story outbox here too. A repeat is a no-op. Bounded by its owner.
     await ref.read(storyOutboxWiperProvider).wipeAll();
+  } catch (_) {}
+  // Spec 1 §5.8: the device wipes too, for the same reason (a repeat is a
+  // no-op). Bounded at 3 s by the registry; its own try, like each step.
+  try {
+    await ref.read(deviceWipeRegistryProvider).run(WipeMoment.signOut);
   } catch (_) {}
   if (refused) {
     try {

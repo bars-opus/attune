@@ -47,7 +47,7 @@ class AppConstants {
   static const String privacyPolicyUrl = 'https://yourapp.com/privacy';
   static const String dataSharingPolicyUrl = 'https://yourapp.com/privacy';
   static const String termsOfServiceUrl = 'https://yourapp.com/terms';
-  static const String supportEmail = 'support@yourapp.com';
+  static const String supportEmail = 'support@barsopus.com';
   static const String whatAppCustomerSupportLink = 'support@yourapp.com';
 
   // App Store Links

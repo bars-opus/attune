@@ -1,4 +1,5 @@
 // lib/core/widgets/home_widget.dart
+import 'dart:math' as math;
 import 'dart:ui';
 
 import 'package:attune/app/theme/design_tokens.dart';
@@ -22,6 +23,10 @@ class HomeWidget extends ConsumerStatefulWidget {
   final bool showLabels;
   final double? centeredFabMarginBottom;
 
+  /// When this changes, the shell selects [initialTabIndex] again (Spec 1
+  /// W3a: a new `/home?tab=` request opens Tab 2 without a rebuild).
+  final Object? reselectToken;
+
   const HomeWidget({
     super.key,
     required this.tabs,
@@ -35,6 +40,7 @@ class HomeWidget extends ConsumerStatefulWidget {
     this.badgeFontSize,
     this.showLabels = true,
     this.centeredFabMarginBottom,
+    this.reselectToken,
   }) : assert(
          tabs.length >= 2 && tabs.length <= 5,
          'HomeWidget supports 2-5 tabs',
@@ -57,6 +63,65 @@ class _HomeWidgetState extends ConsumerState<HomeWidget> {
     super.initState();
     _currentIndex = widget.initialTabIndex;
     _visitedIndices = {widget.initialTabIndex};
+    // A new shell starts with its nav bar showing: a bar hidden by the
+    // previous shell's scroll can't be brought back by a tab that doesn't
+    // scroll (navVisibilityProvider is shared).
+    _showNavAfterFrame();
+  }
+
+  @override
+  void didUpdateWidget(covariant HomeWidget oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.reselectToken != oldWidget.reselectToken) {
+      _visitedIndices.add(widget.initialTabIndex);
+      _currentIndex = widget.initialTabIndex;
+      _showNavAfterFrame();
+    }
+  }
+
+  /// Providers can't change while the tree builds; after the frame they can.
+  void _showNavAfterFrame() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) ref.read(navVisibilityProvider.notifier).state = true;
+    });
+  }
+
+  /// The smallest tap target a tab gets (Material, Android and iOS rules).
+  static const double _minTapTarget = 48;
+
+  /// A tab item's laid-out width: its icon or its one-line label, whichever
+  /// is wider (the Column in [_buildTabItem]; the badge paints outside it).
+  double _naturalTabWidth(
+    BuildContext context,
+    TextTheme textTheme,
+    HomeTab tab, {
+    required bool isActive,
+    required double iconSize,
+    required double activeIconSize,
+  }) {
+    final icon = isActive ? activeIconSize : iconSize;
+    if (!widget.showLabels) return icon;
+    final isWideScreen =
+        MediaQuery.of(context).size.width >= Breakpoints.tablet;
+    var style = DefaultTextStyle.of(context).style.merge(
+      textTheme.labelSmall?.copyWith(
+        fontSize: widget.labelFontSize ?? (isWideScreen ? 8.5 : 9.0),
+        fontWeight: isActive ? FontWeight.w600 : FontWeight.w500,
+      ),
+    );
+    // As Text does: the system bold-text setting makes the label bold.
+    if (MediaQuery.boldTextOf(context)) {
+      style = style.merge(const TextStyle(fontWeight: FontWeight.bold));
+    }
+    final painter = TextPainter(
+      text: TextSpan(text: tab.label, style: style),
+      textDirection: Directionality.of(context),
+      textScaler: TextScaler.noScaling,
+      maxLines: 1,
+    )..layout();
+    final width = painter.width;
+    painter.dispose();
+    return math.max(icon, width);
   }
 
   Widget _buildBottomNavigationBarWithCustomFab(
@@ -73,6 +138,50 @@ class _HomeWidgetState extends ConsumerState<HomeWidget> {
     final iconSize = widget.iconSize ?? (isWideScreen ? 26.h : 22.h);
     final activeIconSize =
         widget.activeIconSize ?? (isWideScreen ? 28.h : 24.h);
+
+    // Spec 1 W3a fix round (review I#3): with two tabs, the gap between
+    // them and an equal outer margin become each tab's tap area, so every
+    // tab is at least 48 dp wide and nothing moves on screen. The gap is
+    // split between the two; equal outer margins keep the centred pair
+    // exactly where it was, and never grow past the bar's spare width (on
+    // the narrowest phones a tab can then stay a little under 48 dp wide).
+    final gap = Spacing.xxl.w;
+    List<EdgeInsetsGeometry>? hitPaddings;
+    if (widget.tabs.length == 2) {
+      final widths = [
+        for (var i = 0; i < 2; i++)
+          _naturalTabWidth(
+            context,
+            textTheme,
+            widget.tabs[i],
+            isActive: i == _currentIndex,
+            iconSize: iconSize,
+            activeIconSize: activeIconSize,
+          ),
+      ];
+      // The Row's width: the screen, less SafeArea's sides, the pill's
+      // side padding below and its hairline border.
+      final insets = MediaQuery.paddingOf(context);
+      final rowWidth =
+          MediaQuery.sizeOf(context).width -
+          insets.left -
+          insets.right -
+          2 * (Spacing.xxl.w + Spacing.xxl) -
+          2 * BorderWidthTokens.hairline;
+      final spare = rowWidth - (widths[0] + gap + widths[1]);
+      final outer = math.max(
+        0.0,
+        math.min(
+          (_minTapTarget - math.min(widths[0], widths[1]) - gap / 2)
+              .ceilToDouble(),
+          (spare / 2 - 1).floorToDouble(),
+        ),
+      );
+      hitPaddings = [
+        EdgeInsetsDirectional.only(start: outer, end: gap / 2),
+        EdgeInsetsDirectional.only(start: gap / 2, end: outer),
+      ];
+    }
 
     return SafeArea(
       top: false,
@@ -123,15 +232,16 @@ class _HomeWidgetState extends ConsumerState<HomeWidget> {
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
                     for (int index = 0; index < widget.tabs.length; index++) ...[
-                      if (index > 0)
+                      if (index > 0 && hitPaddings == null)
                         // Only meaningful with a fixed (non-Expanded) item width —
                         // see the 2-tab branch in _buildTabItem. With 3+ tabs items
                         // still stretch via Expanded, so this gap collapses to
                         // nothing between them (harmless).
-                        Gap(Spacing.xxl.w),
+                        Gap(gap),
                       _buildTabItem(
                         context,
                         tab: widget.tabs[index],
+                        hitPadding: hitPaddings?[index] ?? EdgeInsets.zero,
                         isActive: index == _currentIndex,
                         iconSize: iconSize,
                         activeIconSize: activeIconSize,
@@ -215,6 +325,7 @@ class _HomeWidgetState extends ConsumerState<HomeWidget> {
   Widget _buildTabItem(
     BuildContext context, {
     required HomeTab tab,
+    required EdgeInsetsGeometry hitPadding,
     required bool isActive,
     required double iconSize,
     required double activeIconSize,
@@ -242,7 +353,8 @@ class _HomeWidgetState extends ConsumerState<HomeWidget> {
       onTap: onTap,
       behavior: HitTestBehavior.opaque,
       child: Container(
-        padding: EdgeInsets.symmetric(vertical: 2.h),
+        padding: EdgeInsets.symmetric(vertical: 2.h).add(hitPadding),
+        constraints: const BoxConstraints(minHeight: _minTapTarget),
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           mainAxisSize: MainAxisSize.min,
@@ -287,9 +399,17 @@ class _HomeWidgetState extends ConsumerState<HomeWidget> {
     // centering/spacing — Expanded would stretch both items to fill the
     // whole bar width, leaving no room for the Row to center anything.
     // 3+ tabs keep the normal Expanded fill-the-bar behavior.
+    // Spec 1 W3a fix round (review I#3): a selectable button to a screen
+    // reader; the label is the tab's own text.
+    final item = Semantics(
+      container: true,
+      button: true,
+      selected: isActive,
+      child: content,
+    );
     if (widget.tabs.length == 2) {
-      return content;
+      return item;
     }
-    return Expanded(child: content);
+    return Expanded(child: item);
   }
 }

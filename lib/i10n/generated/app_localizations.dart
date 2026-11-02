@@ -3204,6 +3204,720 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'We\'re calling {number} now. The code is read out twice.'**
   String flow_codeCalling(String number);
+
+  /// No description provided for @flow_tabMe.
+  ///
+  /// In en, this message translates to:
+  /// **'Me'**
+  String get flow_tabMe;
+
+  /// No description provided for @flow_tabSignIn.
+  ///
+  /// In en, this message translates to:
+  /// **'Sign in'**
+  String get flow_tabSignIn;
+
+  /// No description provided for @flow_pathTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'What brings you to Attune?'**
+  String get flow_pathTitle;
+
+  /// No description provided for @flow_pathJustMeLineFull.
+  ///
+  /// In en, this message translates to:
+  /// **'Your journal, quizzes and Healing. Single, partnered or in between.'**
+  String get flow_pathJustMeLineFull;
+
+  /// No description provided for @flow_pathNotOpen.
+  ///
+  /// In en, this message translates to:
+  /// **'Not open in {country} yet'**
+  String flow_pathNotOpen(String country);
+
+  /// No description provided for @flow_pathFooter.
+  ///
+  /// In en, this message translates to:
+  /// **'You can change this any time. Your journal and quizzes are yours whichever you choose.'**
+  String get flow_pathFooter;
+
+  /// No description provided for @flow_pathAlreadyInvited.
+  ///
+  /// In en, this message translates to:
+  /// **'My partner already invited me'**
+  String get flow_pathAlreadyInvited;
+
+  /// No description provided for @flow_pathGroupSemantics.
+  ///
+  /// In en, this message translates to:
+  /// **'Choose one of three'**
+  String get flow_pathGroupSemantics;
+
+  /// No description provided for @flow_pathDatingOffline.
+  ///
+  /// In en, this message translates to:
+  /// **'Dating needs a connection. Try again when you\'re online.'**
+  String get flow_pathDatingOffline;
+
+  /// No description provided for @flow_cancel.
+  ///
+  /// In en, this message translates to:
+  /// **'Cancel'**
+  String get flow_cancel;
+
+  /// No description provided for @flow_cancelInviteTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Cancel your invite?'**
+  String get flow_cancelInviteTitle;
+
+  /// No description provided for @flow_cancelInviteBody.
+  ///
+  /// In en, this message translates to:
+  /// **'Your invite code will stop working. Your partner won\'t be told.'**
+  String get flow_cancelInviteBody;
+
+  /// No description provided for @flow_cancelInviteBodyNamed.
+  ///
+  /// In en, this message translates to:
+  /// **'Your invite code will stop working. {name} won\'t be told.'**
+  String flow_cancelInviteBodyNamed(String name);
+
+  /// No description provided for @flow_cancelInviteConfirm.
+  ///
+  /// In en, this message translates to:
+  /// **'Cancel invite and switch'**
+  String get flow_cancelInviteConfirm;
+
+  /// No description provided for @flow_cancelInviteKeep.
+  ///
+  /// In en, this message translates to:
+  /// **'Keep invite'**
+  String get flow_cancelInviteKeep;
+
+  /// No description provided for @flow_pauseDatingTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Inviting a partner pauses Dating'**
+  String get flow_pauseDatingTitle;
+
+  /// No description provided for @flow_pauseDatingBody.
+  ///
+  /// In en, this message translates to:
+  /// **'Your introductions stop and your Dating profile is hidden. Nobody is told.'**
+  String get flow_pauseDatingBody;
+
+  /// No description provided for @flow_switchOffline.
+  ///
+  /// In en, this message translates to:
+  /// **'You\'re offline. Try again when you\'re connected.'**
+  String get flow_switchOffline;
+
+  /// No description provided for @flow_dobAddTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Add your date of birth'**
+  String get flow_dobAddTitle;
+
+  /// No description provided for @flow_holdTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'We need to check your account'**
+  String get flow_holdTitle;
+
+  /// No description provided for @flow_holdBody.
+  ///
+  /// In en, this message translates to:
+  /// **'You can\'t use Attune while we do this. If you think this is a mistake, contact support.'**
+  String get flow_holdBody;
+
+  /// No description provided for @flow_holdContact.
+  ///
+  /// In en, this message translates to:
+  /// **'Contact support'**
+  String get flow_holdContact;
+
+  /// No description provided for @flow_signOut.
+  ///
+  /// In en, this message translates to:
+  /// **'Sign out'**
+  String get flow_signOut;
+
+  /// No description provided for @flow_updateTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Update Attune to continue'**
+  String get flow_updateTitle;
+
+  /// No description provided for @flow_updateBody.
+  ///
+  /// In en, this message translates to:
+  /// **'This version of Attune can\'t finish setting up your account. Update the app from your app store, then open it again.'**
+  String get flow_updateBody;
+
+  /// No description provided for @flow_checkOfflineTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'We couldn\'t check your account'**
+  String get flow_checkOfflineTitle;
+
+  /// No description provided for @flow_checkOfflineBody.
+  ///
+  /// In en, this message translates to:
+  /// **'Check your connection, then try again.'**
+  String get flow_checkOfflineBody;
+
+  /// No description provided for @flow_invitePartnerTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Invite your partner'**
+  String get flow_invitePartnerTitle;
+
+  /// No description provided for @flow_invitePartnerBody.
+  ///
+  /// In en, this message translates to:
+  /// **'Send a link. When your partner joins, your private space opens.'**
+  String get flow_invitePartnerBody;
+
+  /// No description provided for @flow_invitePartnerCreate.
+  ///
+  /// In en, this message translates to:
+  /// **'Create my invite'**
+  String get flow_invitePartnerCreate;
+
+  /// No description provided for @flow_invitePartnerLater.
+  ///
+  /// In en, this message translates to:
+  /// **'Invite later'**
+  String get flow_invitePartnerLater;
+
+  /// No description provided for @flow_invitePartnerDone.
+  ///
+  /// In en, this message translates to:
+  /// **'Done'**
+  String get flow_invitePartnerDone;
+
+  /// No description provided for @flow_pathOpenSpace.
+  ///
+  /// In en, this message translates to:
+  /// **'You\'re in a shared space. To use Attune another way, end it or pause it first.'**
+  String get flow_pathOpenSpace;
+
+  /// No description provided for @flow_inviteCodeRefused.
+  ///
+  /// In en, this message translates to:
+  /// **'This code didn\'t work. It may have expired or been used. Ask for a new one.'**
+  String get flow_inviteCodeRefused;
+
+  /// No description provided for @flow_inviteCodeAlreadyIn.
+  ///
+  /// In en, this message translates to:
+  /// **'You\'re already in a shared space, so this invite can\'t be used.'**
+  String get flow_inviteCodeAlreadyIn;
+
+  /// No description provided for @flow_inviteCodeOffline.
+  ///
+  /// In en, this message translates to:
+  /// **'We couldn\'t check that code. Try again when you\'re online.'**
+  String get flow_inviteCodeOffline;
+
+  /// No description provided for @flow_ageStopAccountBody.
+  ///
+  /// In en, this message translates to:
+  /// **'You need to be 18 or older to use Attune. Your account is on hold.'**
+  String get flow_ageStopAccountBody;
+
+  /// No description provided for @flow_spaceTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Your space'**
+  String get flow_spaceTitle;
+
+  /// No description provided for @flow_settingsTooltip.
+  ///
+  /// In en, this message translates to:
+  /// **'Settings'**
+  String get flow_settingsTooltip;
+
+  /// No description provided for @flow_spaceJournal.
+  ///
+  /// In en, this message translates to:
+  /// **'Journal'**
+  String get flow_spaceJournal;
+
+  /// No description provided for @flow_spaceJournalLine.
+  ///
+  /// In en, this message translates to:
+  /// **'Notes only you can read'**
+  String get flow_spaceJournalLine;
+
+  /// No description provided for @flow_spaceQuizzes.
+  ///
+  /// In en, this message translates to:
+  /// **'Quizzes'**
+  String get flow_spaceQuizzes;
+
+  /// No description provided for @flow_spaceQuizzesLine.
+  ///
+  /// In en, this message translates to:
+  /// **'Short, private, about you'**
+  String get flow_spaceQuizzesLine;
+
+  /// No description provided for @flow_spaceHealing.
+  ///
+  /// In en, this message translates to:
+  /// **'Healing'**
+  String get flow_spaceHealing;
+
+  /// No description provided for @flow_spaceHealingLine.
+  ///
+  /// In en, this message translates to:
+  /// **'After a breakup or a loss'**
+  String get flow_spaceHealingLine;
+
+  /// No description provided for @flow_firstStartHere.
+  ///
+  /// In en, this message translates to:
+  /// **'Start here'**
+  String get flow_firstStartHere;
+
+  /// No description provided for @flow_firstWriteNote.
+  ///
+  /// In en, this message translates to:
+  /// **'Write your first note'**
+  String get flow_firstWriteNote;
+
+  /// No description provided for @flow_firstQuiz.
+  ///
+  /// In en, this message translates to:
+  /// **'Take a 3-minute look at how you connect'**
+  String get flow_firstQuiz;
+
+  /// No description provided for @flow_firstSaved.
+  ///
+  /// In en, this message translates to:
+  /// **'Saved, just for you.'**
+  String get flow_firstSaved;
+
+  /// No description provided for @flow_moreWays.
+  ///
+  /// In en, this message translates to:
+  /// **'More ways to use Attune'**
+  String get flow_moreWays;
+
+  /// No description provided for @flow_moreInvite.
+  ///
+  /// In en, this message translates to:
+  /// **'Invite a partner'**
+  String get flow_moreInvite;
+
+  /// No description provided for @flow_justMeSheetTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Use Attune just for you?'**
+  String get flow_justMeSheetTitle;
+
+  /// No description provided for @flow_justMeSheetBody.
+  ///
+  /// In en, this message translates to:
+  /// **'Dating will be paused and hidden. Nobody is told. You can delete your Dating profile from Dating settings.'**
+  String get flow_justMeSheetBody;
+
+  /// No description provided for @flow_justMeSheetSwitch.
+  ///
+  /// In en, this message translates to:
+  /// **'Switch'**
+  String get flow_justMeSheetSwitch;
+
+  /// No description provided for @flow_waitWriteNote.
+  ///
+  /// In en, this message translates to:
+  /// **'Write a first note'**
+  String get flow_waitWriteNote;
+
+  /// No description provided for @flow_waitQuiz.
+  ///
+  /// In en, this message translates to:
+  /// **'A quiz about you, for you'**
+  String get flow_waitQuiz;
+
+  /// No description provided for @flow_waitReceipts.
+  ///
+  /// In en, this message translates to:
+  /// **'When your partner joins, read receipts start off. You can each turn them on later.'**
+  String get flow_waitReceipts;
+
+  /// No description provided for @flow_inviteMenu.
+  ///
+  /// In en, this message translates to:
+  /// **'Invite options'**
+  String get flow_inviteMenu;
+
+  /// No description provided for @flow_cancelThisInvite.
+  ///
+  /// In en, this message translates to:
+  /// **'Cancel this invite'**
+  String get flow_cancelThisInvite;
+
+  /// No description provided for @flow_cancelThisInviteTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Cancel this invite?'**
+  String get flow_cancelThisInviteTitle;
+
+  /// No description provided for @flow_cancelThisInviteConfirm.
+  ///
+  /// In en, this message translates to:
+  /// **'Cancel invite'**
+  String get flow_cancelThisInviteConfirm;
+
+  /// No description provided for @flow_waitReceiptsNamed.
+  ///
+  /// In en, this message translates to:
+  /// **'When your partner joins, read receipts start off. You and {partnerFirstName} can each turn them on later.'**
+  String flow_waitReceiptsNamed(String partnerFirstName);
+
+  /// No description provided for @flow_slotDatingTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Dating'**
+  String get flow_slotDatingTitle;
+
+  /// No description provided for @flow_slotDatingBody.
+  ///
+  /// In en, this message translates to:
+  /// **'Up to 3 introductions a day. A match only when you both say yes.'**
+  String get flow_slotDatingBody;
+
+  /// No description provided for @flow_slotSetUp.
+  ///
+  /// In en, this message translates to:
+  /// **'Set up Dating'**
+  String get flow_slotSetUp;
+
+  /// No description provided for @flow_slotNotReady.
+  ///
+  /// In en, this message translates to:
+  /// **'Not ready? Use Attune just for me'**
+  String get flow_slotNotReady;
+
+  /// No description provided for @flow_slotNotOpenTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Dating isn\'t open in {country} yet'**
+  String flow_slotNotOpenTitle(String country);
+
+  /// No description provided for @flow_slotNotOpenBody.
+  ///
+  /// In en, this message translates to:
+  /// **'Dating is open in {countries}. We\'re adding countries one at a time.'**
+  String flow_slotNotOpenBody(String countries);
+
+  /// No description provided for @flow_slotChangeCountry.
+  ///
+  /// In en, this message translates to:
+  /// **'Not in {country}? Change'**
+  String flow_slotChangeCountry(String country);
+
+  /// No description provided for @flow_slotChooseCountry.
+  ///
+  /// In en, this message translates to:
+  /// **'Choose your country'**
+  String get flow_slotChooseCountry;
+
+  /// No description provided for @flow_slotClosedTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Dating isn\'t open yet'**
+  String get flow_slotClosedTitle;
+
+  /// No description provided for @flow_slotClosedBody.
+  ///
+  /// In en, this message translates to:
+  /// **'It opens one country at a time. Your journal, quizzes and Healing are here meanwhile.'**
+  String get flow_slotClosedBody;
+
+  /// No description provided for @flow_slotGentleWait.
+  ///
+  /// In en, this message translates to:
+  /// **'Dating opens for you on {date}.'**
+  String flow_slotGentleWait(String date);
+
+  /// No description provided for @flow_slotGentleWaitWhy.
+  ///
+  /// In en, this message translates to:
+  /// **'This pause is because your relationship ended here. It isn\'t a judgement about you.'**
+  String get flow_slotGentleWaitWhy;
+
+  /// No description provided for @flow_slotHealing.
+  ///
+  /// In en, this message translates to:
+  /// **'Healing is here if you want it'**
+  String get flow_slotHealing;
+
+  /// No description provided for @flow_slotLocked.
+  ///
+  /// In en, this message translates to:
+  /// **'Dating is locked'**
+  String get flow_slotLocked;
+
+  /// No description provided for @flow_slotLockedLine.
+  ///
+  /// In en, this message translates to:
+  /// **'Enter your Safety PIN to show it'**
+  String get flow_slotLockedLine;
+
+  /// No description provided for @flow_lockTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Dating lock'**
+  String get flow_lockTitle;
+
+  /// No description provided for @flow_lockSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Ask for your Safety PIN before showing Dating.'**
+  String get flow_lockSubtitle;
+
+  /// No description provided for @flow_slotGentleWaitNoDate.
+  ///
+  /// In en, this message translates to:
+  /// **'Dating opens for you after a pause.'**
+  String get flow_slotGentleWaitNoDate;
+
+  /// No description provided for @flow_pushTurnOn.
+  ///
+  /// In en, this message translates to:
+  /// **'Turn on'**
+  String get flow_pushTurnOn;
+
+  /// No description provided for @flow_pushAskR2.
+  ///
+  /// In en, this message translates to:
+  /// **'Get a heads-up when your partner joins'**
+  String get flow_pushAskR2;
+
+  /// No description provided for @flow_pushAskR2Named.
+  ///
+  /// In en, this message translates to:
+  /// **'Get a heads-up when {name} joins'**
+  String flow_pushAskR2Named(String name);
+
+  /// No description provided for @flow_reminderTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Remind me to write'**
+  String get flow_reminderTitle;
+
+  /// No description provided for @flow_reminderOff.
+  ///
+  /// In en, this message translates to:
+  /// **'Off'**
+  String get flow_reminderOff;
+
+  /// No description provided for @flow_reminderWhen.
+  ///
+  /// In en, this message translates to:
+  /// **'{days} at {time}'**
+  String flow_reminderWhen(String days, String time);
+
+  /// No description provided for @flow_weekdaysMon.
+  ///
+  /// In en, this message translates to:
+  /// **'Mondays'**
+  String get flow_weekdaysMon;
+
+  /// No description provided for @flow_weekdaysTue.
+  ///
+  /// In en, this message translates to:
+  /// **'Tuesdays'**
+  String get flow_weekdaysTue;
+
+  /// No description provided for @flow_weekdaysWed.
+  ///
+  /// In en, this message translates to:
+  /// **'Wednesdays'**
+  String get flow_weekdaysWed;
+
+  /// No description provided for @flow_weekdaysThu.
+  ///
+  /// In en, this message translates to:
+  /// **'Thursdays'**
+  String get flow_weekdaysThu;
+
+  /// No description provided for @flow_weekdaysFri.
+  ///
+  /// In en, this message translates to:
+  /// **'Fridays'**
+  String get flow_weekdaysFri;
+
+  /// No description provided for @flow_weekdaysSat.
+  ///
+  /// In en, this message translates to:
+  /// **'Saturdays'**
+  String get flow_weekdaysSat;
+
+  /// No description provided for @flow_weekdaysSun.
+  ///
+  /// In en, this message translates to:
+  /// **'Sundays'**
+  String get flow_weekdaysSun;
+
+  /// No description provided for @flow_weekdayMon.
+  ///
+  /// In en, this message translates to:
+  /// **'Mon'**
+  String get flow_weekdayMon;
+
+  /// No description provided for @flow_weekdayTue.
+  ///
+  /// In en, this message translates to:
+  /// **'Tue'**
+  String get flow_weekdayTue;
+
+  /// No description provided for @flow_weekdayWed.
+  ///
+  /// In en, this message translates to:
+  /// **'Wed'**
+  String get flow_weekdayWed;
+
+  /// No description provided for @flow_weekdayThu.
+  ///
+  /// In en, this message translates to:
+  /// **'Thu'**
+  String get flow_weekdayThu;
+
+  /// No description provided for @flow_weekdayFri.
+  ///
+  /// In en, this message translates to:
+  /// **'Fri'**
+  String get flow_weekdayFri;
+
+  /// No description provided for @flow_weekdaySat.
+  ///
+  /// In en, this message translates to:
+  /// **'Sat'**
+  String get flow_weekdaySat;
+
+  /// No description provided for @flow_weekdaySun.
+  ///
+  /// In en, this message translates to:
+  /// **'Sun'**
+  String get flow_weekdaySun;
+
+  /// No description provided for @flow_reminderSheetTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'When should we remind you?'**
+  String get flow_reminderSheetTitle;
+
+  /// No description provided for @flow_reminderDay.
+  ///
+  /// In en, this message translates to:
+  /// **'Day'**
+  String get flow_reminderDay;
+
+  /// No description provided for @flow_reminderTime.
+  ///
+  /// In en, this message translates to:
+  /// **'Time'**
+  String get flow_reminderTime;
+
+  /// No description provided for @flow_reminderChangeTime.
+  ///
+  /// In en, this message translates to:
+  /// **'Change time'**
+  String get flow_reminderChangeTime;
+
+  /// No description provided for @flow_reminderTurnOn.
+  ///
+  /// In en, this message translates to:
+  /// **'Turn on'**
+  String get flow_reminderTurnOn;
+
+  /// No description provided for @flow_reminderTurnOff.
+  ///
+  /// In en, this message translates to:
+  /// **'Turn off'**
+  String get flow_reminderTurnOff;
+
+  /// No description provided for @flow_reminderNeedsPush.
+  ///
+  /// In en, this message translates to:
+  /// **'Reminders need notifications.'**
+  String get flow_reminderNeedsPush;
+
+  /// No description provided for @flow_reminderTurnOnPush.
+  ///
+  /// In en, this message translates to:
+  /// **'Turn on notifications'**
+  String get flow_reminderTurnOnPush;
+
+  /// No description provided for @flow_reminderReadFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'We couldn\'t load your reminder. Try again.'**
+  String get flow_reminderReadFailed;
+
+  /// No description provided for @flow_reminderQuietHours.
+  ///
+  /// In en, this message translates to:
+  /// **'Reminders can be set from {start} to {end}.'**
+  String flow_reminderQuietHours(String start, String end);
+
+  /// No description provided for @flow_howTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'How you use Attune'**
+  String get flow_howTitle;
+
+  /// No description provided for @flow_howSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'In a relationship, dating, or just for you'**
+  String get flow_howSubtitle;
+
+  /// No description provided for @flow_howFooter.
+  ///
+  /// In en, this message translates to:
+  /// **'Your journal, quizzes and Healing stay yours whichever you choose. Nobody is told when you change this.'**
+  String get flow_howFooter;
+
+  /// No description provided for @flow_sharedOpenTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'You\'re in a shared space with {name}'**
+  String flow_sharedOpenTitle(String name);
+
+  /// No description provided for @flow_yourPartner.
+  ///
+  /// In en, this message translates to:
+  /// **'your partner'**
+  String get flow_yourPartner;
+
+  /// No description provided for @flow_sharedOpenBody.
+  ///
+  /// In en, this message translates to:
+  /// **'To use Attune another way, end it first. Pausing keeps it, read-only, for up to 30 days.'**
+  String get flow_sharedOpenBody;
+
+  /// No description provided for @flow_sharedPause.
+  ///
+  /// In en, this message translates to:
+  /// **'Pause our shared space'**
+  String get flow_sharedPause;
+
+  /// No description provided for @flow_sharedEnd.
+  ///
+  /// In en, this message translates to:
+  /// **'End relationship'**
+  String get flow_sharedEnd;
+
+  /// No description provided for @flow_notNow.
+  ///
+  /// In en, this message translates to:
+  /// **'Not now'**
+  String get flow_notNow;
 }
 
 class _AppLocalizationsDelegate extends LocalizationsDelegate<AppLocalizations> {

@@ -27,6 +27,22 @@ void main() {
     }
   });
 
+  // Spec 1 W3c (P-27): the paths topic only while both flags are on.
+  test('How you use Attune needs flow_signin_v2 and flow_paths_v2', () {
+    bool listed(Set<String> on) => DocumentationRegistry.visibleModules(
+      on,
+    ).any((m) => m.id == 'howYouUseAttune');
+    expect(
+      DocumentationRegistry.getAllModules().any(
+        (m) => m.id == 'howYouUseAttune',
+      ),
+      isTrue,
+    );
+    expect(listed(const {}), isFalse);
+    expect(listed(const {'flow_paths_v2'}), isFalse);
+    expect(listed(const {'flow_signin_v2', 'flow_paths_v2'}), isTrue);
+  });
+
   test('every flag a topic needs is one the app reads', () {
     expect(DocumentationRegistry.allRequiredFlags, isNotEmpty);
     for (final f in DocumentationRegistry.allRequiredFlags) {
@@ -42,6 +58,9 @@ void main() {
           'quiz_clinical_signoff',
           'chat_ephemeral_video',
           'chat_video_sharing',
+          // Spec 1 W3c: How you use Attune.
+          'flow_signin_v2',
+          'flow_paths_v2',
         }),
       );
     }

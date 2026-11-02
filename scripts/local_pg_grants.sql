@@ -263,3 +263,7 @@ GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public
 -- Spec 1 W2c: phone-code delivery is server-only; the two decisions are the
 -- edge functions' (service role).
 \i supabase/migrations/20261025110010_otp_delivery_grants.sql
+
+-- Spec 1 W3c: the journal reminder: own row read, RPC writes, the enqueue is
+-- the cron's.
+\i supabase/migrations/20261026100010_journal_reminders_grants.sql

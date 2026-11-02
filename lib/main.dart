@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:app_links/app_links.dart';
 import 'package:attune/app/app.dart';
+import 'package:attune/app/device_wipes.dart';
 import 'package:attune/app/routing/app_router.dart';
 import 'package:attune/app/routing/sign_in_boot.dart';
 import 'package:attune/core/config/env.dart';
@@ -44,6 +45,8 @@ Future<void> main() async {
 
   await _initializeSupabase();
   _initializeDeepLinks();
+  // Spec 1 §5.8: every feature's sign-out and quick-exit wipes, once.
+  registerDeviceWipes();
   final chatCache = ChatCacheService();
   // init() recovers from a corrupt or locked store itself and bounds the
   // keystore read; this outer bound is the last line: a cache can never

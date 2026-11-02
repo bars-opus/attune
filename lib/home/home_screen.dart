@@ -5,15 +5,20 @@ import 'package:attune/core/providers/shared_prefs_provider.dart';
 import 'package:attune/core/services/user_timezone_reporter.dart';
 import 'package:attune/core/utils/exports/export_screens.dart';
 import 'package:attune/features/auth/log_in/presentation/screens/login_profile.dart';
-import 'package:attune/features/auth/data/passwordless_auth_service.dart';
+import 'package:attune/features/auth/sign_up/presentation/sign_up_flags.dart';
 import 'package:attune/features/chat/presentation/widgets/authenticated_chat_workspace.dart';
 import 'package:attune/core/repositories/repository_helpers.dart';
+import 'package:attune/features/onboarding/data/home_state_service.dart';
 import 'package:attune/features/onboarding/data/onboarding_store.dart';
 import 'package:attune/features/onboarding/data/onboarding_sync_service.dart';
 import 'package:attune/features/onboarding/domain/onboarding_models.dart';
+import 'package:attune/features/onboarding/domain/home_state.dart';
 import 'package:attune/features/onboarding/domain/relationship_mode_sync.dart';
-import 'package:attune/features/opinions/presentation/screen/opinions_tab.dart';
+import 'package:attune/features/onboarding/presentation/providers/flow_flags.dart';
+import 'package:attune/features/onboarding/presentation/providers/home_state_providers.dart';
+import 'package:attune/features/onboarding/presentation/screens/invite_partner_screen.dart';
 import 'package:attune/features/relationships/data/relationship_invite_service.dart';
+import 'package:attune/home/home_seams.dart';
 import 'package:attune/home/widgets/home_tab.dart';
 import 'package:attune/home/widgets/home_widget_responsive.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -44,7 +49,12 @@ final relationshipModeResyncSignal = ValueNotifier<int>(0);
 /// stateless build that read `currentUser` inline both re-derived its gate
 /// data on every rebuild and never rebuilt on sign-in/sign-out at all.
 class HomeScreen extends ConsumerStatefulWidget {
-  const HomeScreen({super.key});
+  const HomeScreen({super.key, this.tabRequest});
+
+  /// Spec 1 W3a (§3.11): `/home?tab=chat|me` (homeLocation) opens Tab 2.
+  /// The route passes the whole query, so a repeated request (its `n`
+  /// differs) opens it again; null when the location asked for no tab.
+  final String? tabRequest;
 
   @override
   ConsumerState<HomeScreen> createState() => _HomeScreenState();
@@ -52,9 +62,14 @@ class HomeScreen extends ConsumerStatefulWidget {
 
 class _HomeScreenState extends ConsumerState<HomeScreen>
     with WidgetsBindingObserver {
-  final _authService = PasswordlessAuthService();
-  final _syncService = OnboardingSyncService();
-  final _inviteService = RelationshipInviteService();
+  late final HomeAuth _authService = ref.read(homeAuthProvider);
+  // Preflight F-4: the v2 replay of a queued A6 goes through the same
+  // home-state seam as the rest of the shell.
+  late final _syncService = OnboardingSyncService(
+    homeStateService: ref.read(homeStateServiceProvider),
+  );
+  // B3 fix round: the shared seam, so tests can script it.
+  late final _inviteService = ref.read(invitePartnerServiceProvider);
 
   StreamSubscription<AuthState>? _authSubscription;
 
@@ -73,12 +88,34 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
   /// Latches the one-shot redirect into onboarding — see its use in build().
   bool _redirectingToOnboarding = false;
 
+  /// Spec 1 W3a: the v2 home state for the signed-in account, and the flag.
+  ProviderSubscription<HomeSnapshot>? _homeSubscription;
+  ProviderSubscription<bool>? _pathsSubscription;
+
+  /// Bumped by each new `/home?tab=` request, so the keyed shell opens Tab 2.
+  int _tabRequests = 0;
+
+  /// flow_paths_v2, effective (spec §5.3).
+  bool get _pathsV2 => ref.read(flowPathsV2Provider);
+
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _scopeUserId = _authService.currentUser?.id;
     _gateData = _loadGateDataSync();
+    _bindHomeState(null);
+    _pathsSubscription = ref.listenManual<bool>(flowPathsV2Provider, (
+      previous,
+      next,
+    ) {
+      if (!mounted || previous == next) return;
+      setState(() => _gateData = _loadGateDataSync());
+      _reconcileGateData();
+      // Fix round 1 (review I#1): v2 removed the legacy mode (§5.5); with
+      // the flag off again, today's sync rebuilds it now, not next resume.
+      if (!next) _syncRelationshipMode();
+    });
     _reconcileGateData();
 
     // Rebuild (and re-scope the onboarding store) when the user signs in or
@@ -88,10 +125,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
       if (!mounted) return;
       final userId = _authService.currentUser?.id;
       if (userId == _scopeUserId) return;
+      final previousUserId = _scopeUserId;
       setState(() {
         _scopeUserId = userId;
         _gateData = _loadGateDataSync();
       });
+      _bindHomeState(previousUserId);
       _reconcileGateData();
       // Signing in is the single most important moment to reconcile the
       // relationship mode, and it used to be the one moment that didn't.
@@ -113,11 +152,49 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
   }
 
   @override
+  void didUpdateWidget(covariant HomeScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // Spec 1 W3a: a new /home?tab= while the shell is up opens Tab 2.
+    if (widget.tabRequest != null && widget.tabRequest != oldWidget.tabRequest) {
+      _tabRequests++;
+    }
+  }
+
+  @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     relationshipModeResyncSignal.removeListener(_syncRelationshipMode);
     _authSubscription?.cancel();
+    _homeSubscription?.close();
+    _pathsSubscription?.close();
     super.dispose();
+  }
+
+  /// Spec 1 W3a (§5.3): follows the signed-in account's home state; the
+  /// account that just signed out forgets its live answer (D20: in memory
+  /// only).
+  void _bindHomeState(String? previousUserId) {
+    _homeSubscription?.close();
+    _homeSubscription = null;
+    if (previousUserId != null && previousUserId.isNotEmpty) {
+      ref.invalidate(homeStateProvider(previousUserId));
+    }
+    final userId = _scopeUserId;
+    if (userId == null || userId.isEmpty) return;
+    _homeSubscription = ref.listenManual<HomeSnapshot>(
+      homeStateProvider(userId),
+      (_, next) {
+        if (!mounted || !_pathsV2 || _scopeUserId != userId) return;
+        setState(() => _gateData = _v2GateData(_gateData.store, next));
+      },
+    );
+  }
+
+  /// get_my_home_state(), shared with every other reader (deduplicated).
+  Future<void> _refreshHomeState() async {
+    final userId = _scopeUserId;
+    if (userId == null || userId.isEmpty) return;
+    await ref.read(homeStateProvider(userId).notifier).refresh();
   }
 
   @override
@@ -154,6 +231,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     // silently leaving the couples-locked screen showing forever with no
     // visible error and no retry until the next resume/launch happened to
     // succeed.
+    // Spec 1 W3a: under flow_paths_v2 the home state replaces the mode
+    // sync (§5.5), at the same moments.
+    if (_pathsV2) {
+      await _refreshHomeState();
+      return;
+    }
     try {
       final store = _gateData.store;
       // No local mode is short-circuited here — reconciliation always asks
@@ -244,8 +327,23 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
             ? OnboardingStore.anonymousScope
             : '${OnboardingStore.userScopePrefix}.$userId';
     final store = OnboardingStore(prefs, scope: scope);
+    // Spec 1 W3a (§5.5): under flow_paths_v2 the home state decides.
+    if (_pathsV2 && userId != null && userId.isNotEmpty) {
+      return _v2GateData(store, ref.read(homeStateProvider(userId)));
+    }
     return _HomeGateData(store: store, isComplete: store.isComplete);
   }
+
+  /// `isComplete` under flow_paths_v2 is "nothing is missing and no hold"
+  /// (spec §5.5). Until this phone has any v2 answer for the account, the
+  /// legacy flag stands in, so an account that is set up doesn't flash
+  /// through /onboarding; the first server answer then decides.
+  _HomeGateData _v2GateData(OnboardingStore store, HomeSnapshot home) =>
+      _HomeGateData(
+        store: store,
+        isComplete: home.known ? home.isComplete : store.isComplete,
+        home: home,
+      );
 
   /// Background upgrade of the synchronously-seeded _gateData: pays off any
   /// pending onboarding submission, retries a stashed invite code, and —
@@ -261,6 +359,31 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     final userId = _scopeUserId;
 
     if (userId == null || userId.isEmpty) return;
+
+    // Spec 1 W3a: under flow_paths_v2 the queued A5 and A6 are replayed
+    // first, then the server's home state decides (it can also close the
+    // home again: a new need, a hold).
+    if (_pathsV2) {
+      final home = ref.read(homeStateProvider(userId).notifier);
+      try {
+        await _syncService
+            .flush(store, onPathSynced: home.apply)
+            .timeout(const Duration(seconds: 20));
+      } catch (_) {}
+      if (!mounted || _scopeUserId != userId) return;
+      await _refreshHomeState();
+      if (!mounted || _scopeUserId != userId) return;
+      // Ruling (B3 fix round, D9/§5.2/§3.14): a stored invite waits for a
+      // complete account on the server (its name and date of birth); until
+      // then the v2 gate accepts it, after the name.
+      if (store.pendingInviteCode != null &&
+          store.pendingSignUp == null &&
+          ref.read(homeStateProvider(userId)).isComplete) {
+        await _acceptPendingInvite(store);
+        await _refreshHomeState();
+      }
+      return;
+    }
 
     // Fire-and-forget: the shell has already rendered, and a failed flush
     // keeps the payload for the next launch.
@@ -327,6 +450,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
   /// _gateData itself — it lives several widgets below where the store is
   /// owned — so this is threaded down as a callback instead.
   Future<void> _onInviteSent() async {
+    // Spec 1 W3a: under flow_paths_v2 the server knows; ask it.
+    if (_pathsV2) {
+      await _refreshHomeState();
+      return;
+    }
     await _gateData.store.startCouplesInvite();
     if (!mounted) return;
     setState(() {});
@@ -369,37 +497,93 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     final isActiveCouples = mode == OnboardingMode.couples;
     final isRelationshipTrack = mode?.isRelationshipTrack ?? false;
 
-    // Default tab: Opinions (0) for single/personal, Chat (1) for active couples
-    final initialTabIndex = isOnboarded && isActiveCouples ? 1 : 0;
+    // Spec 1 W3a (§3.11): under flow_paths_v2, Tab 2 is Chat or Me by the
+    // home state's layout (the legacy mode stands in until it is known).
+    final homeState = _gateData.home;
+    final AppTab? layout =
+        homeState == null || !isOnboarded
+            ? null
+            : homeState.tab ??
+                (isRelationshipTrack ? AppTab.chat : AppTab.me);
+    final loc = AppLocalizations.of(context)!;
+    // Fix round 1 (ruling): until this phone has any v2 answer, the couple
+    // link comes from the legacy mode, so an active couple keeps the chat.
+    final tabTwoHome =
+        homeState == null || homeState.known
+            ? homeState
+            : HomeSnapshot(
+              link:
+                  isActiveCouples
+                      ? LinkState.linked
+                      : isRelationshipTrack
+                      ? LinkState.pending
+                      : LinkState.none,
+              needs: homeState.needs,
+              hold: homeState.hold,
+            );
+
+    // Default tab: Opinions (0) for single/personal, Chat (1) for active
+    // couples. Spec 1 W3a: Tab 2 for everyone signed in under
+    // flow_paths_v2, and whenever /home?tab= asked for it.
+    final initialTabIndex =
+        layout != null ||
+                widget.tabRequest != null ||
+                (isOnboarded && isActiveCouples)
+            ? 1
+            : 0;
 
     final tabs = [
-      const HomeTab(
+      HomeTab(
         id: 'opinions',
         label: 'Opinions',
         icon: Icons.forum_outlined,
         activeIcon: Icons.forum,
-        screen: OpinionsTab(),
+        screen: ref.watch(homeOpinionsTabProvider),
       ),
       HomeTab(
-        id: 'chat',
-        label: 'Chat',
-        icon: Icons.chat_bubble_outline,
-        activeIcon: Icons.chat_bubble,
+        id: layout == AppTab.me ? 'me' : 'chat',
+        // Spec 1 §3.2 G2: a guest's Tab 2 is "Sign in" under flow_signin_v2
+        // (preflight F-5: guests only, not a signed-in account mid-setup).
+        label:
+            layout == AppTab.me
+                ? loc.flow_tabMe
+                : !isAuthenticated && ref.watch(signInFlowV2Provider)
+                ? loc.flow_tabSignIn
+                : 'Chat',
+        icon:
+            layout == AppTab.me
+                ? Icons.person_outline
+                : Icons.chat_bubble_outline,
+        activeIcon: layout == AppTab.me ? Icons.person : Icons.chat_bubble,
         screen:
             isOnboarded
-                ? AuthenticatedChatWorkspace(
-                  isCouples: isActiveCouples,
-                  isPendingCouples: isRelationshipTrack && !isActiveCouples,
-                  onInviteSent: _onInviteSent,
-                )
+                ? layout != null
+                    ? ref.watch(homeTabTwoBuilderProvider)(
+                      layout,
+                      tabTwoHome!,
+                      _onInviteSent,
+                    )
+                    : AuthenticatedChatWorkspace(
+                      isCouples: isActiveCouples,
+                      isPendingCouples: isRelationshipTrack && !isActiveCouples,
+                      onInviteSent: _onInviteSent,
+                    )
                 : const LoginProfile(),
       ),
     ];
 
-    final home = HomeWidgetResponsive.adaptive(
-      context: context,
-      tabs: tabs,
-      initialTabIndex: initialTabIndex,
+    final home = KeyedSubtree(
+      // Spec 1 W3a (§3.11): HomeWidget reads initialTabIndex only once, so a
+      // new layout (Chat <-> Me) rebuilds the shell; a link change, or
+      // Dating <-> Just for me (both Me), keeps it. A /home?tab= request
+      // selects Tab 2 in place (fix round 1, review minor #5).
+      key: ValueKey('home-${layout?.wire ?? 'legacy'}'),
+      child: HomeWidgetResponsive.adaptive(
+        context: context,
+        tabs: tabs,
+        initialTabIndex: initialTabIndex,
+        reselectToken: _tabRequests,
+      ),
     );
 
     if (!isAuthenticated) {
@@ -412,8 +596,15 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
 }
 
 class _HomeGateData {
-  const _HomeGateData({required this.store, required this.isComplete});
+  const _HomeGateData({
+    required this.store,
+    required this.isComplete,
+    this.home,
+  });
 
   final OnboardingStore store;
   final bool isComplete;
+
+  /// Spec 1 W3a: the v2 home state, under flow_paths_v2 only.
+  final HomeSnapshot? home;
 }

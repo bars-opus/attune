@@ -2,6 +2,7 @@
 
 import 'dart:async';
 import 'dart:io';
+import 'package:attune/core/device/device_wipe_registry.dart';
 import 'package:attune/features/couple_map/data/couple_map_device_data.dart';
 import 'package:attune/features/stories/data/story_device_wipe.dart';
 import 'package:attune/features/together/data/together_device_surfaces.dart';
@@ -57,6 +58,10 @@ class QuickExitService {
     // Story thumbnails sit in the shared image cache; empty it, with the
     // story URLs and rings snapshot (05 #6).
     unawaited(Future.sync(clearStories).catchError((Object _) {}));
+    // Spec 1 §5.8 (D19): every feature's quick-exit wipes, bounded, never
+    // throwing; protective settings (the Dating lock, the Safety PIN) can't
+    // register for this moment.
+    unawaited(DeviceWipeRegistry.instance.run(WipeMoment.quickExit));
     // The flag must be on disk before Attune leaves, or a kill during the
     // decoy comes back unlocked (Spec 2 review C3). The cover is already up,
     // so waiting reveals nothing; 300 ms is a minimum, not a maximum.

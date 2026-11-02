@@ -4,6 +4,8 @@
 // docs/superpowers/specs/2026-08-02-reflection-journal-design.md.
 
 import 'package:flutter/material.dart';
+import 'package:attune/app/documentations/user_manual/data/documentation_flags.dart';
+import 'package:attune/app/documentations/user_manual/data/manual_documentation_registry.dart';
 import 'package:attune/app/documentations/user_manual/models/documentation_model.dart'
     show DocumentationModule;
 import 'package:attune/app/documentations/user_manual/models/faq_model.dart';
@@ -26,6 +28,13 @@ class ReflectionJournalDocs implements DocumentationModule {
 
   @override
   IconData get icon => Icons.book_outlined;
+
+  /// Spec 1 W3c (B7 ruling M-3): the reminder exists only under the flags.
+  static bool _reminders(BuildContext context) =>
+      DocumentationRegistry.passageVisible(
+        'journalReminder',
+        documentationFlagsOf(context),
+      );
 
   @override
   List<ManualSection> getSections(BuildContext context) => [
@@ -189,7 +198,9 @@ class ReflectionJournalDocs implements DocumentationModule {
           id: 'journal_no_gamification',
           title: '',
           content:
-              'There are no streaks, no badges, and no reminders nagging you to write. Writing here is entirely on your own terms.',
+              _reminders(context)
+                  ? 'There are no streaks and no badges. No reminders unless you set one. Writing here is entirely on your own terms.'
+                  : 'There are no streaks, no badges, and no reminders nagging you to write. Writing here is entirely on your own terms.',
           type: ManualContentType.tip,
         ),
       ],
@@ -269,7 +280,9 @@ class ReflectionJournalDocs implements DocumentationModule {
         id: 'faq_journal_streaks',
         question: 'Does the journal track streaks or remind me to write daily?',
         answer:
-            'No. There are no streaks, badges, or nagging reminders — writing here is entirely optional and on your own schedule.',
+            _reminders(context)
+                ? 'No streaks or badges, and no reminders unless you set one (Your space → Remind me to write). Writing here is entirely optional and on your own schedule.'
+                : 'No. There are no streaks, badges, or nagging reminders — writing here is entirely optional and on your own schedule.',
         category: 'Reflection Journal',
         order: 9,
       ),

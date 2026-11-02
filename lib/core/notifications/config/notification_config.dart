@@ -7,7 +7,10 @@
 //
 // See NOTIFICATION_ENGINE.md for the full integration guide.
 
+import 'package:flutter/widgets.dart' show WidgetsBinding;
 import 'package:go_router/go_router.dart';
+import 'package:attune/features/onboarding/domain/home_state.dart' show AppTab;
+import 'package:attune/home/home_location.dart';
 import 'package:attune/features/planning/presentation/planning_ui.dart' show planningEntryTarget;
 import 'package:attune/app/routing/app_router.dart';
 import 'package:attune/core/notifications/config/feature/notification_config.dart';
@@ -126,6 +129,15 @@ NotificationConfig buildNanoEmbryoNotificationConfig() {
 
         case 'checkin_reminder':
           GoRouter.of(context).go(RouteNames.weeklyCheckin);
+          return;
+
+        // Spec 1 W3c (§3.10 J3, §3.11): Me (Tab 2), then the journal.
+        case 'journal_reminder':
+          final router = GoRouter.of(context);
+          router.go(homeLocation(tab: AppTab.me));
+          WidgetsBinding.instance.addPostFrameCallback(
+            (_) => router.push(RouteNames.reflectionJournal),
+          );
           return;
 
         case 'pulse_updated':

@@ -1681,4 +1681,383 @@ class AppLocalizationsEn extends AppLocalizations {
   String flow_codeCalling(String number) {
     return 'We\'re calling $number now. The code is read out twice.';
   }
+
+  @override
+  String get flow_tabMe => 'Me';
+
+  @override
+  String get flow_tabSignIn => 'Sign in';
+
+  @override
+  String get flow_pathTitle => 'What brings you to Attune?';
+
+  @override
+  String get flow_pathJustMeLineFull => 'Your journal, quizzes and Healing. Single, partnered or in between.';
+
+  @override
+  String flow_pathNotOpen(String country) {
+    return 'Not open in $country yet';
+  }
+
+  @override
+  String get flow_pathFooter => 'You can change this any time. Your journal and quizzes are yours whichever you choose.';
+
+  @override
+  String get flow_pathAlreadyInvited => 'My partner already invited me';
+
+  @override
+  String get flow_pathGroupSemantics => 'Choose one of three';
+
+  @override
+  String get flow_pathDatingOffline => 'Dating needs a connection. Try again when you\'re online.';
+
+  @override
+  String get flow_cancel => 'Cancel';
+
+  @override
+  String get flow_cancelInviteTitle => 'Cancel your invite?';
+
+  @override
+  String get flow_cancelInviteBody => 'Your invite code will stop working. Your partner won\'t be told.';
+
+  @override
+  String flow_cancelInviteBodyNamed(String name) {
+    return 'Your invite code will stop working. $name won\'t be told.';
+  }
+
+  @override
+  String get flow_cancelInviteConfirm => 'Cancel invite and switch';
+
+  @override
+  String get flow_cancelInviteKeep => 'Keep invite';
+
+  @override
+  String get flow_pauseDatingTitle => 'Inviting a partner pauses Dating';
+
+  @override
+  String get flow_pauseDatingBody => 'Your introductions stop and your Dating profile is hidden. Nobody is told.';
+
+  @override
+  String get flow_switchOffline => 'You\'re offline. Try again when you\'re connected.';
+
+  @override
+  String get flow_dobAddTitle => 'Add your date of birth';
+
+  @override
+  String get flow_holdTitle => 'We need to check your account';
+
+  @override
+  String get flow_holdBody => 'You can\'t use Attune while we do this. If you think this is a mistake, contact support.';
+
+  @override
+  String get flow_holdContact => 'Contact support';
+
+  @override
+  String get flow_signOut => 'Sign out';
+
+  @override
+  String get flow_updateTitle => 'Update Attune to continue';
+
+  @override
+  String get flow_updateBody => 'This version of Attune can\'t finish setting up your account. Update the app from your app store, then open it again.';
+
+  @override
+  String get flow_checkOfflineTitle => 'We couldn\'t check your account';
+
+  @override
+  String get flow_checkOfflineBody => 'Check your connection, then try again.';
+
+  @override
+  String get flow_invitePartnerTitle => 'Invite your partner';
+
+  @override
+  String get flow_invitePartnerBody => 'Send a link. When your partner joins, your private space opens.';
+
+  @override
+  String get flow_invitePartnerCreate => 'Create my invite';
+
+  @override
+  String get flow_invitePartnerLater => 'Invite later';
+
+  @override
+  String get flow_invitePartnerDone => 'Done';
+
+  @override
+  String get flow_pathOpenSpace => 'You\'re in a shared space. To use Attune another way, end it or pause it first.';
+
+  @override
+  String get flow_inviteCodeRefused => 'This code didn\'t work. It may have expired or been used. Ask for a new one.';
+
+  @override
+  String get flow_inviteCodeAlreadyIn => 'You\'re already in a shared space, so this invite can\'t be used.';
+
+  @override
+  String get flow_inviteCodeOffline => 'We couldn\'t check that code. Try again when you\'re online.';
+
+  @override
+  String get flow_ageStopAccountBody => 'You need to be 18 or older to use Attune. Your account is on hold.';
+
+  @override
+  String get flow_spaceTitle => 'Your space';
+
+  @override
+  String get flow_settingsTooltip => 'Settings';
+
+  @override
+  String get flow_spaceJournal => 'Journal';
+
+  @override
+  String get flow_spaceJournalLine => 'Notes only you can read';
+
+  @override
+  String get flow_spaceQuizzes => 'Quizzes';
+
+  @override
+  String get flow_spaceQuizzesLine => 'Short, private, about you';
+
+  @override
+  String get flow_spaceHealing => 'Healing';
+
+  @override
+  String get flow_spaceHealingLine => 'After a breakup or a loss';
+
+  @override
+  String get flow_firstStartHere => 'Start here';
+
+  @override
+  String get flow_firstWriteNote => 'Write your first note';
+
+  @override
+  String get flow_firstQuiz => 'Take a 3-minute look at how you connect';
+
+  @override
+  String get flow_firstSaved => 'Saved, just for you.';
+
+  @override
+  String get flow_moreWays => 'More ways to use Attune';
+
+  @override
+  String get flow_moreInvite => 'Invite a partner';
+
+  @override
+  String get flow_justMeSheetTitle => 'Use Attune just for you?';
+
+  @override
+  String get flow_justMeSheetBody => 'Dating will be paused and hidden. Nobody is told. You can delete your Dating profile from Dating settings.';
+
+  @override
+  String get flow_justMeSheetSwitch => 'Switch';
+
+  @override
+  String get flow_waitWriteNote => 'Write a first note';
+
+  @override
+  String get flow_waitQuiz => 'A quiz about you, for you';
+
+  @override
+  String get flow_waitReceipts => 'When your partner joins, read receipts start off. You can each turn them on later.';
+
+  @override
+  String get flow_inviteMenu => 'Invite options';
+
+  @override
+  String get flow_cancelThisInvite => 'Cancel this invite';
+
+  @override
+  String get flow_cancelThisInviteTitle => 'Cancel this invite?';
+
+  @override
+  String get flow_cancelThisInviteConfirm => 'Cancel invite';
+
+  @override
+  String flow_waitReceiptsNamed(String partnerFirstName) {
+    return 'When your partner joins, read receipts start off. You and $partnerFirstName can each turn them on later.';
+  }
+
+  @override
+  String get flow_slotDatingTitle => 'Dating';
+
+  @override
+  String get flow_slotDatingBody => 'Up to 3 introductions a day. A match only when you both say yes.';
+
+  @override
+  String get flow_slotSetUp => 'Set up Dating';
+
+  @override
+  String get flow_slotNotReady => 'Not ready? Use Attune just for me';
+
+  @override
+  String flow_slotNotOpenTitle(String country) {
+    return 'Dating isn\'t open in $country yet';
+  }
+
+  @override
+  String flow_slotNotOpenBody(String countries) {
+    return 'Dating is open in $countries. We\'re adding countries one at a time.';
+  }
+
+  @override
+  String flow_slotChangeCountry(String country) {
+    return 'Not in $country? Change';
+  }
+
+  @override
+  String get flow_slotChooseCountry => 'Choose your country';
+
+  @override
+  String get flow_slotClosedTitle => 'Dating isn\'t open yet';
+
+  @override
+  String get flow_slotClosedBody => 'It opens one country at a time. Your journal, quizzes and Healing are here meanwhile.';
+
+  @override
+  String flow_slotGentleWait(String date) {
+    return 'Dating opens for you on $date.';
+  }
+
+  @override
+  String get flow_slotGentleWaitWhy => 'This pause is because your relationship ended here. It isn\'t a judgement about you.';
+
+  @override
+  String get flow_slotHealing => 'Healing is here if you want it';
+
+  @override
+  String get flow_slotLocked => 'Dating is locked';
+
+  @override
+  String get flow_slotLockedLine => 'Enter your Safety PIN to show it';
+
+  @override
+  String get flow_lockTitle => 'Dating lock';
+
+  @override
+  String get flow_lockSubtitle => 'Ask for your Safety PIN before showing Dating.';
+
+  @override
+  String get flow_slotGentleWaitNoDate => 'Dating opens for you after a pause.';
+
+  @override
+  String get flow_pushTurnOn => 'Turn on';
+
+  @override
+  String get flow_pushAskR2 => 'Get a heads-up when your partner joins';
+
+  @override
+  String flow_pushAskR2Named(String name) {
+    return 'Get a heads-up when $name joins';
+  }
+
+  @override
+  String get flow_reminderTitle => 'Remind me to write';
+
+  @override
+  String get flow_reminderOff => 'Off';
+
+  @override
+  String flow_reminderWhen(String days, String time) {
+    return '$days at $time';
+  }
+
+  @override
+  String get flow_weekdaysMon => 'Mondays';
+
+  @override
+  String get flow_weekdaysTue => 'Tuesdays';
+
+  @override
+  String get flow_weekdaysWed => 'Wednesdays';
+
+  @override
+  String get flow_weekdaysThu => 'Thursdays';
+
+  @override
+  String get flow_weekdaysFri => 'Fridays';
+
+  @override
+  String get flow_weekdaysSat => 'Saturdays';
+
+  @override
+  String get flow_weekdaysSun => 'Sundays';
+
+  @override
+  String get flow_weekdayMon => 'Mon';
+
+  @override
+  String get flow_weekdayTue => 'Tue';
+
+  @override
+  String get flow_weekdayWed => 'Wed';
+
+  @override
+  String get flow_weekdayThu => 'Thu';
+
+  @override
+  String get flow_weekdayFri => 'Fri';
+
+  @override
+  String get flow_weekdaySat => 'Sat';
+
+  @override
+  String get flow_weekdaySun => 'Sun';
+
+  @override
+  String get flow_reminderSheetTitle => 'When should we remind you?';
+
+  @override
+  String get flow_reminderDay => 'Day';
+
+  @override
+  String get flow_reminderTime => 'Time';
+
+  @override
+  String get flow_reminderChangeTime => 'Change time';
+
+  @override
+  String get flow_reminderTurnOn => 'Turn on';
+
+  @override
+  String get flow_reminderTurnOff => 'Turn off';
+
+  @override
+  String get flow_reminderNeedsPush => 'Reminders need notifications.';
+
+  @override
+  String get flow_reminderTurnOnPush => 'Turn on notifications';
+
+  @override
+  String get flow_reminderReadFailed => 'We couldn\'t load your reminder. Try again.';
+
+  @override
+  String flow_reminderQuietHours(String start, String end) {
+    return 'Reminders can be set from $start to $end.';
+  }
+
+  @override
+  String get flow_howTitle => 'How you use Attune';
+
+  @override
+  String get flow_howSubtitle => 'In a relationship, dating, or just for you';
+
+  @override
+  String get flow_howFooter => 'Your journal, quizzes and Healing stay yours whichever you choose. Nobody is told when you change this.';
+
+  @override
+  String flow_sharedOpenTitle(String name) {
+    return 'You\'re in a shared space with $name';
+  }
+
+  @override
+  String get flow_yourPartner => 'your partner';
+
+  @override
+  String get flow_sharedOpenBody => 'To use Attune another way, end it first. Pausing keeps it, read-only, for up to 30 days.';
+
+  @override
+  String get flow_sharedPause => 'Pause our shared space';
+
+  @override
+  String get flow_sharedEnd => 'End relationship';
+
+  @override
+  String get flow_notNow => 'Not now';
 }

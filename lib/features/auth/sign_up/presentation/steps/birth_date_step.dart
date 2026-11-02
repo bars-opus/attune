@@ -20,9 +20,12 @@ class BirthDateStep extends StatefulWidget {
     required this.order,
     required this.todayUtc,
     required this.onSubmit,
-    required this.onBack,
+    this.onBack,
     this.initialDate,
     this.initialYear,
+    this.title,
+    this.errorText,
+    this.errorCount = 0,
   });
 
   final BirthDateOrder order;
@@ -34,7 +37,17 @@ class BirthDateStep extends StatefulWidget {
 
   /// The valid date. The step stays busy until it has finished.
   final FutureOr<void> Function(DateTime date) onSubmit;
-  final VoidCallback onBack;
+
+  /// Null: no back button (Spec 1 W3a's catch-up step, §3.15).
+  final VoidCallback? onBack;
+
+  /// Spec 1 §3.15: the catch-up step says "Add your date of birth".
+  final String? title;
+
+  /// A failed save, shown with its icon under the fields (§2.3); raise
+  /// [errorCount] on each failure so it is read out again.
+  final String? errorText;
+  final int errorCount;
 
   @override
   State<BirthDateStep> createState() => _BirthDateStepState();
@@ -60,6 +73,17 @@ class _BirthDateStepState extends State<BirthDateStep> with SubmitOnce {
   void initState() {
     super.initState();
     _check(showError: false);
+  }
+
+  @override
+  void didUpdateWidget(covariant BirthDateStep oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final error = widget.errorText;
+    if (error != null &&
+        (error != oldWidget.errorText ||
+            widget.errorCount != oldWidget.errorCount)) {
+      SemanticsService.announce(error, Directionality.of(context));
+    }
   }
 
   @override
@@ -146,7 +170,7 @@ class _BirthDateStepState extends State<BirthDateStep> with SubmitOnce {
     final valid = _valid;
 
     return FlowFrame(
-      title: loc.flow_dobTitle,
+      title: widget.title ?? loc.flow_dobTitle,
       hint: loc.flow_dobHint,
       onBack: widget.onBack,
       body: Column(
@@ -190,6 +214,14 @@ class _BirthDateStepState extends State<BirthDateStep> with SubmitOnce {
             const SizedBox(height: 12),
             FlowErrorLine(
               text: _message(loc, _error!),
+              style: theme.textTheme.bodyMedium?.copyWith(
+                color: theme.colorScheme.onSurface,
+              ),
+            ),
+          ] else if (widget.errorText != null) ...[
+            const SizedBox(height: 12),
+            FlowErrorLine(
+              text: widget.errorText!,
               style: theme.textTheme.bodyMedium?.copyWith(
                 color: theme.colorScheme.onSurface,
               ),

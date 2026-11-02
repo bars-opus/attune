@@ -1,7 +1,9 @@
 import 'package:attune/features/auth/sign_up/data/account_service.dart';
 import 'package:attune/features/auth/sign_up/data/age_gate_store.dart';
+import 'package:attune/features/onboarding/data/home_state_service.dart';
 import 'package:attune/features/onboarding/data/onboarding_store.dart';
 import 'package:attune/features/onboarding/data/onboarding_submission_service.dart';
+import 'package:attune/features/onboarding/domain/home_state.dart';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -20,24 +22,34 @@ class OnboardingSyncService {
   OnboardingSyncService({
     OnboardingSubmissionService? submissionService,
     AccountService? accountService,
+    HomeStateService? homeStateService,
     Future<void> Function()? onSignUpNotEligible,
   }) : _submissionService = submissionService ?? OnboardingSubmissionService(),
        _accountService = accountService,
+       _homeStateService = homeStateService,
        _onSignUpNotEligible = onSignUpNotEligible ?? _blockAndSignOut;
 
   final OnboardingSubmissionService _submissionService;
   final AccountService? _accountService;
+  final HomeStateService? _homeStateService;
   final Future<void> Function() _onSignUpNotEligible;
 
   /// Flushes [store]'s pending submission, if any. Silent no-op when there is
   /// nothing owed. Failures are swallowed and the payload is KEPT, so the next
   /// launch tries again.
-  Future<void> flush(OnboardingStore store) async {
+  ///
+  /// Spec 1 W3a: after the account, A6's queued choice (set_my_path);
+  /// [onPathSynced] receives the home state the server answered.
+  Future<void> flush(
+    OnboardingStore store, {
+    void Function(HomeState state)? onPathSynced,
+  }) async {
     // Spec 1 W2b: the account itself first (A5 queued offline), so the
     // users row exists before today's onboarding writes land.
     await _flushSignUp(store);
     // Review M-3: while the account is still owed, today's onboarding waits.
     if (store.pendingSignUp != null) return;
+    await _flushPath(store, onPathSynced);
 
     final pending = store.pendingSubmission;
     if (pending == null) return;
@@ -84,6 +96,46 @@ class OnboardingSyncService {
       await store.clearPendingSignUp();
     } catch (error) {
       debugPrint('[onboarding] pending sign-up kept: ${error.runtimeType}');
+    }
+  }
+
+  /// Replays A6's queued Relationship or Just for me (Spec 1 §3.7, §3.14;
+  /// never Dating, D20). A refusal that a replay can't fix drops it, and
+  /// the gate asks again; offline, or an account not ready yet, keeps it.
+  /// It is sent only while the server still asks for a path, so it never
+  /// replaces one chosen on another device.
+  Future<void> _flushPath(
+    OnboardingStore store,
+    void Function(HomeState state)? onPathSynced,
+  ) async {
+    final path = store.pendingPath;
+    if (path == null) return;
+    try {
+      final service =
+          _homeStateService ?? HomeStateService(SupabaseHomeStateGateway());
+      // Batch-1 review #7: only while the account still owes a path. One
+      // chosen meanwhile (another device) wins; the stale choice goes.
+      final current = await service.fetch();
+      if (!current.needs.contains(HomeNeed.path)) {
+        await store.clearPendingPath();
+        onPathSynced?.call(current);
+        debugPrint('[onboarding] pending path dropped: already chosen');
+        return;
+      }
+      final state = await service.setPath(
+        path,
+        confirmed: store.pendingPathConfirmed,
+      );
+      onPathSynced?.call(state);
+      await store.clearPendingPath();
+      debugPrint('[onboarding] pending path synced');
+    } on PathRefused catch (refused) {
+      debugPrint('[onboarding] pending path refused: ${refused.reason.name}');
+      if (refused.reason != PathRefusal.needsSignUp) {
+        await store.clearPendingPath();
+      }
+    } catch (error) {
+      debugPrint('[onboarding] pending path kept: ${error.runtimeType}');
     }
   }
 
