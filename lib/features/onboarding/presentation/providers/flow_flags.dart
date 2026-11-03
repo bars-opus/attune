@@ -24,13 +24,18 @@ class SupabaseFlowFlagsGateway implements FlowFlagsGateway {
     final rows = await Supabase.instance.client
         .from('feature_flags')
         .select('key, enabled')
-        .inFilter('key', const ['flow_paths_v2', 'flow_couples_v2'])
+        .inFilter('key', const [
+          'flow_paths_v2',
+          'flow_couples_v2',
+          'couple_profile',
+        ])
         .timeout(timeout);
     bool on(String key) =>
         rows.any((row) => row['key'] == key && row['enabled'] == true);
     return SignedInFlowFlags(
       pathsV2: on('flow_paths_v2'),
       couplesV2: on('flow_couples_v2'),
+      coupleProfile: on('couple_profile'),
     );
   }
 }
@@ -84,6 +89,13 @@ final flowPathsV2Provider = Provider<bool>((ref) {
 final flowCouplesV2Provider = Provider<bool>((ref) {
   if (!ref.watch(flowPathsV2Provider)) return false;
   return _current(ref).couplesV2;
+});
+
+/// couple_profile, effective: the flag and flow_couples_v2 (spec §2.5 A-6,
+/// §5.3). Spec 1 W5: About us.
+final coupleProfileEnabledProvider = Provider<bool>((ref) {
+  if (!ref.watch(flowCouplesV2Provider)) return false;
+  return _current(ref).coupleProfile;
 });
 
 /// Batch-5 review I-1 (D9): the signed-in flags are known, from an answer

@@ -271,3 +271,11 @@ GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public
 -- Spec 1 W4a: the accept and the eligibility check are the invite edge
 -- functions' (service role); the preview is the app's.
 \i supabase/migrations/20261102100010_accept_invite_v2_grants.sql
+
+-- Spec 1 W5: About us: the profile and the draft read under RLS and
+-- through their RPCs; the adoption, the anniversary sync and the helpers
+-- are server-only.
+\i supabase/migrations/20261102110010_couple_profiles_grants.sql
+
+-- Spec 1 W5: the four re-created functions keep their grants.
+\i supabase/migrations/20261102110110_couple_profiles_links_grants.sql

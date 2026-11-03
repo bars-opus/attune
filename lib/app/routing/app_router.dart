@@ -35,7 +35,10 @@ import 'package:attune/features/onboarding/presentation/screens/invite_partner_s
 import 'package:attune/features/relationships/presentation/screens/join_invite_screen.dart';
 import 'package:attune/features/onboarding/presentation/screens/onboarding_gate_v2.dart';
 import 'package:attune/features/onboarding/presentation/providers/flow_flags.dart'
-    show flowCouplesV2Provider;
+    show
+        coupleProfileEnabledProvider,
+        flowCouplesV2Provider,
+        flowFlagsKnownProvider;
 import 'package:flutter_riverpod/flutter_riverpod.dart' show ProviderScope;
 import 'package:attune/features/opinions/data/models/opinion_model.dart';
 import 'package:attune/features/opinions/presentation/screen/anonymous_profile_screen.dart';
@@ -144,6 +147,9 @@ import 'package:attune/features/settings/screens/language_screen.dart';
 import 'package:attune/features/settings/screens/settings_screen.dart';
 import 'package:attune/features/settings/screens/theme_screen.dart';
 import 'package:attune/features/settings/presentation/screens/how_you_use_attune_screen.dart';
+import 'package:attune/features/couple_profile/data/couple_profile_service.dart';
+import 'package:attune/features/couple_profile/presentation/about_us_entry.dart'
+    show AboutUsRoutePage;
 import 'package:attune/home/home_location.dart';
 import 'package:attune/home/home_screen.dart';
 import 'package:flutter/foundation.dart';
@@ -178,6 +184,10 @@ class RouteNames {
 
   /// Spec 1 W3c (§3.12).
   static const String howYouUseAttune = '/settings/how-you-use-attune';
+
+  /// Spec 1 W5 (§3.8, §5.4): About us; `draft` is this account's draft
+  /// before linking (aboutUsLocation builds it).
+  static const String aboutUs = '/about-us/:relationshipId';
   static const String signedInDevices = '/settings/signed-in-devices';
   static const String dataExport = DataExportScreen.routeName;
   static const String quietStates = QuietStatesScreen.routeName;
@@ -1686,6 +1696,38 @@ GoRouter createAppRouter(RoutingNotifier routingNotifier) {
         name: 'howYouUseAttune',
         builder: (context, state) => const HowYouUseAttuneScreen(),
       ),
+      // Spec 1 W5 (§3.8): About us, signed in and couple_profile on; with
+      // it off (or unreadable) a typed or deep /about-us goes home. While
+      // the signed-in flags aren't known yet, the page waits for them
+      // (unknown is not off) and decides then.
+      GoRoute(
+        path: RouteNames.aboutUs,
+        name: 'aboutUs',
+        redirect: (context, state) {
+          if (!routingNotifier.isSignedIn) return RouteNames.login;
+          return _coupleProfile(context) ? null : RouteNames.home;
+        },
+        builder: (context, state) {
+          final id = state.pathParameters['relationshipId'];
+          final extra = state.extra;
+          return AboutUsRoutePage(
+            onUnavailable: () => GoRouter.of(context).go(RouteNames.home),
+            target:
+                id == null || id == 'draft'
+                    ? const AboutUsTarget.draft()
+                    : AboutUsTarget.shared(id),
+            partnerName: extra is String ? extra : null,
+            onClose: () {
+              final router = GoRouter.of(context);
+              if (router.canPop()) {
+                router.pop();
+              } else {
+                router.go(RouteNames.home);
+              }
+            },
+          );
+        },
+      ),
       GoRoute(
         path: RouteNames.signedInDevices,
         name: 'signedInDevices',
@@ -1843,6 +1885,19 @@ GoRouter createAppRouter(RoutingNotifier routingNotifier) {
       ),
     ],
   );
+}
+
+/// Spec 1 W5: couple_profile, effective (an unreadable container is off);
+/// true while the signed-in flags aren't known yet, so AboutUsRoutePage
+/// waits for them instead of a never-cached phone going home for good.
+bool _coupleProfile(BuildContext context) {
+  try {
+    final container = ProviderScope.containerOf(context, listen: false);
+    return !container.read(flowFlagsKnownProvider) ||
+        container.read(coupleProfileEnabledProvider);
+  } catch (_) {
+    return false;
+  }
 }
 
 /// flow_couples_v2, effective, from the app's providers; off when they

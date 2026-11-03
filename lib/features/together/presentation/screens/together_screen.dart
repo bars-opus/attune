@@ -8,6 +8,10 @@ import 'package:attune/features/appreciation/presentation/appreciation_jar_scree
 import 'package:attune/features/appreciation/presentation/appreciation_sheet.dart';
 import 'package:attune/features/reminders/presentation/screens/family_members_screen.dart';
 import 'package:attune/core/providers/couple_name_provider.dart';
+import 'package:attune/features/couple_profile/data/couple_profile_service.dart';
+import 'package:attune/features/couple_profile/presentation/about_us_entry.dart';
+import 'package:attune/features/couple_profile/presentation/screens/about_us_question_flow.dart';
+import 'package:attune/features/onboarding/presentation/providers/flow_flags.dart';
 import 'package:attune/core/utils/date_formatter.dart';
 import 'package:attune/core/utils/exports/export_screens.dart';
 import 'package:attune/features/planning/presentation/planning_ui.dart'
@@ -787,6 +791,13 @@ class _TogetherScreenState extends ConsumerState<TogetherScreen> {
                                     context,
                                     relationshipId,
                                   ),
+                              // Spec 1 W5 (§3.8, §5.2): with couple_profile
+                              // on, the anniversary is About us's AU6, and
+                              // About us has its own row.
+                              aboutUs:
+                                  ref.watch(coupleProfileEnabledProvider)
+                                      ? AboutUsTarget.shared(relationshipId)
+                                      : null,
                             ),
                           ]
                           : [
@@ -1271,8 +1282,11 @@ class _TogetherHeader extends StatelessWidget {
 
 /// A brand-new couple: three easy ways in.
 class _EmptyTogether extends StatelessWidget {
-  const _EmptyTogether({required this.onRitual});
+  const _EmptyTogether({required this.onRitual, this.aboutUs});
   final VoidCallback onRitual;
+
+  /// Spec 1 W5: set while couple_profile is on.
+  final AboutUsTarget? aboutUs;
 
   @override
   Widget build(BuildContext context) {
@@ -1295,8 +1309,27 @@ class _EmptyTogether extends StatelessWidget {
               icon: Icons.favorite_border_rounded,
               showAvatar: false,
               showTrailingArrow: true,
-              onTap: () => showReminderSheet(context),
+              onTap:
+                  aboutUs == null
+                      ? () => showReminderSheet(context)
+                      : () => openAboutUsQuestion(
+                        context,
+                        aboutUs!,
+                        AboutUsQuestion.anniversary,
+                      ),
             ),
+            if (aboutUs != null)
+              InfoRowWidget(
+                title: AppLocalizations.of(context)!.aboutUs_title,
+                subtitle: '',
+                icon: Icons.people_alt_outlined,
+                showAvatar: false,
+                showTrailingArrow: true,
+                onTap:
+                    () => context.push(
+                      aboutUsLocation(aboutUs!.relationshipId),
+                    ),
+              ),
             InfoRowWidget(
               title: 'Add a birthday',
               subtitle: '',

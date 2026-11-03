@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:attune/features/auth/sign_up/data/account_service.dart';
 import 'package:attune/features/auth/sign_up/data/age_gate_store.dart';
 import 'package:attune/features/onboarding/data/home_state_service.dart';
@@ -24,15 +26,20 @@ class OnboardingSyncService {
     AccountService? accountService,
     HomeStateService? homeStateService,
     Future<void> Function()? onSignUpNotEligible,
+    Future<void> Function()? flushAboutUs,
   }) : _submissionService = submissionService ?? OnboardingSubmissionService(),
        _accountService = accountService,
        _homeStateService = homeStateService,
-       _onSignUpNotEligible = onSignUpNotEligible ?? _blockAndSignOut;
+       _onSignUpNotEligible = onSignUpNotEligible ?? _blockAndSignOut,
+       _flushAboutUs = flushAboutUs;
 
   final OnboardingSubmissionService _submissionService;
   final AccountService? _accountService;
   final HomeStateService? _homeStateService;
   final Future<void> Function() _onSignUpNotEligible;
+
+  /// Spec 1 W5 (§3.14): About us answers given offline.
+  final Future<void> Function()? _flushAboutUs;
 
   /// Flushes [store]'s pending submission, if any. Silent no-op when there is
   /// nothing owed. Failures are swallowed and the payload is KEPT, so the next
@@ -50,7 +57,30 @@ class OnboardingSyncService {
     // Review M-3: while the account is still owed, today's onboarding waits.
     if (store.pendingSignUp != null) return;
     await _flushPath(store, onPathSynced);
+    await _flushSubmission(store);
+    // Spec 1 W5: then About us answers queued offline (each its own
+    // replay; a failure keeps them for the next launch). Last, so a slow
+    // replay never delays the submission (W5 batch-3 fix round 1, M-2),
+    // and not awaited, so HomeScreen's reconcile (which awaits this flush)
+    // never waits on it either (W5 final review I-1).
+    _startAboutUsReplay();
+  }
 
+  void _startAboutUsReplay() {
+    final replay = _flushAboutUs;
+    if (replay == null) return;
+    void failed(Object error) =>
+        debugPrint('[onboarding] about us replay failed: ${error.runtimeType}');
+    try {
+      unawaited(replay().catchError(failed));
+    } catch (error) {
+      failed(error);
+    }
+  }
+
+  /// Today's pending onboarding submission, if any (moved out of [flush]
+  /// unchanged by Spec 1 W5, so the About us replay can run after it).
+  Future<void> _flushSubmission(OnboardingStore store) async {
     final pending = store.pendingSubmission;
     if (pending == null) return;
 

@@ -2,6 +2,7 @@ import 'package:attune/app/theme/design_tokens.dart';
 import 'package:attune/core/providers/shared_prefs_provider.dart';
 import 'package:attune/core/ui/text/allow_large_text.dart';
 import 'package:attune/features/auth/sign_up/presentation/widgets/flow_buttons.dart';
+import 'package:attune/features/couple_profile/data/about_us_outbox.dart';
 import 'package:attune/features/onboarding/data/home_state_service.dart';
 import 'package:attune/features/onboarding/data/onboarding_store.dart';
 import 'package:attune/features/onboarding/domain/home_state.dart';
@@ -60,6 +61,12 @@ Future<PathChoiceOutcome> choosePath(
     try {
       final state = await service.setPath(path, confirmed: isConfirmed);
       await notifier.apply(state);
+      // Spec 1 W5 final review M-4: the server dropped the About us draft
+      // with the switch to Dating; this account's queued draft answers go
+      // too, so a later replay can't rebuild it.
+      if (state.path == AppPath.dating) {
+        await clearAboutUsDraftQueue(prefs, userId);
+      }
       return PathChoiceOutcome.done;
     } on PathRefused catch (refused) {
       if (!context.mounted) return PathChoiceOutcome.cancelled;

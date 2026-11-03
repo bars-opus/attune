@@ -1521,7 +1521,16 @@ BEGIN
                    'public.set_my_path(text,boolean)'::regprocedure,
                    'public.get_my_home_state()'::regprocedure,
                    'public.withdraw_my_pending_invites(boolean)'::regprocedure)
-     AND p.prosrc ~* '(couple_profiles|couple_profile_drafts|journal_reminder_settings|otp_delivery_intents|invite_preview_attempts|account_activity|fresh_start_challenges|auth_hook_failures|parked_phone_hmac|child_safety_reports)';
+     -- Spec 1 W5 (20261102110100) re-creates set_user_path_internal from
+     -- this live body with exactly one statement of its own, the draft
+     -- delete on a change to Dating (review I-6): that one statement, once,
+     -- in that one function, is set aside (preflight F-6); any other
+     -- later-wave name, or that statement anywhere else, still fails.
+     AND CASE WHEN p.oid = 'public.set_user_path_internal(uuid,text)'::regprocedure
+              THEN regexp_replace(p.prosrc,
+                     'DELETE FROM public\.couple_profile_drafts AS d WHERE d\.user_id = p_user;', '')
+              ELSE p.prosrc END
+         ~* '(couple_profiles|couple_profile_drafts|journal_reminder_settings|otp_delivery_intents|invite_preview_attempts|account_activity|fresh_start_challenges|auth_hook_failures|parked_phone_hmac|child_safety_reports)';
   IF v_bad IS NOT NULL THEN
     RAISE EXCEPTION 'CONTRACT VIOLATED: a W1 function names a later wave''s table (I-6): %', v_bad;
   END IF;

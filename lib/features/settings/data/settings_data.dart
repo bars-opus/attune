@@ -16,6 +16,7 @@ class SettingsDataSource {
     SettingsConfig? datingLock,
     SettingsConfig? journalReminder,
     SettingsConfig? howYouUse,
+    SettingsConfig? aboutUs,
   }) {
     // Access localization for language prefence
     final loc = AppLocalizations.of(context)!;
@@ -350,6 +351,8 @@ SettingsConfig(
         id: 'relationship',
         title: 'Your relationship',
         items: [
+// Spec 1 W5 (§3.8): About us (built by the screen, couple_profile on).
+if (aboutUs != null) aboutUs,
 // Spec 3a (F1 (3)): read-only for both, nothing new shared, no
 // notification; either resumes or ends within 30 days.
 SettingsConfig(

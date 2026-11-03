@@ -102,10 +102,17 @@ class FakeHomeStateGateway implements HomeStateGateway {
 }
 
 class FakeFlowFlagsGateway implements FlowFlagsGateway {
-  FakeFlowFlagsGateway({this.pathsV2 = true, this.couplesV2 = false});
+  FakeFlowFlagsGateway({
+    this.pathsV2 = true,
+    this.couplesV2 = false,
+    this.coupleProfile = false,
+  });
 
   bool pathsV2;
   bool couplesV2;
+
+  /// Spec 1 W5.
+  bool coupleProfile;
   Object? failWith;
   int fetches = 0;
 
@@ -113,6 +120,10 @@ class FakeFlowFlagsGateway implements FlowFlagsGateway {
   Future<SignedInFlowFlags> fetch() async {
     fetches++;
     if (failWith != null) throw failWith!;
-    return SignedInFlowFlags(pathsV2: pathsV2, couplesV2: couplesV2);
+    return SignedInFlowFlags(
+      pathsV2: pathsV2,
+      couplesV2: couplesV2,
+      coupleProfile: coupleProfile,
+    );
   }
 }

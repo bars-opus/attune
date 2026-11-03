@@ -10,6 +10,7 @@ import 'package:attune/features/chat/presentation/widgets/authenticated_chat_wor
 import 'package:attune/core/repositories/repository_helpers.dart';
 import 'package:attune/features/onboarding/data/home_state_service.dart';
 import 'package:attune/features/onboarding/data/onboarding_store.dart';
+import 'package:attune/features/couple_profile/presentation/couple_profile_providers.dart';
 import 'package:attune/features/onboarding/data/onboarding_sync_service.dart';
 import 'package:attune/features/onboarding/domain/onboarding_models.dart';
 import 'package:attune/features/onboarding/domain/home_state.dart';
@@ -67,6 +68,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
   // home-state seam as the rest of the shell.
   late final _syncService = OnboardingSyncService(
     homeStateService: ref.read(homeStateServiceProvider),
+    // Spec 1 W5 (§3.14): About us answers queued offline.
+    flushAboutUs: ref.read(aboutUsOutboxFlushProvider),
   );
   // B3 fix round: the shared seam, so tests can script it.
   late final _inviteService = ref.read(invitePartnerServiceProvider);

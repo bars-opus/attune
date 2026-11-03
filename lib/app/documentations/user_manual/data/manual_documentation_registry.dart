@@ -5,6 +5,7 @@ import 'package:attune/app/documentations/user_manual/data/couple_map_docs.dart'
 import 'package:attune/app/documentations/user_manual/data/couples_journal_docs.dart';
 import 'package:attune/app/documentations/user_manual/data/hard_moment_docs.dart';
 import 'package:attune/app/documentations/user_manual/data/how_you_use_attune_docs.dart';
+import 'package:attune/app/documentations/user_manual/data/about_us_docs.dart';
 import 'package:attune/app/documentations/user_manual/data/planning_docs.dart';
 import 'package:attune/app/documentations/user_manual/data/privacy_data_docs.dart';
 import 'package:attune/app/documentations/user_manual/data/quiet_states_docs.dart';
@@ -61,6 +62,14 @@ class DocumentationRegistry {
     'conflictStyleQuiz': [ChatFeatureFlags.quizClinicalSignoff],
     // Spec 1 W3c: the paths (flow_paths_v2 needs flow_signin_v2).
     'howYouUseAttune': ['flow_signin_v2', 'flow_paths_v2'],
+    // Spec 1 W5: About us (couple_profile needs flow_couples_v2, which
+    // needs flow_paths_v2, which needs flow_signin_v2).
+    'aboutUs': [
+      'flow_signin_v2',
+      'flow_paths_v2',
+      'flow_couples_v2',
+      'couple_profile',
+    ],
   };
 
   static List<String> requiredFlags(String moduleId) =>
@@ -164,6 +173,7 @@ class DocumentationRegistry {
       TogetherDocs(),
       CoupleMapDocs(),
       HowYouUseAttuneDocs(),
+      AboutUsDocs(),
     ]) {
       registerModule(module);
     }

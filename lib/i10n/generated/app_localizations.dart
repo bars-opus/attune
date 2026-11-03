@@ -640,7 +640,7 @@ abstract class AppLocalizations {
   /// Welcome text for guest users on the login profile screen
   ///
   /// In en, this message translates to:
-  /// **'You're browsing {appName} as a guest. Sign in with your phone number to start your shared space with your partner — it takes a few seconds.'**
+  /// **'You\'re browsing {appName} as a guest. Sign in with your phone number to start your shared space with your partner — it takes a few seconds.'**
   String authGuestOverview(String appName);
 
   /// Main title on the intro screen with app name
@@ -4398,6 +4398,624 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Invite {name}'**
   String flow_invitePartnerNamed(String name);
+
+  /// No description provided for @aboutUs_title.
+  ///
+  /// In en, this message translates to:
+  /// **'About us'**
+  String get aboutUs_title;
+
+  /// No description provided for @aboutUs_step.
+  ///
+  /// In en, this message translates to:
+  /// **'{step} of {total}'**
+  String aboutUs_step(int step, int total);
+
+  /// No description provided for @aboutUs_stepSemantics.
+  ///
+  /// In en, this message translates to:
+  /// **'Question {step} of {total}'**
+  String aboutUs_stepSemantics(int step, int total);
+
+  /// No description provided for @aboutUs_skip.
+  ///
+  /// In en, this message translates to:
+  /// **'Skip'**
+  String get aboutUs_skip;
+
+  /// No description provided for @aboutUs_done.
+  ///
+  /// In en, this message translates to:
+  /// **'Done'**
+  String get aboutUs_done;
+
+  /// No description provided for @aboutUs_save.
+  ///
+  /// In en, this message translates to:
+  /// **'Save'**
+  String get aboutUs_save;
+
+  /// No description provided for @aboutUs_moreAbout.
+  ///
+  /// In en, this message translates to:
+  /// **'More about this'**
+  String get aboutUs_moreAbout;
+
+  /// No description provided for @aboutUs_moreAboutBody.
+  ///
+  /// In en, this message translates to:
+  /// **'Either of you can change these. It\'s never used to score or type you.'**
+  String get aboutUs_moreAboutBody;
+
+  /// No description provided for @aboutUs_moreAboutDraft.
+  ///
+  /// In en, this message translates to:
+  /// **'Before {name} joins, your answers are a draft only you can see. When {name} joins, your answers become your shared About us.'**
+  String aboutUs_moreAboutDraft(String name);
+
+  /// No description provided for @aboutUs_moreAboutDraftUnnamed.
+  ///
+  /// In en, this message translates to:
+  /// **'Before your partner joins, your answers are a draft only you can see. When your partner joins, your answers become your shared About us.'**
+  String get aboutUs_moreAboutDraftUnnamed;
+
+  /// No description provided for @aboutUs_stageQuestion.
+  ///
+  /// In en, this message translates to:
+  /// **'How would you describe where you two are?'**
+  String get aboutUs_stageQuestion;
+
+  /// No description provided for @aboutUs_stageDating.
+  ///
+  /// In en, this message translates to:
+  /// **'Dating'**
+  String get aboutUs_stageDating;
+
+  /// No description provided for @aboutUs_stageEngaged.
+  ///
+  /// In en, this message translates to:
+  /// **'Engaged'**
+  String get aboutUs_stageEngaged;
+
+  /// No description provided for @aboutUs_stageMarried.
+  ///
+  /// In en, this message translates to:
+  /// **'Married'**
+  String get aboutUs_stageMarried;
+
+  /// No description provided for @aboutUs_stageOther.
+  ///
+  /// In en, this message translates to:
+  /// **'Something else'**
+  String get aboutUs_stageOther;
+
+  /// No description provided for @aboutUs_stageEngagedHelper.
+  ///
+  /// In en, this message translates to:
+  /// **'Planning to marry, including after the knocking and before the wedding.'**
+  String get aboutUs_stageEngagedHelper;
+
+  /// No description provided for @aboutUs_stageMarriedHelper.
+  ///
+  /// In en, this message translates to:
+  /// **'Any kind of marriage: customary, religious or civil.'**
+  String get aboutUs_stageMarriedHelper;
+
+  /// No description provided for @aboutUs_stageWordsLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'In your own words'**
+  String get aboutUs_stageWordsLabel;
+
+  /// No description provided for @aboutUs_stageWhy.
+  ///
+  /// In en, this message translates to:
+  /// **'So what Attune suggests fits you two. Either of you can change this. It\'s never used to score or type you.'**
+  String get aboutUs_stageWhy;
+
+  /// No description provided for @aboutUs_sinceQuestion.
+  ///
+  /// In en, this message translates to:
+  /// **'When did you two get together?'**
+  String get aboutUs_sinceQuestion;
+
+  /// No description provided for @aboutUs_sinceHelper.
+  ///
+  /// In en, this message translates to:
+  /// **'Use whichever date feels right to {couple}.'**
+  String aboutUs_sinceHelper(String couple);
+
+  /// No description provided for @aboutUs_sinceWhy.
+  ///
+  /// In en, this message translates to:
+  /// **'So we can remember your anniversary with you, if you\'d like.'**
+  String get aboutUs_sinceWhy;
+
+  /// No description provided for @aboutUs_monthLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Month'**
+  String get aboutUs_monthLabel;
+
+  /// No description provided for @aboutUs_yearLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Year'**
+  String get aboutUs_yearLabel;
+
+  /// No description provided for @aboutUs_dayLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Day'**
+  String get aboutUs_dayLabel;
+
+  /// No description provided for @aboutUs_monthOptional.
+  ///
+  /// In en, this message translates to:
+  /// **'Month (optional)'**
+  String get aboutUs_monthOptional;
+
+  /// No description provided for @aboutUs_dayOptional.
+  ///
+  /// In en, this message translates to:
+  /// **'Day (optional)'**
+  String get aboutUs_dayOptional;
+
+  /// No description provided for @aboutUs_notSure.
+  ///
+  /// In en, this message translates to:
+  /// **'Not sure'**
+  String get aboutUs_notSure;
+
+  /// No description provided for @aboutUs_sinceAddDay.
+  ///
+  /// In en, this message translates to:
+  /// **'Add the day'**
+  String get aboutUs_sinceAddDay;
+
+  /// No description provided for @aboutUs_sinceNoMonth.
+  ///
+  /// In en, this message translates to:
+  /// **'Not sure of the month'**
+  String get aboutUs_sinceNoMonth;
+
+  /// No description provided for @aboutUs_sinceSuggestions.
+  ///
+  /// In en, this message translates to:
+  /// **'Suggested dates'**
+  String get aboutUs_sinceSuggestions;
+
+  /// No description provided for @aboutUs_errorFuture.
+  ///
+  /// In en, this message translates to:
+  /// **'That date is in the future.'**
+  String get aboutUs_errorFuture;
+
+  /// No description provided for @aboutUs_errorNoSuchDate.
+  ///
+  /// In en, this message translates to:
+  /// **'Check the day and month.'**
+  String get aboutUs_errorNoSuchDate;
+
+  /// No description provided for @aboutUs_errorNeedsYear.
+  ///
+  /// In en, this message translates to:
+  /// **'Choose a year.'**
+  String get aboutUs_errorNeedsYear;
+
+  /// No description provided for @aboutUs_marryQuestion.
+  ///
+  /// In en, this message translates to:
+  /// **'What year did you marry?'**
+  String get aboutUs_marryQuestion;
+
+  /// No description provided for @aboutUs_ceremonyN.
+  ///
+  /// In en, this message translates to:
+  /// **'Ceremony {n}'**
+  String aboutUs_ceremonyN(int n);
+
+  /// No description provided for @aboutUs_ceremonyLabelGroup.
+  ///
+  /// In en, this message translates to:
+  /// **'What kind of ceremony? (optional)'**
+  String get aboutUs_ceremonyLabelGroup;
+
+  /// No description provided for @aboutUs_labelCustomary.
+  ///
+  /// In en, this message translates to:
+  /// **'Customary'**
+  String get aboutUs_labelCustomary;
+
+  /// No description provided for @aboutUs_labelChurch.
+  ///
+  /// In en, this message translates to:
+  /// **'Church'**
+  String get aboutUs_labelChurch;
+
+  /// No description provided for @aboutUs_labelMosque.
+  ///
+  /// In en, this message translates to:
+  /// **'Mosque'**
+  String get aboutUs_labelMosque;
+
+  /// No description provided for @aboutUs_labelCivil.
+  ///
+  /// In en, this message translates to:
+  /// **'Civil'**
+  String get aboutUs_labelCivil;
+
+  /// No description provided for @aboutUs_labelOther.
+  ///
+  /// In en, this message translates to:
+  /// **'Other'**
+  String get aboutUs_labelOther;
+
+  /// No description provided for @aboutUs_addCeremony.
+  ///
+  /// In en, this message translates to:
+  /// **'Had more than one ceremony? Add another'**
+  String get aboutUs_addCeremony;
+
+  /// No description provided for @aboutUs_removeCeremony.
+  ///
+  /// In en, this message translates to:
+  /// **'Remove this ceremony'**
+  String get aboutUs_removeCeremony;
+
+  /// No description provided for @aboutUs_livingQuestion.
+  ///
+  /// In en, this message translates to:
+  /// **'Where do you two live?'**
+  String get aboutUs_livingQuestion;
+
+  /// No description provided for @aboutUs_livingTogether.
+  ///
+  /// In en, this message translates to:
+  /// **'Together'**
+  String get aboutUs_livingTogether;
+
+  /// No description provided for @aboutUs_livingApartNearby.
+  ///
+  /// In en, this message translates to:
+  /// **'Apart, nearby'**
+  String get aboutUs_livingApartNearby;
+
+  /// No description provided for @aboutUs_livingLongDistance.
+  ///
+  /// In en, this message translates to:
+  /// **'Long distance'**
+  String get aboutUs_livingLongDistance;
+
+  /// No description provided for @aboutUs_livingWhy.
+  ///
+  /// In en, this message translates to:
+  /// **'So plans, maps and reminders fit how you live.'**
+  String get aboutUs_livingWhy;
+
+  /// No description provided for @aboutUs_childrenQuestion.
+  ///
+  /// In en, this message translates to:
+  /// **'Are there children in your life together?'**
+  String get aboutUs_childrenQuestion;
+
+  /// No description provided for @aboutUs_childrenNo.
+  ///
+  /// In en, this message translates to:
+  /// **'No'**
+  String get aboutUs_childrenNo;
+
+  /// No description provided for @aboutUs_childrenYes.
+  ///
+  /// In en, this message translates to:
+  /// **'Yes'**
+  String get aboutUs_childrenYes;
+
+  /// No description provided for @aboutUs_childrenExpecting.
+  ///
+  /// In en, this message translates to:
+  /// **'We\'re expecting'**
+  String get aboutUs_childrenExpecting;
+
+  /// No description provided for @aboutUs_childrenPreferNot.
+  ///
+  /// In en, this message translates to:
+  /// **'Prefer not to say'**
+  String get aboutUs_childrenPreferNot;
+
+  /// No description provided for @aboutUs_childrenAges.
+  ///
+  /// In en, this message translates to:
+  /// **'Their ages (optional)'**
+  String get aboutUs_childrenAges;
+
+  /// No description provided for @aboutUs_bandUnder2.
+  ///
+  /// In en, this message translates to:
+  /// **'Under 2'**
+  String get aboutUs_bandUnder2;
+
+  /// No description provided for @aboutUs_band2to5.
+  ///
+  /// In en, this message translates to:
+  /// **'2–5'**
+  String get aboutUs_band2to5;
+
+  /// No description provided for @aboutUs_band6to12.
+  ///
+  /// In en, this message translates to:
+  /// **'6–12'**
+  String get aboutUs_band6to12;
+
+  /// No description provided for @aboutUs_band13to17.
+  ///
+  /// In en, this message translates to:
+  /// **'13–17'**
+  String get aboutUs_band13to17;
+
+  /// No description provided for @aboutUs_band18plus.
+  ///
+  /// In en, this message translates to:
+  /// **'18+'**
+  String get aboutUs_band18plus;
+
+  /// No description provided for @aboutUs_childrenWhy.
+  ///
+  /// In en, this message translates to:
+  /// **'So ideas and reminders suit your family.'**
+  String get aboutUs_childrenWhy;
+
+  /// No description provided for @aboutUs_anniversaryQuestion.
+  ///
+  /// In en, this message translates to:
+  /// **'Remember your anniversary?'**
+  String get aboutUs_anniversaryQuestion;
+
+  /// No description provided for @aboutUs_anniversaryNo.
+  ///
+  /// In en, this message translates to:
+  /// **'No, thanks'**
+  String get aboutUs_anniversaryNo;
+
+  /// No description provided for @aboutUs_anniversaryTogether.
+  ///
+  /// In en, this message translates to:
+  /// **'The day you got together'**
+  String get aboutUs_anniversaryTogether;
+
+  /// No description provided for @aboutUs_anniversaryCeremony.
+  ///
+  /// In en, this message translates to:
+  /// **'{label} ceremony, {year}'**
+  String aboutUs_anniversaryCeremony(String label, String year);
+
+  /// No description provided for @aboutUs_anniversaryCeremonyPlain.
+  ///
+  /// In en, this message translates to:
+  /// **'Ceremony, {year}'**
+  String aboutUs_anniversaryCeremonyPlain(String year);
+
+  /// No description provided for @aboutUs_anniversaryWhatDay.
+  ///
+  /// In en, this message translates to:
+  /// **'What day was it?'**
+  String get aboutUs_anniversaryWhatDay;
+
+  /// No description provided for @aboutUs_rowSince.
+  ///
+  /// In en, this message translates to:
+  /// **'Together since'**
+  String get aboutUs_rowSince;
+
+  /// No description provided for @aboutUs_rowStage.
+  ///
+  /// In en, this message translates to:
+  /// **'Where you are'**
+  String get aboutUs_rowStage;
+
+  /// No description provided for @aboutUs_rowCeremonies.
+  ///
+  /// In en, this message translates to:
+  /// **'Ceremonies'**
+  String get aboutUs_rowCeremonies;
+
+  /// No description provided for @aboutUs_rowLiving.
+  ///
+  /// In en, this message translates to:
+  /// **'Where you live'**
+  String get aboutUs_rowLiving;
+
+  /// No description provided for @aboutUs_rowChildren.
+  ///
+  /// In en, this message translates to:
+  /// **'Children'**
+  String get aboutUs_rowChildren;
+
+  /// No description provided for @aboutUs_rowAnniversary.
+  ///
+  /// In en, this message translates to:
+  /// **'Anniversary'**
+  String get aboutUs_rowAnniversary;
+
+  /// No description provided for @aboutUs_notAnswered.
+  ///
+  /// In en, this message translates to:
+  /// **'Not answered yet'**
+  String get aboutUs_notAnswered;
+
+  /// No description provided for @aboutUs_childrenYesBands.
+  ///
+  /// In en, this message translates to:
+  /// **'Yes ({bands})'**
+  String aboutUs_childrenYesBands(String bands);
+
+  /// No description provided for @aboutUs_anniversaryOff.
+  ///
+  /// In en, this message translates to:
+  /// **'Off'**
+  String get aboutUs_anniversaryOff;
+
+  /// No description provided for @aboutUs_ceremonyLine.
+  ///
+  /// In en, this message translates to:
+  /// **'{label}, {year}'**
+  String aboutUs_ceremonyLine(String label, String year);
+
+  /// No description provided for @aboutUs_changedBy.
+  ///
+  /// In en, this message translates to:
+  /// **'Changed by {name}'**
+  String aboutUs_changedBy(String name);
+
+  /// No description provided for @aboutUs_changedByYou.
+  ///
+  /// In en, this message translates to:
+  /// **'Changed by you'**
+  String get aboutUs_changedByYou;
+
+  /// No description provided for @aboutUs_changedByPartner.
+  ///
+  /// In en, this message translates to:
+  /// **'Changed by your partner'**
+  String get aboutUs_changedByPartner;
+
+  /// No description provided for @aboutUs_footer.
+  ///
+  /// In en, this message translates to:
+  /// **'Either of you can change these. It\'s never used to score or type you.'**
+  String get aboutUs_footer;
+
+  /// No description provided for @aboutUs_readOnlyUntil.
+  ///
+  /// In en, this message translates to:
+  /// **'You can read this until {date}.'**
+  String aboutUs_readOnlyUntil(String date);
+
+  /// No description provided for @aboutUs_pendingSync.
+  ///
+  /// In en, this message translates to:
+  /// **'Saved on this phone. It will be shared when you\'re back online.'**
+  String get aboutUs_pendingSync;
+
+  /// No description provided for @aboutUs_loadFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'We couldn\'t load About us. Check your connection and try again.'**
+  String get aboutUs_loadFailed;
+
+  /// No description provided for @aboutUs_answerQuestions.
+  ///
+  /// In en, this message translates to:
+  /// **'Answer a few questions'**
+  String get aboutUs_answerQuestions;
+
+  /// No description provided for @aboutUs_rowEditHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Change'**
+  String get aboutUs_rowEditHint;
+
+  /// No description provided for @aboutUs_errorAnniversaryNeedsDay.
+  ///
+  /// In en, this message translates to:
+  /// **'Your anniversary reminder needs the full date. Add the day, or turn the reminder off first.'**
+  String get aboutUs_errorAnniversaryNeedsDay;
+
+  /// No description provided for @aboutUs_errorReadOnly.
+  ///
+  /// In en, this message translates to:
+  /// **'About us can\'t be changed right now.'**
+  String get aboutUs_errorReadOnly;
+
+  /// No description provided for @aboutUs_errorWordsTooLong.
+  ///
+  /// In en, this message translates to:
+  /// **'Use 40 characters or fewer.'**
+  String get aboutUs_errorWordsTooLong;
+
+  /// No description provided for @aboutUs_cardTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'About us'**
+  String get aboutUs_cardTitle;
+
+  /// No description provided for @aboutUs_cardBody.
+  ///
+  /// In en, this message translates to:
+  /// **'A few easy questions about you two. Skip any of them. {name} sees your answers after joining.'**
+  String aboutUs_cardBody(String name);
+
+  /// No description provided for @aboutUs_cardBodyUnnamed.
+  ///
+  /// In en, this message translates to:
+  /// **'A few easy questions about you two. Skip any of them. Your partner sees your answers after joining.'**
+  String get aboutUs_cardBodyUnnamed;
+
+  /// No description provided for @aboutUs_settingsSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'When you got together, where you live and more'**
+  String get aboutUs_settingsSubtitle;
+
+  /// No description provided for @aboutUs_reminderFollows.
+  ///
+  /// In en, this message translates to:
+  /// **'This reminder follows About us'**
+  String get aboutUs_reminderFollows;
+
+  /// No description provided for @aboutUs_reminderChange.
+  ///
+  /// In en, this message translates to:
+  /// **'Change in About us'**
+  String get aboutUs_reminderChange;
+
+  /// No description provided for @aboutUs_reminderStopTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Your anniversary reminder will stop'**
+  String get aboutUs_reminderStopTitle;
+
+  /// No description provided for @aboutUs_reminderStopBody.
+  ///
+  /// In en, this message translates to:
+  /// **'It follows this ceremony\'s date. It can follow the day you got together instead.'**
+  String get aboutUs_reminderStopBody;
+
+  /// No description provided for @aboutUs_reminderStopOff.
+  ///
+  /// In en, this message translates to:
+  /// **'Turn it off'**
+  String get aboutUs_reminderStopOff;
+
+  /// No description provided for @aboutUs_sinceHelperUnnamed.
+  ///
+  /// In en, this message translates to:
+  /// **'Use whichever date feels right.'**
+  String get aboutUs_sinceHelperUnnamed;
+
+  /// No description provided for @aboutUs_reminderOffline.
+  ///
+  /// In en, this message translates to:
+  /// **'We couldn\'t check this reminder. Check your connection and try again.'**
+  String get aboutUs_reminderOffline;
+
+  /// No description provided for @aboutUs_reminderTimes.
+  ///
+  /// In en, this message translates to:
+  /// **'Reminder times and note'**
+  String get aboutUs_reminderTimes;
+
+  /// No description provided for @aboutUs_reminderLocked.
+  ///
+  /// In en, this message translates to:
+  /// **'Its date, title and type follow About us.'**
+  String get aboutUs_reminderLocked;
+
+  /// No description provided for @aboutUs_anniversaryHandMade.
+  ///
+  /// In en, this message translates to:
+  /// **'You already have an anniversary reminder, so we won\'t add another.'**
+  String get aboutUs_anniversaryHandMade;
 }
 
 class _AppLocalizationsDelegate extends LocalizationsDelegate<AppLocalizations> {

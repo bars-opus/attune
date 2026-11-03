@@ -1,5 +1,6 @@
 import 'package:attune/core/device/device_wipe_registry.dart';
 import 'package:attune/core/platform/install_referrer_keys.dart';
+import 'package:attune/features/couple_profile/data/about_us_outbox.dart';
 import 'package:attune/features/onboarding/data/ask2_progress_store.dart';
 import 'package:attune/features/relationships/data/invite_device_store.dart';
 import 'package:attune/features/safety/data/dating_lock_store.dart';
@@ -86,5 +87,14 @@ List<DeviceWipeEntry> spec1DeviceWipes() => [
     moments: const {WipeMoment.signOut, WipeMoment.quickExit},
     keys: const {kInstallReferrerCodeKey},
     run: () => removePrefsKeys((key) => key == kInstallReferrerCodeKey),
+  ),
+  // W5 (§3.8 About us, §3.14): answers queued offline, at sign-out, for
+  // every account on the phone (the shared-phone rule: nobody's answers
+  // reach the next account).
+  DeviceWipeEntry(
+    id: 'spec1.about_us_outbox',
+    moments: const {WipeMoment.signOut},
+    keys: const {'attune.flow.<uid>.about_us_outbox'},
+    run: () => removePrefsKeys(AboutUsOutbox.isOutboxKey),
   ),
 ];

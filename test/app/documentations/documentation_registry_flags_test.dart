@@ -61,6 +61,9 @@ void main() {
           // Spec 1 W3c: How you use Attune.
           'flow_signin_v2',
           'flow_paths_v2',
+          // Spec 1 W5: About us.
+          'flow_couples_v2',
+          'couple_profile',
         }),
       );
     }

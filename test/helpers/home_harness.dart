@@ -129,6 +129,8 @@ Future<HomeHarness> pumpHome(
   // Batch-5 review I-1: the real flow flags (a test's flowFlagsGateway
   // override answers them) instead of the scripted flow_paths_v2.
   bool realFlags = false,
+  // W5 final review I-1: the gateway, before the first frame.
+  void Function(FakeHomeStateGateway gateway)? onGateway,
 }) async {
   tester.view.physicalSize = const Size(390, 844);
   tester.view.devicePixelRatio = 1;
@@ -140,6 +142,7 @@ Future<HomeHarness> pumpHome(
   addTearDown(auth.changes.close);
   // serverError: every home-state call fails (offline) from the start.
   final gateway = FakeHomeStateGateway(state: server)..failAlways = serverError;
+  onGateway?.call(gateway);
   final visits = <String>[];
   final router = GoRouter(
     initialLocation: initialLocation,

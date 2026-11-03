@@ -13,6 +13,10 @@ import 'package:attune/core/widgets/app_divider.dart';
 import 'package:attune/features/together/data/together_repository.dart';
 import 'package:attune/features/together/presentation/screens/together_screen.dart';
 import 'package:attune/features/together/presentation/together_providers.dart';
+import 'package:attune/features/couple_profile/data/couple_profile_service.dart';
+import 'package:attune/features/onboarding/presentation/providers/flow_flags.dart';
+import 'package:attune/home/home_seams.dart';
+import 'package:attune/i10n/generated/app_localizations.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
@@ -32,6 +36,8 @@ import 'together_calendar_mirror_test.dart' show FakeMirrorCalendar;
 import 'together_live_activity_test.dart' show FakeLiveStore;
 import 'together_widget_sync_test.dart' show FakeWidgetStore;
 import 'together_repository_test.dart' show FakeTogetherGateway;
+import '../../helpers/fake_couple_profile.dart';
+import '../../helpers/home_harness.dart' show FakeHomeAuth, testUser;
 
 Map<String, dynamic> _row(
   String id,
@@ -74,6 +80,8 @@ Future<FakeTogetherGateway> _pump(
   String? coupleName,
   bool appreciation = false,
   List<Map<String, dynamic>> wins = const [],
+  bool aboutUs = false,
+  FakeCoupleProfileServer? aboutUsServer,
 }) async {
   // Never the real lock-screen channel or phone calendar in tests.
   TogetherLiveActivity.store = live ?? FakeLiveStore();
@@ -133,10 +141,26 @@ Future<FakeTogetherGateway> _pump(
         remindersListProvider.overrideWith(_Reminders.new),
         appreciationEnabledProvider.overrideWith((ref) async => appreciation),
         winsEnabledProvider.overrideWith((ref) async => wins.isNotEmpty),
+        // Spec 1 W5: About us is off unless a test turns it on.
+        coupleProfileEnabledProvider.overrideWithValue(aboutUs),
+        coupleProfileRpcProvider.overrideWithValue(
+          (aboutUsServer ?? FakeCoupleProfileServer()).rpc,
+        ),
+        if (aboutUs)
+          homeAuthProvider.overrideWithValue(FakeHomeAuth(testUser('ama'))),
       ],
       child: ScreenUtilInit(
         designSize: const Size(375, 812),
-        builder: (_, __) => MaterialApp(home: TogetherScreen(embedded: embedded)),
+        builder:
+            (_, __) => MaterialApp(
+              localizationsDelegates:
+                  aboutUs ? AppLocalizations.localizationsDelegates : null,
+              supportedLocales:
+                  aboutUs
+                      ? AppLocalizations.supportedLocales
+                      : const [Locale('en', 'US')],
+              home: TogetherScreen(embedded: embedded),
+            ),
       ),
     ),
   );
@@ -352,6 +376,64 @@ void main() {
     expect(find.text('Add your anniversary'), findsOneWidget);
     expect(find.text('Add a birthday'), findsOneWidget);
     expect(find.text('Set up a ritual'), findsOneWidget);
+  });
+
+  // Spec 1 W5 (§3.8, §5.2): with couple_profile on, "Add your anniversary"
+  // is About us's AU6, and About us has its own row; off, as before.
+  testWidgets('About us on: the anniversary is AU6, and About us has a row', (
+    t,
+  ) async {
+    final server = FakeCoupleProfileServer();
+    await _pump(t, aboutUs: true, aboutUsServer: server);
+    expect(find.text('About us'), findsOneWidget);
+    await t.tap(find.text('Add your anniversary'));
+    await t.pumpAndSettle();
+    expect(find.text('Remember your anniversary?'), findsOneWidget);
+    // Preflight F-3: an empty About us never dead-ends here. "The day you
+    // got together" is always offered; it asks the whole date and saves it
+    // with the anniversary in one write.
+    await t.tap(find.text('The day you got together'));
+    await t.pumpAndSettle();
+    expect(find.text('What day was it?'), findsOneWidget);
+    Future<void> choose(String key, String item) async {
+      await t.ensureVisible(find.byKey(ValueKey(key)));
+      await t.tap(find.byKey(ValueKey(key)));
+      await t.pumpAndSettle();
+      await t.scrollUntilVisible(
+        find.text(item).hitTestable(),
+        100,
+        scrollable: find.byType(Scrollable).last,
+      );
+      await t.pumpAndSettle();
+      await t.tap(find.text(item).last);
+      await t.pumpAndSettle();
+    }
+
+    await choose('about-us-anniversary-year', '2019');
+    await choose('about-us-anniversary-month', 'October');
+    await choose('about-us-anniversary-day', '14');
+    await t.ensureVisible(find.text('Save'));
+    await t.tap(find.text('Save'));
+    await t.pumpAndSettle();
+    final updates = server.calls.where((c) => c.$1 == 'update_couple_profile');
+    expect(updates.length, 1, reason: 'one write');
+    expect(updates.single.$2, {
+      'p_relationship_id': 'r1',
+      'p_patch': {
+        'together_since': '2019-10-14',
+        'together_since_precision': 'day',
+        'anniversary_source': 'together_since',
+      },
+    });
+    expect(find.text('Remember your anniversary?'), findsNothing);
+  });
+
+  testWidgets('About us off: Start with is as it was', (t) async {
+    await _pump(t);
+    expect(find.text('About us'), findsNothing);
+    await t.tap(find.text('Add your anniversary'));
+    await t.pumpAndSettle();
+    expect(find.text('Add reminder'), findsOneWidget);
   });
 
   testWidgets('tapping an event opens its editor', (t) async {

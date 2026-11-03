@@ -27,6 +27,24 @@ class MyDateFormat {
     return DateFormat('EEE, MMMM').format(dateTime);
   }
 
+  /// Month and year, e.g. "October 2024" (Spec 1 W5: About us's
+  /// "Together since" when only the month is known).
+  static String toMonthYear(DateTime dateTime) {
+    return DateFormat('MMMM y').format(dateTime);
+  }
+
+  /// The month's name alone, e.g. "October" (Spec 1 W5: About us's month
+  /// pickers).
+  static String toMonth(DateTime dateTime) {
+    return DateFormat('MMMM').format(dateTime);
+  }
+
+  /// The year alone, e.g. "2024" (Spec 1 W5: a year-only date, a
+  /// ceremony's year).
+  static String toYear(DateTime dateTime) {
+    return DateFormat('y').format(dateTime);
+  }
+
   static String toTime(DateTime dateTime) {
     final time = DateFormat('hh:mm a').format(dateTime);
     return '$time';

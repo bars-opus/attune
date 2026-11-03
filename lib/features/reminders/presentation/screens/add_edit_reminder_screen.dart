@@ -1,6 +1,7 @@
 // lib/features/reminders/presentation/screens/add_edit_reminder_screen.dart
 import 'package:attune/core/providers/run_write.dart';
 import 'package:attune/core/utils/exports/export_screens.dart';
+import 'package:attune/features/couple_profile/presentation/about_us_entry.dart';
 import 'package:attune/features/reminders/data/models/reminder_model.dart';
 import 'package:attune/features/reminders/presentation/providers/reminders_providers.dart';
 import 'package:attune/core/utils/date_formatter.dart';
@@ -17,12 +18,50 @@ Future<void> showReminderSheet(
   ReminderModel? reminder,
   DateTime? initialDate,
 }) async {
+  // Spec 1 W5 (§5.2): the anniversary reminder About us keeps opens its
+  // own sheet ("This reminder follows About us"), not this form; from it,
+  // "Reminder times and note" opens this form locked (final review I-2).
+  if (reminder != null &&
+      await showAboutUsReminderLink(
+        context,
+        reminderId: reminder.id,
+        relationshipId: reminder.relationshipId,
+        reminderType: reminder.reminderType,
+        title: reminder.title,
+        onReminderTimes:
+            () => _openReminderForm(
+              context,
+              reminder: reminder,
+              followsAboutUs: true,
+            ),
+      )) {
+    return;
+  }
+  if (!context.mounted) return;
+  await _openReminderForm(
+    context,
+    reminder: reminder,
+    initialDate: initialDate,
+  );
+}
+
+Future<void> _openReminderForm(
+  BuildContext context, {
+  ReminderModel? reminder,
+  DateTime? initialDate,
+  bool followsAboutUs = false,
+}) async {
+  if (!context.mounted) return;
   // The sheet closes with its confirmation; it is shown here, on the
   // screen behind, because the sheet's own messenger closes with it.
   final message = await BottomSheetUtils.showDocumentationBottomSheet<String>(
     context: context,
     backgroundColor: Theme.of(context).colorScheme.neutral,
-    widget: AddEditReminderScreen(reminder: reminder, initialDate: initialDate),
+    widget: AddEditReminderScreen(
+      reminder: reminder,
+      initialDate: initialDate,
+      followsAboutUs: followsAboutUs,
+    ),
   );
   if (message != null && context.mounted) {
     context.showSuccessSnackbar(message);
@@ -30,13 +69,25 @@ Future<void> showReminderSheet(
 }
 
 class AddEditReminderScreen extends ConsumerStatefulWidget {
-  const AddEditReminderScreen({super.key, this.reminder, this.initialDate});
+  const AddEditReminderScreen({
+    super.key,
+    this.reminder,
+    this.initialDate,
+    this.followsAboutUs = false,
+  }) : assert(!followsAboutUs || reminder != null);
 
   /// The reminder being edited; null when adding one.
   final ReminderModel? reminder;
 
   /// The calendar day a new reminder is being added to: already chosen.
   final DateTime? initialDate;
+
+  /// Spec 1 W5 final review I-2 (F-4 ruling): About us's anniversary
+  /// reminder. Its date, title, type and repeat follow About us (plan P-6:
+  /// the server's guard refuses them), so they are shown but can't change,
+  /// and it can't be deleted here; its lead times and note stay the
+  /// couple's and are all that is saved.
+  final bool followsAboutUs;
 
   @override
   ConsumerState<AddEditReminderScreen> createState() =>
@@ -83,6 +134,8 @@ class _AddEditReminderScreenState extends ConsumerState<AddEditReminderScreen> {
   static const _pickerTypes = {'anniversary', 'birthday', 'custom'};
 
   bool get _isEditing => widget.reminder != null;
+
+  bool get _locked => widget.followsAboutUs;
 
   @override
   void initState() {
@@ -141,6 +194,7 @@ class _AddEditReminderScreenState extends ConsumerState<AddEditReminderScreen> {
   Future<void> _save() async {
     // A second tap before the button rebuilds would save it twice.
     if (_isSaving) return;
+    if (_locked) return _saveTimes();
     if (_titleController.text.trim().isEmpty) {
       context.showErrorSnackbar('Please add a title.');
       return;
@@ -209,6 +263,30 @@ class _AddEditReminderScreenState extends ConsumerState<AddEditReminderScreen> {
       }
       if (!mounted) return;
       Navigator.of(context).pop(message);
+    } catch (_) {
+      if (!mounted) return;
+      context.showErrorSnackbar('Could not save that. Please try again.');
+    } finally {
+      if (mounted) setState(() => _isSaving = false);
+    }
+  }
+
+  /// The locked form's save (W5 final review I-2): the lead times and the
+  /// note only.
+  Future<void> _saveTimes() async {
+    setState(() => _isSaving = true);
+    try {
+      final note = _noteController.text.trim();
+      await runWrite(
+        ref,
+        updateReminderTimesProvider((
+          id: widget.reminder!.id,
+          note: note.isEmpty ? null : note,
+          remindDaysBefore: _daysBefore.toList()..sort(),
+        )),
+      );
+      if (!mounted) return;
+      Navigator.of(context).pop('Saved.');
     } catch (_) {
       if (!mounted) return;
       context.showErrorSnackbar('Could not save that. Please try again.');
@@ -321,12 +399,28 @@ class _AddEditReminderScreenState extends ConsumerState<AddEditReminderScreen> {
               onPressed: _isSaving ? () {} : _save,
             ),
             AppDivider(),
+            if (_locked)
+              Padding(
+                padding: EdgeInsets.fromLTRB(
+                  Spacing.md.w,
+                  Spacing.md,
+                  Spacing.md.w,
+                  0,
+                ),
+                child: Text(
+                  AppLocalizations.of(context)!.aboutUs_reminderLocked,
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    color: colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ),
             Gap(Spacing.lg.h),
             AppTextFormField(
               controller: _titleController,
               label: 'Title',
               hintText: 'Our anniversary, Emma\'s birthday...',
-              autofocus: true,
+              autofocus: !_locked,
+              readOnly: _locked,
               maxLength: 80, // the database's limit
             ),
 
@@ -371,14 +465,18 @@ class _AddEditReminderScreenState extends ConsumerState<AddEditReminderScreen> {
                 emptySelectionAllowed: true,
                 selected: {if (_reminderType != null) _reminderType!},
                 onSelectionChanged:
-                    (s) => setState(() {
-                      if (s.isEmpty) return;
-                      _reminderType = s.first;
-                      _keptType = null;
-                      // Birthdays and anniversaries come round every
-                      // year; anything else is a one-off by default.
-                      if (!_yearlyTouched) _isYearly = s.first != 'custom';
-                    }),
+                    _locked
+                        ? null
+                        : (s) => setState(() {
+                          if (s.isEmpty) return;
+                          _reminderType = s.first;
+                          _keptType = null;
+                          // Birthdays and anniversaries come round every
+                          // year; anything else is a one-off by default.
+                          if (!_yearlyTouched) {
+                            _isYearly = s.first != 'custom';
+                          }
+                        }),
               ),
             ),
             Gap(Spacing.md),
@@ -390,25 +488,27 @@ class _AddEditReminderScreenState extends ConsumerState<AddEditReminderScreen> {
               icon: Icons.calendar_month,
               showDivider: true,
               avatarRadius: 25.h,
-              onTap: _pickDate,
+              // W5 final review I-2: About us's date, never changed here.
+              onTap: _locked ? null : _pickDate,
               disableTrailing: true,
               showAvatar: false,
               showTrailingArrow: false,
             ),
-            InfoRowWidget(
-              title: 'Repeats every year',
-              subtitle: '',
-              icon: FontAwesomeIcons.repeat,
-              showDivider: true,
-              showAvatar: false,
-              isToggleItem: true,
-              toggleValue: _isYearly,
-              onToggleChanged:
-                  (value) => setState(() {
-                    _isYearly = value;
-                    _yearlyTouched = true;
-                  }),
-            ),
+            if (!_locked)
+              InfoRowWidget(
+                title: 'Repeats every year',
+                subtitle: '',
+                icon: FontAwesomeIcons.repeat,
+                showDivider: true,
+                showAvatar: false,
+                isToggleItem: true,
+                toggleValue: _isYearly,
+                onToggleChanged:
+                    (value) => setState(() {
+                      _isYearly = value;
+                      _yearlyTouched = true;
+                    }),
+              ),
             Padding(
               padding: EdgeInsets.fromLTRB(
                 Spacing.md.w,
@@ -445,7 +545,7 @@ class _AddEditReminderScreenState extends ConsumerState<AddEditReminderScreen> {
               ),
             ),
             AppDivider(),
-            if (_isEditing) ...[
+            if (_isEditing && !_locked) ...[
               InfoRowWidget(
                 title: 'Delete reminder',
                 subtitle: '',

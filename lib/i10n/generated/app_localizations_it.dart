@@ -2344,4 +2344,337 @@ class AppLocalizationsIt extends AppLocalizations {
   String flow_invitePartnerNamed(String name) {
     return 'Invite $name';
   }
+
+  @override
+  String get aboutUs_title => 'About us';
+
+  @override
+  String aboutUs_step(int step, int total) {
+    return '$step of $total';
+  }
+
+  @override
+  String aboutUs_stepSemantics(int step, int total) {
+    return 'Question $step of $total';
+  }
+
+  @override
+  String get aboutUs_skip => 'Skip';
+
+  @override
+  String get aboutUs_done => 'Done';
+
+  @override
+  String get aboutUs_save => 'Save';
+
+  @override
+  String get aboutUs_moreAbout => 'More about this';
+
+  @override
+  String get aboutUs_moreAboutBody => 'Either of you can change these. It\'s never used to score or type you.';
+
+  @override
+  String aboutUs_moreAboutDraft(String name) {
+    return 'Before $name joins, your answers are a draft only you can see. When $name joins, your answers become your shared About us.';
+  }
+
+  @override
+  String get aboutUs_moreAboutDraftUnnamed => 'Before your partner joins, your answers are a draft only you can see. When your partner joins, your answers become your shared About us.';
+
+  @override
+  String get aboutUs_stageQuestion => 'How would you describe where you two are?';
+
+  @override
+  String get aboutUs_stageDating => 'Dating';
+
+  @override
+  String get aboutUs_stageEngaged => 'Engaged';
+
+  @override
+  String get aboutUs_stageMarried => 'Married';
+
+  @override
+  String get aboutUs_stageOther => 'Something else';
+
+  @override
+  String get aboutUs_stageEngagedHelper => 'Planning to marry, including after the knocking and before the wedding.';
+
+  @override
+  String get aboutUs_stageMarriedHelper => 'Any kind of marriage: customary, religious or civil.';
+
+  @override
+  String get aboutUs_stageWordsLabel => 'In your own words';
+
+  @override
+  String get aboutUs_stageWhy => 'So what Attune suggests fits you two. Either of you can change this. It\'s never used to score or type you.';
+
+  @override
+  String get aboutUs_sinceQuestion => 'When did you two get together?';
+
+  @override
+  String aboutUs_sinceHelper(String couple) {
+    return 'Use whichever date feels right to $couple.';
+  }
+
+  @override
+  String get aboutUs_sinceWhy => 'So we can remember your anniversary with you, if you\'d like.';
+
+  @override
+  String get aboutUs_monthLabel => 'Month';
+
+  @override
+  String get aboutUs_yearLabel => 'Year';
+
+  @override
+  String get aboutUs_dayLabel => 'Day';
+
+  @override
+  String get aboutUs_monthOptional => 'Month (optional)';
+
+  @override
+  String get aboutUs_dayOptional => 'Day (optional)';
+
+  @override
+  String get aboutUs_notSure => 'Not sure';
+
+  @override
+  String get aboutUs_sinceAddDay => 'Add the day';
+
+  @override
+  String get aboutUs_sinceNoMonth => 'Not sure of the month';
+
+  @override
+  String get aboutUs_sinceSuggestions => 'Suggested dates';
+
+  @override
+  String get aboutUs_errorFuture => 'That date is in the future.';
+
+  @override
+  String get aboutUs_errorNoSuchDate => 'Check the day and month.';
+
+  @override
+  String get aboutUs_errorNeedsYear => 'Choose a year.';
+
+  @override
+  String get aboutUs_marryQuestion => 'What year did you marry?';
+
+  @override
+  String aboutUs_ceremonyN(int n) {
+    return 'Ceremony $n';
+  }
+
+  @override
+  String get aboutUs_ceremonyLabelGroup => 'What kind of ceremony? (optional)';
+
+  @override
+  String get aboutUs_labelCustomary => 'Customary';
+
+  @override
+  String get aboutUs_labelChurch => 'Church';
+
+  @override
+  String get aboutUs_labelMosque => 'Mosque';
+
+  @override
+  String get aboutUs_labelCivil => 'Civil';
+
+  @override
+  String get aboutUs_labelOther => 'Other';
+
+  @override
+  String get aboutUs_addCeremony => 'Had more than one ceremony? Add another';
+
+  @override
+  String get aboutUs_removeCeremony => 'Remove this ceremony';
+
+  @override
+  String get aboutUs_livingQuestion => 'Where do you two live?';
+
+  @override
+  String get aboutUs_livingTogether => 'Together';
+
+  @override
+  String get aboutUs_livingApartNearby => 'Apart, nearby';
+
+  @override
+  String get aboutUs_livingLongDistance => 'Long distance';
+
+  @override
+  String get aboutUs_livingWhy => 'So plans, maps and reminders fit how you live.';
+
+  @override
+  String get aboutUs_childrenQuestion => 'Are there children in your life together?';
+
+  @override
+  String get aboutUs_childrenNo => 'No';
+
+  @override
+  String get aboutUs_childrenYes => 'Yes';
+
+  @override
+  String get aboutUs_childrenExpecting => 'We\'re expecting';
+
+  @override
+  String get aboutUs_childrenPreferNot => 'Prefer not to say';
+
+  @override
+  String get aboutUs_childrenAges => 'Their ages (optional)';
+
+  @override
+  String get aboutUs_bandUnder2 => 'Under 2';
+
+  @override
+  String get aboutUs_band2to5 => '2–5';
+
+  @override
+  String get aboutUs_band6to12 => '6–12';
+
+  @override
+  String get aboutUs_band13to17 => '13–17';
+
+  @override
+  String get aboutUs_band18plus => '18+';
+
+  @override
+  String get aboutUs_childrenWhy => 'So ideas and reminders suit your family.';
+
+  @override
+  String get aboutUs_anniversaryQuestion => 'Remember your anniversary?';
+
+  @override
+  String get aboutUs_anniversaryNo => 'No, thanks';
+
+  @override
+  String get aboutUs_anniversaryTogether => 'The day you got together';
+
+  @override
+  String aboutUs_anniversaryCeremony(String label, String year) {
+    return '$label ceremony, $year';
+  }
+
+  @override
+  String aboutUs_anniversaryCeremonyPlain(String year) {
+    return 'Ceremony, $year';
+  }
+
+  @override
+  String get aboutUs_anniversaryWhatDay => 'What day was it?';
+
+  @override
+  String get aboutUs_rowSince => 'Together since';
+
+  @override
+  String get aboutUs_rowStage => 'Where you are';
+
+  @override
+  String get aboutUs_rowCeremonies => 'Ceremonies';
+
+  @override
+  String get aboutUs_rowLiving => 'Where you live';
+
+  @override
+  String get aboutUs_rowChildren => 'Children';
+
+  @override
+  String get aboutUs_rowAnniversary => 'Anniversary';
+
+  @override
+  String get aboutUs_notAnswered => 'Not answered yet';
+
+  @override
+  String aboutUs_childrenYesBands(String bands) {
+    return 'Yes ($bands)';
+  }
+
+  @override
+  String get aboutUs_anniversaryOff => 'Off';
+
+  @override
+  String aboutUs_ceremonyLine(String label, String year) {
+    return '$label, $year';
+  }
+
+  @override
+  String aboutUs_changedBy(String name) {
+    return 'Changed by $name';
+  }
+
+  @override
+  String get aboutUs_changedByYou => 'Changed by you';
+
+  @override
+  String get aboutUs_changedByPartner => 'Changed by your partner';
+
+  @override
+  String get aboutUs_footer => 'Either of you can change these. It\'s never used to score or type you.';
+
+  @override
+  String aboutUs_readOnlyUntil(String date) {
+    return 'You can read this until $date.';
+  }
+
+  @override
+  String get aboutUs_pendingSync => 'Saved on this phone. It will be shared when you\'re back online.';
+
+  @override
+  String get aboutUs_loadFailed => 'We couldn\'t load About us. Check your connection and try again.';
+
+  @override
+  String get aboutUs_answerQuestions => 'Answer a few questions';
+
+  @override
+  String get aboutUs_rowEditHint => 'Change';
+
+  @override
+  String get aboutUs_errorAnniversaryNeedsDay => 'Your anniversary reminder needs the full date. Add the day, or turn the reminder off first.';
+
+  @override
+  String get aboutUs_errorReadOnly => 'About us can\'t be changed right now.';
+
+  @override
+  String get aboutUs_errorWordsTooLong => 'Use 40 characters or fewer.';
+
+  @override
+  String get aboutUs_cardTitle => 'About us';
+
+  @override
+  String aboutUs_cardBody(String name) {
+    return 'A few easy questions about you two. Skip any of them. $name sees your answers after joining.';
+  }
+
+  @override
+  String get aboutUs_cardBodyUnnamed => 'A few easy questions about you two. Skip any of them. Your partner sees your answers after joining.';
+
+  @override
+  String get aboutUs_settingsSubtitle => 'When you got together, where you live and more';
+
+  @override
+  String get aboutUs_reminderFollows => 'This reminder follows About us';
+
+  @override
+  String get aboutUs_reminderChange => 'Change in About us';
+
+  @override
+  String get aboutUs_reminderStopTitle => 'Your anniversary reminder will stop';
+
+  @override
+  String get aboutUs_reminderStopBody => 'It follows this ceremony\'s date. It can follow the day you got together instead.';
+
+  @override
+  String get aboutUs_reminderStopOff => 'Turn it off';
+
+  @override
+  String get aboutUs_sinceHelperUnnamed => 'Use whichever date feels right.';
+
+  @override
+  String get aboutUs_reminderOffline => 'We couldn\'t check this reminder. Check your connection and try again.';
+
+  @override
+  String get aboutUs_reminderTimes => 'Reminder times and note';
+
+  @override
+  String get aboutUs_reminderLocked => 'Its date, title and type follow About us.';
+
+  @override
+  String get aboutUs_anniversaryHandMade => 'You already have an anniversary reminder, so we won\'t add another.';
 }

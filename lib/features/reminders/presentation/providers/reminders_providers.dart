@@ -169,6 +169,26 @@ final updateReminderProvider = FutureProvider.family<
   return reminder;
 });
 
+/// Spec 1 W5 final review I-2: About us's anniversary reminder, saved from
+/// its locked form. Only the lead times and the note are sent; its date,
+/// title, type and repeat follow About us (the server's guard refuses
+/// them).
+final updateReminderTimesProvider = FutureProvider.family<
+  ReminderModel,
+  ({String id, String? note, List<int> remindDaysBefore})
+>((ref, params) async {
+  final reminder = await ref
+      .read(remindersRepositoryProvider)
+      .updateReminder(
+        id: params.id,
+        note: params.note,
+        clearNote: params.note == null,
+        remindDaysBefore: params.remindDaysBefore,
+      );
+  ref.invalidate(remindersListProvider);
+  return reminder;
+});
+
 final deleteReminderProvider = FutureProvider.family<void, String>((
   ref,
   id,

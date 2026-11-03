@@ -9,6 +9,7 @@ import 'package:attune/core/providers/shared_prefs_provider.dart';
 import 'package:attune/core/ui/text/allow_large_text.dart';
 import 'package:attune/features/auth/sign_up/presentation/widgets/flow_buttons.dart';
 import 'package:attune/features/auth/sign_up/presentation/widgets/flow_text_field.dart';
+import 'package:attune/features/couple_profile/presentation/widgets/about_us_card.dart';
 import 'package:attune/features/me/presentation/widgets/journal_reminder_row.dart';
 import 'package:attune/features/me/presentation/widgets/more_ways_sheet.dart';
 import 'package:attune/features/me/presentation/widgets/your_space_section.dart';
@@ -358,6 +359,8 @@ class _RelationshipSpaceScreenState
         ),
         const SizedBox(height: Spacing.md),
         _WhileYouWait(),
+        // Spec 1 W5 (§3.8 R3): About us, the draft (couple_profile on).
+        AboutUsCard(partnerName: _partnerName),
         const SizedBox(height: Spacing.sm),
         Text(
           _partnerName == null
