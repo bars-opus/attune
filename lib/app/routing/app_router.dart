@@ -147,6 +147,8 @@ import 'package:attune/features/settings/screens/language_screen.dart';
 import 'package:attune/features/settings/screens/settings_screen.dart';
 import 'package:attune/features/settings/screens/theme_screen.dart';
 import 'package:attune/features/settings/presentation/screens/how_you_use_attune_screen.dart';
+import 'package:attune/features/settings/presentation/screens/birth_date_settings_screen.dart';
+import 'package:attune/features/safety/presentation/screens/report_child_concern_screen.dart';
 import 'package:attune/features/couple_profile/data/couple_profile_service.dart';
 import 'package:attune/features/couple_profile/presentation/about_us_entry.dart'
     show AboutUsRoutePage;
@@ -184,6 +186,12 @@ class RouteNames {
 
   /// Spec 1 W3c (§3.12).
   static const String howYouUseAttune = '/settings/how-you-use-attune';
+
+  /// Spec 1 W6b (§3.15): your age and the one correction.
+  static const String birthDateSettings = '/settings/date-of-birth';
+
+  /// Spec 1 W6c (§3.15): Report a concern about a child.
+  static const String reportChildConcern = '/settings/report-child-concern';
 
   /// Spec 1 W5 (§3.8, §5.4): About us; `draft` is this account's draft
   /// before linking (aboutUsLocation builds it).
@@ -1695,6 +1703,24 @@ GoRouter createAppRouter(RoutingNotifier routingNotifier) {
         path: RouteNames.howYouUseAttune,
         name: 'howYouUseAttune',
         builder: (context, state) => const HowYouUseAttuneScreen(),
+      ),
+      // Spec 1 W6b (§3.15): signed-in only.
+      GoRoute(
+        path: RouteNames.birthDateSettings,
+        name: 'birthDateSettings',
+        redirect:
+            (context, state) =>
+                routingNotifier.isSignedIn ? null : RouteNames.login,
+        builder: (context, state) => const BirthDateSettingsScreen(),
+      ),
+      // Spec 1 W6c (§3.15): signed-in only (the report needs the account).
+      GoRoute(
+        path: RouteNames.reportChildConcern,
+        name: 'reportChildConcern',
+        redirect:
+            (context, state) =>
+                routingNotifier.isSignedIn ? null : RouteNames.login,
+        builder: (context, state) => const ReportChildConcernScreen(),
       ),
       // Spec 1 W5 (§3.8): About us, signed in and couple_profile on; with
       // it off (or unreadable) a typed or deep /about-us goes home. While

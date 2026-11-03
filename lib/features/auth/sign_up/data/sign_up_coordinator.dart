@@ -1,8 +1,12 @@
 import 'dart:async';
 
 import 'package:attune/core/metrics/metric_counter.dart';
+import 'package:attune/core/platform/age_signals.dart';
+import 'package:attune/features/auth/data/passwordless_auth_service.dart'
+    show AccountDormant, AccountUnderReview, HookRefusal;
 import 'package:attune/features/auth/sign_up/data/account_service.dart';
 import 'package:attune/features/auth/sign_up/data/age_gate_store.dart';
+import 'package:attune/features/auth/sign_up/data/fresh_start_service.dart';
 import 'package:attune/features/auth/sign_up/data/sign_up_draft_store.dart';
 import 'package:attune/features/auth/sign_up/data/sign_up_gateways.dart';
 import 'package:attune/features/auth/sign_up/domain/birth_date_validator.dart';
@@ -26,6 +30,15 @@ enum SignUpStepId {
 
   /// The account of a proven number is read, or couldn't be (offline).
   accountCheck,
+
+  /// DM1 · Welcome (W6a, §3.5): the number's account is dormant.
+  dormant,
+
+  /// DM2 · One more code to finish (W6a, §3.5).
+  freshStart,
+
+  /// H1 · Account check, from the access-token hook (W6a, §3.15).
+  held,
 }
 
 /// Where a verified code leads.
@@ -62,6 +75,22 @@ class VerifiedBlocked extends VerifyOutcome {
   const VerifiedBlocked();
 }
 
+/// W6a (§3.5): the hook refused the code sign-in: the number's account has
+/// had no activity for 180 days. DM1; nothing about that account is known
+/// here but the challenge, held in memory by the coordinator.
+class VerifiedDormant extends VerifyOutcome {
+  const VerifiedDormant();
+}
+
+/// W6a (§3.15): the hook refused the code sign-in for a held account. H1;
+/// the draft is gone, and for an age hold ([age]) the phone is blocked
+/// (W3 carry C-2).
+class VerifiedHeld extends VerifyOutcome {
+  const VerifiedHeld({required this.age});
+
+  final bool age;
+}
+
 class VerifyFailed extends VerifyOutcome {
   const VerifyFailed(this.failure);
 
@@ -89,6 +118,34 @@ enum CompleteOutcome {
   signedOut,
 }
 
+/// DM1's "I'm new to Attune" (W6a, §3.5).
+enum FreshStartOutcome {
+  /// The old account is parked: DM2.
+  done,
+
+  /// The challenge can't be used any more: A3, the number open again.
+  expired,
+
+  /// Too many tries from this network.
+  tryLater,
+
+  /// Offline or the server: DM1 again, with "Try again".
+  failed,
+
+  /// This phone is under X1's block (creating an account is closed):
+  /// X1, and start-fresh-account is never called (no park).
+  blocked,
+}
+
+/// No fresh starts (tests that never reach DM1).
+class _NoFreshStart implements FreshStartGateway {
+  const _NoFreshStart();
+
+  @override
+  Future<FreshStartResult> start(String nonce) async =>
+      FreshStartResult.unavailable;
+}
+
 /// The sign-up's decisions, apart from any widget (Spec 1 §3.3, §3.4,
 /// §3.6, §5.5). Every step writes the draft, so closing the app resumes.
 class SignUpCoordinator {
@@ -102,7 +159,9 @@ class SignUpCoordinator {
     required MetricCounter metrics,
     required DateTime Function() now,
     Duration timeout = callTimeout,
+    FreshStartGateway freshStart = const _NoFreshStart(),
   }) : _drafts = drafts,
+       _freshStart = freshStart,
        _sender = sender,
        _auth = auth,
        _accounts = accounts,
@@ -130,6 +189,11 @@ class SignUpCoordinator {
   final MetricCounter _metrics;
   final DateTime Function() _now;
   final Duration _timeout;
+  final FreshStartGateway _freshStart;
+
+  /// DM1's challenge (W6a): in memory only, never written to the phone,
+  /// gone with the flow.
+  String? _dormantNonce;
 
   late SignUpDraft _draft;
 
@@ -296,11 +360,17 @@ class SignUpCoordinator {
   /// G1's year, for A2's pre-fill.
   Future<int?> guestBirthYear() => _ageGate.guestBirthYear();
 
-  /// False: under 18 on today's UTC date. Nothing was sent anywhere; the
-  /// draft is deleted and the phone blocked for 30 days (§3.6).
-  Future<bool> saveBirthDate(DateTime birthDate) async {
-    if (ageOn(birthDate, todayUtc) < 18) {
-      _metrics.bump(ClientMetricKey.signupAgeStop);
+  /// False: under 18 on today's UTC date, or the platform's age signal
+  /// ([signal], W6b) says minor or supervised (the stricter wins). Nothing
+  /// was sent anywhere; the draft is deleted and the phone blocked for 30
+  /// days (§3.6).
+  Future<bool> saveBirthDate(DateTime birthDate, {AgeSignal? signal}) async {
+    if (ageOn(birthDate, todayUtc) < 18 || (signal?.stopsSignUp ?? false)) {
+      // Play Age Signals' terms (no analytics use): only a stop the typed
+      // date made is counted, never one the signal made.
+      if (ageOn(birthDate, todayUtc) < 18) {
+        _metrics.bump(ClientMetricKey.signupAgeStop);
+      }
       await _stopUnderAge();
       return false;
     }
@@ -308,6 +378,13 @@ class SignUpCoordinator {
     _metrics.bump(ClientMetricKey.signupStepDob);
     await _save();
     return true;
+  }
+
+  /// W6b (§3.3 A2): the platform says minor or supervised before any date
+  /// was typed: X1, exactly as an under-18 date stops it, but never counted
+  /// (Play Age Signals' terms: no analytics use of the signal).
+  Future<void> stopForAgeSignal() async {
+    await _stopUnderAge();
   }
 
   /// A3's send, or A4's resend when [phoneE164] is null. Null on success.
@@ -395,6 +472,10 @@ class SignUpCoordinator {
             _checkLost = true;
             _sessionBeforeLostCheck = before;
           }
+          // W6a: the hook's refusals come back as a 403, which would read
+          // as a wrong code; they are DM1 and H1, before anything else.
+          final refusal = HookRefusal.of(error);
+          if (refusal != null) return _refused(refusal);
           return VerifyFailed(
             classifyOtpVerifyError(
               error,
@@ -412,6 +493,93 @@ class SignUpCoordinator {
     _draft = _draft.copyWith(verifiedUserId: userId);
     await _save();
     return resolveVerified();
+  }
+
+  /// W6a: DM1 keeps the challenge for "I'm new to Attune"; H1 drops the
+  /// draft (nobody signs in with it) and, for an age hold, blocks this
+  /// phone first, in X1's order (W3 carry C-2, ruling N-2): block, delete
+  /// the draft, then end any session left on the phone. Each step is
+  /// best-effort and never skips the next, and H1 shows whatever fails.
+  /// The keystore copy of the block waits at most [heldBlockBound] (the
+  /// prefs copy, written first, already holds it), as the gate's H1 does.
+  Future<VerifyOutcome> _refused(HookRefusal refusal) async {
+    switch (refusal) {
+      case AccountDormant(:final nonce):
+        _dormantNonce = nonce;
+        return const VerifiedDormant();
+      case AccountUnderReview(:final age):
+        _discarded = true;
+        if (age) {
+          await _ageGate.block().timeout(heldBlockBound, onTimeout: () {});
+        }
+        try {
+          await _drafts.clear();
+        } catch (error) {
+          debugPrint('[sign-up] draft not deleted at H1: ${error.runtimeType}');
+        }
+        if (_auth.currentUserId != null) {
+          try {
+            await _auth.signOut();
+          } catch (error) {
+            debugPrint('[sign-up] sign-out failed at H1: ${error.runtimeType}');
+          }
+        }
+        return VerifiedHeld(age: age);
+    }
+  }
+
+  /// The longest the sign-in H1 waits on the keystore (as the gate, 1 s).
+  static const heldBlockBound = Duration(seconds: 1);
+
+  /// DM1's neutral exit (system back; fix round 1, ruling I-2): the
+  /// challenge and the draft go, from the phone too; nothing is parked.
+  Future<void> leaveDormant() async {
+    _dormantNonce = null;
+    _setAside = null;
+    _discarded = true;
+    try {
+      await _drafts.clear();
+    } catch (error) {
+      debugPrint('[sign-up] draft not deleted at DM1: ${error.runtimeType}');
+    }
+  }
+
+  /// DM1's "I'm new to Attune" (§3.5): start-fresh-account parks the old
+  /// account; then DM2 sends a new code to the same number, which makes a
+  /// new account. A1/A2 already typed stay for it, and the way in becomes
+  /// a new account (no N1 after DM1).
+  Future<FreshStartOutcome> startFresh() async {
+    // Fix round 1 (ruling): a blocked phone can't create the new account,
+    // so the old one is never parked for it: X1, no call.
+    if (_ageGate.isBlocked) {
+      _dormantNonce = null;
+      await _stopUnderAge(blockInForce: true);
+      return FreshStartOutcome.blocked;
+    }
+    final nonce = _dormantNonce;
+    if (nonce == null) return FreshStartOutcome.expired;
+    FreshStartResult result;
+    try {
+      result = await _freshStart.start(nonce).timeout(_timeout);
+    } catch (_) {
+      result = FreshStartResult.unavailable;
+    }
+    switch (result) {
+      case FreshStartResult.done:
+        _dormantNonce = null;
+        _draft = _draft.withoutCode().copyWith(entry: SignUpEntry.newAccount);
+        await _save();
+        return FreshStartOutcome.done;
+      case FreshStartResult.invalid:
+        _dormantNonce = null;
+        _setNumberOpen();
+        await _save();
+        return FreshStartOutcome.expired;
+      case FreshStartResult.tryLater:
+        return FreshStartOutcome.tryLater;
+      case FreshStartResult.unavailable:
+        return FreshStartOutcome.failed;
+    }
   }
 
   /// The account behind the verified number (also the hold's "Try

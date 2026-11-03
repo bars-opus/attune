@@ -13,6 +13,8 @@ Map<String, dynamic> homeJson({
   String? pathPrevious,
   List<String> needs = const [],
   bool hold = false,
+  // W6a: a hold reads as age_review unless a test names another kind.
+  String? holdKind,
   bool datingEnabled = false,
   bool datingEnrolled = false,
   String link = 'none',
@@ -27,6 +29,7 @@ Map<String, dynamic> homeJson({
   'path_previous': pathPrevious,
   'needs': needs,
   'hold': hold,
+  'hold_kind': hold ? (holdKind ?? 'age_review') : null,
   'eula_version': hasAccount ? '2' : null,
   'dating': {'enabled': datingEnabled, 'enrolled': datingEnrolled},
   'link': {

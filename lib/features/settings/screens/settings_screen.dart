@@ -6,11 +6,13 @@ import 'package:attune/features/appreciation/data/thankful_phrasing_preference.d
 import 'package:attune/features/me/presentation/widgets/dating_lock_setting.dart';
 import 'package:attune/features/me/presentation/widgets/journal_reminder_row.dart';
 import 'package:attune/features/settings/presentation/screens/how_you_use_attune_screen.dart';
+import 'package:attune/features/settings/presentation/screens/birth_date_settings_screen.dart';
 import 'package:attune/features/couple_profile/presentation/about_us_entry.dart';
 import 'package:attune/features/settings/data/chat_feel_preference.dart';
 import 'package:attune/features/settings/data/sound_preference.dart';
 import 'package:attune/features/settings/utility/settings_exports.dart';
 import 'package:attune/features/safety/presentation/outside_perspective_screen.dart';
+import 'package:attune/features/safety/presentation/screens/report_child_concern_screen.dart';
 
 /// Main Settings screen displaying categorized user preferences and app configurations.
 ///
@@ -178,6 +180,20 @@ class SettingsScreen extends ConsumerWidget {
           currentUserId.isEmpty ? null : journalReminderSetting(context, ref),
       howYouUse: currentUserId.isEmpty ? null : howYouUseSetting(context, ref),
       aboutUs: currentUserId.isEmpty ? null : aboutUsSetting(context, ref),
+      birthDate:
+          currentUserId.isEmpty ? null : birthDateSetting(context, ref),
+      childReport:
+          currentUserId.isEmpty
+              ? null
+              : childReportSetting(context, id: 'child_report', order: 3),
+      childReportSupport:
+          currentUserId.isEmpty
+              ? null
+              : childReportSetting(
+                context,
+                id: 'child_report_support',
+                order: 0,
+              ),
     );
 
     // Access localization for language prefence

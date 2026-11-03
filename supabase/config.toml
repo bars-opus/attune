@@ -22,6 +22,19 @@ verify_jwt = false
 [functions.send-sms-hook]
 verify_jwt = false
 
+# Spec 1 W6a: called by the app with no session, after the access-token
+# hook refused a code sign-in with account_dormant:<nonce>. Per-IP limit in
+# consume_fresh_start.
+[functions.start-fresh-account]
+verify_jwt = false
+
+# Spec 1 W6a: the Custom Access Token Hook (public.attune_access_token_hook)
+# is switched on per project in the dashboard (owner deploy checklist), like
+# the Send SMS Hook below, never from this file. To try it on a local stack:
+# [auth.hook.custom_access_token]
+# enabled = true
+# uri = "pg-functions://postgres/public/attune_access_token_hook"
+
 # Spec 1 W2c: the Send SMS Hook is switched on per project in the dashboard
 # (owner deploy checklist), never from this file: enabled here, every
 # `supabase start` (CI included) would need SEND_SMS_HOOK_SECRET set, and a

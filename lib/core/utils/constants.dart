@@ -48,6 +48,10 @@ class AppConstants {
   static const String dataSharingPolicyUrl = 'https://yourapp.com/privacy';
   static const String termsOfServiceUrl = 'https://yourapp.com/terms';
   static const String supportEmail = 'support@barsopus.com';
+
+  /// Spec 1 W6c (D6, §8.1): the named child-safety contact's address, on
+  /// the CSAE page too. The owner confirms it before the W6c gate.
+  static const String childSafetyEmail = 'childsafety@barsopus.com';
   static const String whatAppCustomerSupportLink = 'support@yourapp.com';
 
   // App Store Links

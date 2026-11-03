@@ -9,6 +9,9 @@ import android.os.Handler
 import android.os.Looper
 import android.provider.MediaStore
 import android.telephony.TelephonyManager
+import com.google.android.play.agesignals.AgeSignalsManagerFactory
+import com.google.android.play.agesignals.AgeSignalsRequest
+import com.google.android.play.agesignals.model.AgeRangeSource
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
@@ -118,6 +121,17 @@ class MainActivity : FlutterActivity() {
                 }
             }
 
+        // Spec 1 W6b (§3.3 A2): Play Age Signals, once, at A2. Only a status
+        // goes back (adult, minor, supervised, unknown, unavailable); nothing
+        // is stored or sent.
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "attune/age_signals")
+            .setMethodCallHandler { call, result ->
+                when (call.method) {
+                    "read" -> readAgeSignal(result)
+                    else -> result.notImplemented()
+                }
+            }
+
         // Quick exit (Spec 2; research 06 §3 F3 (2)): leave AND drop the
         // task, so Attune is not left in Recents. The only method on this
         // channel; nothing is logged or sent. Reply first: once the activity
@@ -132,6 +146,31 @@ class MainActivity : FlutterActivity() {
                     else -> result.notImplemented()
                 }
             }
+    }
+
+    // 18 and over is adult; a band that ends under 18 is supervised when a
+    // parent set it (TIER_B), otherwise minor; not shared is unknown; any
+    // failure (no Play Store, an old one, not installed from Play) is
+    // unavailable, and the date of birth decides.
+    private fun readAgeSignal(result: MethodChannel.Result) {
+        try {
+            AgeSignalsManagerFactory.create(applicationContext)
+                .checkAgeSignals(AgeSignalsRequest.builder().build())
+                .addOnSuccessListener { signal ->
+                    val lower = signal.ageLower()
+                    val upper = signal.ageUpper()
+                    val status = when {
+                        lower != null && lower >= 18 -> "adult"
+                        upper != null && upper < 18 ->
+                            if (signal.ageRangeSource() == AgeRangeSource.TIER_B) "supervised" else "minor"
+                        else -> "unknown"
+                    }
+                    result.success(mapOf("status" to status))
+                }
+                .addOnFailureListener { result.success(mapOf("status" to "unavailable")) }
+        } catch (_: Throwable) {
+            result.success(mapOf("status" to "unavailable"))
+        }
     }
 
     private fun startScreenshotDetection() {

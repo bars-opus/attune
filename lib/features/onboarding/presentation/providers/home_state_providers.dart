@@ -22,6 +22,7 @@ class HomeSnapshot {
     this.link = LinkState.none,
     this.needs = const [],
     this.hold = false,
+    this.holdKind,
     this.server,
   });
 
@@ -33,6 +34,9 @@ class HomeSnapshot {
   final LinkState link;
   final List<HomeNeed> needs;
   final bool hold;
+
+  /// Which hold (W6a); null when nothing named it.
+  final HoldKind? holdKind;
 
   /// This run's live answer, in memory only.
   final HomeState? server;
@@ -53,6 +57,7 @@ class HomeSnapshot {
     link: cache.link,
     needs: cache.needs,
     hold: cache.hold,
+    holdKind: cache.holdKind,
   );
 
   factory HomeSnapshot.fromServer(HomeState state) => HomeSnapshot(
@@ -60,6 +65,7 @@ class HomeSnapshot {
     link: state.link.state,
     needs: state.needs,
     hold: state.hold,
+    holdKind: state.holdKind,
     server: state,
   );
 
@@ -94,6 +100,7 @@ class HomeSnapshot {
       link: link,
       needs: needs,
       hold: hold,
+      holdKind: holdKind,
       server: server,
     );
   }

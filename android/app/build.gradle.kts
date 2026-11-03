@@ -51,6 +51,8 @@ flutter {
 // JVM unit tests for the home-screen widget's pure logic (widget spec §8).
 // org.json is the real library: Android's stub throws in plain JVM tests.
 dependencies {
+    // Spec 1 W6b (§3.3 A2): Play Age Signals, read once at A2, never stored.
+    implementation("com.google.android.play:age-signals:0.0.4")
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.json:json:20240303")
 }

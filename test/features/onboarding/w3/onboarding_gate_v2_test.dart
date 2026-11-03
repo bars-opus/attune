@@ -780,6 +780,70 @@ void main() {
     expectAgeHoldBlock(g);
   });
 
+  // Spec 1 W6a (W3 batch 5 carry; fix round 1, I#1): only an age hold, or a
+  // hold that names no kind, blocks this phone; a safety or recovery hold,
+  // or a kind this build doesn't know, shows H1 and leaves the phone for
+  // whoever holds it next.
+  for (final kind in ['safety_review', 'recovery_hold', 'from_a_later_spec']) {
+    testWidgets('a $kind hold: H1, and this phone is not blocked (W6a)', (
+      tester,
+    ) async {
+      final g = await _pumpGate(
+        tester,
+        server: homeJson(hold: true, holdKind: kind),
+      );
+      expect(find.text('We need to check your account'), findsOneWidget);
+      expect(AgeGateStore.readBlocked(g.prefs, DateTime.now()), isFalse);
+      expect(g.routing.underAgeBlocked, isFalse);
+      expect(
+        flowV2Redirect(g.routing, RouteNames.signUp),
+        isNot(RouteNames.ageStop),
+      );
+    });
+  }
+
+  testWidgets('a hold that names no kind (a server from before W6a): H1 and '
+      'the device block (W6a #2)', (tester) async {
+    final g = await _pumpGate(
+      tester,
+      server: homeJson(hold: true)..remove('hold_kind'),
+    );
+    expectAgeHoldBlock(g);
+  });
+
+  testWidgets('a hold whose kind is not a name: H1 and the device block '
+      '(W6a I#1)', (tester) async {
+    final g = await _pumpGate(
+      tester,
+      server: homeJson(hold: true)..['hold_kind'] = 7,
+    );
+    expectAgeHoldBlock(g);
+  });
+
+  // W6a #2: offline, the kind comes from the cache.
+  for (final (kind, blocks) in [('safety_review', false), ('age_review', true)]) {
+    testWidgets('offline with a cached $kind hold: H1, and the block '
+        '${blocks ? 'set' : 'not set'} (W6a #2)', (tester) async {
+      final g = await _pumpGate(
+        tester,
+        prefsValues: {
+          'attune.home.$_uid.state':
+              '{"tab":"me","link":"none","needs":[],"hold":true,'
+              '"hold_kind":"$kind",'
+              '"at":"${DateTime.now().toUtc().toIso8601String()}"}',
+        },
+        setUp: (gw) => gw.failAlways = TimeoutException('offline'),
+      );
+      if (blocks) {
+        expectAgeHoldBlock(g);
+      } else {
+        expect(find.text('We need to check your account'), findsOneWidget);
+        expect(AgeGateStore.readBlocked(g.prefs, DateTime.now()), isFalse);
+        expect(g.routing.underAgeBlocked, isFalse);
+      }
+    });
+  }
+
   testWidgets('an unknown need asks for an update, never home (P-15)', (
     tester,
   ) async {

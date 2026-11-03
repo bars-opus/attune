@@ -41,6 +41,11 @@ BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'service_role') THEN
     CREATE ROLE service_role NOLOGIN BYPASSRLS;
   END IF;
+  -- Spec 1 W6a (W2 P-30): Supabase Auth's role, the only one that may run
+  -- the Custom Access Token Hook (public.attune_access_token_hook).
+  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'supabase_auth_admin') THEN
+    CREATE ROLE supabase_auth_admin NOLOGIN NOINHERIT;
+  END IF;
 END $$;
 
 CREATE SCHEMA IF NOT EXISTS auth;

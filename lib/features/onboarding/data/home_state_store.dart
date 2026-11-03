@@ -16,12 +16,16 @@ class CachedHomeState {
     required this.needs,
     required this.hold,
     required this.at,
+    this.holdKind,
   });
 
   final AppTab tab;
   final LinkState link;
   final List<HomeNeed> needs;
   final bool hold;
+
+  /// Which hold (W6a); null in a cache from before W6a.
+  final HoldKind? holdKind;
   final DateTime at;
 
   bool get isComplete => needs.isEmpty;
@@ -59,6 +63,7 @@ class HomeStateStore {
         link: LinkState.fromWire(json['link']),
         needs: HomeNeed.listFromWire(json['needs']),
         hold: json['hold'] == true,
+        holdKind: HoldKind.fromWire(json['hold_kind']),
         at: at,
       );
     } catch (_) {
@@ -74,6 +79,7 @@ class HomeStateStore {
       'link': state.link.state.wire,
       'needs': [for (final need in state.needs) need.wire],
       'hold': state.hold,
+      if (state.holdKind != null) 'hold_kind': state.holdKind!.wire,
       'at': _now().toUtc().toIso8601String(),
     }),
   );

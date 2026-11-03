@@ -1,5 +1,7 @@
 import AVFAudio
+import DeclaredAgeRange
 import Flutter
+import StoreKit
 import UIKit
 
 @main
@@ -17,6 +19,7 @@ import UIKit
   private var screenshotObserver: NSObjectProtocol?
   private var recordingHapticsChannel: FlutterMethodChannel?
   private var backupExclusionChannel: FlutterMethodChannel?
+  private var ageSignalsChannel: FlutterMethodChannel?
   private var switcherCover: UIView?
 
   override func application(
@@ -135,6 +138,35 @@ import UIKit
       }
     }
 
+    // Spec 1 W6b (§3.3 A2): Apple's Declared Age Range, once, at A2, only
+    // in the listed App Store storefronts. Only a status goes back; nothing
+    // is stored or sent. DeclaredAgeRange is weak-linked (OTHER_LDFLAGS
+    // -weak_framework) and used only on iOS 26 and later.
+    let ageChannel = FlutterMethodChannel(
+      name: "attune/age_signals",
+      binaryMessenger: controller.binaryMessenger
+    )
+    ageSignalsChannel = ageChannel
+    ageChannel.setMethodCallHandler { [weak self] call, result in
+      guard call.method == "read" else {
+        result(FlutterMethodNotImplemented)
+        return
+      }
+      let storefronts = (call.arguments as? [String: Any])?["storefronts"] as? [String] ?? []
+      // Review F1: the Runner target ships at iOS 12.0; Swift concurrency
+      // needs iOS 13 (the TogetherLiveActivityChannel pattern).
+      if #available(iOS 13.0, *) {
+        Task { @MainActor in
+          result(await AgeSignalReader.read(
+            storefronts: storefronts,
+            controller: self?.window?.rootViewController
+          ))
+        }
+      } else {
+        result(["status": "unavailable"])
+      }
+    }
+
     TogetherLiveActivityChannel.register(with: controller.binaryMessenger)
 
     return super.application(application, didFinishLaunchingWithOptions: launchOptions)
@@ -177,5 +209,38 @@ import UIKit
   private func hideSwitcherCover() {
     switcherCover?.removeFromSuperview()
     switcherCover = nil
+  }
+}
+
+/// Spec 1 W6b: Declared Age Range's answer as A2 reads it. 18 and over is
+/// adult; a range under 18 is supervised when a guardian declared it,
+/// otherwise minor; declined sharing is unknown; below iOS 26, outside the
+/// storefronts, or on any error: unavailable (the date of birth decides).
+@available(iOS 13.0, *)
+enum AgeSignalReader {
+  @MainActor
+  static func read(storefronts: [String], controller: UIViewController?) async -> [String: String] {
+    guard #available(iOS 26.0, *) else { return ["status": "unavailable"] }
+    guard let country = await Storefront.current?.countryCode, storefronts.contains(country),
+          let controller else {
+      return ["status": "unavailable"]
+    }
+    do {
+      let response = try await AgeRangeService.shared.requestAgeRange(ageGates: 18, in: controller)
+      switch response {
+      case .declinedSharing:
+        return ["status": "unknown"]
+      case .sharing(let range):
+        if let lower = range.lowerBound, lower >= 18 { return ["status": "adult"] }
+        if let upper = range.upperBound, upper < 18 {
+          return ["status": range.ageRangeDeclaration == .guardianDeclared ? "supervised" : "minor"]
+        }
+        return ["status": "unknown"]
+      @unknown default:
+        return ["status": "unknown"]
+      }
+    } catch {
+      return ["status": "unavailable"]
+    }
   }
 }

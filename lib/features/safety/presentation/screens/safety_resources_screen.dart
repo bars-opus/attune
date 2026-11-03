@@ -5,6 +5,7 @@ import 'package:attune/core/utils/exports/export_screens.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../providers/safety_providers.dart';
 import 'safety_pin_screen.dart';
+import 'report_child_concern_screen.dart';
 
 class SafetyResourcesScreen extends ConsumerWidget {
   static const routeName = '/safety-resources';
@@ -39,6 +40,8 @@ class SafetyResourcesScreen extends ConsumerWidget {
             const SafetyPinPromptCard(),
             // Spec 8 (F14): the private check-in, while it is on.
             const SafetySelfCheckRow(),
+            // Spec 1 W6c (§3.15, §5.4; P-28): the report, signed in only.
+            const ReportChildConcernLink(),
             // Disclaimer
             Container(
               padding: EdgeInsets.all(Spacing.md.w),

@@ -5016,6 +5016,234 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'You already have an anniversary reminder, so we won\'t add another.'**
   String get aboutUs_anniversaryHandMade;
+
+  /// No description provided for @flow_dormantTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Welcome to Attune'**
+  String get flow_dormantTitle;
+
+  /// No description provided for @flow_dormantBody.
+  ///
+  /// In en, this message translates to:
+  /// **'Let\'s get you set up.'**
+  String get flow_dormantBody;
+
+  /// No description provided for @flow_dormantNew.
+  ///
+  /// In en, this message translates to:
+  /// **'I\'m new to Attune'**
+  String get flow_dormantNew;
+
+  /// No description provided for @flow_dormantUsedBefore.
+  ///
+  /// In en, this message translates to:
+  /// **'Used Attune before on this number? Contact support'**
+  String get flow_dormantUsedBefore;
+
+  /// No description provided for @flow_dormantFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'We couldn\'t reach Attune. Check your connection and try again.'**
+  String get flow_dormantFailed;
+
+  /// No description provided for @flow_dormantTryLater.
+  ///
+  /// In en, this message translates to:
+  /// **'Too many tries. Try again in an hour.'**
+  String get flow_dormantTryLater;
+
+  /// No description provided for @flow_dormantExpired.
+  ///
+  /// In en, this message translates to:
+  /// **'That took too long. Enter your number again.'**
+  String get flow_dormantExpired;
+
+  /// No description provided for @flow_freshStartTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'One more code to finish'**
+  String get flow_freshStartTitle;
+
+  /// No description provided for @flow_freshStartBody.
+  ///
+  /// In en, this message translates to:
+  /// **'We\'ll send a new code to {phone}.'**
+  String flow_freshStartBody(String phone);
+
+  /// No description provided for @flow_freshStartSend.
+  ///
+  /// In en, this message translates to:
+  /// **'Send code'**
+  String get flow_freshStartSend;
+
+  /// No description provided for @flow_dobSettingsTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Date of birth'**
+  String get flow_dobSettingsTitle;
+
+  /// No description provided for @flow_dobSettingsSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Only your age is shown, never the date'**
+  String get flow_dobSettingsSubtitle;
+
+  /// No description provided for @flow_dobSettingsAge.
+  ///
+  /// In en, this message translates to:
+  /// **'Your age: {age}'**
+  String flow_dobSettingsAge(int age);
+
+  /// No description provided for @flow_dobSettingsNoAge.
+  ///
+  /// In en, this message translates to:
+  /// **'We don\'t have your date of birth yet.'**
+  String get flow_dobSettingsNoAge;
+
+  /// No description provided for @flow_dobSettingsFixUntil.
+  ///
+  /// In en, this message translates to:
+  /// **'If it\'s wrong, you can fix it once, until {date}.'**
+  String flow_dobSettingsFixUntil(String date);
+
+  /// No description provided for @flow_dobSettingsContact.
+  ///
+  /// In en, this message translates to:
+  /// **'To change this, contact support.'**
+  String get flow_dobSettingsContact;
+
+  /// No description provided for @flow_dobSettingsFix.
+  ///
+  /// In en, this message translates to:
+  /// **'Fix a mistake'**
+  String get flow_dobSettingsFix;
+
+  /// No description provided for @flow_dobFixTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Fix your date of birth'**
+  String get flow_dobFixTitle;
+
+  /// No description provided for @flow_dobFixSaved.
+  ///
+  /// In en, this message translates to:
+  /// **'Saved.'**
+  String get flow_dobFixSaved;
+
+  /// No description provided for @flow_dobSettingsLoadFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'We couldn\'t load this. Check your connection and try again.'**
+  String get flow_dobSettingsLoadFailed;
+
+  /// No description provided for @support_childReportTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Report a concern about a child'**
+  String get support_childReportTitle;
+
+  /// No description provided for @support_childReportSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'A person on our team reads every report'**
+  String get support_childReportSubtitle;
+
+  /// No description provided for @support_childReportBody.
+  ///
+  /// In en, this message translates to:
+  /// **'Tell us what you saw and where. A person on our team reads every report. If a child is in danger right now, call your local emergency number.'**
+  String get support_childReportBody;
+
+  /// No description provided for @support_childReportWhere.
+  ///
+  /// In en, this message translates to:
+  /// **'Where did you see it?'**
+  String get support_childReportWhere;
+
+  /// No description provided for @support_childReportChat.
+  ///
+  /// In en, this message translates to:
+  /// **'Chat'**
+  String get support_childReportChat;
+
+  /// No description provided for @support_childReportStories.
+  ///
+  /// In en, this message translates to:
+  /// **'Stories'**
+  String get support_childReportStories;
+
+  /// No description provided for @support_childReportOpinions.
+  ///
+  /// In en, this message translates to:
+  /// **'Opinions'**
+  String get support_childReportOpinions;
+
+  /// No description provided for @support_childReportDating.
+  ///
+  /// In en, this message translates to:
+  /// **'Dating'**
+  String get support_childReportDating;
+
+  /// No description provided for @support_childReportElsewhere.
+  ///
+  /// In en, this message translates to:
+  /// **'Somewhere else'**
+  String get support_childReportElsewhere;
+
+  /// No description provided for @support_childReportDetails.
+  ///
+  /// In en, this message translates to:
+  /// **'What did you see?'**
+  String get support_childReportDetails;
+
+  /// No description provided for @support_childReportCount.
+  ///
+  /// In en, this message translates to:
+  /// **'{count} of {max}'**
+  String support_childReportCount(int count, int max);
+
+  /// No description provided for @support_childReportSend.
+  ///
+  /// In en, this message translates to:
+  /// **'Send report'**
+  String get support_childReportSend;
+
+  /// No description provided for @support_childReportThanks.
+  ///
+  /// In en, this message translates to:
+  /// **'Thank you. We\'ve received your report.'**
+  String get support_childReportThanks;
+
+  /// No description provided for @support_childReportLimit.
+  ///
+  /// In en, this message translates to:
+  /// **'You\'ve sent 5 reports today. To tell us more, email {email}.'**
+  String support_childReportLimit(String email);
+
+  /// No description provided for @support_childReportFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'We couldn\'t send this. Check your connection and try again.'**
+  String get support_childReportFailed;
+
+  /// No description provided for @support_childReportDone.
+  ///
+  /// In en, this message translates to:
+  /// **'Done'**
+  String get support_childReportDone;
+
+  /// No description provided for @support_childReportTooLong.
+  ///
+  /// In en, this message translates to:
+  /// **'This is too long. Keep it to 2,000 characters or fewer.'**
+  String get support_childReportTooLong;
+
+  /// No description provided for @support_childReportInvalid.
+  ///
+  /// In en, this message translates to:
+  /// **'We couldn\'t send this as written. Make it shorter and try again, or email {email}.'**
+  String support_childReportInvalid(String email);
 }
 
 class _AppLocalizationsDelegate extends LocalizationsDelegate<AppLocalizations> {

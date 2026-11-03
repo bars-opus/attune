@@ -1535,5 +1535,78 @@
 
   "aboutUs_reminderTimes": "Reminder times and note",
   "aboutUs_reminderLocked": "Its date, title and type follow About us.",
-  "aboutUs_anniversaryHandMade": "You already have an anniversary reminder, so we won't add another."
+  "aboutUs_anniversaryHandMade": "You already have an anniversary reminder, so we won't add another.",
+
+  "flow_dormantTitle": "Welcome to Attune",
+  "flow_dormantBody": "Let's get you set up.",
+  "flow_dormantNew": "I'm new to Attune",
+  "flow_dormantUsedBefore": "Used Attune before on this number? Contact support",
+  "flow_dormantFailed": "We couldn't reach Attune. Check your connection and try again.",
+  "flow_dormantTryLater": "Too many tries. Try again in an hour.",
+  "flow_dormantExpired": "That took too long. Enter your number again.",
+  "flow_freshStartTitle": "One more code to finish",
+  "flow_freshStartBody": "We'll send a new code to {phone}.",
+  "@flow_freshStartBody": {
+    "placeholders": {
+      "phone": {"type": "String"}
+    }
+  },
+  "flow_freshStartSend": "Send code",
+
+  "flow_dobSettingsTitle": "Date of birth",
+  "flow_dobSettingsSubtitle": "Only your age is shown, never the date",
+  "flow_dobSettingsAge": "Your age: {age}",
+  "@flow_dobSettingsAge": {
+    "placeholders": {
+      "age": {"type": "int"}
+    }
+  },
+  "flow_dobSettingsNoAge": "We don't have your date of birth yet.",
+  "flow_dobSettingsFixUntil": "If it's wrong, you can fix it once, until {date}.",
+  "@flow_dobSettingsFixUntil": {
+    "placeholders": {
+      "date": {"type": "String"}
+    }
+  },
+  "flow_dobSettingsContact": "To change this, contact support.",
+  "flow_dobSettingsFix": "Fix a mistake",
+  "flow_dobFixTitle": "Fix your date of birth",
+  "flow_dobFixSaved": "Saved.",
+  "flow_dobSettingsLoadFailed": "We couldn't load this. Check your connection and try again.",
+
+  "support_childReportTitle": "Report a concern about a child",
+  "support_childReportSubtitle": "A person on our team reads every report",
+  "support_childReportBody": "Tell us what you saw and where. A person on our team reads every report. If a child is in danger right now, call your local emergency number.",
+  "support_childReportWhere": "Where did you see it?",
+  "support_childReportChat": "Chat",
+  "support_childReportStories": "Stories",
+  "support_childReportOpinions": "Opinions",
+  "support_childReportDating": "Dating",
+  "support_childReportElsewhere": "Somewhere else",
+  "support_childReportDetails": "What did you see?",
+  "support_childReportCount": "{count} of {max}",
+  "@support_childReportCount": {
+    "placeholders": {
+      "count": {"type": "int"},
+      "max": {"type": "int"}
+    }
+  },
+  "support_childReportSend": "Send report",
+  "support_childReportThanks": "Thank you. We've received your report.",
+  "support_childReportLimit": "You've sent 5 reports today. To tell us more, email {email}.",
+  "@support_childReportLimit": {
+    "placeholders": {
+      "email": {"type": "String"}
+    }
+  },
+  "support_childReportFailed": "We couldn't send this. Check your connection and try again.",
+  "support_childReportDone": "Done",
+
+  "support_childReportTooLong": "This is too long. Keep it to 2,000 characters or fewer.",
+  "support_childReportInvalid": "We couldn't send this as written. Make it shorter and try again, or email {email}.",
+  "@support_childReportInvalid": {
+    "placeholders": {
+      "email": {"type": "String"}
+    }
+  }
 }

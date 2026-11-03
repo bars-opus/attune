@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:attune/app/routing/app_router.dart' show RouteNames;
 import 'package:attune/core/metrics/metric_counter.dart';
+import 'package:attune/core/platform/age_signals.dart';
 import 'package:attune/core/platform/sim_country.dart';
 import 'package:attune/core/providers/routing_providers.dart';
 import 'package:attune/core/providers/shared_prefs_provider.dart';
@@ -10,6 +11,7 @@ import 'package:attune/core/ui/motion/shared_axis_step.dart';
 import 'package:attune/features/auth/log_in/domain/phone_country.dart';
 import 'package:attune/features/auth/sign_up/data/account_service.dart';
 import 'package:attune/features/auth/sign_up/data/age_gate_store.dart';
+import 'package:attune/features/auth/sign_up/data/fresh_start_service.dart';
 import 'package:attune/features/auth/sign_up/data/sign_up_coordinator.dart';
 import 'package:attune/features/auth/sign_up/data/sign_up_draft_store.dart';
 import 'package:attune/features/auth/sign_up/data/sign_up_gateways.dart';
@@ -22,11 +24,15 @@ import 'package:attune/features/auth/sign_up/presentation/steps/account_check_st
 import 'package:attune/features/auth/sign_up/presentation/steps/birth_date_step.dart';
 import 'package:attune/features/auth/sign_up/presentation/steps/code_step.dart';
 import 'package:attune/features/auth/sign_up/presentation/steps/consent_step.dart';
+import 'package:attune/features/auth/sign_up/presentation/steps/dormant_step.dart';
+import 'package:attune/features/auth/sign_up/presentation/steps/fresh_start_step.dart';
 import 'package:attune/features/auth/sign_up/presentation/steps/name_step.dart';
 import 'package:attune/features/auth/sign_up/presentation/steps/no_account_step.dart';
 import 'package:attune/features/auth/sign_up/presentation/steps/phone_step.dart';
 import 'package:attune/features/auth/sign_up/presentation/widgets/flow_frame.dart';
 import 'package:attune/features/onboarding/data/onboarding_store.dart';
+import 'package:attune/features/onboarding/presentation/widgets/catch_up_steps.dart'
+    show AccountHoldStep;
 import 'package:attune/i10n/generated/app_localizations.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/semantics.dart';
@@ -58,6 +64,7 @@ final signUpCoordinatorProvider = Provider.autoDispose<SignUpCoordinator>((
         ),
     metrics: ref.watch(metricCounterProvider),
     now: now,
+    freshStart: ref.watch(freshStartGatewayProvider),
   );
 });
 
@@ -85,8 +92,12 @@ class _SignUpFlowState extends ConsumerState<SignUpFlow> {
   /// running: Back waits for it.
   bool _busy = false;
 
-  /// A3's send failure, A5's save failure.
+  /// A3's send failure, A5's save failure, DM1's and DM2's failures.
   String? _error;
+
+  /// Raised with each DM1 or DM2 failure, so the same words are read out
+  /// again (W6a).
+  int _errorCount = 0;
 
   // A4 (review B4 I-2): what is wrong with the code (read out and red; a
   // wrong code also shakes), apart from a notice about anything else.
@@ -110,6 +121,13 @@ class _SignUpFlowState extends ConsumerState<SignUpFlow> {
   DateTime? _resendNotBefore;
   int? _guestYear;
   String? _welcomeName;
+
+  /// W6b (§3.3 A2, platform_age_signals): the platform's age signal, read
+  /// once when A2 first shows; held in memory, never stored or sent.
+  Future<AgeSignal>? _ageSignal;
+
+  /// The longest A2's Continue waits for a signal still out.
+  static const _signalWait = Duration(seconds: 30);
 
   /// The app's background and return (review B5 fix round 5): the
   /// coordinator drops A1/A2 that no code was sent for after more than 5
@@ -147,6 +165,12 @@ class _SignUpFlowState extends ConsumerState<SignUpFlow> {
       unawaited(_checkAccount());
     }
     if (_step == SignUpStepId.code) _listenForCode();
+    if (_step == SignUpStepId.birthDate) _readAgeSignalOnce();
+    // Review B6 M-2: the anon config may not be known yet when A2 opens
+    // (first install, slow network); A2 asks once it arrives on.
+    ref.listenManual(ageSignalSettingsProvider, (_, next) {
+      if (next.on && _step == SignUpStepId.birthDate) _readAgeSignalOnce();
+    });
     _lifecycle = AppLifecycleListener(
       onHide: _c.wentToBackground,
       onShow: _cameBack,
@@ -176,6 +200,9 @@ class _SignUpFlowState extends ConsumerState<SignUpFlow> {
       SignUpStepId.name,
       SignUpStepId.birthDate,
       SignUpStepId.phone,
+      // W6a fix round 1 (I-1): DM2's number and A1/A2 are bound to no code
+      // once the fresh start dropped it, so they go like any typed step.
+      SignUpStepId.freshStart,
       SignUpStepId.consent,
     };
     if (!typed.contains(_step)) return;
@@ -210,6 +237,41 @@ class _SignUpFlowState extends ConsumerState<SignUpFlow> {
       if (step != SignUpStepId.code) _autofill = null;
     });
     step == SignUpStepId.code ? _listenForCode() : _stopListening();
+    if (step == SignUpStepId.birthDate) _readAgeSignalOnce();
+  }
+
+  /// W6b: asks the platform once, when A2 first shows. A minor or
+  /// supervised answer while A2 is still up stops the flow at X1 before
+  /// any date is typed; otherwise A2's Continue weighs it (the stricter
+  /// wins). Off, unknown or unavailable: the date decides.
+  void _readAgeSignalOnce() {
+    if (_ageSignal != null) return;
+    final settings = ref.read(ageSignalSettingsProvider);
+    if (!settings.on) return;
+    final read = ref.read(ageSignalReaderProvider);
+    final signal = Future<AgeSignal>.sync(
+      () => read(settings.storefronts),
+    ).catchError((Object _) => AgeSignal.none);
+    _ageSignal = signal;
+    unawaited(
+      signal.then((answer) async {
+        if (!mounted || !answer.stopsSignUp) return;
+        if (_step != SignUpStepId.birthDate || _busy) return;
+        _busy = true;
+        await _c.stopForAgeSignal();
+        if (!mounted) return;
+        ref.read(routingNotifierProvider).setUnderAgeBlocked(true);
+        context.go(RouteNames.ageStop);
+      }),
+    );
+  }
+
+  /// The signal for A2's Continue: null when none was asked for; a signal
+  /// still out after [_signalWait] counts as unavailable.
+  Future<AgeSignal?> _settledAgeSignal() async {
+    final signal = _ageSignal;
+    if (signal == null) return null;
+    return signal.timeout(_signalWait, onTimeout: () => AgeSignal.none);
   }
 
   /// Listens for A4's SMS, unless a listen is already out.
@@ -259,6 +321,10 @@ class _SignUpFlowState extends ConsumerState<SignUpFlow> {
         _leave();
       case SignUpStepId.birthDate:
         _go(SignUpStepId.name, forward: false);
+      case SignUpStepId.dormant:
+        // W6a fix round 1 (ruling I-2): DM1 leaves neutrally, nothing kept
+        // and nothing parked; it never says whether an account exists.
+        unawaited(_leaveDormant());
       case SignUpStepId.phone:
         // The draft's own way in: a resumed draft opens on a bare /signup.
         _c.draft.entry == SignUpEntry.returning && _c.draft.name == null
@@ -270,6 +336,10 @@ class _SignUpFlowState extends ConsumerState<SignUpFlow> {
       case SignUpStepId.noAccount:
       case SignUpStepId.welcomeBack:
       case SignUpStepId.accountCheck:
+      // W6a: DM2 and H1 have no way back to the code that was refused;
+      // only their own buttons leave.
+      case SignUpStepId.freshStart:
+      case SignUpStepId.held:
         // Signed in by now: only the screen's own buttons leave.
         break;
     }
@@ -402,6 +472,38 @@ class _SignUpFlowState extends ConsumerState<SignUpFlow> {
       context.go(RouteNames.ageStop);
       return;
     }
+    if (outcome is VerifiedDormant) {
+      // W6a (§3.5): a recycled number. DM1, never animated.
+      setState(() => _busy = false);
+      _go(SignUpStepId.dormant);
+      return;
+    }
+    if (outcome is VerifiedHeld) {
+      // W6a (§3.15; W3 carry C-2): H1 first. An age hold blocks this phone
+      // too, as the gate's H1 does (the coordinator wrote the block first).
+      setState(() => _busy = false);
+      _go(SignUpStepId.held);
+      if (outcome.age) {
+        // The block closes /signup but the returning way (M-1), so H1 takes
+        // that way in before the router hears of the block: the same route,
+        // so the same page and this state (nothing rebuilt), and H1 never
+        // turns into X1. (Not replace(): go_router 10.2 loses the path of a
+        // replaced location on its next refresh.)
+        if (widget.entry != SignUpEntry.returning) {
+          final backTo = widget.backTo;
+          final returning = Uri(
+            path: RouteNames.signUp,
+            queryParameters: {
+              'entry': SignUpEntry.returning.wire,
+              if (backTo != null) 'back': backTo,
+            },
+          );
+          GoRouter.of(context).go(returning.toString());
+        }
+        ref.read(routingNotifierProvider).setUnderAgeBlocked(true);
+      }
+      return;
+    }
     if (outcome is VerifiedUnresolved ||
         (outcome is VerifyFailed && _step == SignUpStepId.accountCheck)) {
       // The number is proven (the code is spent); only the account is
@@ -463,6 +565,79 @@ class _SignUpFlowState extends ConsumerState<SignUpFlow> {
       default:
         break;
     }
+  }
+
+  /// DM1's "I'm new to Attune" (W6a, §3.5).
+  Future<void> _startFresh() async {
+    // Back waits for it: the park may already be running.
+    _busy = true;
+    FreshStartOutcome outcome;
+    try {
+      outcome = await _c.startFresh();
+    } catch (_) {
+      outcome = FreshStartOutcome.failed;
+    } finally {
+      _busy = false;
+    }
+    if (!mounted) return;
+    switch (outcome) {
+      case FreshStartOutcome.done:
+        _go(SignUpStepId.freshStart);
+      case FreshStartOutcome.expired:
+        // The challenge is spent or too old: the number again, for a new
+        // code (which challenges again if the account is still dormant).
+        _go(SignUpStepId.phone, forward: false);
+        setState(() => _error = _loc.flow_dormantExpired);
+      case FreshStartOutcome.tryLater:
+        setState(() {
+          _error = _loc.flow_dormantTryLater;
+          _errorCount++;
+        });
+      case FreshStartOutcome.failed:
+        setState(() {
+          _error = _loc.flow_dormantFailed;
+          _errorCount++;
+        });
+      case FreshStartOutcome.blocked:
+        // Fix round 1: creating an account is closed on this phone, so
+        // nothing was parked: X1, at once (never animated).
+        ref.read(routingNotifierProvider).setUnderAgeBlocked(true);
+        context.go(RouteNames.ageStop);
+    }
+  }
+
+  /// DM1's system back (fix round 1, ruling I-2): the challenge and the
+  /// draft go, then Welcome.
+  Future<void> _leaveDormant() async {
+    _busy = true;
+    try {
+      await _c.leaveDormant();
+    } catch (_) {
+      // Nothing on the phone is worth keeping DM1 for.
+    }
+    _busy = false;
+    if (mounted) context.go(RouteNames.welcome);
+  }
+
+  /// DM2's "Send code": a new code to the same number, then A4.
+  Future<void> _sendFreshCode() async {
+    _listenForCode();
+    final failure = await _sending(() => _c.sendCode());
+    if (!mounted) return;
+    if (failure != null) {
+      _stopListening();
+      setState(() {
+        // DM2 offers SMS only (fix round 1): never "or try WhatsApp".
+        _error =
+            failure.kind == OtpSendFailureKind.unavailable
+                ? _loc.flow_sendFailedSms
+                : _sendError(failure);
+        _errorCount++;
+      });
+      return;
+    }
+    _resendNotBefore = null;
+    _go(SignUpStepId.code);
   }
 
   Future<void> _welcomeBack() async {
@@ -607,7 +782,10 @@ class _SignUpFlowState extends ConsumerState<SignUpFlow> {
             _busy = true;
             final bool adult;
             try {
-              adult = await _c.saveBirthDate(date);
+              adult = await _c.saveBirthDate(
+                date,
+                signal: await _settledAgeSignal(),
+              );
             } finally {
               _busy = false;
             }
@@ -687,6 +865,22 @@ class _SignUpFlowState extends ConsumerState<SignUpFlow> {
         );
       case SignUpStepId.welcomeBack:
         return WelcomeBackStep(firstName: _welcomeName);
+      case SignUpStepId.dormant:
+        return DormantStep(
+          onNew: _startFresh,
+          errorText: _error,
+          errorCount: _errorCount,
+        );
+      case SignUpStepId.freshStart:
+        return FreshStartStep(
+          phoneE164: draft.phoneE164 ?? '',
+          onSend: _sendFreshCode,
+          errorText: _error,
+          errorCount: _errorCount,
+        );
+      case SignUpStepId.held:
+        // Nobody is signed in (the hook issued no token): "Sign out" leaves.
+        return AccountHoldStep(onSignOut: _leave);
       case SignUpStepId.accountCheck:
         return AccountCheckStep(
           checking: _accountChecking,
@@ -703,7 +897,11 @@ class _SignUpFlowState extends ConsumerState<SignUpFlow> {
     // Consent, the under-18 stop and the account screens are never
     // animated (§2.2): they replace the previous step at once.
     final still =
-        _step == SignUpStepId.consent || _step == SignUpStepId.consentUpdate;
+        _step == SignUpStepId.consent ||
+        _step == SignUpStepId.consentUpdate ||
+        _step == SignUpStepId.dormant ||
+        _step == SignUpStepId.freshStart ||
+        _step == SignUpStepId.held;
     return PopScope(
       canPop: false,
       onPopInvokedWithResult: (didPop, _) {

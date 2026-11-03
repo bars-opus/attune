@@ -90,6 +90,46 @@ enum HomeNeed {
   ];
 }
 
+/// Which hold an account is under (Spec 1 §4.2 `account_holds`, W6a), as
+/// get_my_home_state() names it in `hold_kind`.
+enum HoldKind {
+  ageReview('age_review'),
+  safetyReview('safety_review'),
+  recoveryHold('recovery_hold'),
+
+  /// A kind this build doesn't know (a later spec added it). Never an age
+  /// hold: get_my_home_state and the access-token hook both name
+  /// `age_review` first, so any new age-type kind must reach the app as
+  /// `age_review` (and `account_review:age`), never under a new name.
+  unknown('unknown');
+
+  const HoldKind(this.wire);
+
+  final String wire;
+
+  /// Null when the server named no kind (no hold, or a server or cache
+  /// from before W6a) or sent something that isn't a name (fix round 1,
+  /// I#1: malformed data still blocks, as no kind does); a name this build
+  /// doesn't know is [unknown].
+  static HoldKind? fromWire(Object? value) {
+    if (value is! String) return null;
+    for (final kind in values) {
+      if (kind != unknown && kind.wire == value) return kind;
+    }
+    return unknown;
+  }
+}
+
+/// Whether a hold also blocks this phone (X1's 30-day block; rulings N-2,
+/// F-8; W3 batch 5 carry; fix round 1, I#1): an age hold does, and so does
+/// a hold that names no kind (an older server or cache, where every hold
+/// was an age hold; a failed read; a malformed kind). A safety or recovery
+/// hold, or a kind this build doesn't know (never an age hold, see
+/// [HoldKind.unknown]), shows H1 and never blocks the phone: the next
+/// person on it may be someone else entirely.
+bool holdBlocksDevice(HoldKind? kind) =>
+    kind == null || kind == HoldKind.ageReview;
+
 @immutable
 class HomeLink {
   const HomeLink({
@@ -157,6 +197,7 @@ class HomeState {
     required this.eulaVersion,
     required this.dating,
     required this.link,
+    this.holdKind,
   });
 
   final bool hasAccount;
@@ -167,6 +208,9 @@ class HomeState {
 
   /// An unresolved account hold: the app shows H1 and nothing else.
   final bool hold;
+
+  /// Which hold (W6a); null when the server named none.
+  final HoldKind? holdKind;
   final String? eulaVersion;
   final DatingSummary dating;
   final HomeLink link;
@@ -181,6 +225,7 @@ class HomeState {
     pathPrevious: AppPath.fromWire(json['path_previous']),
     needs: HomeNeed.listFromWire(json['needs']),
     hold: json['hold'] == true,
+    holdKind: HoldKind.fromWire(json['hold_kind']),
     eulaVersion: json['eula_version'] as String?,
     dating: DatingSummary.fromJson(json['dating']),
     link: HomeLink.fromJson(json['link']),

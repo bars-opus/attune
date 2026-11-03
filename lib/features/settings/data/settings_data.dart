@@ -17,6 +17,9 @@ class SettingsDataSource {
     SettingsConfig? journalReminder,
     SettingsConfig? howYouUse,
     SettingsConfig? aboutUs,
+    SettingsConfig? birthDate,
+    SettingsConfig? childReport,
+    SettingsConfig? childReportSupport,
   }) {
     // Access localization for language prefence
     final loc = AppLocalizations.of(context)!;
@@ -64,6 +67,8 @@ SettingsConfig(
             ),
 // Spec 1 W3c (§3.12): how you use Attune (built by the screen).
 if (howYouUse != null) howYouUse,
+// Spec 1 W6b (§3.15): your age, and the one correction.
+if (birthDate != null) birthDate,
         ],
       ),
       // How chat feels: sounds, motion, phrasing (built by the screen,
@@ -127,6 +132,8 @@ SettingsConfig(
 // Spec 1 W3b (§3.9): the Dating lock, when the path or an enrollment
 // calls for it (built by the screen, which holds the switch).
 if (datingLock != null) datingLock,
+// Spec 1 W6c (§3.15): Report a concern about a child.
+if (childReport != null) childReport,
 SettingsConfig(
               id: 'blocked',
               title: loc.blockedItemTitle,
@@ -264,6 +271,8 @@ SettingsConfig(
         id: 'support',
         title: loc.supportSectionTitle,
         items: [
+// Spec 1 W6c (§3.15): the same report, from Support too (signed in).
+if (childReportSupport != null) childReportSupport,
 SettingsConfig(
             id: 'guide',
             title: loc.guideItemTitle,

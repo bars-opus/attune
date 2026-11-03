@@ -279,3 +279,21 @@ GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public
 
 -- Spec 1 W5: the four re-created functions keep their grants.
 \i supabase/migrations/20261102110110_couple_profiles_links_grants.sql
+
+-- Spec 1 W6a: the home state keeps its grant; no client deletes a users row.
+\i supabase/migrations/20261103100010_holds_enforced_grants.sql
+
+-- Spec 1 W6a: the access-token hook is supabase_auth_admin's only; the
+-- activity and challenge tables are the service role's.
+\i supabase/migrations/20261103100110_access_token_hook_grants.sql
+
+-- Spec 1 W6a: the fresh start, the purge list and the alerts are the edge
+-- functions' (service role).
+\i supabase/migrations/20261103100210_fresh_start_grants.sql
+
+-- Spec 1 W6b: the correction and its status are the signed-in app's.
+\i supabase/migrations/20261103110010_birth_date_correction_grants.sql
+
+-- Spec 1 W6c: a child-safety report is sent through the RPC and read by
+-- the service role only.
+\i supabase/migrations/20261103120010_child_safety_reports_grants.sql

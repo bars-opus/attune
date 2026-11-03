@@ -3,6 +3,50 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+/// Why Supabase Auth's access-token hook refused a sign-in (Spec 1 W6a,
+/// §3.5, §3.15, §4.4). The hook's own message reaches the app unchanged in
+/// the AuthException (403): `account_dormant:<nonce>` for a recycled number
+/// (DM1), `account_review` or `account_review:age` for a held account (H1).
+/// Each word stands alone (fix round 1, #5): a nonce of exactly 128
+/// lowercase hex, and only the exact `:age` suffix is an age hold, so a
+/// later age-type hold must keep that suffix; any other suffix is H1 alone.
+sealed class HookRefusal {
+  const HookRefusal();
+
+  static final _dormant = RegExp(
+    r'(?<![0-9A-Za-z_])account_dormant:([0-9a-f]{128})(?![0-9A-Za-z_])',
+  );
+  static final _review = RegExp(
+    r'(?<![0-9A-Za-z_])account_review(?::([0-9a-z_]+))?(?![0-9A-Za-z_:])',
+  );
+
+  /// The refusal in [error], or null when it is anything else.
+  static HookRefusal? of(Object error) {
+    if (error is! AuthException) return null;
+    final dormant = _dormant.firstMatch(error.message);
+    if (dormant != null) return AccountDormant(dormant.group(1)!);
+    final review = _review.firstMatch(error.message);
+    if (review != null) return AccountUnderReview(age: review.group(1) == 'age');
+    return null;
+  }
+}
+
+/// DM1: the number's account has had no activity for 180 days. [nonce] is
+/// the one-use challenge start-fresh-account takes; held in memory only.
+class AccountDormant extends HookRefusal {
+  const AccountDormant(this.nonce);
+
+  final String nonce;
+}
+
+/// H1: the account is held. [age]: an age hold, which also blocks this
+/// phone (X1's block).
+class AccountUnderReview extends HookRefusal {
+  const AccountUnderReview({required this.age});
+
+  final bool age;
+}
+
 class PasswordlessAuthResult {
   const PasswordlessAuthResult({required this.isConfigured, this.userId});
 
@@ -102,6 +146,19 @@ class PasswordlessAuthService {
   /// provider limits), and no internal configuration. Operators diagnose from
   /// the logs, not from the user's screen.
   String userSafeMessage(Object error) {
+    // Spec 1 W6a (W2 P-29): the access-token hook's refusals, in H1's and
+    // DM1's words. This screen (flow_signin_v2 off) can't run the fresh
+    // start, so a recycled number is asked to update the app.
+    switch (HookRefusal.of(error)) {
+      case AccountUnderReview():
+        return "We need to check your account. You can't use Attune while "
+            'we do this. If you think this is a mistake, contact support.';
+      case AccountDormant():
+        return "Welcome to Attune. Let's get you set up: update Attune to "
+            'the latest version to continue.';
+      case null:
+        break;
+    }
     if (error is TimeoutException) {
       return 'That took too long. Check your connection and try again.';
     }

@@ -1,0 +1,42 @@
+-- Spec 1 W6a: grants for 20261103100200_fresh_start.sql. The fresh start,
+-- the purge list and the alerts are the edge functions' (service role);
+-- the retention, the health helpers and the park-alert marks are
+-- server-only.
+BEGIN;
+SET LOCAL lock_timeout = '5s';
+REVOKE ALL ON private.fresh_start_attempts FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON private.fresh_start_park_alerts FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON FUNCTION private.fresh_starts_unparked() FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON FUNCTION public.fresh_start_park_alerts_due() FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION public.mark_fresh_start_park_alerts_sent(uuid[]) FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON private.parked_review_alerts FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON FUNCTION private.parked_kept_for_review() FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON FUNCTION public.parked_kept_for_review_alerts_due() FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION public.mark_parked_kept_for_review_alerts_sent(uuid[]) FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON private.recovery_purge_stuck_alerts FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON FUNCTION private.recovery_purge_stuck() FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON FUNCTION public.recovery_purge_stuck_alerts_due() FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION public.mark_recovery_purge_stuck_alerts_sent(uuid[]) FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION public.consume_fresh_start(text, text) FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION public.mark_fresh_start_parked(uuid) FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION public.recovery_hold_candidates() FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION public.is_recovery_hold_due(uuid) FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION public.identity_alerts_due() FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION public.mark_identity_alerts_sent(bigint[]) FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION private.identity_health_w6a() FROM PUBLIC, anon, authenticated, service_role;
+REVOKE ALL ON FUNCTION public.get_identity_health() FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION private.fresh_start_retention() FROM PUBLIC, anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION public.consume_fresh_start(text, text) TO service_role;
+GRANT EXECUTE ON FUNCTION public.mark_fresh_start_parked(uuid) TO service_role;
+GRANT EXECUTE ON FUNCTION public.recovery_hold_candidates() TO service_role;
+GRANT EXECUTE ON FUNCTION public.is_recovery_hold_due(uuid) TO service_role;
+GRANT EXECUTE ON FUNCTION public.identity_alerts_due() TO service_role;
+GRANT EXECUTE ON FUNCTION public.mark_identity_alerts_sent(bigint[]) TO service_role;
+GRANT EXECUTE ON FUNCTION public.fresh_start_park_alerts_due() TO service_role;
+GRANT EXECUTE ON FUNCTION public.mark_fresh_start_park_alerts_sent(uuid[]) TO service_role;
+GRANT EXECUTE ON FUNCTION public.parked_kept_for_review_alerts_due() TO service_role;
+GRANT EXECUTE ON FUNCTION public.mark_parked_kept_for_review_alerts_sent(uuid[]) TO service_role;
+GRANT EXECUTE ON FUNCTION public.recovery_purge_stuck_alerts_due() TO service_role;
+GRANT EXECUTE ON FUNCTION public.mark_recovery_purge_stuck_alerts_sent(uuid[]) TO service_role;
+GRANT EXECUTE ON FUNCTION public.get_identity_health() TO service_role;
+COMMIT;

@@ -2677,4 +2677,130 @@ class AppLocalizationsPt extends AppLocalizations {
 
   @override
   String get aboutUs_anniversaryHandMade => 'You already have an anniversary reminder, so we won\'t add another.';
+
+  @override
+  String get flow_dormantTitle => 'Welcome to Attune';
+
+  @override
+  String get flow_dormantBody => 'Let\'s get you set up.';
+
+  @override
+  String get flow_dormantNew => 'I\'m new to Attune';
+
+  @override
+  String get flow_dormantUsedBefore => 'Used Attune before on this number? Contact support';
+
+  @override
+  String get flow_dormantFailed => 'We couldn\'t reach Attune. Check your connection and try again.';
+
+  @override
+  String get flow_dormantTryLater => 'Too many tries. Try again in an hour.';
+
+  @override
+  String get flow_dormantExpired => 'That took too long. Enter your number again.';
+
+  @override
+  String get flow_freshStartTitle => 'One more code to finish';
+
+  @override
+  String flow_freshStartBody(String phone) {
+    return 'We\'ll send a new code to $phone.';
+  }
+
+  @override
+  String get flow_freshStartSend => 'Send code';
+
+  @override
+  String get flow_dobSettingsTitle => 'Date of birth';
+
+  @override
+  String get flow_dobSettingsSubtitle => 'Only your age is shown, never the date';
+
+  @override
+  String flow_dobSettingsAge(int age) {
+    return 'Your age: $age';
+  }
+
+  @override
+  String get flow_dobSettingsNoAge => 'We don\'t have your date of birth yet.';
+
+  @override
+  String flow_dobSettingsFixUntil(String date) {
+    return 'If it\'s wrong, you can fix it once, until $date.';
+  }
+
+  @override
+  String get flow_dobSettingsContact => 'To change this, contact support.';
+
+  @override
+  String get flow_dobSettingsFix => 'Fix a mistake';
+
+  @override
+  String get flow_dobFixTitle => 'Fix your date of birth';
+
+  @override
+  String get flow_dobFixSaved => 'Saved.';
+
+  @override
+  String get flow_dobSettingsLoadFailed => 'We couldn\'t load this. Check your connection and try again.';
+
+  @override
+  String get support_childReportTitle => 'Report a concern about a child';
+
+  @override
+  String get support_childReportSubtitle => 'A person on our team reads every report';
+
+  @override
+  String get support_childReportBody => 'Tell us what you saw and where. A person on our team reads every report. If a child is in danger right now, call your local emergency number.';
+
+  @override
+  String get support_childReportWhere => 'Where did you see it?';
+
+  @override
+  String get support_childReportChat => 'Chat';
+
+  @override
+  String get support_childReportStories => 'Stories';
+
+  @override
+  String get support_childReportOpinions => 'Opinions';
+
+  @override
+  String get support_childReportDating => 'Dating';
+
+  @override
+  String get support_childReportElsewhere => 'Somewhere else';
+
+  @override
+  String get support_childReportDetails => 'What did you see?';
+
+  @override
+  String support_childReportCount(int count, int max) {
+    return '$count of $max';
+  }
+
+  @override
+  String get support_childReportSend => 'Send report';
+
+  @override
+  String get support_childReportThanks => 'Thank you. We\'ve received your report.';
+
+  @override
+  String support_childReportLimit(String email) {
+    return 'You\'ve sent 5 reports today. To tell us more, email $email.';
+  }
+
+  @override
+  String get support_childReportFailed => 'We couldn\'t send this. Check your connection and try again.';
+
+  @override
+  String get support_childReportDone => 'Done';
+
+  @override
+  String get support_childReportTooLong => 'This is too long. Keep it to 2,000 characters or fewer.';
+
+  @override
+  String support_childReportInvalid(String email) {
+    return 'We couldn\'t send this as written. Make it shorter and try again, or email $email.';
+  }
 }

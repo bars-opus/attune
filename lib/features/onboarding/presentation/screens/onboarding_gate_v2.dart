@@ -250,7 +250,9 @@ class _OnboardingGateV2State extends ConsumerState<OnboardingGateV2> {
     } catch (_) {}
     final answer = await home.refresh();
     if (!mounted) return;
-    if (held && answer == null) return _showHold();
+    // The read failed: the refusal's kind isn't known, so the phone is
+    // blocked as before W6a (holdBlocksDevice(null)).
+    if (held && answer == null) return _showHold(null);
     await _next(userId, answer: answer);
   }
 
@@ -259,7 +261,7 @@ class _OnboardingGateV2State extends ConsumerState<OnboardingGateV2> {
     final store = _store(userId);
     final live = answer ?? snapshot.server;
     final queuedSignUp = store.pendingSignUp != null;
-    if (snapshot.hold) return _showHold();
+    if (snapshot.hold) return _showHold(snapshot.holdKind);
     if (live == null && !snapshot.known && !queuedSignUp) {
       return _show(_Step.offline);
     }
@@ -429,18 +431,20 @@ class _OnboardingGateV2State extends ConsumerState<OnboardingGateV2> {
   /// H1, and this phone's block (ruling N-2): the one H1 path, for a hold
   /// the server says and for a hold refusal whose read then failed
   /// (batch-4 review #2). H1 first: it never waits on the keystore (review
-  /// I-2).
-  void _showHold() {
+  /// I-2). Spec 1 W6a (W3 batch 5 carry; I#1): the block only for an age
+  /// hold, or a hold that names no kind ([holdBlocksDevice]); a safety or
+  /// recovery hold, or a kind this build doesn't know, shows H1 alone.
+  void _showHold(HoldKind? kind) {
     _show(_Step.hold);
-    unawaited(_blockForAgeHold());
+    if (holdBlocksDevice(kind)) unawaited(_blockForAgeHold());
   }
 
   /// Ruling N-2: H1 for an age hold also blocks this phone, as F-8 does: a
   /// retried under-18 catch-up (`already_set`, the server already holds
   /// it) and a held minor signing back in through "I already have an
   /// account". The block closes creation and guest Opinions only;
-  /// `entry=returning` stays open (M-1). The home state says only `hold`,
-  /// and `age_review` is the one kind placed today (W1b).
+  /// `entry=returning` stays open (M-1). Only for an age hold, or a hold
+  /// that names no kind (W6a, [holdBlocksDevice]).
   ///
   /// F-8's order (prefs and keychain, then this session), read before the
   /// first await and bounded like F-8 (review I-2).
