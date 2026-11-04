@@ -7,6 +7,8 @@
 // the system actually does.
 
 import 'package:flutter/material.dart';
+import 'package:attune/app/documentations/user_manual/data/documentation_flags.dart';
+import 'package:attune/app/documentations/user_manual/data/manual_documentation_registry.dart';
 import 'package:attune/app/documentations/user_manual/models/documentation_model.dart'
     show DocumentationModule;
 import 'package:attune/app/documentations/user_manual/models/faq_model.dart';
@@ -119,6 +121,19 @@ class SafetyDocs implements DocumentationModule {
           numberPrefix: '2',
           type: ManualContentType.text,
         ),
+        // Spec 1 W7a: only while Support resources v2 is on.
+        if (DocumentationRegistry.passageVisible(
+          'supportResourcesV2',
+          documentationFlagsOf(context),
+        ))
+          ManualContent(
+            id: 'safety_resources_by_country',
+            title: 'Help for where you are',
+            content:
+                'Support resources shows checked helplines for your country, with emergency numbers first. Apart from emergency numbers, help that isn\'t the police is marked "Not the police". If we don\'t have a checked list for your country yet, "Find a helpline" opens an international directory. You can change the country; your choice isn\'t saved on your phone. It works offline too.',
+            numberPrefix: '3',
+            type: ManualContentType.text,
+          ),
         ManualContent(
           id: 'safety_no_erase_claim',
           title: '',

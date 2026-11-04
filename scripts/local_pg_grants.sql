@@ -297,3 +297,12 @@ GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public
 -- Spec 1 W6c: a child-safety report is sent through the RPC and read by
 -- the service role only.
 \i supabase/migrations/20261103120010_child_safety_reports_grants.sql
+
+-- Spec 1 W7a: anyone reads the support directory through
+-- get_support_resources; only the service role loads it.
+\i supabase/migrations/20261103130010_support_resources_v2_grants.sql
+
+-- Spec 1 W7b: image safety is the service role's (scan-media, Spec 2's
+-- inline pipeline) and the database's own (the enqueue); no client.
+\i supabase/migrations/20261103140010_media_scan_grants.sql
+\i supabase/migrations/20261103140110_media_scan_enqueue_grants.sql

@@ -80,6 +80,8 @@ class DocumentationRegistry {
   static const Map<String, List<String>> _passageFlags = {
     // Spec 1 W3c: the journal reminder (Your space, Settings).
     'journalReminder': ['flow_signin_v2', 'flow_paths_v2'],
+    // Spec 1 W7a: help for the country you're in (Support resources v2).
+    'supportResourcesV2': ['support_resources_v2'],
   };
 
   static bool passageVisible(String passageId, Set<String> enabledFlags) =>

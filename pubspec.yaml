@@ -264,6 +264,8 @@ flutter:
     - assets/images/game_icons/
     - assets/geo/
     - assets/config/
+    # Spec 1 W7a: the support catalogue, for offline (the server's source).
+    - assets/support_resources/
     - assets/sounds/
     # Constellation scene graphs. Prototype only -- see
     # CONSTELLATION_GAME_SPEC.md §15; real scenes would ship as .vec

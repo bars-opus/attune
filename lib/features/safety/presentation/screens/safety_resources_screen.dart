@@ -6,14 +6,24 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../providers/safety_providers.dart';
 import 'safety_pin_screen.dart';
 import 'report_child_concern_screen.dart';
+import '../providers/support_resources_providers.dart';
+import 'support_resources_v2_screen.dart';
 
 class SafetyResourcesScreen extends ConsumerWidget {
   static const routeName = '/safety-resources';
 
-  const SafetyResourcesScreen({super.key});
+  const SafetyResourcesScreen({super.key, this.focus});
+
+  /// Spec 1 W7a: grief or youth only (the route's `focus`), under v2.
+  final SupportFocus? focus;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    // Spec 1 W7a (§5.2): the v2 body under support_resources_v2, on the
+    // same route; with the flag off, today's screen below, unchanged.
+    if (ref.watch(supportResourcesV2Provider)) {
+      return SupportResourcesV2Screen(focus: focus);
+    }
     final colorScheme = Theme.of(context).colorScheme;
     final textTheme = Theme.of(context).textTheme;
 

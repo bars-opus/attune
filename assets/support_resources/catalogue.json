@@ -1,0 +1,73 @@
+{
+  "catalogue_version": "2026-11-03.1",
+  "resources": [
+    {
+      "id": "4aa75099-930c-4bf5-b773-ee9387f04fab",
+      "country_code": "GH",
+      "category": "dv",
+      "name": "Ghana Police DOVVSU",
+      "description": null,
+      "phone": "055 100 0900",
+      "sms": null,
+      "whatsapp": null,
+      "url": "https://police.gov.gh/",
+      "hours": null,
+      "languages": [],
+      "is_police": true,
+      "sort_order": 10,
+      "verified_at": "2026-11-03",
+      "verified_by": "carried-from-v1"
+    },
+    {
+      "id": "d244340f-397a-4d07-ad11-c4f017f1dca6",
+      "country_code": "US",
+      "category": "dv",
+      "name": "National Domestic Violence Hotline",
+      "description": null,
+      "phone": "800-799-SAFE (7233)",
+      "sms": null,
+      "whatsapp": null,
+      "url": "https://www.thehotline.org/",
+      "hours": null,
+      "languages": [],
+      "is_police": false,
+      "sort_order": 10,
+      "verified_at": "2026-11-03",
+      "verified_by": "carried-from-v1"
+    },
+    {
+      "id": "bcc82e60-d2bf-424a-9686-0bb2a15a195d",
+      "country_code": "GB",
+      "category": "dv",
+      "name": "Refuge National Domestic Abuse Helpline",
+      "description": null,
+      "phone": "0808 2000 247",
+      "sms": null,
+      "whatsapp": null,
+      "url": "https://www.refuge.org.uk/",
+      "hours": null,
+      "languages": [],
+      "is_police": false,
+      "sort_order": 10,
+      "verified_at": "2026-11-03",
+      "verified_by": "carried-from-v1"
+    },
+    {
+      "id": "e4fc8603-3679-468e-86c9-e8d6e0a3e89e",
+      "country_code": "XX",
+      "category": "crisis",
+      "name": "Find A Helpline",
+      "description": null,
+      "phone": null,
+      "sms": null,
+      "whatsapp": null,
+      "url": "https://findahelpline.com",
+      "hours": null,
+      "languages": [],
+      "is_police": false,
+      "sort_order": 10,
+      "verified_at": "2026-11-03",
+      "verified_by": "carried-from-v1"
+    }
+  ]
+}

@@ -90,11 +90,56 @@ export const CHILD_SAFETY_REPORTS: AlertSource = {
     "A person must read them today (child_safety_reports).",
 };
 
+/// Spec 1 W7b (plan P-21): an image matched a known CSAM hash. The named
+/// child-safety contact reviews it before anything is reported; the
+/// uploader's account is already held. A count and a time only. scan-media
+/// posts this straight after its run; this 15-minute run is the backstop.
+/// PF-L4: a match whose copy failed (quarantined = false) is still in its
+/// own bucket, kept there as the only evidence.
+export const CSAM_MATCH_ESCALATIONS: AlertSource = {
+  name: "csam_match",
+  due: "csam_escalations_due",
+  mark: "mark_safety_escalations_alerted",
+  line: (count, firstAt) =>
+    `Attune: ${count} image(s) matched a known child sexual abuse hash, the first at ${firstAt}. ` +
+    "The uploader's account is on hold and the image is in safety-quarantine (or still in place where quarantined is false). " +
+    "The named child-safety contact must review them now (public.safety_escalations, status open); " +
+    "nothing has been reported to anyone.",
+};
+
+/// Spec 1 W7b: uploads not scanned within 24 hours (the matcher was down,
+/// unconfigured, or the stub was refused in production).
+export const SCAN_FAILED_ESCALATIONS: AlertSource = {
+  name: "scan_failed",
+  due: "scan_failed_escalations_due",
+  mark: "mark_safety_escalations_alerted",
+  line: (count, firstAt) =>
+    `Attune: ${count} upload(s) could not be scanned for CSAM within 24 hours, the first at ${firstAt}. ` +
+    "Check CSAM_MATCHER and its keys and scan-media's logs, then review public.safety_escalations (kind scan_failed).",
+};
+
+/// W7 final review M-1: uploads the scan queue could not take (one object,
+/// or a sweep or reconcile whose whole read of storage.objects failed, so
+/// nothing was queued). Never silent: one count and the times, once.
+export const MEDIA_SCAN_ENQUEUE_FAILED: AlertSource = {
+  name: "media_scan_enqueue_failed",
+  due: "media_scan_enqueue_alerts_due",
+  mark: "mark_media_scan_enqueue_alerted",
+  line: (count, firstAt, lastAt) =>
+    `Attune: the CSAM scan queue failed to take uploads ${count} time(s) between ${firstAt} and ${lastAt}. ` +
+    "Uploads in that window may not be scanned: check get_identity_health (media_scan_enqueue_*) and the database logs; " +
+    "the daily reconcile queues the last 25 hours again.",
+};
+
 export const ALERT_SOURCES: AlertSource[] = [
   HOOK_FAIL_OPENS,
   FRESH_START_UNPARKED,
   PARKED_KEPT_FOR_REVIEW,
   RECOVERY_PURGE_STUCK,
+  // W7b's three before W6c's, so W6c's test still sees its mark last.
+  CSAM_MATCH_ESCALATIONS,
+  SCAN_FAILED_ESCALATIONS,
+  MEDIA_SCAN_ENQUEUE_FAILED,
   CHILD_SAFETY_REPORTS,
 ];
 

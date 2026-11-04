@@ -2,8 +2,10 @@ import 'package:attune/app/routing/app_router.dart' show RouteNames;
 import 'package:attune/core/utils/url_launcher_utils.dart';
 import 'package:attune/features/auth/sign_up/presentation/widgets/flow_buttons.dart';
 import 'package:attune/features/auth/sign_up/presentation/widgets/flow_frame.dart';
+import 'package:attune/features/safety/presentation/providers/support_resources_providers.dart';
 import 'package:attune/i10n/generated/app_localizations.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 /// X1 · Attune is for adults (Spec 1 §3.6). Never animated: the route opens
@@ -25,6 +27,24 @@ class UnderAgeStopScreen extends StatelessWidget {
 
   /// Before W7's country list: the international helpline directory.
   static const youthSupportUrl = 'https://findahelpline.com';
+
+  /// Spec 1 W7a (§3.6): the youth help for this phone's country, with the
+  /// directory as its fallback, on the Support screen.
+  static final youthSupportLocation =
+      '${RouteNames.safetyResources}?focus=youth';
+
+  /// support_resources_v2, read when the link is tapped. No ProviderScope
+  /// (a bare test frame) reads as off: the directory, as before W7.
+  static bool _supportV2(BuildContext context) {
+    try {
+      return ProviderScope.containerOf(
+        context,
+        listen: false,
+      ).read(supportResourcesV2Provider);
+    } catch (_) {
+      return false;
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -51,10 +71,13 @@ class UnderAgeStopScreen extends StatelessWidget {
             label: loc.flow_ageStopYouthLink,
             alignment: AlignmentDirectional.centerStart,
             onPressed:
-                () => UrlLauncherUtils.launchUrlWithFeedback(
-                  context: context,
-                  url: youthSupportUrl,
-                ),
+                () =>
+                    _supportV2(context)
+                        ? context.push(youthSupportLocation)
+                        : UrlLauncherUtils.launchUrlWithFeedback(
+                          context: context,
+                          url: youthSupportUrl,
+                        ),
           ),
         ],
       ),

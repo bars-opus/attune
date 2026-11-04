@@ -4,6 +4,7 @@ import 'package:attune/core/utils/exports/export_screens.dart' show RouteNames;
 import 'package:attune/core/widgets/info_row_widget.dart';
 import 'package:attune/features/healing/presentation/providers/healing_providers.dart';
 import 'package:attune/features/healing/presentation/widgets/healing_self_report_sheet.dart';
+import 'package:attune/features/me/presentation/widgets/healing_choice_sheet.dart';
 import 'package:attune/features/profile/widgets/know_yourself_section.dart';
 import 'package:attune/i10n/generated/app_localizations.dart';
 import 'package:flutter/material.dart';
@@ -79,7 +80,8 @@ class YourSpaceSection extends ConsumerWidget {
               title: loc.flow_spaceHealing,
               subtitle: loc.flow_spaceHealingLine,
               icon: Icons.healing_outlined,
-              onTap: () => openHealing(context, ref),
+              // Spec 1 W7a: a breakup or a loss, asked first (flag on).
+              onTap: () => openHealingOrGrief(context, ref),
             ),
             ...extraRows,
           ],

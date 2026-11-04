@@ -64,6 +64,8 @@ void main() {
           // Spec 1 W5: About us.
           'flow_couples_v2',
           'couple_profile',
+          // Spec 1 W7a: Support resources v2.
+          'support_resources_v2',
         }),
       );
     }

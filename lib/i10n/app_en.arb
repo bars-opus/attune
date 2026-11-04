@@ -1608,5 +1608,113 @@
     "placeholders": {
       "email": {"type": "String"}
     }
+  },
+
+  "support_resourcesTitle": "Support resources",
+  "support_resourcesIntro": "If something does not feel safe, these contacts and planning resources may be useful.",
+  "support_resourcesNoEmergencyService": "Attune cannot assess an emergency or contact help for you.",
+  "support_quickExit": "Quick exit",
+  "support_quickExitBody": "Tap to exit the app and show a neutral screen.",
+  "support_exitNow": "Exit now",
+  "support_notNow": "Not relevant right now",
+  "support_helpFor": "Help for {country}",
+  "@support_helpFor": {
+    "placeholders": {
+      "country": {"type": "String"}
+    }
+  },
+  "support_changeCountry": "Change",
+  "support_changeCountryLabel": "Change country. Now showing {country}",
+  "@support_changeCountryLabel": {
+    "placeholders": {
+      "country": {"type": "String"}
+    }
+  },
+  "support_chooseCountry": "Choose your country to see help near you.",
+  "support_chooseCountryButton": "Choose a country",
+  "support_loading": "Looking for help near you",
+  "support_emergencyHeading": "In an emergency",
+  "support_anywhereHeading": "Anywhere in the world",
+  "support_categoryEmergency": "Emergency",
+  "support_categoryDv": "Domestic abuse",
+  "support_categoryCrisis": "Someone to talk to now",
+  "support_categorySexualAssault": "Sexual assault",
+  "support_categorySextortion": "Threats to share images",
+  "support_categoryChildSafety": "A child at risk",
+  "support_categoryYouth": "For young people",
+  "support_categoryLgbtqLegal": "LGBTQ+ and legal help",
+  "support_categoryGrief": "Grief",
+  "support_categoryPerinatal": "Pregnancy and after birth",
+  "support_categoryAddiction": "Alcohol, drugs and gambling",
+  "support_categoryFinancialControl": "Money and control",
+  "support_notPolice": "Not the police",
+  "support_police": "Police",
+  "support_call": "Call {number}",
+  "@support_call": {
+    "placeholders": {
+      "number": {"type": "String"}
+    }
+  },
+  "support_text": "Text {number}",
+  "@support_text": {
+    "placeholders": {
+      "number": {"type": "String"}
+    }
+  },
+  "support_whatsapp": "WhatsApp",
+  "support_website": "Website",
+  "support_callConfirmTitle": "Call {number}?",
+  "@support_callConfirmTitle": {
+    "placeholders": {
+      "number": {"type": "String"}
+    }
+  },
+  "support_callConfirmBody": "Calls may show in your phone's call history.",
+  "support_callConfirmCall": "Call",
+  "support_textConfirmTitle": "Text {number}?",
+  "@support_textConfirmTitle": {
+    "placeholders": {
+      "number": {"type": "String"}
+    }
+  },
+  "support_textConfirmBody": "Messages may stay on your phone.",
+  "support_linkConfirmTitle": "Open {site}?",
+  "@support_linkConfirmTitle": {
+    "placeholders": {
+      "site": {"type": "String"}
+    }
+  },
+  "support_linkConfirmBody": "It may show in your browser history.",
+  "support_open": "Open",
+  "support_cancel": "Cancel",
+  "support_unsupported": "We don't have a checked list for {country} yet.",
+  "@support_unsupported": {
+    "placeholders": {
+      "country": {"type": "String"}
+    }
+  },
+  "support_noFocusList": "We don't have a checked list for this in {country} yet.",
+  "@support_noFocusList": {
+    "placeholders": {
+      "country": {"type": "String"}
+    }
+  },
+  "support_findHelpline": "Find a helpline",
+  "support_localEmergency": "In an emergency, call your local emergency number.",
+  "support_griefTitle": "Grief support",
+  "support_youthTitle": "Support for young people",
+  "support_writeInJournal": "Write about it in your journal",
+  "support_settingsTitle": "Find support",
+  "support_settingsSubtitle": "Helplines for where you are",
+  "support_cannotOpen": "That didn't open here. Try it from another phone or computer.",
+  "flow_healingChoiceTitle": "What happened?",
+  "flow_healingBreakup": "A breakup",
+  "flow_healingLoss": "Someone I love died",
+
+  "support_whatsappConfirmBody": "The chat may stay in WhatsApp on your phone.",
+
+  "support_back": "Back",
+  "@support_back": {
+    "description": "The way out of a focused support view (grief, young people): never \"Not relevant right now\" there (W7 final review M-7)."
   }
 }

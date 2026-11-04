@@ -13,6 +13,9 @@ import 'package:attune/features/settings/data/sound_preference.dart';
 import 'package:attune/features/settings/utility/settings_exports.dart';
 import 'package:attune/features/safety/presentation/outside_perspective_screen.dart';
 import 'package:attune/features/safety/presentation/screens/report_child_concern_screen.dart';
+import 'package:attune/features/safety/presentation/providers/support_resources_providers.dart';
+import 'package:attune/features/safety/presentation/screens/support_resources_v2_screen.dart'
+    show supportResourcesSetting;
 
 /// Main Settings screen displaying categorized user preferences and app configurations.
 ///
@@ -194,6 +197,10 @@ class SettingsScreen extends ConsumerWidget {
                 id: 'child_report_support',
                 order: 0,
               ),
+      supportResources:
+          ref.watch(supportResourcesV2Provider)
+              ? supportResourcesSetting(context)
+              : null,
     );
 
     // Access localization for language prefence

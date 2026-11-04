@@ -4,6 +4,9 @@
 // app settings, support and legal stay grey.
 import 'package:attune/core/providers/shared_prefs_provider.dart';
 import 'package:attune/core/utils/screen_util_config.dart';
+import 'package:attune/features/safety/presentation/providers/support_resources_providers.dart';
+import 'package:attune/features/safety/presentation/screens/support_resources_v2_screen.dart'
+    show supportResourcesSetting;
 import 'package:attune/features/settings/data/settings_data.dart';
 import 'package:attune/features/settings/models/settings_config.dart';
 import 'package:attune/features/settings/screens/settings_screen.dart';
@@ -37,6 +40,8 @@ Future<(List<SettingsSection>, AppLocalizations)> _sections(
                 title: 'Chat feel',
                 items: [],
               ),
+              // Spec 1 W7a (ruling PF-L1): Find support, grey like Support.
+              supportResources: supportResourcesSetting(context),
             );
             return const SizedBox();
           },
@@ -105,6 +110,7 @@ void main() {
     ]);
     expect(by['app'], ['theme', 'language']);
     expect(by['support'], [
+      'support_resources',
       'guide',
       'help',
       'feedback',
@@ -169,7 +175,10 @@ void main() {
       final prefs = await SharedPreferences.getInstance();
       await t.pumpWidget(
         ProviderScope(
-          overrides: [sharedPreferencesProvider.overrideWithValue(prefs)],
+          overrides: [
+            sharedPreferencesProvider.overrideWithValue(prefs),
+            supportResourcesV2Provider.overrideWithValue(false),
+          ],
           child: ScreenUtilConfig.builder(
             builder:
                 (_) => const MaterialApp(
@@ -199,4 +208,42 @@ void main() {
       );
     },
   );
+
+  // Spec 1 W7a (§5.2; batch 3 review M-1): Settings shows "Find support"
+  // only while support_resources_v2 is on; off, Support is as before.
+  for (final on in [true, false]) {
+    testWidgets('on screen, Find support only with the flag (flag $on)', (
+      t,
+    ) async {
+      SharedPreferences.setMockInitialValues({});
+      final prefs = await SharedPreferences.getInstance();
+      await t.pumpWidget(
+        ProviderScope(
+          overrides: [
+            sharedPreferencesProvider.overrideWithValue(prefs),
+            supportResourcesV2Provider.overrideWithValue(on),
+          ],
+          child: ScreenUtilConfig.builder(
+            builder:
+                (_) => const MaterialApp(
+                  localizationsDelegates:
+                      AppLocalizations.localizationsDelegates,
+                  supportedLocales: AppLocalizations.supportedLocales,
+                  home: SettingsScreen(currentUserId: 'test-user'),
+                ),
+          ),
+        ),
+      );
+      await t.pumpAndSettle();
+      final guide = find.text('User Guide');
+      await t.scrollUntilVisible(
+        guide,
+        200,
+        scrollable: find.byType(Scrollable).first,
+      );
+      await t.pumpAndSettle();
+      expect(guide, findsOneWidget, reason: 'the Support card is on screen');
+      expect(find.text('Find support'), on ? findsOneWidget : findsNothing);
+    });
+  }
 }

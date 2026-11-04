@@ -143,6 +143,8 @@ import 'package:attune/features/account/presentation/signed_in_devices_screen.da
 import 'package:attune/features/data_export/presentation/data_export_screen.dart';
 import 'package:attune/features/safety/presentation/screens/safety_pin_screen.dart';
 import 'package:attune/features/safety/presentation/screens/safety_resources_screen.dart';
+import 'package:attune/features/safety/presentation/screens/support_resources_v2_screen.dart'
+    show SupportFocus;
 import 'package:attune/features/settings/screens/language_screen.dart';
 import 'package:attune/features/settings/screens/settings_screen.dart';
 import 'package:attune/features/settings/screens/theme_screen.dart';
@@ -1692,7 +1694,11 @@ GoRouter createAppRouter(RoutingNotifier routingNotifier) {
       GoRoute(
         path: RouteNames.safetyResources,
         name: 'safetyResources',
-        builder: (context, state) => const SafetyResourcesScreen(),
+        // Spec 1 W7a: `?focus=grief|youth` narrows the v2 screen.
+        builder:
+            (context, state) => SafetyResourcesScreen(
+              focus: SupportFocus.parse(state.uri.queryParameters['focus']),
+            ),
       ),
       GoRoute(
         path: RouteNames.safetyPin,

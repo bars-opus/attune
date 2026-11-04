@@ -82,6 +82,39 @@ Deno.test("W6c: new child-safety reports post a count and a time, never the word
   assert(r.calls.at(-1) === `mark_child_safety_alerts_sent:{"p_ids":["${reportId}"]}`, r.calls.join(" "));
 });
 
+Deno.test("W7b: CSAM matches and scan failures post a count and a time, then are marked", async () => {
+  const calls: string[] = [];
+  const client: AlertClient = {
+    rpc(fn, args) {
+      calls.push(`${fn}:${JSON.stringify(args ?? {})}`);
+      if (fn === "csam_escalations_due") {
+        return Promise.resolve({ data: { ids: [41], count: 1, first_at: "2026-11-03T14:00:00Z", last_at: "2026-11-03T14:00:00Z" }, error: null });
+      }
+      if (fn === "scan_failed_escalations_due") {
+        return Promise.resolve({ data: { ids: [42, 43], count: 2, first_at: "2026-11-03T13:00:00Z", last_at: "2026-11-03T13:30:00Z" }, error: null });
+      }
+      if (fn.endsWith("_due")) {
+        return Promise.resolve({ data: { ids: [], count: 0, first_at: null, last_at: null }, error: null });
+      }
+      return Promise.resolve({ data: null, error: null });
+    },
+  };
+  const posts: string[] = [];
+  const result = await sendAlerts(client, "https://hooks.example/x", async (_url, body) => {
+    posts.push(JSON.parse(body).text);
+    return { ok: true, status: 200 };
+  });
+  assert(result.csam_match === "sent" && result.scan_failed === "sent", JSON.stringify(result));
+  assert(posts.length === 2, `posts ${posts.length}`);
+  assert(posts[0].includes("1 image(s) matched") && posts[0].includes("nothing has been reported"), posts[0]);
+  // PF-L4: an unquarantined match is still where it was uploaded.
+  assert(posts[0].includes("in safety-quarantine (or still in place where quarantined is false)"), posts[0]);
+  assert(posts[1].includes("2 upload(s) could not be scanned"), posts[1]);
+  assert(!posts.join(" ").match(/\b(41|42|43)\b/), "an escalation id was posted");
+  assert(calls.includes('mark_safety_escalations_alerted:{"p_ids":[41]}'), calls.join(" "));
+  assert(calls.includes('mark_safety_escalations_alerted:{"p_ids":[42,43]}'), calls.join(" "));
+});
+
 Deno.test("a failed read or mark is reported, never thrown", async () => {
   const ok = async () => ({ ok: true, status: 200 });
   assert((await sendAlerts(rig(DUE, { readFails: true }).client, "https://x", ok)).hook_fail_open === "read_failed", "read");
@@ -171,4 +204,27 @@ Deno.test("a purge stuck after 3 failed runs posts a count and a time, then is m
   assert(text.includes("1 parked account(s)") && text.includes("3") && text.includes("2026-10-05T00:00:00Z"), text);
   assert(!posts[0].includes(K1), `an id was posted: ${posts[0]}`);
   assert(r.calls.includes(`mark_recovery_purge_stuck_alerts_sent:{"p_ids":["${K1}"]}`), r.calls.join(" "));
+});
+
+// W7 final review M-1: an upload the scan queue could not take, or a sweep
+// whose whole read of storage.objects failed (nothing queued at all), is
+// never silent: posted once with a count and times, then marked.
+Deno.test("W7b: enqueue failures post a count and times, then are marked", async () => {
+  assert(ALERT_SOURCES.some((s) => s.name === "media_scan_enqueue_failed"), ALERT_SOURCES.map((s) => s.name).join(","));
+  const r = rigDues({
+    media_scan_enqueue_alerts_due: { ids: [12], count: 3, first_at: "2026-11-04T01:00:00Z", last_at: "2026-11-04T01:20:00Z" },
+  });
+  const posts: string[] = [];
+  const result = await sendAlerts(r.client, "https://hooks.example/x", async (_url, body) => {
+    posts.push(body);
+    return { ok: true, status: 200 };
+  });
+  assert(result.media_scan_enqueue_failed === "sent" && posts.length === 1, JSON.stringify(result));
+  const text = JSON.parse(posts[0]).text as string;
+  assert(text.includes("3 time(s)") && text.includes("2026-11-04T01:00:00Z") && text.includes("2026-11-04T01:20:00Z"), text);
+  assert(text.includes("may not be scanned") && text.includes("media_scan_enqueue"), text);
+  assert(!/\b12\b/.test(text), `the counter id was posted: ${text}`);
+  assert(r.calls.includes('mark_media_scan_enqueue_alerted:{"p_ids":[12]}'), r.calls.join(" "));
+  // W6c's report stays the last mark (its own test reads calls.at(-1)).
+  assert(ALERT_SOURCES.at(-1)?.name === "child_safety_report", ALERT_SOURCES.map((s) => s.name).join(","));
 });

@@ -5244,6 +5244,348 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'We couldn\'t send this as written. Make it shorter and try again, or email {email}.'**
   String support_childReportInvalid(String email);
+
+  /// No description provided for @support_resourcesTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Support resources'**
+  String get support_resourcesTitle;
+
+  /// No description provided for @support_resourcesIntro.
+  ///
+  /// In en, this message translates to:
+  /// **'If something does not feel safe, these contacts and planning resources may be useful.'**
+  String get support_resourcesIntro;
+
+  /// No description provided for @support_resourcesNoEmergencyService.
+  ///
+  /// In en, this message translates to:
+  /// **'Attune cannot assess an emergency or contact help for you.'**
+  String get support_resourcesNoEmergencyService;
+
+  /// No description provided for @support_quickExit.
+  ///
+  /// In en, this message translates to:
+  /// **'Quick exit'**
+  String get support_quickExit;
+
+  /// No description provided for @support_quickExitBody.
+  ///
+  /// In en, this message translates to:
+  /// **'Tap to exit the app and show a neutral screen.'**
+  String get support_quickExitBody;
+
+  /// No description provided for @support_exitNow.
+  ///
+  /// In en, this message translates to:
+  /// **'Exit now'**
+  String get support_exitNow;
+
+  /// No description provided for @support_notNow.
+  ///
+  /// In en, this message translates to:
+  /// **'Not relevant right now'**
+  String get support_notNow;
+
+  /// No description provided for @support_helpFor.
+  ///
+  /// In en, this message translates to:
+  /// **'Help for {country}'**
+  String support_helpFor(String country);
+
+  /// No description provided for @support_changeCountry.
+  ///
+  /// In en, this message translates to:
+  /// **'Change'**
+  String get support_changeCountry;
+
+  /// No description provided for @support_changeCountryLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Change country. Now showing {country}'**
+  String support_changeCountryLabel(String country);
+
+  /// No description provided for @support_chooseCountry.
+  ///
+  /// In en, this message translates to:
+  /// **'Choose your country to see help near you.'**
+  String get support_chooseCountry;
+
+  /// No description provided for @support_chooseCountryButton.
+  ///
+  /// In en, this message translates to:
+  /// **'Choose a country'**
+  String get support_chooseCountryButton;
+
+  /// No description provided for @support_loading.
+  ///
+  /// In en, this message translates to:
+  /// **'Looking for help near you'**
+  String get support_loading;
+
+  /// No description provided for @support_emergencyHeading.
+  ///
+  /// In en, this message translates to:
+  /// **'In an emergency'**
+  String get support_emergencyHeading;
+
+  /// No description provided for @support_anywhereHeading.
+  ///
+  /// In en, this message translates to:
+  /// **'Anywhere in the world'**
+  String get support_anywhereHeading;
+
+  /// No description provided for @support_categoryEmergency.
+  ///
+  /// In en, this message translates to:
+  /// **'Emergency'**
+  String get support_categoryEmergency;
+
+  /// No description provided for @support_categoryDv.
+  ///
+  /// In en, this message translates to:
+  /// **'Domestic abuse'**
+  String get support_categoryDv;
+
+  /// No description provided for @support_categoryCrisis.
+  ///
+  /// In en, this message translates to:
+  /// **'Someone to talk to now'**
+  String get support_categoryCrisis;
+
+  /// No description provided for @support_categorySexualAssault.
+  ///
+  /// In en, this message translates to:
+  /// **'Sexual assault'**
+  String get support_categorySexualAssault;
+
+  /// No description provided for @support_categorySextortion.
+  ///
+  /// In en, this message translates to:
+  /// **'Threats to share images'**
+  String get support_categorySextortion;
+
+  /// No description provided for @support_categoryChildSafety.
+  ///
+  /// In en, this message translates to:
+  /// **'A child at risk'**
+  String get support_categoryChildSafety;
+
+  /// No description provided for @support_categoryYouth.
+  ///
+  /// In en, this message translates to:
+  /// **'For young people'**
+  String get support_categoryYouth;
+
+  /// No description provided for @support_categoryLgbtqLegal.
+  ///
+  /// In en, this message translates to:
+  /// **'LGBTQ+ and legal help'**
+  String get support_categoryLgbtqLegal;
+
+  /// No description provided for @support_categoryGrief.
+  ///
+  /// In en, this message translates to:
+  /// **'Grief'**
+  String get support_categoryGrief;
+
+  /// No description provided for @support_categoryPerinatal.
+  ///
+  /// In en, this message translates to:
+  /// **'Pregnancy and after birth'**
+  String get support_categoryPerinatal;
+
+  /// No description provided for @support_categoryAddiction.
+  ///
+  /// In en, this message translates to:
+  /// **'Alcohol, drugs and gambling'**
+  String get support_categoryAddiction;
+
+  /// No description provided for @support_categoryFinancialControl.
+  ///
+  /// In en, this message translates to:
+  /// **'Money and control'**
+  String get support_categoryFinancialControl;
+
+  /// No description provided for @support_notPolice.
+  ///
+  /// In en, this message translates to:
+  /// **'Not the police'**
+  String get support_notPolice;
+
+  /// No description provided for @support_police.
+  ///
+  /// In en, this message translates to:
+  /// **'Police'**
+  String get support_police;
+
+  /// No description provided for @support_call.
+  ///
+  /// In en, this message translates to:
+  /// **'Call {number}'**
+  String support_call(String number);
+
+  /// No description provided for @support_text.
+  ///
+  /// In en, this message translates to:
+  /// **'Text {number}'**
+  String support_text(String number);
+
+  /// No description provided for @support_whatsapp.
+  ///
+  /// In en, this message translates to:
+  /// **'WhatsApp'**
+  String get support_whatsapp;
+
+  /// No description provided for @support_website.
+  ///
+  /// In en, this message translates to:
+  /// **'Website'**
+  String get support_website;
+
+  /// No description provided for @support_callConfirmTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Call {number}?'**
+  String support_callConfirmTitle(String number);
+
+  /// No description provided for @support_callConfirmBody.
+  ///
+  /// In en, this message translates to:
+  /// **'Calls may show in your phone\'s call history.'**
+  String get support_callConfirmBody;
+
+  /// No description provided for @support_callConfirmCall.
+  ///
+  /// In en, this message translates to:
+  /// **'Call'**
+  String get support_callConfirmCall;
+
+  /// No description provided for @support_textConfirmTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Text {number}?'**
+  String support_textConfirmTitle(String number);
+
+  /// No description provided for @support_textConfirmBody.
+  ///
+  /// In en, this message translates to:
+  /// **'Messages may stay on your phone.'**
+  String get support_textConfirmBody;
+
+  /// No description provided for @support_linkConfirmTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Open {site}?'**
+  String support_linkConfirmTitle(String site);
+
+  /// No description provided for @support_linkConfirmBody.
+  ///
+  /// In en, this message translates to:
+  /// **'It may show in your browser history.'**
+  String get support_linkConfirmBody;
+
+  /// No description provided for @support_open.
+  ///
+  /// In en, this message translates to:
+  /// **'Open'**
+  String get support_open;
+
+  /// No description provided for @support_cancel.
+  ///
+  /// In en, this message translates to:
+  /// **'Cancel'**
+  String get support_cancel;
+
+  /// No description provided for @support_unsupported.
+  ///
+  /// In en, this message translates to:
+  /// **'We don\'t have a checked list for {country} yet.'**
+  String support_unsupported(String country);
+
+  /// No description provided for @support_noFocusList.
+  ///
+  /// In en, this message translates to:
+  /// **'We don\'t have a checked list for this in {country} yet.'**
+  String support_noFocusList(String country);
+
+  /// No description provided for @support_findHelpline.
+  ///
+  /// In en, this message translates to:
+  /// **'Find a helpline'**
+  String get support_findHelpline;
+
+  /// No description provided for @support_localEmergency.
+  ///
+  /// In en, this message translates to:
+  /// **'In an emergency, call your local emergency number.'**
+  String get support_localEmergency;
+
+  /// No description provided for @support_griefTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Grief support'**
+  String get support_griefTitle;
+
+  /// No description provided for @support_youthTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Support for young people'**
+  String get support_youthTitle;
+
+  /// No description provided for @support_writeInJournal.
+  ///
+  /// In en, this message translates to:
+  /// **'Write about it in your journal'**
+  String get support_writeInJournal;
+
+  /// No description provided for @support_settingsTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Find support'**
+  String get support_settingsTitle;
+
+  /// No description provided for @support_settingsSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Helplines for where you are'**
+  String get support_settingsSubtitle;
+
+  /// No description provided for @support_cannotOpen.
+  ///
+  /// In en, this message translates to:
+  /// **'That didn\'t open here. Try it from another phone or computer.'**
+  String get support_cannotOpen;
+
+  /// No description provided for @flow_healingChoiceTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'What happened?'**
+  String get flow_healingChoiceTitle;
+
+  /// No description provided for @flow_healingBreakup.
+  ///
+  /// In en, this message translates to:
+  /// **'A breakup'**
+  String get flow_healingBreakup;
+
+  /// No description provided for @flow_healingLoss.
+  ///
+  /// In en, this message translates to:
+  /// **'Someone I love died'**
+  String get flow_healingLoss;
+
+  /// No description provided for @support_whatsappConfirmBody.
+  ///
+  /// In en, this message translates to:
+  /// **'The chat may stay in WhatsApp on your phone.'**
+  String get support_whatsappConfirmBody;
+
+  /// The way out of a focused support view (grief, young people): never "Not relevant right now" there (W7 final review M-7).
+  ///
+  /// In en, this message translates to:
+  /// **'Back'**
+  String get support_back;
 }
 
 class _AppLocalizationsDelegate extends LocalizationsDelegate<AppLocalizations> {

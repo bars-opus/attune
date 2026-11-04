@@ -20,6 +20,7 @@ class SettingsDataSource {
     SettingsConfig? birthDate,
     SettingsConfig? childReport,
     SettingsConfig? childReportSupport,
+    SettingsConfig? supportResources,
   }) {
     // Access localization for language prefence
     final loc = AppLocalizations.of(context)!;
@@ -271,6 +272,8 @@ SettingsConfig(
         id: 'support',
         title: loc.supportSectionTitle,
         items: [
+// Spec 1 W7a (§5.2): Find support, signed in or not (support_resources_v2).
+if (supportResources != null) supportResources,
 // Spec 1 W6c (§3.15): the same report, from Support too (signed in).
 if (childReportSupport != null) childReportSupport,
 SettingsConfig(

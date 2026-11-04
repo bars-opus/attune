@@ -2803,4 +2803,193 @@ class AppLocalizationsDe extends AppLocalizations {
   String support_childReportInvalid(String email) {
     return 'We couldn\'t send this as written. Make it shorter and try again, or email $email.';
   }
+
+  @override
+  String get support_resourcesTitle => 'Support resources';
+
+  @override
+  String get support_resourcesIntro => 'If something does not feel safe, these contacts and planning resources may be useful.';
+
+  @override
+  String get support_resourcesNoEmergencyService => 'Attune cannot assess an emergency or contact help for you.';
+
+  @override
+  String get support_quickExit => 'Quick exit';
+
+  @override
+  String get support_quickExitBody => 'Tap to exit the app and show a neutral screen.';
+
+  @override
+  String get support_exitNow => 'Exit now';
+
+  @override
+  String get support_notNow => 'Not relevant right now';
+
+  @override
+  String support_helpFor(String country) {
+    return 'Help for $country';
+  }
+
+  @override
+  String get support_changeCountry => 'Change';
+
+  @override
+  String support_changeCountryLabel(String country) {
+    return 'Change country. Now showing $country';
+  }
+
+  @override
+  String get support_chooseCountry => 'Choose your country to see help near you.';
+
+  @override
+  String get support_chooseCountryButton => 'Choose a country';
+
+  @override
+  String get support_loading => 'Looking for help near you';
+
+  @override
+  String get support_emergencyHeading => 'In an emergency';
+
+  @override
+  String get support_anywhereHeading => 'Anywhere in the world';
+
+  @override
+  String get support_categoryEmergency => 'Emergency';
+
+  @override
+  String get support_categoryDv => 'Domestic abuse';
+
+  @override
+  String get support_categoryCrisis => 'Someone to talk to now';
+
+  @override
+  String get support_categorySexualAssault => 'Sexual assault';
+
+  @override
+  String get support_categorySextortion => 'Threats to share images';
+
+  @override
+  String get support_categoryChildSafety => 'A child at risk';
+
+  @override
+  String get support_categoryYouth => 'For young people';
+
+  @override
+  String get support_categoryLgbtqLegal => 'LGBTQ+ and legal help';
+
+  @override
+  String get support_categoryGrief => 'Grief';
+
+  @override
+  String get support_categoryPerinatal => 'Pregnancy and after birth';
+
+  @override
+  String get support_categoryAddiction => 'Alcohol, drugs and gambling';
+
+  @override
+  String get support_categoryFinancialControl => 'Money and control';
+
+  @override
+  String get support_notPolice => 'Not the police';
+
+  @override
+  String get support_police => 'Police';
+
+  @override
+  String support_call(String number) {
+    return 'Call $number';
+  }
+
+  @override
+  String support_text(String number) {
+    return 'Text $number';
+  }
+
+  @override
+  String get support_whatsapp => 'WhatsApp';
+
+  @override
+  String get support_website => 'Website';
+
+  @override
+  String support_callConfirmTitle(String number) {
+    return 'Call $number?';
+  }
+
+  @override
+  String get support_callConfirmBody => 'Calls may show in your phone\'s call history.';
+
+  @override
+  String get support_callConfirmCall => 'Call';
+
+  @override
+  String support_textConfirmTitle(String number) {
+    return 'Text $number?';
+  }
+
+  @override
+  String get support_textConfirmBody => 'Messages may stay on your phone.';
+
+  @override
+  String support_linkConfirmTitle(String site) {
+    return 'Open $site?';
+  }
+
+  @override
+  String get support_linkConfirmBody => 'It may show in your browser history.';
+
+  @override
+  String get support_open => 'Open';
+
+  @override
+  String get support_cancel => 'Cancel';
+
+  @override
+  String support_unsupported(String country) {
+    return 'We don\'t have a checked list for $country yet.';
+  }
+
+  @override
+  String support_noFocusList(String country) {
+    return 'We don\'t have a checked list for this in $country yet.';
+  }
+
+  @override
+  String get support_findHelpline => 'Find a helpline';
+
+  @override
+  String get support_localEmergency => 'In an emergency, call your local emergency number.';
+
+  @override
+  String get support_griefTitle => 'Grief support';
+
+  @override
+  String get support_youthTitle => 'Support for young people';
+
+  @override
+  String get support_writeInJournal => 'Write about it in your journal';
+
+  @override
+  String get support_settingsTitle => 'Find support';
+
+  @override
+  String get support_settingsSubtitle => 'Helplines for where you are';
+
+  @override
+  String get support_cannotOpen => 'That didn\'t open here. Try it from another phone or computer.';
+
+  @override
+  String get flow_healingChoiceTitle => 'What happened?';
+
+  @override
+  String get flow_healingBreakup => 'A breakup';
+
+  @override
+  String get flow_healingLoss => 'Someone I love died';
+
+  @override
+  String get support_whatsappConfirmBody => 'The chat may stay in WhatsApp on your phone.';
+
+  @override
+  String get support_back => 'Back';
 }
