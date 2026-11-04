@@ -1,5 +1,8 @@
+import 'package:attune/features/auth/providers/auth_provider.dart'
+    show currentUserProvider;
 import 'package:attune/features/healing/data/models/healing_journey.dart';
 import 'package:attune/features/healing/data/repositories/healing_repository.dart';
+import 'package:attune/features/healing/services/healing_generation_service.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
@@ -14,18 +17,35 @@ final healingRepositoryProvider = Provider<HealingRepository>((ref) {
   return HealingRepository(ref.read(supabaseClientProvider));
 });
 
-final currentUserIdProvider = Provider<String?>((ref) {
-  return ref.read(supabaseClientProvider).auth.currentUser?.id;
-});
+final currentUserIdProvider = Provider<String?>(
+  (ref) => ref.watch(healingAccountProvider), // Spec 1 W9e (D8)
+);
+
+/// Spec 1 W9e (D8, shared phones): the signed-in account's id (null signed
+/// out). Healing's journey, its start context and its readiness answers
+/// are this account's only: they are read again when it changes.
+final healingAccountProvider = Provider<String?>(
+  (ref) => ref.watch(currentUserProvider.select((u) => u?.id)),
+);
+
+/// Spec 1 W9e: the two Healing AI functions, behind a provider so the
+/// stage screens can be tested without Supabase.
+final healingGenerationServiceProvider = Provider<HealingGenerationService>(
+  (ref) => HealingGenerationService(supabase: ref.read(supabaseClientProvider)),
+);
 
 final healingJourneyProvider = FutureProvider<HealingJourney?>((ref) async {
+  final account = ref.watch(healingAccountProvider); // Spec 1 W9e (D8)
   final repository = ref.read(healingRepositoryProvider);
-  return repository.getLatestJourney();
+  final journey = await repository.getLatestJourney();
+  // Spec 1 W9e (D8): never a journey read for another account.
+  return journey != null && journey.userId == account ? journey : null;
 });
 
 final healingStartContextProvider = FutureProvider<HealingStartContext?>((
   ref,
 ) async {
+  ref.watch(healingAccountProvider); // Spec 1 W9e (D8)
   final repository = ref.read(healingRepositoryProvider);
   final relationship = await repository.getStartableRelationship();
   if (relationship == null || relationship['ended_at'] == null) {
@@ -40,6 +60,9 @@ final healingStartContextProvider = FutureProvider<HealingStartContext?>((
 });
 
 final hasActiveSoloHealingJourneyProvider = FutureProvider<bool>((ref) async {
+  // Spec 1 W9e (D8, owner ruling): whether someone has a breakup journey
+  // never carries over to the next account on a shared phone.
+  ref.watch(healingAccountProvider);
   final repository = ref.read(healingRepositoryProvider);
   return repository.hasActiveSoloJourney();
 });
@@ -49,6 +72,9 @@ final startHealingJourneyProvider =
       ref,
       params,
     ) async {
+      // Spec 1 W9e (D8): a partner who shares the ended relationship and
+      // the phone starts their own journey, not the cached answer.
+      ref.watch(healingAccountProvider);
       final repository = ref.read(healingRepositoryProvider);
       final journey = await repository.getOrCreateJourney(
         relationshipId: params.relationshipId,
@@ -154,6 +180,7 @@ final latestReadinessAttemptProvider =
       ref,
       journeyId,
     ) async {
+      ref.watch(healingAccountProvider); // Spec 1 W9e (D8)
       return ref
           .read(healingRepositoryProvider)
           .getLatestReadinessAttempt(journeyId);

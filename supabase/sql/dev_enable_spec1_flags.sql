@@ -21,6 +21,7 @@ BEGIN
     ('csam_hash_matching', true),
     ('opinions_safety_v1', true),
     ('journal_ai_insights', true),
+    ('healing_ai_insights', true),
     ('text_scale_v2', true)
   ON CONFLICT (key) DO UPDATE SET enabled = EXCLUDED.enabled, updated_at = now();
 END $$;

@@ -62,6 +62,9 @@ Widget _buildTestApp({required bool hasActiveSoloJourney}) {
       healingRepositoryProvider.overrideWithValue(
         _FakeHealingRepository(hasActiveSoloJourney: hasActiveSoloJourney),
       ),
+      // Spec 1 W9e (D8): the check belongs to the signed-in account; the
+      // test names one rather than reaching Supabase's auth stream.
+      healingAccountProvider.overrideWithValue('ama'),
     ],
     child: ScreenUtilConfig.builder(
       builder:

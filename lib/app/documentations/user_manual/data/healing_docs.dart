@@ -115,6 +115,16 @@ class HealingDocs implements DocumentationModule {
               'Safety resources and the quick-exit gesture remain available on every screen throughout Healing Mode, exactly like everywhere else in the app.',
           type: ManualContentType.important,
         ),
+        // Spec 1 W9e: for everyone, like the check itself (it runs whatever
+        // healing_ai_insights says).
+        ManualContent(
+          id: 'healing_support_first',
+          title: 'When a reflection sounds very hard',
+          content:
+              "If what you write in your reflection sounds like you may be going through something very hard, Attune doesn't write a relationship reflection or a portrait from it. It shows you a way to reach support instead. Only you see it, and nothing about it is kept. \"Need support now?\" is always at the end of your reflection.",
+          numberPrefix: '2',
+          type: ManualContentType.text,
+        ),
       ],
     ),
     ManualSection(

@@ -1,6 +1,8 @@
 import 'package:attune/core/device/device_wipe_registry.dart';
 import 'package:attune/core/platform/install_referrer_keys.dart';
 import 'package:attune/features/couple_profile/data/about_us_outbox.dart';
+import 'package:attune/features/healing/presentation/providers/healing_support_providers.dart'
+    show HealingSupportMemory;
 import 'package:attune/features/onboarding/data/ask2_progress_store.dart';
 import 'package:attune/features/reflection_journal/presentation/providers/reflection_journal_providers.dart'
     show JournalSupportMemory;
@@ -107,5 +109,13 @@ List<DeviceWipeEntry> spec1DeviceWipes() => [
     id: 'spec1.journal_support_memory',
     moments: const {WipeMoment.signOut, WipeMoment.quickExit},
     run: JournalSupportMemory.clear,
+  ),
+  // W9e (D8): Healing's support card state, held in memory only (the
+  // offers and the hidden AI text), at sign-out and on quick exit (iOS
+  // keeps the process alive behind the neutral screen). No device key.
+  DeviceWipeEntry(
+    id: 'spec1.healing_support_memory',
+    moments: const {WipeMoment.signOut, WipeMoment.quickExit},
+    run: HealingSupportMemory.clear,
   ),
 ];

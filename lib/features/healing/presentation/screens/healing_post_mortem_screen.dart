@@ -5,9 +5,10 @@ import 'dart:async';
 import 'package:attune/core/utils/exports/export_screens.dart';
 import 'package:attune/core/widgets/animated_circle.dart';
 import 'package:attune/features/healing/data/models/healing_journey.dart';
-import 'package:attune/features/healing/services/healing_generation_service.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../providers/healing_providers.dart';
+import '../providers/healing_support_providers.dart';
+import '../widgets/healing_support.dart';
 
 class HealingPostMortemScreen extends ConsumerStatefulWidget {
   final HealingJourney journey;
@@ -76,6 +77,14 @@ class _HealingPostMortemScreenState
       if (status == AnimationStatus.completed && mounted) setState(() {});
     });
     _checkExistingStatus();
+    // Spec 1 W9e: a match for this stage, from any request, hides the
+    // AI text this screen shows at once.
+    ref.listenManual(
+      healingSupportProvider.select((s) => s.hidden.contains(_supportKey)),
+      (_, hidden) {
+        if (hidden && mounted) setState(_dropAiText);
+      },
+    );
   }
 
   @override
@@ -85,8 +94,36 @@ class _HealingPostMortemScreenState
     super.dispose();
   }
 
+  /// Spec 1 W9e: this journey's stage in the support state.
+  late final HealingSupportKey _supportKey = (
+    journeyId: widget.journey.id,
+    stage: HealingAiStage.postMortem,
+  );
+
+  /// Spec 1 W9e: drops the AI text this screen holds; a completed stage
+  /// then shows as having none (plan P-9).
+  void _dropAiText() {
+    _observation = null;
+    _confidence = null;
+    _reflectionPrompt = null;
+    if (_isComplete) {
+      _hasSkipped = true;
+      _revealController.value = 1.0;
+    }
+  }
+
   void _checkExistingStatus() {
-    if (widget.journey.postMortemStatus == 'completed') {
+    // Spec 1 W9e: AI text the crisis check matched this run is never
+    // shown, and a completed stage whose AI text was removed shows as
+    // having none.
+    final hidden = ref.read(healingSupportProvider).hidden.contains(
+      _supportKey,
+    );
+    final saved = widget.journey.postMortemObservation;
+    if (widget.journey.postMortemStatus == 'completed' &&
+        !hidden &&
+        saved != null &&
+        saved.trim().isNotEmpty) {
       setState(() {
         _observation = widget.journey.postMortemObservation;
         _confidence = widget.journey.postMortemConfidence;
@@ -96,7 +133,8 @@ class _HealingPostMortemScreenState
       // Revisiting an already-generated reflection is not a reveal — the user
       // has seen it. Show it whole.
       _revealController.value = 1.0;
-    } else if (widget.journey.postMortemStatus == 'skipped' ||
+    } else if (widget.journey.postMortemStatus == 'completed' ||
+        widget.journey.postMortemStatus == 'skipped' ||
         widget.journey.postMortemStatus == 'insufficient_evidence') {
       setState(() {
         _hasSkipped = true;
@@ -136,17 +174,47 @@ class _HealingPostMortemScreenState
     // The real network latency is the anticipation window — no artificial delay
     // is added on top of it.
     _startAnticipation();
+    // Spec 1 W9e: taken now; the answer may land after the screen or
+    // the account is gone.
+    final support = ref.read(healingSupportProvider.notifier);
+    final account = ref.read(healingAccountProvider);
+    final request = support.begin();
 
     try {
-      final service = HealingGenerationService(
-        supabase: ref.read(supabaseClientProvider),
-      );
+      final service = ref.read(healingGenerationServiceProvider);
 
       final result = await service.generatePostMortem(
         journeyId: widget.journey.id,
       );
 
+      // Spec 1 W9e: the crisis check matched. Nothing is saved; any AI
+      // text held for this stage is hidden and the card shows instead.
+      // An answer that lands after the account changed is dropped (D8).
+      if (result != null && result['status'] == 'support_offered') {
+        if (support.account != account) return;
+        support.offer(_supportKey);
+        _stopAnticipation();
+        if (!mounted) return;
+        setState(() {
+          _observation = null;
+          _confidence = null;
+          _reflectionPrompt = null;
+          _isGenerating = false;
+        });
+        return;
+      }
+      // Spec 1 W9e (D8): every other answer that lands after the
+      // account changed is dropped too: never shown, never saved.
+      if (support.account != account) return;
       if (result != null && result['status'] == 'completed') {
+        // Spec 1 W9e: an answer to a request sent before this stage's
+        // latest match is stale: never shown, never saved.
+        if (support.isStale(_supportKey, request)) {
+          _stopAnticipation();
+          if (mounted) setState(() => _isGenerating = false);
+          return;
+        }
+        support.completed(_supportKey); // Spec 1 W9e
         _stopAnticipation();
         setState(() {
           _observation = result['observation'];
@@ -217,6 +285,10 @@ class _HealingPostMortemScreenState
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
     final textTheme = Theme.of(context).textTheme;
+    // Spec 1 W9e: the crisis check's card for this stage, this run.
+    final supportOffered = ref.watch(
+      healingSupportProvider.select((s) => s.offered.contains(_supportKey)),
+    );
 
     return Scaffold(
       appBar: AppBar(
@@ -274,6 +346,19 @@ class _HealingPostMortemScreenState
                 ),
               ),
               const Spacer(),
+            ] else if (supportOffered) ...[
+              // Spec 1 W9e: the card instead of the AI text.
+              Gap(Spacing.md.h),
+              Expanded(
+                child: SingleChildScrollView(
+                  child: HealingSupportCard(
+                    onNotNow:
+                        () => ref
+                            .read(healingSupportProvider.notifier)
+                            .notNow(_supportKey),
+                  ),
+                ),
+              ),
             ] else if (_isComplete && _observation != null) ...[
               Gap(Spacing.xl.h),
               Container(

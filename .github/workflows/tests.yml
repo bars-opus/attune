@@ -45,7 +45,7 @@ jobs:
     # (deno.land std, esm.sh supabase-js and its transitive versions) to
     # .github/deno-w9.lock; --frozen fails on any change. Refresh the lock
     # with the same command without --frozen.
-    name: Deno tests (W9 normaliser + journal check)
+    name: Deno tests (W9 normaliser + journal check, W9e Healing check)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
@@ -56,7 +56,7 @@ jobs:
 
       - name: Run Deno tests
         working-directory: supabase/functions
-        run: deno test --allow-read --allow-env --lock=../../.github/deno-w9.lock --frozen _shared/unicode_normaliser.test.ts analyse-journal-entry/
+        run: deno test --allow-read --allow-env --lock=../../.github/deno-w9.lock --frozen _shared/unicode_normaliser.test.ts _shared/writer_crisis_check.test.ts _shared/healing_ai_gate.test.ts analyse-journal-entry/ generate-healing-portrait/ generate-healing-post-mortem/
 
   sql-contracts:
     name: SQL contract tests

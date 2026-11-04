@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:attune/features/quiz/presentation/widgets/number_badge.dart';
 
 import '../providers/healing_providers.dart';
+import '../widgets/healing_support.dart';
 
 /// Same index order as [_reflectionPrompts]. Mirrors onboarding's
 /// personalAnchorPrompts/personalAnchorExamples pattern (see
@@ -294,6 +295,9 @@ class _HealingReflectionScreenState
                 ),
               );
             }),
+            // Spec 1 W9e: always here, whatever healing_ai_insights says.
+            Gap(Spacing.md.h),
+            const HealingNeedSupportLink(),
           ],
         ),
         bottomNavigationBar: SafeArea(

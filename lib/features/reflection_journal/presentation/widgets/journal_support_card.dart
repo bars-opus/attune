@@ -10,9 +10,17 @@ export '../providers/journal_support_providers.dart';
 /// The writer's card (Spec 1 §8 W9c), shown instead of a reflection. Only
 /// the writer sees it; never animated (§2.2); large text let through.
 class JournalSupportCard extends ConsumerWidget {
-  const JournalSupportCard({super.key, required this.onNotNow});
+  const JournalSupportCard({
+    super.key,
+    required this.onNotNow,
+    this.onSeeSupport,
+  });
 
   final VoidCallback onNotNow;
+
+  /// Spec 1 W9e: Healing opens Support itself; by default the journal's
+  /// link, counted as support_link_opened:journal.
+  final VoidCallback? onSeeSupport;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -59,6 +67,7 @@ class JournalSupportCard extends ConsumerWidget {
                       minimumSize: const Size(48, 48),
                     ),
                     onPressed:
+                        onSeeSupport ??
                         () => openSupportNow(
                           context,
                           ref,

@@ -1,0 +1,293 @@
+// supabase/functions/generate-healing-post-mortem/post_mortem_handler.ts
+//
+// The post-mortem reflection, moved out of index.ts unchanged except for Spec 1
+// W9e (owner approval O2; spec 8 W9e), on the lines marked so: after the
+// caller's own journey is read, healingGate runs first (the crisis check,
+// then the healing_ai_insights pause; _shared/healing_ai_gate.ts), before
+// the saved answer, the cache and any provider call; the cache read is
+// limited to the caller's own rows; the provider is injected
+// (HealingDeps.model) so post_mortem_handler.test.ts can spy on it.
+import { type HealingDeps, healingGate, type HealingModel } from "../_shared/healing_ai_gate.ts";
+import { pickPatternEvidence } from "./pattern_evidence.ts";
+
+// Persisted on each generated row, so it must name the model that
+// actually ran rather than the Claude constant this replaced.
+const MODEL_NAME = Deno.env.get("GEMINI_MODEL") ?? "gemini-1.5-flash";
+
+export const corsHeaders = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers":
+    "authorization, x-client-info, apikey, content-type",
+};
+
+const MODEL_PROVIDER = "anthropic";
+const INPUT_SCHEMA_VERSION = "1.1.0";
+const PROMPT_VERSION = "1.1.0";
+const VALIDATION_VERSION = "1.1.0";
+const TIMEOUT_MS = 10000;
+const BANNED = /\b(toxic|narcissist|codependent|disorder|broken)\b/i;
+
+export async function handlePostMortem(
+  // deno-lint-ignore no-explicit-any
+  userClient: any,
+  // deno-lint-ignore no-explicit-any
+  adminClient: any,
+  user: { id: string },
+  journey_id: string,
+  deps: HealingDeps,
+): Promise<Response> {
+  if (!journey_id) {
+    return json({ error: "journey_id_required" }, 400);
+  }
+
+  const journeyRes = await userClient
+    .from("healing_journeys")
+    .select("*")
+    .eq("id", journey_id)
+    .single();
+  // Spec 1 W9e: a journey that is not there never reaches the gate.
+  if (journeyRes.error || !journeyRes.data) {
+    return json({ error: "journey_not_found" }, 404);
+  }
+
+  const journey = journeyRes.data;
+  // Spec 1 W9e: the crisis check, then the healing_ai_insights pause,
+  // before the saved answer, the cache and any provider call.
+  const gate = await healingGate(adminClient, user.id, journey, "post_mortem", deps);
+  if (gate) {
+    return json(gate);
+  }
+  if (journey.post_mortem_status === "completed" && journey.post_mortem_observation) {
+    return json({
+      status: "completed",
+      observation: journey.post_mortem_observation,
+      confidence: journey.post_mortem_confidence ?? "none",
+      reflection_prompt: journey.post_mortem_reflection_prompt,
+    });
+  }
+
+  const evidence = await buildPostMortemEvidence(userClient, adminClient, journey, user.id);
+  const inputHash = await sha256(JSON.stringify(evidence));
+  const existing = await adminClient
+    .from("healing_generation_jobs")
+    .select("*")
+    .eq("user_id", user.id) // Spec 1 W9e: the caller's own rows only
+    .eq("journey_id", journey_id)
+    .eq("stage", "post_mortem")
+    .eq("input_hash", inputHash)
+    .eq("status", "completed")
+    .maybeSingle();
+
+  if (existing.data) {
+    return json({
+      status: "completed",
+      observation: existing.data.output_observation,
+      confidence: existing.data.output_confidence ?? "none",
+      reflection_prompt: existing.data.output_reflection_prompt,
+    });
+  }
+
+  if (evidence.patterns.length === 0 && evidence.reflection.length === 0) {
+    await upsertJob(adminClient, {
+      journeyId: journey_id,
+      userId: user.id,
+      stage: "post_mortem",
+      inputHash,
+      output: {
+        observation: null,
+        confidence: "none",
+        reflection_prompt: null,
+      },
+    });
+    return json({
+      status: "insufficient_evidence",
+      observation: null,
+      confidence: "none",
+      reflection_prompt: null,
+    });
+  }
+
+  // Spec 1 W9e: the provider is injected (HealingDeps.model).
+  let output = await maybeGenerateWithGemini(deps.model, evidence, buildPrompt(evidence), user.id);
+  if (!output) {
+    output = buildFallback(evidence);
+  }
+
+  validateOutput(output);
+  await upsertJob(adminClient, {
+    journeyId: journey_id,
+    userId: user.id,
+    stage: "post_mortem",
+    inputHash,
+    output,
+  });
+
+  return json({ status: "completed", ...output });
+}
+
+async function buildPostMortemEvidence(userClient: any, adminClient: any, journey: any, userId: string) {
+  const reflection = Object.values(journey.reflection_answers ?? {})
+    .filter((value): value is string => typeof value === "string" && value.trim().length > 0)
+    .map((value) => value.trim());
+
+  const profileRes = await userClient
+    .from("psych_profiles")
+    .select("attachment_style, communication_style, conflict_style")
+    .eq("user_id", userId)
+    .maybeSingle();
+
+  let patterns: string[] = [];
+  if (journey.relationship_id) {
+    // Spec 3a (05 D.4 (a)): the role-free snapshot taken at ending first, so
+    // the read-only window and the 12-month deletion never leave Stage 2
+    // without evidence; live patterns only for endings that predate it.
+    const snapshotRes = await adminClient
+      .from("healing_ending_snapshots")
+      .select("pattern_types")
+      .eq("user_id", userId)
+      .eq("relationship_id", journey.relationship_id)
+      .maybeSingle();
+    let live: unknown[] = [];
+    if (!snapshotRes.data) {
+      const patternRes = await adminClient
+        .from("patterns")
+        .select("pattern_type, severity")
+        .eq("relationship_id", journey.relationship_id)
+        .neq("severity", "safety")
+        .limit(6);
+      live = (patternRes.data ?? []).map((row: any) => row.pattern_type);
+    }
+    patterns = pickPatternEvidence(snapshotRes.data?.pattern_types ?? null, live);
+  }
+
+  return {
+    reflection,
+    patterns,
+    profile: profileRes.data ?? {},
+  };
+}
+
+function buildPrompt(evidence: any) {
+  return [
+    "Return only valid JSON.",
+    "Write only about the requesting user or a neutral relationship dynamic.",
+    "Do not diagnose, blame, or infer the former partner's internal state.",
+    "If evidence is insufficient, return observation null, confidence none, and reflection_prompt null.",
+    "",
+    `PATTERNS: ${JSON.stringify(evidence.patterns)}`,
+    `PROFILE: ${JSON.stringify(evidence.profile)}`,
+    `REFLECTION: ${JSON.stringify(evidence.reflection)}`,
+    "",
+    'Schema: {"observation": string | null, "reflection_prompt": string | null}',
+  ].join("\n");
+}
+
+async function maybeGenerateWithGemini(model: HealingModel, evidence: any, prompt: string, userId: string) {
+  // The shared helper replaces a hand-rolled Anthropic client here: it
+  // owns the request shape, the abort timeout, fenced-JSON extraction and
+  // the prohibited-pattern filter. It returns null on any failure, which
+  // is the same signal this function already used to fall back.
+  // Spec 1 W9e: callGeminiJson, injected (HealingDeps.model).
+  const parsed = await model({
+    promptId: "healing_post_mortem",
+    attribution: { fn: "generate-healing-post-mortem", userId },
+    systemPrompt:
+      "You are a careful, non-judgemental reflection assistant. Reply with JSON only.",
+    userPrompt: prompt,
+    maxOutputTokens: 180,
+  });
+
+  if (!parsed) {
+    return null;
+  }
+
+  const confidence = evidence.patterns.length >= 3
+    ? "high"
+    : evidence.patterns.length >= 2
+    ? "medium"
+    : "low";
+  return {
+    observation: parsed.observation ?? null,
+    reflection_prompt: parsed.reflection_prompt ?? "What feels familiar about that?",
+    confidence,
+  };
+}
+
+function buildFallback(evidence: any) {
+  const profile = evidence.profile ?? {};
+  const profileParts = [
+    profile.attachment_style?.primary,
+    profile.communication_style?.primary_style ?? profile.communication_style?.primary,
+    profile.conflict_style?.primary,
+  ].filter(Boolean);
+  const patternText =
+    evidence.patterns.length > 0
+      ? `A pattern of ${String(evidence.patterns[0]).replace(/_/g, " ")} may have surfaced when strain rose.`
+      : "Your reflections suggest there may be a repeating dynamic worth noticing with care.";
+  const observation = profileParts.length > 0
+    ? `${patternText} Your ${profileParts.join(", ").replace(/_/g, " ")} tendencies may shape how that feels in relationship stress.`
+    : patternText;
+
+  return {
+    observation: trimWords(observation, 40),
+    confidence: evidence.patterns.length >= 3 ? "high" : evidence.patterns.length >= 2 ? "medium" : "low",
+    reflection_prompt: "What part of this feels most familiar?",
+  };
+}
+
+function validateOutput(output: any) {
+  if (!output || typeof output !== "object") {
+    throw new Error("invalid_output");
+  }
+  if (output.observation !== null) {
+    if (typeof output.observation !== "string" || BANNED.test(output.observation)) {
+      throw new Error("invalid_observation");
+    }
+  }
+  if (output.reflection_prompt !== null && typeof output.reflection_prompt !== "string") {
+    throw new Error("invalid_reflection_prompt");
+  }
+}
+
+async function upsertJob(adminClient: any, options: any) {
+  await adminClient.from("healing_generation_jobs").upsert(
+    {
+      journey_id: options.journeyId,
+      user_id: options.userId,
+      stage: options.stage,
+      status: "completed",
+      idempotency_key: `${options.journeyId}:${options.stage}:${options.inputHash}`,
+      input_hash: options.inputHash,
+      input_schema_version: INPUT_SCHEMA_VERSION,
+      prompt_version: PROMPT_VERSION,
+      model_provider: MODEL_PROVIDER,
+      model_name: MODEL_NAME,
+      validation_version: VALIDATION_VERSION,
+      attempt_count: 1,
+      failure_code: null,
+      output_observation: options.output.observation,
+      output_confidence: options.output.confidence,
+      output_reflection_prompt: options.output.reflection_prompt,
+      output_portrait: null,
+    },
+    { onConflict: "journey_id,stage,input_hash" },
+  );
+}
+
+function trimWords(text: string, maxWords: number) {
+  const words = text.trim().split(/\s+/);
+  return words.length <= maxWords ? text.trim() : words.slice(0, maxWords).join(" ");
+}
+
+async function sha256(input: string) {
+  const bytes = new TextEncoder().encode(input);
+  const digest = await crypto.subtle.digest("SHA-256", bytes);
+  return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+export function json(body: unknown, status = 200) {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { ...corsHeaders, "content-type": "application/json" },
+  });
+}

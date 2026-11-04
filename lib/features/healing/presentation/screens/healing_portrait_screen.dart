@@ -2,9 +2,10 @@
 
 import 'package:attune/core/utils/exports/export_screens.dart';
 import 'package:attune/features/healing/data/models/healing_journey.dart';
-import 'package:attune/features/healing/services/healing_generation_service.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../providers/healing_providers.dart';
+import '../providers/healing_support_providers.dart';
+import '../widgets/healing_support.dart';
 
 class HealingPortraitScreen extends ConsumerStatefulWidget {
   final HealingJourney journey;
@@ -28,17 +29,58 @@ class _HealingPortraitScreenState extends ConsumerState<HealingPortraitScreen> {
   void initState() {
     super.initState();
     _checkExistingStatus();
+    // Spec 1 W9e: a match for this stage, from any request, hides the
+    // AI text this screen shows at once.
+    ref.listenManual(
+      healingSupportProvider.select((s) => s.hidden.contains(_supportKey)),
+      (_, hidden) {
+        if (hidden && mounted) setState(_dropAiText);
+      },
+    );
+  }
+
+  /// Spec 1 W9e: this journey's stage in the support state.
+  late final HealingSupportKey _supportKey = (
+    journeyId: widget.journey.id,
+    stage: HealingAiStage.portrait,
+  );
+
+  /// Spec 1 W9e: drops the AI text this screen holds. A saved stage then
+  /// shows as having none (plan P-9); an unsaved answer can be asked
+  /// for again. The person's own words stay.
+  void _dropAiText() {
+    final hadText = _portrait != null;
+    _portrait = null;
+    _reflectionPrompt = null;
+    if (hadText && _isComplete && !_hasSkipped) {
+      if (widget.journey.portraitStatus == 'completed') {
+        _hasSkipped = true;
+      } else {
+        _isComplete = false;
+      }
+    }
   }
 
   void _checkExistingStatus() {
-    if (widget.journey.portraitStatus == 'completed') {
+    // Spec 1 W9e: AI text the crisis check matched this run is never
+    // shown, and a completed stage whose AI text was removed shows as
+    // having none.
+    final hidden = ref.read(healingSupportProvider).hidden.contains(
+      _supportKey,
+    );
+    final saved = widget.journey.portraitText;
+    if (widget.journey.portraitStatus == 'completed' &&
+        !hidden &&
+        saved != null &&
+        saved.trim().isNotEmpty) {
       setState(() {
         _portrait = widget.journey.portraitText;
         _reflectionController.text = widget.journey.portraitReflection ?? '';
         _reflectionPrompt = widget.journey.portraitPrompt;
         _isComplete = true;
       });
-    } else if (widget.journey.portraitStatus == 'skipped' ||
+    } else if (widget.journey.portraitStatus == 'completed' ||
+        widget.journey.portraitStatus == 'skipped' ||
         widget.journey.portraitStatus == 'insufficient_evidence') {
       setState(() {
         _hasSkipped = true;
@@ -49,17 +91,44 @@ class _HealingPortraitScreenState extends ConsumerState<HealingPortraitScreen> {
 
   Future<void> _generatePortrait() async {
     setState(() => _isGenerating = true);
+    // Spec 1 W9e: taken now; the answer may land after the screen or
+    // the account is gone.
+    final support = ref.read(healingSupportProvider.notifier);
+    final account = ref.read(healingAccountProvider);
+    final request = support.begin();
 
     try {
-      final service = HealingGenerationService(
-        supabase: ref.read(supabaseClientProvider),
-      );
+      final service = ref.read(healingGenerationServiceProvider);
 
       final result = await service.generatePortrait(
         journeyId: widget.journey.id,
       );
 
+      // Spec 1 W9e: the crisis check matched. Nothing is saved; any AI
+      // text held for this stage is hidden and the card shows instead.
+      // An answer that lands after the account changed is dropped (D8).
+      if (result != null && result['status'] == 'support_offered') {
+        if (support.account != account) return;
+        support.offer(_supportKey);
+        if (!mounted) return;
+        setState(() {
+          _portrait = null;
+          _reflectionPrompt = null;
+          _isGenerating = false;
+        });
+        return;
+      }
+      // Spec 1 W9e (D8): every other answer that lands after the
+      // account changed is dropped too: never shown, never saved.
+      if (support.account != account) return;
       if (result != null && result['status'] == 'completed') {
+        // Spec 1 W9e: an answer to a request sent before this stage's
+        // latest match is stale: never shown, never saved.
+        if (support.isStale(_supportKey, request)) {
+          if (mounted) setState(() => _isGenerating = false);
+          return;
+        }
+        support.completed(_supportKey); // Spec 1 W9e
         setState(() {
           _portrait = result['portrait'];
           _reflectionPrompt = result['reflection_prompt'] as String?;
@@ -147,6 +216,10 @@ class _HealingPortraitScreenState extends ConsumerState<HealingPortraitScreen> {
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
     final textTheme = Theme.of(context).textTheme;
+    // Spec 1 W9e: the crisis check's card for this stage, this run.
+    final supportOffered = ref.watch(
+      healingSupportProvider.select((s) => s.offered.contains(_supportKey)),
+    );
 
     return Scaffold(
       appBar: AppBar(
@@ -188,6 +261,19 @@ class _HealingPortraitScreenState extends ConsumerState<HealingPortraitScreen> {
                 ),
               ),
               const Spacer(),
+            ] else if (supportOffered) ...[
+              // Spec 1 W9e: the card instead of the AI text.
+              Gap(Spacing.md.h),
+              Expanded(
+                child: SingleChildScrollView(
+                  child: HealingSupportCard(
+                    onNotNow:
+                        () => ref
+                            .read(healingSupportProvider.notifier)
+                            .notNow(_supportKey),
+                  ),
+                ),
+              ),
             ] else if (_isComplete && _portrait != null) ...[
               Gap(Spacing.xl.h),
               Container(

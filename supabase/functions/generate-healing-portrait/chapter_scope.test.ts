@@ -2,7 +2,8 @@
 // relationship's insights.
 import { assert, assertStringIncludes } from "https://deno.land/std@0.224.0/assert/mod.ts";
 
-const src = await Deno.readTextFile(new URL("./index.ts", import.meta.url));
+// Spec 1 W9e: the evidence moved, unchanged, into portrait_handler.ts.
+const src = await Deno.readTextFile(new URL("./portrait_handler.ts", import.meta.url));
 
 Deno.test("insights are scoped to the journey's relationship", () => {
   const read = src.slice(src.indexOf('.from("personal_insights")'), src.indexOf(".limit(5)"));

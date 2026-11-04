@@ -24,10 +24,13 @@
 // The text is folded first (typographic apostrophes and quotes, invisible
 // characters), and the journal's pending-review self-harm list
 // (journal_self_harm_pending.ts) runs next to the reviewed corpus.
+// Spec 1 W9e: both now live in _shared/writer_crisis_check.ts and
+// _shared/self_harm_pending.ts.
 import { STATIC_PROHIBITED_PATTERNS } from "../_shared/gemini_json.ts";
-import { detectSelfDisclosure } from "../_shared/self_disclosure.ts";
 import { PAUSED_BODY } from "./journal_pause.ts";
-import { matchesPendingSelfHarm } from "./journal_self_harm_pending.ts";
+// Spec 1 W9e: the fold and the check are shared with Healing.
+import { foldTypography, writerTextDiscloses } from "../_shared/writer_crisis_check.ts";
+export { foldTypography };
 
 export const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -106,36 +109,13 @@ async function pausedOr(deps: JournalDeps, answer: Response): Promise<Response> 
   return (await insightsPaused(deps)) ? json(PAUSED_BODY) : answer;
 }
 
-// Review I-2: typographic apostrophes (iOS smart punctuation, pasted text)
-// and quotes become ASCII, so "don\u2019t" matches the corpus's "don't".
-const APOSTROPHES = /[\u2018\u2019\u201B\u02BB\u02BC\uFF07\u0060\u00B4\u2032]/g;
-const QUOTES = /[\u201C\u201D\u201E\u201F\u2033\uFF02\u00AB\u00BB]/g;
-// Review M-1: invisible characters. The shared normaliser drops some of
-// them (joining "kill\u200Bmyself" into one word); the text is checked both
-// with them removed and with them as spaces.
-const INVISIBLE = /[\u200B-\u200D\u2060\uFEFF\u00AD]/g;
-
-/// Typographic apostrophes to ', typographic double quotes to ".
-export function foldTypography(text: string): string {
-  return text.replace(APOSTROPHES, "'").replace(QUOTES, '"');
-}
-
-function pendingSelfHarm(text: string): boolean {
-  return matchesPendingSelfHarm(text);
-}
-
 /// True for a match, and for anything that stops the check from running
-/// (an unknown flag, a detector that throws): the writer is offered support
-/// and nothing reaches the provider.
+/// (an unknown flag, a detector that throws, an entry whose text cannot be
+/// read): the writer is offered support and nothing reaches the provider.
+/// Spec 1 W9e: the check itself is _shared/writer_crisis_check.ts.
 function disclosed(entry: EntryText, victimisation: boolean | null): boolean {
-  if (victimisation === null) return true;
   try {
-    const folded = foldTypography(`${entry.title ?? ""}\n${entry.content ?? ""}`);
-    for (const text of [folded.replace(INVISIBLE, ""), folded.replace(INVISIBLE, " ")]) {
-      if (detectSelfDisclosure(text, { victimisation }) !== null) return true;
-      if (pendingSelfHarm(text)) return true;
-    }
-    return false;
+    return writerTextDiscloses(`${entry.title ?? ""}\n${entry.content ?? ""}`, victimisation);
   } catch {
     return true;
   }
