@@ -2,6 +2,7 @@ import 'package:equatable/equatable.dart';
 
 class JournalAnalysis extends Equatable {
   // 'pending' | 'completed' | 'insufficient_evidence' | 'failed' | 'paused'
+  // | 'support_offered'
   final String status;
   final String? tone;
   final String? observation;
@@ -31,6 +32,10 @@ class JournalAnalysis extends Equatable {
   /// entry screen shows a reflection only when [isComplete], so a paused
   /// answer shows nothing.
   bool get isPaused => status == 'paused';
+
+  /// Spec 1 W9c: the crisis check matched; no reflection, the writer's
+  /// card instead (nothing about it is stored).
+  bool get isSupportOffered => status == 'support_offered';
 
   @override
   List<Object?> get props => [status, tone, observation, confidence];

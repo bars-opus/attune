@@ -2,6 +2,8 @@ import 'package:attune/core/device/device_wipe_registry.dart';
 import 'package:attune/core/platform/install_referrer_keys.dart';
 import 'package:attune/features/couple_profile/data/about_us_outbox.dart';
 import 'package:attune/features/onboarding/data/ask2_progress_store.dart';
+import 'package:attune/features/reflection_journal/presentation/providers/reflection_journal_providers.dart'
+    show JournalSupportMemory;
 import 'package:attune/features/relationships/data/invite_device_store.dart';
 import 'package:attune/features/safety/data/dating_lock_store.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -96,5 +98,14 @@ List<DeviceWipeEntry> spec1DeviceWipes() => [
     moments: const {WipeMoment.signOut},
     keys: const {'attune.flow.<uid>.about_us_outbox'},
     run: () => removePrefsKeys(AboutUsOutbox.isOutboxKey),
+  ),
+  // W9c (D8, batch-8 review I-1): the journal's support card state, held
+  // in memory only (the offers, the hidden reflections, Patterns' "Not
+  // now"), at sign-out and on quick exit (iOS keeps the process alive
+  // behind the neutral screen). No device key.
+  DeviceWipeEntry(
+    id: 'spec1.journal_support_memory',
+    moments: const {WipeMoment.signOut, WipeMoment.quickExit},
+    run: JournalSupportMemory.clear,
   ),
 ];

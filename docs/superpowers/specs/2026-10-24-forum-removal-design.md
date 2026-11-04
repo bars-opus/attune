@@ -786,6 +786,6 @@ Per `2026-10-24-cross-spec-review.md` and its "Controller rulings for the fix pa
 ## Owner approval (2026-10-24)
 
 The owner approved Specs 1, 2 and 3 as written, together with the recommendations for the remaining open items:
-- **O2 (Healing AI):** yes. Healing's AI insight gets the same pause, with the `self_disclosure` crisis check running first. It is built in S1 W9 behind `healing_ai_insights`, under the same clinician gate.
+- **O2 (Healing AI):** yes. Healing's AI insight gets the same pause, with the `self_disclosure` crisis check running first. It is built in **S1 W9e**, straight after W9c and not dependent on S2 W1, behind `healing_ai_insights`, under the same clinician gate. *(amended W9 final, I-3: first written "S1 W9"; S1 W9d is O4's, after S2 W1)*
 - **O3 (parked account restrictions):** no. A parked account's live Dating restrictions do **not** follow a recycled number to the fresh account. The enforcement record stays attached to the old account and its HMAC.
 - **O4 (Opinions enforcement records):** yes. Opinions-scope enforcement records survive account deletion like Dating's. This is built as **S1 W9d**, after S2 W1 creates `enforcement_records`.

@@ -111,11 +111,12 @@ class OpinionRepository {
   }
 
   Future<void> deleteOpinion(String opinionId) async {
-    // RLS restricts UPDATE to the owner; a non-owner delete is a no-op.
-    await _supabase
-        .from('opinions')
-        .update({'removed_at': DateTime.now().toIso8601String()})
-        .eq('id', opinionId);
+    // Spec 1 W9b (OPN-DELETE-RLS): the owner-checked RPC; a direct UPDATE
+    // fails the SELECT policy. A non-owner delete is still a no-op.
+    await _supabase.rpc(
+      'remove_my_opinion',
+      params: {'p_opinion_id': opinionId},
+    );
   }
 
   // ============================================================
@@ -466,21 +467,11 @@ class OpinionRepository {
   }
 
   Future<void> deleteComment(String commentId) async {
-    final comment =
-        await _supabase
-            .from('opinion_comments')
-            .select('opinion_id')
-            .eq('id', commentId)
-            .single();
-
-    await _supabase
-        .from('opinion_comments')
-        .update({'removed_at': DateTime.now().toIso8601String()})
-        .eq('id', commentId);
-
+    // Spec 1 W9b (OPN-DELETE-RLS): the owner-checked RPC, which also lowers
+    // the opinion's comment_count once (only when it removed a live comment).
     await _supabase.rpc(
-      'decrement_opinion_comment_count',
-      params: {'p_opinion_id': comment['opinion_id']},
+      'remove_my_comment',
+      params: {'p_comment_id': commentId},
     );
   }
 

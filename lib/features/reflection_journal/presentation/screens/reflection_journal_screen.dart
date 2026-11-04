@@ -4,12 +4,14 @@ import 'package:attune/app/documentations/user_manual/data/reflection_journal_do
 import 'package:attune/core/utils/exports/export_screens.dart';
 import 'package:attune/core/notes/note_date_sections.dart';
 import 'package:attune/core/notes/note_section.dart';
+import 'package:attune/core/ui/text/allow_large_text.dart';
 import 'package:attune/features/planning/presentation/widgets/planning_skeletons.dart';
 import 'package:attune/features/reflection_journal/data/journal_prompts.dart';
 import 'package:attune/features/reflection_journal/data/models/journal_note.dart';
 import 'package:attune/features/reflection_journal/presentation/providers/reflection_journal_providers.dart';
 import 'package:attune/features/reflection_journal/presentation/screens/journal_entry_screen.dart';
 import 'package:attune/features/reflection_journal/presentation/widgets/journal_entry_row.dart';
+import 'package:attune/features/reflection_journal/presentation/widgets/journal_support_card.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 class ReflectionJournalScreen extends ConsumerStatefulWidget {
@@ -121,7 +123,11 @@ class _EntriesTab extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final async = ref.watch(journalListProvider);
     return async.when(
-      skipLoadingOnReload: true,
+      // Spec 1 W9c (D8, batch-8 re-review N-1): a reload is an account
+      // change (the list watches the account); the last account's list is
+      // never shown while the new one's loads. Same-account refreshes are
+      // `isRefreshing` and still keep the list on screen.
+      skipLoadingOnReload: false,
       loading: () => const PlanningEntriesSkeleton(label: 'Loading entries'),
       error: (error, _) => Center(
         child: ErrorStateWidget(
@@ -147,6 +153,11 @@ class _EntriesTab extends ConsumerWidget {
           await ref.read(journalListProvider.notifier).refresh();
         }
 
+        // Spec 1 W9c: an entry of this account read as a crisis when it was
+        // last closed, on whatever page it is (the offers start again when
+        // the account changes, D8).
+        final offered = ref.watch(journalSupportOffersProvider).isNotEmpty;
+
         Widget section(String title, List<JournalEntrySummary> rows) => NoteSection(
           title: title,
           children: [
@@ -167,6 +178,13 @@ class _EntriesTab extends ConsumerWidget {
                 const EdgeInsets.only(bottom: 96),
               ),
               children: [
+                if (offered)
+                  Padding(
+                    padding: Spacing.horizontalMd,
+                    child: JournalSupportCard(
+                      onNotNow: () => ref.read(journalSupportOffersProvider.notifier).dismissAll(),
+                    ),
+                  ),
                 if (s.pinned.isNotEmpty) section('Pinned', s.pinned),
                 for (final g in noteDateSections(s.entries, (e) => e.createdAt, now)) section(g.title, g.items),
               ],
@@ -204,6 +222,26 @@ class _PatternsTab extends ConsumerWidget {
             title: 'Not enough entries yet',
             subtitle:
                 'Once you\'ve written a few entries, patterns across them will show up here.',
+          );
+        }
+        // Spec 1 W9c: the newest entry read as a crisis: support, no
+        // summary. "Not now" keeps it away for this run (PF-C6).
+        if (patterns.status == 'support_offered') {
+          if (ref.watch(journalPatternsSupportDismissedProvider)) {
+            final loc = AppLocalizations.of(context)!;
+            return AllowLargeText(
+              child: EmptyStateWidget(
+                icon: Icons.pattern,
+                title: loc.journal_supportPatternsAway,
+                subtitle: loc.journal_supportPatternsAwayBody,
+              ),
+            );
+          }
+          return SingleChildScrollView(
+            padding: EdgeInsets.all(Spacing.md.w),
+            child: JournalSupportCard(
+              onNotNow: () => ref.read(journalPatternsSupportDismissedProvider.notifier).dismiss(),
+            ),
           );
         }
         // Spec 1 W1c (D12): insights are paused (journal_ai_insights off);

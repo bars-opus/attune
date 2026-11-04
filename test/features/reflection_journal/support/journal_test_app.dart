@@ -4,6 +4,7 @@ import 'package:attune/features/planning/presentation/widgets/photo_block_view.d
 import 'package:attune/features/reflection_journal/presentation/providers/reflection_journal_providers.dart';
 import 'package:attune/features/reflection_journal/presentation/screens/journal_entry_screen.dart';
 import 'package:attune/features/reflection_journal/presentation/screens/reflection_journal_screen.dart';
+import 'package:attune/i10n/generated/app_localizations.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
@@ -22,6 +23,7 @@ Future<GoRouter> pumpJournal(
   List<List<int>> photos = const [],
   String initial = '/reflectionJournal',
   Object? extra,
+  List<Override> overrides = const [],
 }) async {
   final router = GoRouter(
     initialLocation: initial,
@@ -36,6 +38,8 @@ Future<GoRouter> pumpJournal(
           return JournalEntryScreen(entryId: a.entryId, isNew: a.isNew, prompt: a.prompt);
         },
       ),
+      // Spec 1 W9c: where "Need support now?" and "See support" go.
+      GoRoute(path: '/safety-resources', builder: (_, __) => const Text('Support resources screen')),
     ],
   );
   t.view.physicalSize = const Size(1170, 2532);
@@ -50,10 +54,16 @@ Future<GoRouter> pumpJournal(
       planningPhotoPickerProvider.overrideWithValue(
         (ImageSource source, int limit) async => (photos: [for (final p in photos) Uint8List.fromList(p)], rejected: 0),
       ),
+      ...overrides,
     ],
     child: ScreenUtilInit(
       designSize: const Size(390, 844),
-      builder: (_, __) => MaterialApp.router(routerConfig: router),
+      // Spec 1 W9c: the support card and link read the app's strings.
+      builder: (_, __) => MaterialApp.router(
+        routerConfig: router,
+        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        supportedLocales: AppLocalizations.supportedLocales,
+      ),
     ),
   ));
   await t.pumpAndSettle();

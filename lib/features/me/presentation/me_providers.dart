@@ -7,7 +7,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 final firstActionInputsProvider = Provider<({bool? hasNote, bool? hasQuiz})>((
   ref,
 ) {
-  final notes = ref.watch(journalEntriesProvider).valueOrNull;
+  // Spec 1 W9c (D8): the signed-in account's entries only.
+  final notes = ref.watch(journalOwnEntriesProvider);
   final quizzes = ref.watch(userQuizzesStatusProvider).valueOrNull;
   return (
     hasNote: notes?.isNotEmpty,

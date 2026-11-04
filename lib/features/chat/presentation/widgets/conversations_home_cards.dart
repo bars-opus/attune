@@ -53,7 +53,8 @@ class _ReflectionRow extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final colorScheme = Theme.of(context).colorScheme;
-    final latest = ref.watch(journalEntriesProvider).valueOrNull?.firstOrNull;
+    // Spec 1 W9c (D8): the signed-in account's entries only.
+    final latest = ref.watch(journalOwnEntriesProvider)?.firstOrNull;
     return InfoRowWidget(
       title: journalRowTitle(latest),
       subtitle: MyDateFormat.join([

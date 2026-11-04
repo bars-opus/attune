@@ -1,8 +1,11 @@
 // lib/features/opinions/data/opinion_more_data.dart
 
 import 'package:attune/core/utils/exports/export_screens.dart';
+import 'package:attune/core/ui/text/allow_large_text.dart';
 import 'package:attune/features/opinions/data/models/opinion_model.dart';
 import 'package:attune/features/opinions/presentation/providers/opinion_providers.dart';
+import 'package:attune/features/opinions/presentation/providers/opinions_safety_provider.dart';
+import 'package:attune/features/opinions/presentation/widgets/need_support_link.dart';
 import 'package:attune/features/settings/models/settings_config.dart';
 import 'package:flutter/services.dart' show Clipboard, ClipboardData;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -46,6 +49,24 @@ class OpinionMoreData {
         id: 'opinion_actions',
         title: 'Opinion',
         items: [
+          // Spec 1 W9b: "Need support now?" on every post, whatever it says
+          // (opinions_safety_v1 only). The menu closes first.
+          if (ref.read(opinionsSafetyProvider))
+            SettingsConfig(
+              id: 'need_support',
+              title: AppLocalizations.of(context)!.support_needSupportNow,
+              subtitle: '',
+              icon: Icons.support_outlined,
+              type: SettingsItemType.action,
+              iconColor: Theme.of(
+                context,
+              ).colorScheme.onSurface.withValues(alpha: 0.6),
+              onTap: () {
+                Navigator.of(context).pop();
+                openSupportNow(context, ref, SupportLinkSource.opinions);
+              },
+              order: 0,
+            ),
           // You cannot report your own post; you can delete it.
           if (!isOwnPost)
             SettingsConfig(
@@ -158,11 +179,22 @@ class OpinionMoreData {
       'Spam',
       'Other',
     ];
+    // Spec 1 W9b: read once, as the list opens (opinions_safety_v1). The
+    // at-risk reason comes first.
+    final safety = ref.read(opinionsSafetyProvider);
+    final shown = [if (safety) atRiskReportReason, ...reasons];
     showModalBottomSheet<void>(
       context: context,
+      // Spec 1 §2.2: with the flag on (the at-risk reason is here), the
+      // report sheet never animates; null is today's default.
+      sheetAnimationStyle: safety ? AnimationStyle.noAnimation : null,
       builder:
           (sheetContext) => SafeArea(
-            child: Column(
+            // Spec 1 W9b: with the flag on, the seven reasons scroll and let
+            // large text through; with it off, six render exactly as before.
+            child: _safetySheet(
+              safety,
+              Column(
               mainAxisSize: MainAxisSize.min,
               children: [
                 Padding(
@@ -172,11 +204,48 @@ class OpinionMoreData {
                     style: Theme.of(sheetContext).textTheme.titleMedium,
                   ),
                 ),
-                for (final reason in reasons)
+                for (final reason in shown)
                   ListTile(
-                    title: Text(reason),
+                    title: Text(
+                      reason == atRiskReportReason
+                          ? AppLocalizations.of(
+                            sheetContext,
+                          )!.opinions_reportAtRisk
+                          : reason,
+                    ),
                     onTap: () async {
                       Navigator.pop(sheetContext);
+                      // Spec 1 W9b: an at-risk report goes to a person
+                      // (priority, never auto-hide), then the thank-you
+                      // with the emergency numbers.
+                      if (reason == atRiskReportReason) {
+                        await sendAtRiskReport(
+                          context,
+                          ref,
+                          () => ref
+                              .read(opinionRepositoryProvider)
+                              .reportOpinion(
+                                opinionId: opinionId,
+                                reason: atRiskReportReason,
+                              ),
+                        );
+                        return;
+                      }
+                      // Spec 1 W9b, flag on: the other reasons' thanks
+                      // promises only that the report was sent, and a
+                      // failure says so.
+                      if (safety) {
+                        await sendReport(
+                          context,
+                          () => ref
+                              .read(opinionRepositoryProvider)
+                              .reportOpinion(
+                                opinionId: opinionId,
+                                reason: reason,
+                              ),
+                        );
+                        return;
+                      }
                       await ref.read(
                         reportOpinionProvider((
                           opinionId: opinionId,
@@ -192,7 +261,11 @@ class OpinionMoreData {
                   ),
               ],
             ),
+            ),
           ),
     );
   }
+
+  static Widget _safetySheet(bool on, Widget child) =>
+      on ? AllowLargeText(child: SingleChildScrollView(child: child)) : child;
 }

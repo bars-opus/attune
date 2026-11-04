@@ -5,6 +5,7 @@ import 'package:attune/features/auth/providers/auth_provider.dart';
 import 'package:attune/features/conflict_toolkit/data/pause_service.dart';
 import 'package:attune/features/location/presentation/providers/presence_providers.dart';
 import 'package:attune/features/onboarding/presentation/providers/flow_flags.dart';
+import 'package:attune/features/opinions/presentation/providers/opinions_safety_provider.dart';
 import 'package:attune/features/quiet_states/presentation/quiet_state_providers.dart';
 import 'package:attune/features/quiz/presentation/providers/quiz_providers.dart';
 import 'package:attune/features/safety/self_check/safety_self_check_service.dart';
@@ -27,6 +28,8 @@ final List<ProviderOrFamily> refreshedFlagProviders = [
   documentationFlagsProvider,
   publicAppConfigProvider,
   flowFlagsProvider,
+  // Spec 1 W9b.
+  opinionsSafetyReadProvider,
 ];
 
 class FeatureFlagRefresher extends ConsumerStatefulWidget {
@@ -63,6 +66,9 @@ class _FeatureFlagRefresherState extends ConsumerState<FeatureFlagRefresher> {
 
   @override
   Widget build(BuildContext context) {
+    // Spec 1 W9b: read from the start, so the first post or comment menu
+    // (which reads it once, when it opens) already knows.
+    ref.listen(opinionsSafetyReadProvider, (_, __) {});
     ref.listen(currentUserProvider.select((u) => u?.id), (previous, next) {
       if (previous != next) _refresh();
     });

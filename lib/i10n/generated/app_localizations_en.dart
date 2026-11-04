@@ -2992,4 +2992,58 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get support_back => 'Back';
+
+  @override
+  String get opinions_filterContactInfo => 'Phone numbers, emails, links and usernames can\'t go in Opinions. They can identify you or someone else. Take it out and post again.';
+
+  @override
+  String get opinions_filterSlur => 'This includes a word that attacks people for who they are. Opinions doesn\'t allow it.';
+
+  @override
+  String get opinions_filterExplicit => 'Opinions doesn\'t allow sexual content. You can describe what happened without explicit words.';
+
+  @override
+  String get opinions_filterQuoted => 'The comment you\'re replying to can\'t be quoted in Opinions. Your own words are fine. Close the reply and post again.';
+
+  @override
+  String get opinions_filterPollOption => 'It\'s in one of your poll options.';
+
+  @override
+  String get support_needSupportNow => 'Need support now?';
+
+  @override
+  String get opinions_reportAtRisk => 'Someone may be at risk';
+
+  @override
+  String get opinions_atRiskThanks => 'Thank you. A person on our team will look at this soon. If someone is in danger right now, call your local emergency number.';
+
+  @override
+  String get opinions_atRiskSeeNumbers => 'See emergency numbers';
+
+  @override
+  String get opinions_atRiskClose => 'Close';
+
+  @override
+  String get opinions_reportFailed => 'Couldn\'t send your report. Please try again.';
+
+  @override
+  String get opinions_reportSent => 'Thank you. Your report has been sent.';
+
+  @override
+  String get opinions_reportSending => 'Sending your report';
+
+  @override
+  String get journal_supportCardBody => 'If things feel heavy right now, you don\'t have to carry it alone. Support is here if you want it.';
+
+  @override
+  String get journal_supportSeeSupport => 'See support';
+
+  @override
+  String get journal_supportNotNow => 'Not now';
+
+  @override
+  String get journal_supportPatternsAway => 'Patterns will show here again later';
+
+  @override
+  String get journal_supportPatternsAwayBody => 'Your entries are saved and stay private to you.';
 }

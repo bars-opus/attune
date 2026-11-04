@@ -11,6 +11,7 @@ import 'package:attune/features/planning/presentation/widgets/note_text_block.da
 import 'package:attune/features/planning/presentation/widgets/photo_block_view.dart' show planningPhotoPickerProvider;
 import 'package:attune/features/planning/presentation/widgets/planning_doc_scope.dart';
 import 'package:attune/features/planning/presentation/widgets/planning_ribbon.dart';
+import 'package:attune/features/opinions/presentation/widgets/need_support_link.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
 
@@ -18,6 +19,7 @@ import '../../data/models/journal_note.dart';
 import '../../data/repositories/reflection_journal_repository.dart';
 import '../providers/reflection_journal_providers.dart';
 import '../widgets/journal_photo_block.dart';
+import '../widgets/journal_support_card.dart';
 import '../widgets/journal_text_saver.dart';
 
 class JournalEntryArgs {
@@ -33,7 +35,7 @@ const journalBlockTools = <(PlanningBlockType, IconData, String)>[
   (PlanningBlockType.photo, Icons.photo_library_outlined, 'Photo'),
 ];
 
-enum _EntryMenu { pin, unpin, delete }
+enum _EntryMenu { pin, unpin, delete, support }
 
 enum _BlockMenu { up, down, remove }
 
@@ -56,6 +58,8 @@ class _JournalEntryScreenState extends ConsumerState<JournalEntryScreen> {
   // after the widget is gone.
   late final ReflectionJournalRepository _repo;
   late final JournalListNotifier _list;
+  late final JournalSupportOffers _offers;
+  late final JournalAnalysisListener _onAnalysis;
   JournalEntryDetail? _last;
   bool _promptDismissed = false;
 
@@ -64,6 +68,8 @@ class _JournalEntryScreenState extends ConsumerState<JournalEntryScreen> {
     super.initState();
     _repo = ref.read(reflectionJournalRepositoryProvider);
     _list = ref.read(journalListProvider.notifier);
+    _offers = ref.read(journalSupportOffersProvider.notifier);
+    _onAnalysis = journalAnalysisListener(ref);
   }
 
   @override
@@ -74,10 +80,17 @@ class _JournalEntryScreenState extends ConsumerState<JournalEntryScreen> {
     final visit = _visit;
     final repo = _repo;
     final list = _list;
+    final offers = _offers;
+    final onAnalysis = _onAnalysis;
     final id = widget.entryId;
     scheduleMicrotask(() async {
       await visit.settled();
-      if (visit.textChanged) unawaited(repo.analyseEntry(id).then((_) {}, onError: (Object _) {}));
+      // Spec 1 W9c: support_offered shows the writer's card and hides the
+      // entry's reflection (this run only); any other answer puts it away.
+      if (visit.textChanged) {
+        final ticket = offers.nextTicket(id);
+        unawaited(repo.analyseEntry(id).then((a) => onAnalysis(id, ticket, a), onError: (Object _) {}));
+      }
       unawaited(list.refresh());
     });
     super.dispose();
@@ -230,6 +243,7 @@ class _JournalEntryScreenState extends ConsumerState<JournalEntryScreen> {
                       _EntryMenu.pin => _guard(() => _ctl.setPinned(true)),
                       _EntryMenu.unpin => _guard(() => _ctl.setPinned(false)),
                       _EntryMenu.delete => _confirmDelete(),
+                      _EntryMenu.support => openSupportNow(context, ref, SupportLinkSource.journal),
                     },
                     itemBuilder: (_) => [
                       if (d.entry.pinnedAt == null)
@@ -237,6 +251,12 @@ class _JournalEntryScreenState extends ConsumerState<JournalEntryScreen> {
                       else
                         const PopupMenuItem(value: _EntryMenu.unpin, child: Text('Unpin')),
                       const PopupMenuItem(value: _EntryMenu.delete, child: Text('Delete')),
+                      // Spec 1 W9c: always there (batch-8 ruling I-4: support
+                      // never waits for journal_ai_insights).
+                      PopupMenuItem(
+                        value: _EntryMenu.support,
+                        child: Text(AppLocalizations.of(context)!.support_needSupportNow),
+                      ),
                     ],
                   ),
               ],
@@ -280,7 +300,11 @@ class _JournalEntryScreenState extends ConsumerState<JournalEntryScreen> {
           _PromptCard(prompt: widget.prompt!, onDismiss: () => setState(() => _promptDismissed = true)),
       ]),
       footer: Column(children: [
-        if (d.analysis case final a? when a.status == 'completed' && (a.observation ?? '').isNotEmpty)
+        // Spec 1 W9c: the writer's card instead of any reflection (the
+        // controller has already dropped a hidden one).
+        if (ref.watch(journalSupportOffersProvider).contains(widget.entryId))
+          JournalSupportCard(onNotNow: () => _offers.dismiss(widget.entryId))
+        else if (d.analysis case final a? when a.status == 'completed' && (a.observation ?? '').isNotEmpty)
           _ReflectionCard(tone: a.tone, observation: a.observation!),
         const SizedBox(height: Spacing.xxl * 2),
       ]),

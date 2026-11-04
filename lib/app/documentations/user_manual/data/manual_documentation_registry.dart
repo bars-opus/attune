@@ -82,6 +82,8 @@ class DocumentationRegistry {
     'journalReminder': ['flow_signin_v2', 'flow_paths_v2'],
     // Spec 1 W7a: help for the country you're in (Support resources v2).
     'supportResourcesV2': ['support_resources_v2'],
+    // Spec 1 W9b: the content filter, the support link, the at-risk reason.
+    'opinionsSafety': ['opinions_safety_v1'],
   };
 
   static bool passageVisible(String passageId, Set<String> enabledFlags) =>

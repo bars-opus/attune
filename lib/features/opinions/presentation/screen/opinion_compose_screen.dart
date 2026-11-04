@@ -7,6 +7,11 @@ import 'package:attune/features/opinions/presentation/providers/opinion_provider
 import 'package:attune/core/widgets/poll_composer.dart';
 import 'package:attune/core/widgets/tag_picker.dart';
 import 'package:attune/core/widgets/bottom_sheet_header.dart';
+import 'package:attune/core/metrics/metric_counter.dart';
+import 'package:attune/features/opinions/domain/content_filter_error.dart';
+import 'package:attune/features/opinions/presentation/widgets/content_filter_notice.dart';
+import 'package:attune/features/opinions/presentation/providers/opinions_safety_provider.dart';
+import 'package:attune/features/opinions/presentation/widgets/need_support_link.dart';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -42,6 +47,10 @@ class _OpinionComposeScreenState extends ConsumerState<OpinionComposeScreen> {
   /// a post can carry a poll and tags, either, or neither.
   List<String> _tagSlugs = const [];
 
+  /// Spec 1 W9a: the content filter's refusal, shown under the field.
+  ContentFilterReason? _filterReason;
+  ContentFilterPart _filterPart = ContentFilterPart.text;
+
   @override
   void dispose() {
     _controller.dispose();
@@ -73,7 +82,11 @@ class _OpinionComposeScreenState extends ConsumerState<OpinionComposeScreen> {
     }
 
     final content = _controller.text.trim();
-    setState(() => _isSubmitting = true);
+    final metrics = ref.read(metricCounterProvider); // Spec 1 W9a
+    setState(() {
+      _isSubmitting = true;
+      _filterReason = null; // a repeat refusal re-announces (Spec 1 W9a)
+    });
 
     try {
       final success = await postOpinionWithPoll(
@@ -89,7 +102,17 @@ class _OpinionComposeScreenState extends ConsumerState<OpinionComposeScreen> {
         Navigator.maybePop(context, true);
       }
     } catch (e) {
-      if (mounted) {
+      // Spec 1 W9a: a filter refusal shows under the field; the draft stays.
+      final reason = ContentFilterReason.of(e);
+      if (reason != null) {
+        metrics.bump(reason.metric);
+        if (mounted) {
+          setState(() {
+            _filterReason = reason;
+            _filterPart = ContentFilterPart.of(e);
+          });
+        }
+      } else if (mounted) {
         ScaffoldMessenger.of(
           context,
         ).showSnackBar(SnackBar(content: Text('Failed to post: $e')));
@@ -170,10 +193,14 @@ class _OpinionComposeScreenState extends ConsumerState<OpinionComposeScreen> {
               maxLength: maxContentLength,
               autofocus: true,
               // buildCounter: (context, {required currentLength, required isFocused, maxLength}) => null, // Custom counter
-              onChanged: (_) => setState(() {}),
+              onChanged: (_) => setState(() => _filterReason = null),
               enabled: !_isSubmitting,
               label: '',
             ),
+            if (_filterReason != null)
+              ContentFilterNotice(reason: _filterReason!, part: _filterPart),
+            // Spec 1 W9b: in compose, whatever is typed (flag on only).
+            if (ref.watch(opinionsSafetyProvider)) const NeedSupportLink(),
 
             // Optional tags (§8.11) and poll — both compact icon buttons
             // that open their own configuration sheet on tap, rather than
@@ -188,7 +215,10 @@ class _OpinionComposeScreenState extends ConsumerState<OpinionComposeScreen> {
                 PollComposerRow(
                   currentOptions: _pollOptions,
                   onChanged:
-                      (options) => setState(() => _pollOptions = options),
+                      (options) => setState(() {
+                        _pollOptions = options;
+                        _filterReason = null;
+                      }),
                 ),
               ],
             ),

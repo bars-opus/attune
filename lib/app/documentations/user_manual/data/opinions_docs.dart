@@ -4,6 +4,8 @@
 // (Sections 3 and 4 — the anonymity system and Opinions feature).
 
 import 'package:flutter/material.dart';
+import 'package:attune/app/documentations/user_manual/data/documentation_flags.dart';
+import 'package:attune/app/documentations/user_manual/data/manual_documentation_registry.dart';
 import 'package:attune/app/documentations/user_manual/models/documentation_model.dart'
     show DocumentationModule;
 import 'package:attune/app/documentations/user_manual/models/faq_model.dart';
@@ -127,6 +129,19 @@ class OpinionsDocs implements DocumentationModule {
               'You can\'t like or dislike your own posts — that\'s intentional, not a bug.',
           type: ManualContentType.tip,
         ),
+        // Spec 1 W9b: only while Opinions safety is on.
+        if (DocumentationRegistry.passageVisible(
+          'opinionsSafety',
+          documentationFlagsOf(context),
+        ))
+          ManualContent(
+            id: 'opinions_safety',
+            title: 'Keeping Opinions safe',
+            content:
+                "Posts, comments and edits can't include phone numbers, emails, links or usernames, words that attack people for who they are, or sexual content. If something is held back, you'll see why, and your words stay there for you to change. \"Need support now?\" is in compose and in every post and comment menu. If you're worried about someone, report it with \"Someone may be at risk\": a person on our team looks at it, and it never hides the post or comment.",
+            numberPrefix: '4',
+            type: ManualContentType.text,
+          ),
       ],
     ),
     ManualSection(

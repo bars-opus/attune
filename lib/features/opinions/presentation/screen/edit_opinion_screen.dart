@@ -3,6 +3,9 @@
 import 'package:attune/core/utils/exports/export_screens.dart';
 import 'package:attune/features/opinions/data/models/opinion_model.dart';
 import 'package:attune/features/opinions/presentation/providers/opinion_providers.dart';
+import 'package:attune/core/metrics/metric_counter.dart';
+import 'package:attune/features/opinions/domain/content_filter_error.dart';
+import 'package:attune/features/opinions/presentation/widgets/content_filter_notice.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 /// Edits an existing opinion inside its 15-minute window
@@ -33,6 +36,9 @@ class _EditOpinionScreenState extends ConsumerState<EditOpinionScreen> {
   late final TextEditingController _controller;
   final FocusNode _focusNode = FocusNode();
   bool _isSubmitting = false;
+
+  /// Spec 1 W9a: the content filter's refusal, shown under the field.
+  ContentFilterReason? _filterReason;
 
   @override
   void initState() {
@@ -73,7 +79,11 @@ class _EditOpinionScreenState extends ConsumerState<EditOpinionScreen> {
     if (!_isSaveEnabled()) return;
 
     final content = _controller.text.trim();
-    setState(() => _isSubmitting = true);
+    final metrics = ref.read(metricCounterProvider); // Spec 1 W9a
+    setState(() {
+      _isSubmitting = true;
+      _filterReason = null; // a repeat refusal re-announces (Spec 1 W9a)
+    });
 
     try {
       await editOpinion(ref, opinionId: widget.opinion.id, content: content);
@@ -84,7 +94,12 @@ class _EditOpinionScreenState extends ConsumerState<EditOpinionScreen> {
         Navigator.pop(context, true);
       }
     } catch (error) {
-      if (mounted) {
+      // Spec 1 W9a: a filter refusal shows under the field; the edit stays.
+      final reason = ContentFilterReason.of(error);
+      if (reason != null) {
+        metrics.bump(reason.metric);
+        if (mounted) setState(() => _filterReason = reason);
+      } else if (mounted) {
         context.showInfoSnackbar(_editErrorMessage(error));
       }
     } finally {
@@ -136,10 +151,12 @@ class _EditOpinionScreenState extends ConsumerState<EditOpinionScreen> {
                 maxLines: 6,
                 minLines: 3,
                 maxLength: maxContentLength,
-                onChanged: (_) => setState(() {}),
+                onChanged: (_) => setState(() => _filterReason = null),
                 enabled: !_isSubmitting,
                 label: '',
               ),
+              if (_filterReason != null)
+                ContentFilterNotice(reason: _filterReason!),
               Gap(Spacing.sm.h),
               Text(
                 _getRemainingCharacters(),

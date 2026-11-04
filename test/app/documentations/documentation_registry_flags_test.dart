@@ -66,6 +66,8 @@ void main() {
           'couple_profile',
           // Spec 1 W7a: Support resources v2.
           'support_resources_v2',
+          // Spec 1 W9b: Opinions safety.
+          'opinions_safety_v1',
         }),
       );
     }

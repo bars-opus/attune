@@ -4,7 +4,9 @@
 // hard-coded self_disclosure check runs before any provider call (S1 W9c).
 // The flag journal_ai_insights is off by default; off, unreadable or missing
 // all mean paused, for both actions: no Gemini call, nothing read from or
-// written to reflection_journal_analysis.
+// written to reflection_journal_analysis. Spec 1 W9 fix round 1 (ruling):
+// the deterministic crisis check runs before this pause; on a match the
+// entry's old reflection is still removed and support offered.
 import { featureFlagEnabled } from "../_shared/feature_flag.ts";
 
 export const JOURNAL_AI_FLAG = "journal_ai_insights";

@@ -5586,6 +5586,114 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Back'**
   String get support_back;
+
+  /// Shown under an Opinions post, comment or edit the content filter refused for contact details (Spec 1 W9a). The draft stays.
+  ///
+  /// In en, this message translates to:
+  /// **'Phone numbers, emails, links and usernames can\'t go in Opinions. They can identify you or someone else. Take it out and post again.'**
+  String get opinions_filterContactInfo;
+
+  /// Shown under an Opinions post, comment or edit the content filter refused for a slur (Spec 1 W9a). The draft stays.
+  ///
+  /// In en, this message translates to:
+  /// **'This includes a word that attacks people for who they are. Opinions doesn\'t allow it.'**
+  String get opinions_filterSlur;
+
+  /// Shown under an Opinions post, comment or edit the content filter refused for explicit sexual content (Spec 1 W9a). The draft stays.
+  ///
+  /// In en, this message translates to:
+  /// **'Opinions doesn\'t allow sexual content. You can describe what happened without explicit words.'**
+  String get opinions_filterExplicit;
+
+  /// Shown above the Opinions comment field when the content filter refused the quoted text of the comment being replied to, not the writer's own words (Spec 1 W9a, batch-3 review I-3). Replaces the reason line. The draft stays.
+  ///
+  /// In en, this message translates to:
+  /// **'The comment you\'re replying to can\'t be quoted in Opinions. Your own words are fine. Close the reply and post again.'**
+  String get opinions_filterQuoted;
+
+  /// Shown under the reason line when the Opinions content filter refused one of a post's poll options (Spec 1 W9a, batch-3 review I-3). The draft stays.
+  ///
+  /// In en, this message translates to:
+  /// **'It\'s in one of your poll options.'**
+  String get opinions_filterPollOption;
+
+  /// The link to Support, in Opinions compose and every post and comment menu (Spec 1 W9b), and in the journal entry menu (W9c). Shown whatever anyone typed.
+  ///
+  /// In en, this message translates to:
+  /// **'Need support now?'**
+  String get support_needSupportNow;
+
+  /// A report reason in both Opinions report lists (Spec 1 W9b). It goes to a person and never hides the post.
+  ///
+  /// In en, this message translates to:
+  /// **'Someone may be at risk'**
+  String get opinions_reportAtRisk;
+
+  /// Shown after an at-risk report (Spec 1 W9b).
+  ///
+  /// In en, this message translates to:
+  /// **'Thank you. A person on our team will look at this soon. If someone is in danger right now, call your local emergency number.'**
+  String get opinions_atRiskThanks;
+
+  /// Opens Support from the at-risk report's thank-you (Spec 1 W9b).
+  ///
+  /// In en, this message translates to:
+  /// **'See emergency numbers'**
+  String get opinions_atRiskSeeNumbers;
+
+  /// Closes the at-risk report's thank-you (Spec 1 W9b).
+  ///
+  /// In en, this message translates to:
+  /// **'Close'**
+  String get opinions_atRiskClose;
+
+  /// An at-risk report that did not reach the server (Spec 1 W9b). With opinions_safety_v1 on, also any other report reason that did not reach the server.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t send your report. Please try again.'**
+  String get opinions_reportFailed;
+
+  /// With opinions_safety_v1 on, shown after a post or comment report with any reason other than Someone may be at risk reached the server (Spec 1 W9b, owner ruling (c)). Promises no review time: review queue v0 lists only the priority reasons.
+  ///
+  /// In en, this message translates to:
+  /// **'Thank you. Your report has been sent.'**
+  String get opinions_reportSent;
+
+  /// Shown when a report from Opinions takes longer than 400 ms to reach the server (Spec 1 W9b, section 2.2), at-risk always and every reason with opinions_safety_v1 on. Replaced by the thank-you or the failure.
+  ///
+  /// In en, this message translates to:
+  /// **'Sending your report'**
+  String get opinions_reportSending;
+
+  /// The writer's card, shown instead of a reflection when an entry reads as a crisis (Spec 1 W9c). Only the writer sees it.
+  ///
+  /// In en, this message translates to:
+  /// **'If things feel heavy right now, you don\'t have to carry it alone. Support is here if you want it.'**
+  String get journal_supportCardBody;
+
+  /// Opens Support from the journal's writer card (Spec 1 W9c).
+  ///
+  /// In en, this message translates to:
+  /// **'See support'**
+  String get journal_supportSeeSupport;
+
+  /// Dismisses the journal's writer card (Spec 1 W9c).
+  ///
+  /// In en, this message translates to:
+  /// **'Not now'**
+  String get journal_supportNotNow;
+
+  /// The Patterns tab after the writer chose Not now on its support card (Spec 1 W9c, ruling PF-C6). Shown instead of a summary for the rest of this run; never stored.
+  ///
+  /// In en, this message translates to:
+  /// **'Patterns will show here again later'**
+  String get journal_supportPatternsAway;
+
+  /// Under journal_supportPatternsAway, on the Patterns tab after Not now on its support card (Spec 1 W9c, ruling PF-C6; batch-8 review M-5).
+  ///
+  /// In en, this message translates to:
+  /// **'Your entries are saved and stay private to you.'**
+  String get journal_supportPatternsAwayBody;
 }
 
 class _AppLocalizationsDelegate extends LocalizationsDelegate<AppLocalizations> {

@@ -14,6 +14,12 @@ import 'package:attune/features/opinions/data/models/opinion_model.dart';
 import 'package:attune/features/opinions/data/opinion_more_data.dart';
 import 'package:attune/features/opinions/presentation/providers/opinion_providers.dart';
 import 'package:attune/features/opinions/presentation/widgets/opinion_card.dart';
+import 'package:attune/features/opinions/presentation/providers/opinions_safety_provider.dart';
+import 'package:attune/features/opinions/presentation/widgets/need_support_link.dart';
+import 'package:attune/core/ui/text/allow_large_text.dart';
+import 'package:attune/core/metrics/metric_counter.dart';
+import 'package:attune/features/opinions/domain/content_filter_error.dart';
+import 'package:attune/features/opinions/presentation/widgets/content_filter_notice.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_slidable/flutter_slidable.dart';
 
@@ -50,10 +56,38 @@ class _CommentThreadScreenState extends ConsumerState<CommentThreadScreen> {
   final FocusNode _editFocusNode = FocusNode();
   bool _isSavingEdit = false;
 
+  /// Spec 1 W9b: opinions_safety_v1 as read when the comment report list
+  /// opened, so the list and what a tap sends always agree (batch-6 M-2).
+  bool _reportSafety = false;
+
+  /// Spec 1 W9a: the content filter's refusal of a new comment (shown
+  /// above the field) and of an inline edit (under the editor).
+  ContentFilterReason? _commentFilterReason;
+  ContentFilterPart _commentFilterPart = ContentFilterPart.text;
+  ContentFilterReason? _editFilterReason;
+
+  /// The comment text the filter refused: typing anything else clears the
+  /// notice, a cursor move does not (batch-3 review I-2).
+  String? _refusedCommentText;
+
+  @override
+  void initState() {
+    super.initState();
+    _commentController.addListener(_clearStaleCommentNotice);
+  }
+
+  void _clearStaleCommentNotice() {
+    if (_commentFilterReason != null &&
+        _commentController.text != _refusedCommentText) {
+      setState(() => _commentFilterReason = null);
+    }
+  }
+
   void _startEditingComment(CommentModel comment) {
     setState(() {
       _editingCommentId = comment.id;
       _editController.text = comment.content;
+      _editFilterReason = null;
     });
     _editFocusNode.requestFocus();
   }
@@ -62,6 +96,7 @@ class _CommentThreadScreenState extends ConsumerState<CommentThreadScreen> {
     setState(() {
       _editingCommentId = null;
       _editController.clear();
+      _editFilterReason = null;
     });
   }
 
@@ -78,7 +113,11 @@ class _CommentThreadScreenState extends ConsumerState<CommentThreadScreen> {
       return;
     }
 
-    setState(() => _isSavingEdit = true);
+    final metrics = ref.read(metricCounterProvider); // Spec 1 W9a
+    setState(() {
+      _isSavingEdit = true;
+      _editFilterReason = null; // a repeat refusal re-announces (Spec 1 W9a)
+    });
     try {
       await editComment(
         ref,
@@ -88,7 +127,12 @@ class _CommentThreadScreenState extends ConsumerState<CommentThreadScreen> {
       );
       if (mounted) _cancelEditingComment();
     } catch (error) {
-      if (mounted) {
+      // Spec 1 W9a: a filter refusal shows under the editor; the edit stays.
+      final reason = ContentFilterReason.of(error);
+      if (reason != null) {
+        metrics.bump(reason.metric);
+        if (mounted) setState(() => _editFilterReason = reason);
+      } else if (mounted) {
         final text = error.toString();
         context.showInfoSnackbar(
           text.contains('not_editable')
@@ -218,7 +262,11 @@ class _CommentThreadScreenState extends ConsumerState<CommentThreadScreen> {
     final content = _commentController.text.trim();
     if (content.isEmpty || _isSubmitting) return;
 
-    setState(() => _isSubmitting = true);
+    final metrics = ref.read(metricCounterProvider); // Spec 1 W9a
+    setState(() {
+      _isSubmitting = true;
+      _commentFilterReason = null; // a repeat refusal re-announces (Spec 1 W9a)
+    });
 
     try {
       await postComment(
@@ -229,12 +277,24 @@ class _CommentThreadScreenState extends ConsumerState<CommentThreadScreen> {
         quotedText: _replyToQuotedText,
       );
 
+      _commentFilterReason = null;
       _commentController.clear();
       _clearReplyTarget();
       setState(() => _isSubmitting = false);
     } catch (e) {
       setState(() => _isSubmitting = false);
-      if (mounted) {
+      // Spec 1 W9a: a filter refusal shows above the field; the draft stays.
+      final reason = ContentFilterReason.of(e);
+      if (reason != null) {
+        metrics.bump(reason.metric);
+        if (mounted) {
+          setState(() {
+            _commentFilterReason = reason;
+            _commentFilterPart = ContentFilterPart.of(e);
+            _refusedCommentText = _commentController.text;
+          });
+        }
+      } else if (mounted) {
         print(e);
         context.showErrorSnackbar('Failed to post comment: $e');
       }
@@ -525,6 +585,11 @@ class _CommentThreadScreenState extends ConsumerState<CommentThreadScreen> {
                               ),
                             ),
                           ),
+                        if (_commentFilterReason != null)
+                          ContentFilterNotice(
+                            reason: _commentFilterReason!,
+                            part: _commentFilterPart,
+                          ),
                         // Comment input, floating pill over the list instead
                         // of a full-width opaque bar.
                         ChatTextField(
@@ -696,6 +761,12 @@ class _CommentThreadScreenState extends ConsumerState<CommentThreadScreen> {
           TextField(
             controller: _editController,
             focusNode: _editFocusNode,
+            // Spec 1 W9a: typing clears a refusal (batch-3 review I-2).
+            onChanged: (_) {
+              if (_editFilterReason != null) {
+                setState(() => _editFilterReason = null);
+              }
+            },
             enabled: !_isSavingEdit,
             maxLines: 5,
             minLines: 1,
@@ -714,6 +785,8 @@ class _CommentThreadScreenState extends ConsumerState<CommentThreadScreen> {
               ),
             ),
           ),
+          if (_editFilterReason != null)
+            ContentFilterNotice(reason: _editFilterReason!),
           Gap(Spacing.xs.h),
           Row(
             mainAxisSize: MainAxisSize.min,
@@ -991,6 +1064,12 @@ class _CommentThreadScreenState extends ConsumerState<CommentThreadScreen> {
                             commentId: comment.id,
                             opinionId: widget.opinionId,
                           );
+                        } else if (value == 'support') {
+                          openSupportNow(
+                            context,
+                            ref,
+                            SupportLinkSource.opinions,
+                          );
                         }
                       },
                       itemBuilder:
@@ -1013,6 +1092,16 @@ class _CommentThreadScreenState extends ConsumerState<CommentThreadScreen> {
                               const PopupMenuItem(
                                 value: 'delete',
                                 child: Text('Delete'),
+                              ),
+                            // Spec 1 W9b: on every comment (flag on only).
+                            if (ref.read(opinionsSafetyProvider))
+                              PopupMenuItem(
+                                value: 'support',
+                                child: Text(
+                                  AppLocalizations.of(
+                                    context,
+                                  )!.support_needSupportNow,
+                                ),
                               ),
                           ],
                     ),
@@ -1104,14 +1193,29 @@ class _CommentThreadScreenState extends ConsumerState<CommentThreadScreen> {
     String commentId,
   ) {
     if (_blockedForGuest()) return;
+    // Spec 1 W9b: read once, as the list opens (opinions_safety_v1).
+    final safety = _reportSafety = ref.read(opinionsSafetyProvider);
     showDialog(
       context: context,
       builder:
-          (context) => AlertDialog(
+          (context) => _safetyDialog(
+            safety,
+            AlertDialog(
+            // Spec 1 W9b: with the flag on, the seven reasons scroll and let
+            // large text through; with it off, the dialog is as before.
+            scrollable: safety,
             title: const Text('Report this comment'),
             content: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
+                // Spec 1 W9b: the at-risk reason, first (flag on only).
+                if (safety)
+                  _buildReportOption(
+                    context,
+                    ref,
+                    commentId,
+                    atRiskReportReason,
+                  ),
                 _buildReportOption(
                   context,
                   ref,
@@ -1141,8 +1245,12 @@ class _CommentThreadScreenState extends ConsumerState<CommentThreadScreen> {
               ],
             ),
           ),
+          ),
     );
   }
+
+  static Widget _safetyDialog(bool on, Widget dialog) =>
+      on ? AllowLargeText(child: dialog) : dialog;
 
   Widget _buildReportOption(
     BuildContext context,
@@ -1151,9 +1259,31 @@ class _CommentThreadScreenState extends ConsumerState<CommentThreadScreen> {
     String reason,
   ) {
     return ListTile(
-      title: Text(reason),
+      title: Text(
+        reason == atRiskReportReason
+            ? AppLocalizations.of(context)!.opinions_reportAtRisk
+            : reason,
+      ),
       onTap: () async {
         Navigator.pop(context);
+        // Spec 1 W9b (owner ruling (c)): with opinions_safety_v1 on, every
+        // reason reaches the server. An at-risk report goes to a person
+        // (the RPC records it as priority; it never hides the comment) and
+        // thanks the reporter with the emergency numbers; the others'
+        // thanks promises only that it was sent. With the flag off, the
+        // other reasons are unchanged.
+        if (reason == atRiskReportReason || _reportSafety) {
+          final screen = this.context;
+          Future<void> send() => ref
+              .read(opinionRepositoryProvider)
+              .reportComment(commentId: commentId, reason: reason);
+          if (reason == atRiskReportReason) {
+            await sendAtRiskReport(screen, ref, send);
+          } else {
+            await sendReport(screen, send);
+          }
+          return;
+        }
         // Implement comment report provider
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(

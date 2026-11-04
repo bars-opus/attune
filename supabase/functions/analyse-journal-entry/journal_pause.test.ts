@@ -48,13 +48,29 @@ Deno.test("journal insights are paused unless journal_ai_insights is on", async 
   if (await journalInsightsPaused(on.client)) throw new Error("flag on must not pause");
 });
 
-Deno.test("the pause is checked before either action can reach a provider", async () => {
+Deno.test("the pause is checked before either action can reach the analyses or a provider", async () => {
+  // Spec 1 W9 fix round 1 (ruling, spec amendment): the deterministic crisis
+  // check runs before this pause, so a writer in crisis is offered support
+  // whatever journal_ai_insights says. The pause is injected into each action
+  // and checked right after the check, before the cache read and any provider
+  // call; index.ts still answers paused for anything else.
   const index = await Deno.readTextFile(new URL("./index.ts", import.meta.url));
-  const pause = index.indexOf("if (await journalInsightsPaused(adminClient))");
-  if (pause < 0) throw new Error("index.ts does not check the pause");
-  for (const dispatch of ['body.action === "get_patterns"', 'body.action === "analyse_entry"']) {
-    const at = index.indexOf(dispatch);
-    if (at < 0 || at < pause) throw new Error(`${dispatch} is reached before the pause`);
+  if (!index.includes("insightsPaused: () => journalInsightsPaused(adminClient),")) {
+    throw new Error("index.ts does not inject the pause");
   }
   if (!index.includes("return json(PAUSED_BODY);")) throw new Error("the pause must answer PAUSED_BODY");
+  const handlers = await Deno.readTextFile(new URL("./journal_handlers.ts", import.meta.url));
+  for (const [action, end] of [
+    ["export async function handleAnalyseEntry(", "export async function handleGetPatterns("],
+    ["export async function handleGetPatterns(", "function globalConstraintHeader("],
+  ]) {
+    const body = handlers.slice(handlers.indexOf(action), handlers.indexOf(end));
+    const pause = body.indexOf("if (await insightsPaused(deps))");
+    const check = body.indexOf("disclosed(");
+    if (pause < 0 || check < 0 || check > pause) throw new Error(`${action} checks the pause before the crisis check`);
+    for (const later of ['.select("status, tone, observation, confidence")', '.select("entry_id, observation, tone, created_at")', "deps.model(", "maybeGenerate("]) {
+      const at = body.indexOf(later);
+      if (at >= 0 && at < pause) throw new Error(`${action} reaches ${later} before the pause`);
+    }
+  }
 });

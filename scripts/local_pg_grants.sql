@@ -306,3 +306,18 @@ GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public
 -- inline pipeline) and the database's own (the enqueue); no client.
 \i supabase/migrations/20261103140010_media_scan_grants.sql
 \i supabase/migrations/20261103140110_media_scan_enqueue_grants.sql
+
+-- Spec 1 W9a: the content filter is the database's own; the six Opinion
+-- writers keep their grants (signed-in only).
+\i supabase/migrations/20261104100010_opinion_content_filter_grants.sql
+
+-- Spec 1 W9b: the report RPCs keep their grants; review queue v0 is the
+-- service role's; increment_opinion_report_count loses its client EXECUTE
+-- (batch-6 ruling; the revoke is in the twin below).
+\i supabase/migrations/20261104110010_opinion_at_risk_and_review_queue_grants.sql
+
+-- Spec 1 W9b: admin_confirm_content_removal stays the service role's.
+\i supabase/migrations/20261104120010_opinion_moderation_notices_grants.sql
+
+-- Spec 1 W9b: removing your own opinion or comment, signed in only.
+\i supabase/migrations/20261104130010_opinion_remove_own_grants.sql

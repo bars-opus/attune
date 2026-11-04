@@ -4,6 +4,10 @@ on:
   push:
   pull_request:
 
+# Spec 1 W9 final re-review N-3: read-only token for every job.
+permissions:
+  contents: read
+
 jobs:
   flutter-tests:
     name: Flutter analyze + tests
@@ -32,6 +36,27 @@ jobs:
 
       - name: Run tests
         run: flutter test
+
+  deno-w9:
+    # Spec 1 W9 final M-3: the TypeScript side of the normaliser parity pin
+    # and the journal crisis-check ordering tests (the SQL side runs in
+    # sql-contracts). Deno is pinned: an ICU change must fail here, not
+    # drift silently. Actions are pinned to commits, and the remote modules
+    # (deno.land std, esm.sh supabase-js and its transitive versions) to
+    # .github/deno-w9.lock; --frozen fails on any change. Refresh the lock
+    # with the same command without --frozen.
+    name: Deno tests (W9 normaliser + journal check)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - uses: denoland/setup-deno@22d081ff2d3a40755e97629de92e3bcbfa7cf2ed # v2.0.5
+        with:
+          deno-version: 2.8.1
+
+      - name: Run Deno tests
+        working-directory: supabase/functions
+        run: deno test --allow-read --allow-env --lock=../../.github/deno-w9.lock --frozen _shared/unicode_normaliser.test.ts analyse-journal-entry/
 
   sql-contracts:
     name: SQL contract tests

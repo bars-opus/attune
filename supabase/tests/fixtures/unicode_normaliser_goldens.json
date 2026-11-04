@@ -1,0 +1,456 @@
+{
+  "about": "Spec 1 W9a (I-17): shared normaliser goldens. Each line must give the same base and match form from private.normalize_for_filter / private.match_form (opinion_filter_contracts.sql) and from baseForm / matchForm (unicode_normaliser.test.ts). Spec 2 W6 runs the same file. The parity entry: sha256 of the lines \"<hex code point>\\t<base form>\\t<match form>\\n\" of x<c>x for every code point in ranges (surrogates excluded), in code point order, UTF-8.",
+  "parity": {
+    "ranges": [
+      [
+        1,
+        262143
+      ],
+      [
+        917504,
+        921599
+      ]
+    ],
+    "sha256": "751eb4c157a95657ef3303aaf9f37a25a4fdbec7596f137cb71c95af536e3828"
+  },
+  "cases": [
+    {
+      "name": "ordinary_gh",
+      "input": "Me and my husband have been married since 2015. We live in Kumasi near Kejetia and he sells at Makola on Saturdays.",
+      "base": "me and my husband have been married since 2015. we live in kumasi near kejetia and he sells at makola on saturdays.",
+      "match": "me and my husband have been married since 2ois we live in kumasi near kejetia and he sells at makola on saturdays"
+    },
+    {
+      "name": "ordinary_ng",
+      "input": "Abeg, my oga said make I wait till December before we fix the wedding. Na wa o!",
+      "base": "abeg, my oga said make i wait till december before we fix the wedding. na wa o",
+      "match": "abeg my oga said make i wait till december before we fix the wedding na wa o"
+    },
+    {
+      "name": "ordinary_uk",
+      "input": "We've been together 7 years; I'm knackered, but it's lovely - honestly.",
+      "base": "we ve been together 7 years i m knackered, but it s lovely honestly.",
+      "match": "we ve been together t years i m knackered but it s lovely honestly"
+    },
+    {
+      "name": "ordinary_money",
+      "input": "He wants GH\u20b5 2,500 for the rent and \u20a650,000 for school fees, that's $40.",
+      "base": "he wants gh\u20b5 2,500 for the rent and \u20a650,000 for school fees, that s $40.",
+      "match": "he wants gh\u20b5 2 soo for the rent and \u20a6so ooo for school fees that s sao"
+    },
+    {
+      "name": "ordinary_years",
+      "input": "We met in 1999, broke up in 2004 and got back together in 2010.",
+      "base": "we met in 1999, broke up in 2004 and got back together in 2010.",
+      "match": "we met in i999 broke up in 2ooa and got back together in 2oio"
+    },
+    {
+      "name": "ordinary_time",
+      "input": "Meet me at the mall by 7:30pm on 12/05/2024?",
+      "base": "meet me at the mall by 7:30pm on 12/05/2024",
+      "match": "meet me at the mall by t eopm on i2 os 2o2a"
+    },
+    {
+      "name": "twi_with_letters",
+      "input": "Me d\u0254 wo pa ara, \u0190na me ho y\u025b",
+      "base": "me d\u0254 wo pa ara, \u025bna me ho y\u025b",
+      "match": "me do wo pa ara ena me ho ye"
+    },
+    {
+      "name": "twi_without_letters",
+      "input": "Me do wo pa ara, Ena me ho ye",
+      "base": "me do wo pa ara, ena me ho ye",
+      "match": "me do wo pa ara ena me ho ye"
+    },
+    {
+      "name": "ewe_hausa_letters",
+      "input": "\u0192e \u028bu \u0253a \u0257a \u0199a \u014bk\u0254",
+      "base": "\u0192e \u028bu \u0253a \u0257a \u0199a \u014bk\u0254",
+      "match": "fe vu ba da ka ngko"
+    },
+    {
+      "name": "zero_width_split",
+      "input": "f\u200bu\u200cc\u200dk",
+      "base": "fuck",
+      "match": "fuck"
+    },
+    {
+      "name": "soft_hyphen_and_bidi",
+      "input": "pa\u00adss\u202eword\u202c\u2066x\u2069",
+      "base": "passwordx",
+      "match": "passwordx"
+    },
+    {
+      "name": "cyrillic_lookalikes",
+      "input": "\u0410\u0412\u0421 \u0440\u0430\u0443 \u0435\u0445\u0441\u0435\u0440t",
+      "base": "abc pay except",
+      "match": "abc pay except"
+    },
+    {
+      "name": "greek_lookalikes",
+      "input": "\u039a\u039f\u03a5 \u03b1\u03bd\u03c4\u03b9",
+      "base": "kou avti",
+      "match": "kou avti"
+    },
+    {
+      "name": "final_sigma",
+      "input": "\u039f\u0394\u039f\u03a3 \u03a3",
+      "base": "o\u03b4o\u03c3 \u03c3",
+      "match": "o\u03b4o\u03c3 \u03c3"
+    },
+    {
+      "name": "dotted_capital_i",
+      "input": "\u0130stanbul D\u0130YARBAKIR",
+      "base": "istanbul diyarbakir",
+      "match": "istanbul diyarbakir"
+    },
+    {
+      "name": "sharp_s",
+      "input": "STRA\u1e9eE stra\u00dfe",
+      "base": "stra\u00dfe stra\u00dfe",
+      "match": "stra\u00dfe stra\u00dfe"
+    },
+    {
+      "name": "fullwidth",
+      "input": "\uff26\uff55\uff4c\uff4c \uff57\uff49\uff44\uff54\uff48 \uff10\uff12\uff14",
+      "base": "full width 024",
+      "match": "full width o2a"
+    },
+    {
+      "name": "math_letters",
+      "input": "\ud835\udc1b\ud835\udc1a\ud835\udc1d",
+      "base": "bad",
+      "match": "bad"
+    },
+    {
+      "name": "arabic_digits",
+      "input": "\u0660\u0662\u0664\u0664 \u06f1\u06f2\u06f3 \u0967\u0968",
+      "base": "0244 123 12",
+      "match": "o2aa i2e i2"
+    },
+    {
+      "name": "leet",
+      "input": "b@st4rd 5h1t l33t $10",
+      "base": "b@st4rd 5h1t l33t $10",
+      "match": "bastard shit leet sio"
+    },
+    {
+      "name": "phone_spaced",
+      "input": "Call me on 024 412 3456 or +233 (0)24-412-3456",
+      "base": "call me on 024 412 3456 or +233 0 24 412 3456",
+      "match": "call me on o2a ai2 eas6 or 2ee o 2a ai2 eas6"
+    },
+    {
+      "name": "phone_words",
+      "input": "zero two four four one two three four five six",
+      "base": "zero two four four one two three four five six",
+      "match": "zero two four four one two three four five six"
+    },
+    {
+      "name": "email",
+      "input": "Write to Kofi.Mensah+test@Gmail.COM today",
+      "base": "write to kofi.mensah+test@gmail.com today",
+      "match": "write to kofi mensah testagmail com today"
+    },
+    {
+      "name": "email_words",
+      "input": "kofi (at) gmail [dot] com",
+      "base": "kofi at gmail dot com",
+      "match": "kofi at gmail dot com"
+    },
+    {
+      "name": "url",
+      "input": "https://wa.me/233244123456 www.example.org t.me/kofi",
+      "base": "https://wa.me/233244123456 www.example.org t.me/kofi",
+      "match": "https wa me 2ee2aai2eas6 www example org t me kofi"
+    },
+    {
+      "name": "handle",
+      "input": "Follow @kofi_99 on IG: kofi.99",
+      "base": "follow @kofi_99 on ig: kofi.99",
+      "match": "follow akofi 99 on ig kofi 99"
+    },
+    {
+      "name": "punctuation_unicode",
+      "input": "\u201cHello\u201d \u2014 she said\u2026 \u00abyes\u00bb \u00bfok? \u00a1no!",
+      "base": "hello she said... yes ok no",
+      "match": "hello she said yes ok no"
+    },
+    {
+      "name": "whitespace_mix",
+      "input": "a\tb\nc\r\nd\u00a0e\u2003f\u3000g   h",
+      "base": "a b c d e f g h",
+      "match": "a b c d e f g h"
+    },
+    {
+      "name": "emoji_kept",
+      "input": "I love you \u2764\ufe0f\ud83d\ude0d so much",
+      "base": "i love you \u2764\ud83d\ude0d so much",
+      "match": "i love you \u2764\ud83d\ude0d so much"
+    },
+    {
+      "name": "accents_kept",
+      "input": "Caf\u00e9 na\u00efve \u00c0 bient\u00f4t",
+      "base": "caf\u00e9 na\u00efve \u00e0 bient\u00f4t",
+      "match": "cafe naive a bientot"
+    },
+    {
+      "name": "apostrophes",
+      "input": "don't won\u2019t it's",
+      "base": "don t won t it s",
+      "match": "don t won t it s"
+    },
+    {
+      "name": "empty_after",
+      "input": "\u200b\u200b  \u00ad",
+      "base": "",
+      "match": ""
+    },
+    {
+      "name": "invisible_splitters",
+      "input": "f\u034fu\u061cc\u17b4k s\u115fh\u1160i\u180et \u3164b\uffa0a\u17b5d",
+      "base": "fuck shit bad",
+      "match": "fuck shit bad"
+    },
+    {
+      "name": "variation_selector_split",
+      "input": "f\ufe0fu\ufe0ec\udb40\udc41k\udb40\udd00 \udb40\udc01x\udb40\udc7f",
+      "base": "fuck x",
+      "match": "fuck x"
+    },
+    {
+      "name": "braille_blank",
+      "input": "f\u2800u\u2800c\u2800k",
+      "base": "f u c k",
+      "match": "f u c k"
+    },
+    {
+      "name": "zalgo",
+      "input": "f\u0338u\u0338c\u0338k\u0338",
+      "base": "f\u0338u\u0338c\u0338k\u0338",
+      "match": "fuck"
+    },
+    {
+      "name": "twi_tone_marks",
+      "input": "M\u00e9 d\u0254\u0301 w\u00f2, \u025b\u0300y\u025b\u0301 d\u025b\u0301",
+      "base": "m\u00e9 d\u0254\u0301 w\u00f2, \u025b\u0300y\u025b\u0301 d\u025b\u0301",
+      "match": "me do wo eye de"
+    },
+    {
+      "name": "twi_tone_marks_plain",
+      "input": "Me do wo, eye de",
+      "base": "me do wo, eye de",
+      "match": "me do wo eye de"
+    },
+    {
+      "name": "ewe_d_and_gamma",
+      "input": "\u0189o \u0256o \u0194e \u0263e",
+      "base": "\u0256o \u0256o \u0263e \u0263e",
+      "match": "do do ge ge"
+    },
+    {
+      "name": "hausa_hooked_y",
+      "input": "\u01b3a \u01b4a",
+      "base": "\u01b4a \u01b4a",
+      "match": "ya ya"
+    },
+    {
+      "name": "yoruba_dot_below",
+      "input": "\u1eb8 \u1e63\u00e9 \u1ecc\u1e63\u1eb9\u0301 \u1ecdm\u1ecd \u1e62",
+      "base": "\u1eb9 \u1e63\u00e9 \u1ecd\u1e63\u1eb9\u0301 \u1ecdm\u1ecd \u1e63",
+      "match": "e se ose omo s"
+    },
+    {
+      "name": "cyrillic_with_mark",
+      "input": "sh\u0457t \u0451",
+      "base": "sh\u0457t \u0451",
+      "match": "shit e"
+    },
+    {
+      "name": "hindi_not_mangled",
+      "input": "\u0928\u092e\u0938\u094d\u0924\u0947\u0964 \u0926\u094b\u0938\u094d\u0924\u0965",
+      "base": "\u0928\u092e\u0938\u094d\u0924\u0947 \u0926\u094b\u0938\u094d\u0924",
+      "match": "\u0928\u092e\u0938\u094d\u0924\u0947 \u0926\u094b\u0938\u094d\u0924"
+    },
+    {
+      "name": "split_accent",
+      "input": "cafe\u200b\u0301",
+      "base": "caf\u00e9",
+      "match": "cafe"
+    },
+    {
+      "name": "small_capitals",
+      "input": "\ua730\u1d1c\u1d04\u1d0b \u028f\u1d0f\u1d1c \u0299\u026a\u0262 \u029c\u1d07\u029f\u029f\u1d0f \u0280\u1d1c\u0274 \ua731\u1d1b\u1d0f\u1d18",
+      "base": "fuck you big hello run stop",
+      "match": "fuck you big hello run stop"
+    },
+    {
+      "name": "armenian_cyrillic_lookalikes",
+      "input": "\u0570\u0585\u057ds\u0435 \u0433u\u043f",
+      "base": "house run",
+      "match": "house run"
+    },
+    {
+      "name": "arabic_punctuation",
+      "input": "\u0645\u0631\u062d\u0628\u0627\u060c \u0643\u064a\u0641\u061f \u06d4",
+      "base": "\u0645\u0631\u062d\u0628\u0627 \u0643\u064a\u0641",
+      "match": "\u0645\u0631\u062d\u0628\u0627 \u0643\u064a\u0641"
+    },
+    {
+      "name": "all_confusables",
+      "input": "\u0430\u0432\u0435\u043a\u043c\u043d\u043e\u0440\u0441\u0442\u0443\u0445\u0455\u0456\u0458\u04bb\u04cf\u04af\u0501\u051b\u051d\u03b1\u03b2\u03b3\u03b5\u03b7\u03b9\u03ba\u03bd\u03bf\u03c1\u03c4\u03c5\u03c7\u03c9\u0131\u0251\u0261\u1d00\u1d03\u1d04\u1d05\u1d06\u1d07\u1d09\u1d0a\u1d0b\u1d0c\u1d0d\u1d0e\u1d0f\u1d10\u1d11\u1d12\u1d13\u1d16\u1d17\u1d18\u1d19\u1d1a\u1d1b\u1d1c\u1d1d\u1d1e\u1d1f\u1d20\u1d21\u1d22\ua730\ua731\u0280\u0262\u029c\u026a\u029f\u0274\u028f\u0299\u0585\u057d\u0570\u0433\u043f",
+      "base": "abekmhopctyxsijhlydqwabyenikvoptuxwiagabcddeijklmnoooooooprrtuuumvwzfsrghilnybouhrn",
+      "match": "abekmhopctyxsijhlydqwabyenikvoptuxwiagabcddeijklmnoooooooprrtuuumvwzfsrghilnybouhrn"
+    },
+    {
+      "name": "all_digits",
+      "input": "\u0660\u0661\u0662\u0663\u0664\u0665\u0666\u0667\u0668\u0669\u06f0\u06f1\u06f2\u06f3\u06f4\u06f5\u06f6\u06f7\u06f8\u06f9\u0966\u0967\u0968\u0969\u096a\u096b\u096c\u096d\u096e\u096f\u09e6\u09e7\u09e8\u09e9\u09ea\u09eb\u09ec\u09ed\u09ee\u09ef\u07c0\u07c1\u07c2\u07c3\u07c4\u07c5\u07c6\u07c7\u07c8\u07c9\ud83a\udd50\ud83a\udd51\ud83a\udd52\ud83a\udd53\ud83a\udd54\ud83a\udd55\ud83a\udd56\ud83a\udd57\ud83a\udd58\ud83a\udd59",
+      "base": "012345678901234567890123456789012345678901234567890123456789",
+      "match": "oi2eas6t89oi2eas6t89oi2eas6t89oi2eas6t89oi2eas6t89oi2eas6t89"
+    },
+    {
+      "name": "west_african_capitals",
+      "input": "\u0186 \u014a \u0181 \u018a \u0198 \u0191 \u01b2 \u0190",
+      "base": "\u0254 \u014b \u0253 \u0257 \u0199 \u0192 \u028b \u025b",
+      "match": "o ng b d k f v e"
+    },
+    {
+      "name": "ligature_fi",
+      "input": "\ufb01ne \ufb02y",
+      "base": "fine fly",
+      "match": "fine fly"
+    },
+    {
+      "name": "enclosed_and_superscript",
+      "input": "\u24d5\u24e4\u24d2\u24da \u24a1\u24b0\u249e\u24a6 \u1da0\u1d58\u1d9c\u1d4f",
+      "base": "fuck f u c k fuck",
+      "match": "fuck f u c k fuck"
+    },
+    {
+      "name": "zwj_emoji",
+      "input": "\ud83d\udc68\u200d\ud83d\udc69\u200d\ud83d\udc67",
+      "base": "\ud83d\udc68\ud83d\udc69\ud83d\udc67",
+      "match": "\ud83d\udc68\ud83d\udc69\ud83d\udc67"
+    },
+    {
+      "name": "empty_input",
+      "input": "",
+      "base": "",
+      "match": ""
+    },
+    {
+      "name": "separators_only",
+      "input": " \t--!!??\u3000 ",
+      "base": "",
+      "match": ""
+    },
+    {
+      "name": "kept_punctuation_only",
+      "input": "-- ,.. @_ --",
+      "base": ",.. @_",
+      "match": "a"
+    },
+    {
+      "name": "nfc_after_strip",
+      "input": "\uc548\ub155 \u0622\u0645\u064a\u0646 \u09a6\u09cb\u09b8\u09cd\u09a4 \u304c\u3063\u3053\u3046",
+      "base": "\uc548\ub155 \u0622\u0645\u064a\u0646 \u09a6\u09cb\u09b8\u09cd\u09a4 \u304c\u3063\u3053\u3046",
+      "match": "\uc548\ub155 \u0627\u0645\u064a\u0646 \u09a6\u09cb\u09b8\u09cd\u09a4 \u304c\u3063\u3053\u3046"
+    },
+    {
+      "name": "marks_each_block",
+      "input": "f\u1ab5u\u1dc4c\u20e3k\ufe20 s\u0488h\u0489it",
+      "base": "f\u1ab5u\u1dc4c\u20e3k\ufe20 s\u0488h\u0489it",
+      "match": "fuck shit"
+    },
+    {
+      "name": "negated_relations",
+      "input": "a\u2260b\u226ec\u226fd",
+      "base": "a\u2260b\u226ec\u226fd",
+      "match": "a b c d"
+    },
+    {
+      "name": "deprecated_format_controls",
+      "input": "f\u206au\u206bc\u206c\u206d\u206e\u206fk",
+      "base": "fuck",
+      "match": "fuck"
+    },
+    {
+      "name": "shorthand_format_controls",
+      "input": "f\ud82f\udca0u\ud82f\udca1c\ud82f\udca2\ud82f\udca3k",
+      "base": "fuck",
+      "match": "fuck"
+    },
+    {
+      "name": "musical_format_controls",
+      "input": "f\ud834\udd73u\ud834\udd74c\ud834\udd75\ud834\udd76\ud834\udd77\ud834\udd78\ud834\udd79\ud834\udd7ak",
+      "base": "fuck",
+      "match": "fuck"
+    },
+    {
+      "name": "interlinear_annotation",
+      "input": "f\ufff9u\ufffac\ufffbk",
+      "base": "fuck",
+      "match": "fuck"
+    },
+    {
+      "name": "noncharacters",
+      "input": "f\ufdd0u\ufffec\ud83f\udfffk\udbff\udffe",
+      "base": "fuck",
+      "match": "fuck"
+    },
+    {
+      "name": "unicode16_compat_pins",
+      "input": "\ud833\udcd6\ud833\udcd7\ud833\udcd8\ud833\udcd9\ud833\udcda\ud833\udcdb\ud833\udcdc\ud833\udcdd\ud833\udcde\ud833\udcdf\ud833\udce0\ud833\udce1\ud833\udce2\ud833\udce3\ud833\udce4\ud833\udce5\ud833\udce6\ud833\udce7\ud833\udce8\ud833\udce9\ud833\udcea\ud833\udceb\ud833\udcec\ud833\udced\ud833\udcee\ud833\udcef \ud833\udcf0\ud833\udcf1\ud833\udcf2\ud833\udcf3\ud833\udcf4\ud833\udcf5\ud833\udcf6\ud833\udcf7\ud833\udcf8\ud833\udcf9 \ud803\udd50\ud803\udd51\ud803\udd52\ud803\udd53\ud803\udd54\ud803\udd55\ud803\udd56\ud803\udd57\ud803\udd58\ud803\udd59\ud803\udd5a\ud803\udd5b\ud803\udd5c\ud803\udd5d\ud803\udd5e\ud803\udd5f\ud803\udd60\ud803\udd61\ud803\udd62\ud803\udd63\ud803\udd64\ud803\udd65 \u1c89\ua7cb\ua7cc\ua7da\ua7dc \ud801\uddc9\ud801\udde4",
+      "base": "abcdefghijklmnopqrstuvwxyz 0123456789 \ud803\udd70\ud803\udd71\ud803\udd72\ud803\udd73\ud803\udd74\ud803\udd75\ud803\udd76\ud803\udd77\ud803\udd78\ud803\udd79\ud803\udd7a\ud803\udd7b\ud803\udd7c\ud803\udd7d\ud803\udd7e\ud803\udd7f\ud803\udd80\ud803\udd81\ud803\udd82\ud803\udd83\ud803\udd84\ud803\udd85 \u1c8a\u0264\ua7cd\ua7db\u019b \ud801\uddd2\ud801\uddda",
+      "match": "abcdefghijklmnopqrstuvwxyz oi2eas6t89 \ud803\udd70\ud803\udd71\ud803\udd72\ud803\udd73\ud803\udd74\ud803\udd75\ud803\udd76\ud803\udd77\ud803\udd78\ud803\udd79\ud803\udd7a\ud803\udd7b\ud803\udd7c\ud803\udd7d\ud803\udd7e\ud803\udd7f\ud803\udd80\ud803\udd81\ud803\udd82\ud803\udd83\ud803\udd84\ud803\udd85 \u1c8a\u0264\ua7cd\ua7db\u019b \ud801\uddd2\ud801\uddda"
+    },
+    {
+      "name": "outlined_porn",
+      "input": "you \ud833\udce5\ud833\udce4\ud833\udce7\ud833\udce3",
+      "base": "you porn",
+      "match": "you porn"
+    },
+    {
+      "name": "arabic_hebrew_points",
+      "input": "fag\u0650got \u05e9\u05b8\u05c1\u05dc\u05d5\u05b9\u05dd \u05d0\u05be\u05d1",
+      "base": "fag\u0650got \u05e9\u05b8\u05c1\u05dc\u05d5\u05b9\u05dd \u05d0\u05be\u05d1",
+      "match": "faggot \u05e9\u05dc\u05d5\u05dd \u05d0\u05be\u05d1"
+    },
+    {
+      "name": "cyrillic_titlo",
+      "input": "fag\u0483got",
+      "base": "fag\u0483got",
+      "match": "faggot"
+    },
+    {
+      "name": "bang_pipe_between_letters",
+      "input": "R!TARD n!gger he|lo wow! |x",
+      "base": "r tard n gger he lo wow x",
+      "match": "ritard nigger hello wow x"
+    },
+    {
+      "name": "nordic_polish",
+      "input": "Fj\u00f8rd \u0142\u00f3d\u017a \u00d8",
+      "base": "fjord l\u00f3d\u017a o",
+      "match": "fjord lodz o"
+    },
+    {
+      "name": "other_script_digits",
+      "input": "\u0e50\u0e52\u0e54 \u0ae6\u0ae7 \u1040\u1049 \ud805\udeda\ud805\udee3",
+      "base": "024 01 09 09",
+      "match": "o2a oi o9 o9"
+    },
+    {
+      "name": "unassigned_specials_ignorables",
+      "input": "f\ufff0u\ufff4c\ufff8k",
+      "base": "fuck",
+      "match": "fuck"
+    },
+    {
+      "name": "unassigned_tag_block_ignorables",
+      "input": "f\udb40\udc80u\udb40\udcffc\udb40\uddf0\udb43\udfffk",
+      "base": "fuck",
+      "match": "fuck"
+    }
+  ]
+}

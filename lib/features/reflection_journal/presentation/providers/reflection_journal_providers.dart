@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:attune/features/auth/providers/auth_provider.dart' show currentUserProvider;
 import 'package:attune/features/healing/presentation/providers/healing_providers.dart'
     show supabaseClientProvider;
 import 'package:attune/features/planning/presentation/widgets/note_text_block.dart';
@@ -22,6 +23,31 @@ final journalEntriesProvider =
       JournalEntriesNotifier.new,
     );
 
+/// [value]'s entries when they are the signed-in [account]'s, else null
+/// (unknown). Riverpod carries the last value through a reload and keeps it
+/// after a failed read, so after an account change the previous account's
+/// list is still there until the new account's read lands; each entry
+/// carries its owner (`user_id`), so a list holding anyone else's entry is
+/// never shown (D8 shared phones, batch-8 re-review N-1). Signed out
+/// (null), no journal surface is on screen; the list is passed through.
+List<JournalEntry>? ownJournalEntries(
+  AsyncValue<List<JournalEntry>> value,
+  String? account,
+) {
+  final entries = value.valueOrNull;
+  if (entries == null || account == null) return entries;
+  return entries.every((e) => e.userId == account) ? entries : null;
+}
+
+/// What the Conversations row and J1 read: [journalEntriesProvider], the
+/// signed-in account's only (see [ownJournalEntries]).
+final journalOwnEntriesProvider = Provider<List<JournalEntry>?>(
+  (ref) => ownJournalEntries(
+    ref.watch(journalEntriesProvider),
+    ref.watch(journalAccountProvider),
+  ),
+);
+
 /// Cache-then-refresh: paints the last-known entries immediately on a cold
 /// start so ConversationsScreen's reflection row isn't showing its empty
 /// prompt while the fetch runs, then swaps in fresh data when it lands.
@@ -36,7 +62,10 @@ class JournalEntriesNotifier extends AsyncNotifier<List<JournalEntry>> {
 
   @override
   Future<List<JournalEntry>> build() async {
-    final userId = ref.read(supabaseClientProvider).auth.currentUser?.id;
+    // Spec 1 W9c (D8, batch-8 fix round 1): the signed-in account's, read
+    // again when it changes, so the Conversations row never shows the last
+    // account's entry title.
+    final userId = ref.watch(journalAccountProvider);
     final cache = ref.read(reflectionJournalCacheProvider);
 
     if (!_servedCache && userId != null) {
@@ -68,6 +97,8 @@ class JournalEntriesNotifier extends AsyncNotifier<List<JournalEntry>> {
   ) async {
     try {
       final entries = await _fetch();
+      // Another account by now (D8): its own build has the list.
+      if (ref.read(journalAccountProvider) != userId) return;
       state = AsyncData(entries);
       unawaited(cache.writeEntries(userId, entries));
     } catch (error) {
@@ -78,12 +109,59 @@ class JournalEntriesNotifier extends AsyncNotifier<List<JournalEntry>> {
   }
 }
 
+/// The signed-in account's id (null signed out). The journal's lists and
+/// its in-memory support state are this account's only: they start again
+/// when it changes (Spec 1 W9c, D8 shared phones; batch-8 review I-1).
+final journalAccountProvider = Provider<String?>(
+  (ref) => ref.watch(currentUserProvider.select((u) => u?.id)),
+);
+
+/// Bumped when an analysis answer changes what Patterns may show (Spec 1
+/// W9c, batch-8 review I-2): a support_offered answer must replace a summary
+/// read earlier in the run.
+class JournalPatternsEpoch extends Notifier<int> {
+  @override
+  int build() => 0;
+
+  void bump() => state++;
+}
+
+final journalPatternsEpochProvider =
+    NotifierProvider<JournalPatternsEpoch, int>(JournalPatternsEpoch.new);
+
 final journalPatternsProvider =
     FutureProvider<({String status, String? summary, int entryCount})>((
       ref,
     ) async {
+      ref.watch(journalAccountProvider);
+      ref.watch(journalPatternsEpochProvider);
       return ref.read(reflectionJournalRepositoryProvider).getPatterns();
     });
+
+/// The journal's in-memory support state (the offers, the hidden
+/// reflections, Patterns' "Not now"), emptied on sign-out and on quick exit
+/// through the device-wipe registry (lib/app/device_wipes.dart): on iOS
+/// quick exit leaves the process on the neutral screen, so memory survives
+/// it (batch-8 review I-1, M-1).
+abstract final class JournalSupportMemory {
+  static final _clears = <Object, void Function()>{};
+
+  /// [owner]'s [clear], until [ref] is disposed or rebuilt.
+  static void track(Object owner, Ref ref, void Function() clear) {
+    _clears[owner] = clear;
+    ref.onDispose(() => _clears.remove(owner));
+  }
+
+  static Future<void> clear() async {
+    for (final clear in List.of(_clears.values)) {
+      try {
+        clear();
+      } catch (_) {
+        // A notifier being torn down has nothing left to clear.
+      }
+    }
+  }
+}
 
 final journalMediaGatewayProvider = Provider<JournalMediaGateway>(
   (ref) => SupabaseJournalMediaGateway(ref.read(supabaseClientProvider)),
@@ -110,11 +188,21 @@ class JournalListState {
 class JournalListNotifier extends AsyncNotifier<JournalListState> {
   final Set<String> _discarded = {};
   bool _swept = false;
+  static const _unset = Object();
+  Object? _account = _unset;
 
   ReflectionJournalRepository get _repo => ref.read(reflectionJournalRepositoryProvider);
 
   @override
   Future<JournalListState> build() async {
+    // Spec 1 W9c (D8, batch-8 review I-1): another account on this phone
+    // starts from its own list, never the last account's.
+    final account = ref.watch(journalAccountProvider);
+    if (account != _account) {
+      _account = account;
+      _discarded.clear();
+      _swept = false;
+    }
     if (!_swept) {
       _swept = true;
       unawaited(_repo.purgeMyDeleted().then((_) {}, onError: (Object _) {}));
@@ -130,7 +218,10 @@ class JournalListNotifier extends AsyncNotifier<JournalListState> {
     // The Conversations "latest reflection" line reads the other list.
     ref.invalidate(journalEntriesProvider);
     try {
+      final account = ref.read(journalAccountProvider);
       final page = await _repo.listEntries();
+      // Another account by now (D8, batch-8 N-2): its own build has the list.
+      if (ref.read(journalAccountProvider) != account) return;
       state = AsyncData(JournalListState(pinned: _keep(page.pinned), entries: _keep(page.entries), hasMore: page.hasMore));
     } catch (_) {} // keep what's on screen; the next visit retries
   }
@@ -139,11 +230,16 @@ class JournalListNotifier extends AsyncNotifier<JournalListState> {
 
   /// The next page, once at a time (scrolling asks repeatedly).
   Future<void> loadMore() async {
+    // Never while the list is (re)loading: what it holds then may be the
+    // last account's (D8, batch-8 N-2).
+    if (state.isLoading) return;
     final s = state.valueOrNull;
     if (_loadingMore || s == null || !s.hasMore || s.entries.isEmpty) return;
     _loadingMore = true;
     try {
+      final account = ref.read(journalAccountProvider);
       final page = await _repo.listEntries(before: s.entries.last.createdAt);
+      if (ref.read(journalAccountProvider) != account) return;
       final now = state.valueOrNull ?? s;
       state = AsyncData(now.copyWith(entries: [...now.entries, ..._keep(page.entries)], hasMore: page.hasMore));
     } catch (_) {
@@ -222,13 +318,28 @@ class JournalEntryController extends AutoDisposeFamilyAsyncNotifier<JournalEntry
   JournalEntryDetail get _current => state.requireValue;
 
   @override
-  Future<JournalEntryDetail> build(String entryId) => _repo.getEntryDetail(entryId);
+  Future<JournalEntryDetail> build(String entryId) async {
+    // Spec 1 W9c: an answer that lands while the entry is open hides its
+    // reflection at once.
+    ref.listen(journalHiddenReflectionsProvider, (_, hidden) {
+      final d = state.valueOrNull;
+      if (d != null && hidden.contains(entryId)) _put(_visible(d));
+    });
+    return _visible(await _repo.getEntryDetail(entryId));
+  }
+
+  /// [d] without its reflection when the crisis check answered
+  /// support_offered for this entry (Spec 1 W9c).
+  JournalEntryDetail _visible(JournalEntryDetail d) =>
+      d.analysis != null && ref.read(journalHiddenReflectionsProvider).contains(arg)
+          ? JournalEntryDetail(entry: d.entry, blocks: d.blocks)
+          : d;
 
   void _put(JournalEntryDetail d) {
     if (state.hasValue) state = AsyncData(d);
   }
 
-  Future<void> _reload() async => _put(await _repo.getEntryDetail(arg));
+  Future<void> _reload() async => _put(_visible(await _repo.getEntryDetail(arg)));
 
   Future<NoteSaveResult> saveText(String blockId, int version, List<Map<String, dynamic>> ops) async {
     try {
@@ -314,6 +425,29 @@ class JournalEntryController extends AutoDisposeFamilyAsyncNotifier<JournalEntry
     return addBlock('photo', payload: {'path': path}, afterId: afterId);
   }
 }
+
+/// Spec 1 W9c (batch-7 ruling R-1): entries whose analysis answered
+/// support_offered, this run and this account only (never stored). Their reflection is never
+/// shown: [JournalEntryController] drops it from its state, whenever it is
+/// read and the moment an entry is added here. An entry leaves only when a
+/// later answer is a fresh reflection (journalAnalysisListener).
+class JournalHiddenReflections extends Notifier<Set<String>> {
+  @override
+  Set<String> build() {
+    ref.watch(journalAccountProvider);
+    JournalSupportMemory.track(this, ref, () => state = const {});
+    return const {};
+  }
+
+  void hide(String entryId) => state = {...state, entryId};
+
+  void reveal(String entryId) => state = {...state}..remove(entryId);
+}
+
+final journalHiddenReflectionsProvider =
+    NotifierProvider<JournalHiddenReflections, Set<String>>(
+      JournalHiddenReflections.new,
+    );
 
 final journalEntryDetailProvider =
     AsyncNotifierProvider.autoDispose.family<JournalEntryController, JournalEntryDetail, String>(

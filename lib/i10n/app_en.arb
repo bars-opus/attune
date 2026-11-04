@@ -1716,5 +1716,84 @@
   "support_back": "Back",
   "@support_back": {
     "description": "The way out of a focused support view (grief, young people): never \"Not relevant right now\" there (W7 final review M-7)."
+  },
+
+  "opinions_filterContactInfo": "Phone numbers, emails, links and usernames can't go in Opinions. They can identify you or someone else. Take it out and post again.",
+  "@opinions_filterContactInfo": {
+    "description": "Shown under an Opinions post, comment or edit the content filter refused for contact details (Spec 1 W9a). The draft stays."
+  },
+  "opinions_filterSlur": "This includes a word that attacks people for who they are. Opinions doesn't allow it.",
+  "@opinions_filterSlur": {
+    "description": "Shown under an Opinions post, comment or edit the content filter refused for a slur (Spec 1 W9a). The draft stays."
+  },
+  "opinions_filterExplicit": "Opinions doesn't allow sexual content. You can describe what happened without explicit words.",
+  "@opinions_filterExplicit": {
+    "description": "Shown under an Opinions post, comment or edit the content filter refused for explicit sexual content (Spec 1 W9a). The draft stays."
+  },
+
+  "opinions_filterQuoted": "The comment you're replying to can't be quoted in Opinions. Your own words are fine. Close the reply and post again.",
+  "@opinions_filterQuoted": {
+    "description": "Shown above the Opinions comment field when the content filter refused the quoted text of the comment being replied to, not the writer's own words (Spec 1 W9a, batch-3 review I-3). Replaces the reason line. The draft stays."
+  },
+  "opinions_filterPollOption": "It's in one of your poll options.",
+  "@opinions_filterPollOption": {
+    "description": "Shown under the reason line when the Opinions content filter refused one of a post's poll options (Spec 1 W9a, batch-3 review I-3). The draft stays."
+  },
+
+  "support_needSupportNow": "Need support now?",
+  "@support_needSupportNow": {
+    "description": "The link to Support, in Opinions compose and every post and comment menu (Spec 1 W9b), and in the journal entry menu (W9c). Shown whatever anyone typed."
+  },
+  "opinions_reportAtRisk": "Someone may be at risk",
+  "@opinions_reportAtRisk": {
+    "description": "A report reason in both Opinions report lists (Spec 1 W9b). It goes to a person and never hides the post."
+  },
+  "opinions_atRiskThanks": "Thank you. A person on our team will look at this soon. If someone is in danger right now, call your local emergency number.",
+  "@opinions_atRiskThanks": {
+    "description": "Shown after an at-risk report (Spec 1 W9b)."
+  },
+  "opinions_atRiskSeeNumbers": "See emergency numbers",
+  "@opinions_atRiskSeeNumbers": {
+    "description": "Opens Support from the at-risk report's thank-you (Spec 1 W9b)."
+  },
+  "opinions_atRiskClose": "Close",
+  "@opinions_atRiskClose": {
+    "description": "Closes the at-risk report's thank-you (Spec 1 W9b)."
+  },
+  "opinions_reportFailed": "Couldn't send your report. Please try again.",
+  "@opinions_reportFailed": {
+    "description": "An at-risk report that did not reach the server (Spec 1 W9b). With opinions_safety_v1 on, also any other report reason that did not reach the server."
+  },
+  "opinions_reportSent": "Thank you. Your report has been sent.",
+  "@opinions_reportSent": {
+    "description": "With opinions_safety_v1 on, shown after a post or comment report with any reason other than Someone may be at risk reached the server (Spec 1 W9b, owner ruling (c)). Promises no review time: review queue v0 lists only the priority reasons."
+  },
+
+  "opinions_reportSending": "Sending your report",
+  "@opinions_reportSending": {
+    "description": "Shown when a report from Opinions takes longer than 400 ms to reach the server (Spec 1 W9b, section 2.2), at-risk always and every reason with opinions_safety_v1 on. Replaced by the thank-you or the failure."
+  },
+
+  "journal_supportCardBody": "If things feel heavy right now, you don't have to carry it alone. Support is here if you want it.",
+  "@journal_supportCardBody": {
+    "description": "The writer's card, shown instead of a reflection when an entry reads as a crisis (Spec 1 W9c). Only the writer sees it."
+  },
+  "journal_supportSeeSupport": "See support",
+  "@journal_supportSeeSupport": {
+    "description": "Opens Support from the journal's writer card (Spec 1 W9c)."
+  },
+  "journal_supportNotNow": "Not now",
+  "@journal_supportNotNow": {
+    "description": "Dismisses the journal's writer card (Spec 1 W9c)."
+  },
+
+  "journal_supportPatternsAway": "Patterns will show here again later",
+  "@journal_supportPatternsAway": {
+    "description": "The Patterns tab after the writer chose Not now on its support card (Spec 1 W9c, ruling PF-C6). Shown instead of a summary for the rest of this run; never stored."
+  },
+
+  "journal_supportPatternsAwayBody": "Your entries are saved and stay private to you.",
+  "@journal_supportPatternsAwayBody": {
+    "description": "Under journal_supportPatternsAway, on the Patterns tab after Not now on its support card (Spec 1 W9c, ruling PF-C6; batch-8 review M-5)."
   }
 }

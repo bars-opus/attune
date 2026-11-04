@@ -168,6 +168,16 @@ class ReflectionJournalDocs implements DocumentationModule {
           numberPrefix: '2',
           type: ManualContentType.text,
         ),
+        // Spec 1 W9c: for everyone, like the check itself (it runs whatever
+        // journal_ai_insights says; batch-8 ruling I-4).
+        ManualContent(
+          id: 'journal_support_first',
+          title: 'When an entry sounds very hard',
+          content:
+              "If an entry sounds like you may be going through something very hard, Attune doesn't write a reflection. It shows you a way to reach support instead. Only you see it, and nothing about it is kept.",
+          numberPrefix: '3',
+          type: ManualContentType.text,
+        ),
       ],
     ),
     ManualSection(
