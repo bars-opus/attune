@@ -32,7 +32,7 @@ class GameGridTile extends StatelessWidget {
     final palette = GamePalette.of(gameType);
     // Spec 5 (R5-13, F16): above 1.3x text the card grows to fit its words
     // (at least its usual height) instead of clipping inside a fixed shape.
-    final large = MediaQuery.textScalerOf(context).scale(10) / 10 > 1.3;
+    final large = MediaQuery.textScalerOf(context).scale(10) / 10 > 1.0;
 
     final card = Material(
       color: Colors.transparent,

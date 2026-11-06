@@ -630,12 +630,12 @@ class _ChatGamesSectionLabel extends StatelessWidget {
             size: 23.h,
           ),
           Gap(Spacing.md.w),
-          Text(
+          Flexible(child: Text(
             label,
             style: Theme.of(
               context,
             ).textTheme.labelLarge?.copyWith(fontWeight: FontWeight.w600),
-          ),
+          )),
         ],
       ),
     );
