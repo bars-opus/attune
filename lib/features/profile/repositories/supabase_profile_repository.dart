@@ -27,7 +27,7 @@ class SupabaseProfileRepository implements ProfileRepository {
   /// Create empty profile for a new user.
   ///
   /// Idempotent: uses UPSERT with `ignoreDuplicates` so two concurrent
-  /// callers (e.g. `_handleNewUser` racing with `UsernameCreationScreen`)
+  /// callers (e.g. two `_handleNewUser` calls racing each other)
   /// both succeed without a unique-violation. Safe to call repeatedly.
   @override
   Future<void> createProfile(String userId) async {

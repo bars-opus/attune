@@ -40,7 +40,6 @@ export 'package:attune/app/documentations/user_manual/data/pulse_docs.dart';
 export 'package:attune/app/documentations/user_manual/data/verdict_docs.dart';
 export 'package:attune/app/documentations/user_manual/models/documentation_model.dart';
 export 'package:attune/app/documentations/user_manual/widgets/all_manual_widget.dart';
-export 'package:attune/features/auth/log_in/presentation/screens/login_screen_options.dart';
 export 'package:attune/home/widgets/highlighted_text.dart';
 export 'package:attune/home/widgets/icon_avatar.dart';
 export 'package:attune/core/widgets/more_screen.dart';
