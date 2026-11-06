@@ -32,6 +32,7 @@ import '../widgets/planning_block_motion.dart';
 import '../widgets/planning_doc_scope.dart';
 import '../widgets/planning_ribbon.dart';
 import '../../domain/delta_sanitizer.dart';
+import 'package:attune/core/ui/text/large_text.dart';
 
 enum _EntryMenu { done, reopen, putAway, next, splitOn, splitOff }
 
@@ -757,7 +758,16 @@ class _SplitCard extends ConsumerWidget {
               ],
             ),
           ),
-          if (!split.isEven) TextButton(onPressed: () => _settle(context, ref), child: const Text('Mark settled')),
+          if (!split.isEven)
+            if (isTextScaledUp(context))
+              // Spec 1 W10a: above 1.0 the button keeps to 40% of the screen
+              // and the balances get the rest of the card.
+              ConstrainedBox(
+                constraints: BoxConstraints(maxWidth: MediaQuery.sizeOf(context).width * 0.4),
+                child: TextButton(onPressed: () => _settle(context, ref), child: const Text('Mark settled')),
+              )
+            else
+              TextButton(onPressed: () => _settle(context, ref), child: const Text('Mark settled')),
         ],
       ),
     );

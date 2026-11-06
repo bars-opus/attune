@@ -21,6 +21,7 @@ import 'dart:io';
 import '../../../helpers/fake_home_state.dart';
 import '../../../helpers/flow_harness.dart';
 import '../../../helpers/home_harness.dart';
+import '../../../helpers/tap_in_reach.dart';
 
 class _Server {
   final sent = <Map<String, dynamic>>[];
@@ -89,7 +90,7 @@ void main() {
       isNull,
       reason: 'nothing to send yet',
     );
-    await tester.tap(find.text('Stories'));
+    await tapInReach(tester, find.text('Stories'));
     await tester.enterText(
       find.byType(TextField),
       '  A grown-up asked a child to message privately.  ',

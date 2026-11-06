@@ -10,6 +10,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:attune/core/ui/text/large_text.dart';
 
 /// What to tell the person: a device that signed in since the last check, or
 /// (null [device]) the one-time "review where you're signed in" (review M9).
@@ -232,9 +233,15 @@ class _Banner extends StatelessWidget {
             Row(
               mainAxisAlignment: MainAxisAlignment.end,
               children: [
-                TextButton(onPressed: onDismiss, child: const Text('Dismiss')),
+                Flexible(
+                  flex: isTextScaledUp(context) ? 1 : 0,
+                  child: TextButton(onPressed: onDismiss, child: const Text('Dismiss')),
+                ),
                 const SizedBox(width: 8),
-                FilledButton(onPressed: onReview, child: const Text('Review')),
+                Flexible(
+                  flex: isTextScaledUp(context) ? 1 : 0,
+                  child: FilledButton(onPressed: onReview, child: const Text('Review')),
+                ),
               ],
             ),
           ],

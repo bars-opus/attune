@@ -470,7 +470,9 @@ class _ReflectionCard extends StatelessWidget {
       padding: Spacing.allMd,
       decoration: BoxDecoration(color: scheme.surfaceContainerLow, borderRadius: BorderRadiusTokens.mdAll),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Row(children: [
+        // Spec 1 W10a: the tone chip moves under the title when they
+        // no longer fit side by side.
+        Wrap(crossAxisAlignment: WrapCrossAlignment.center, runSpacing: Spacing.xs, children: [
           Text('A reflection', style: text.titleSmall),
           if (tone != null) ...[
             const SizedBox(width: Spacing.sm),

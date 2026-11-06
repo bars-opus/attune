@@ -22,6 +22,7 @@ import 'package:attune/features/opinions/domain/content_filter_error.dart';
 import 'package:attune/features/opinions/presentation/widgets/content_filter_notice.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_slidable/flutter_slidable.dart';
+import 'package:attune/core/ui/text/large_text.dart';
 
 class CommentThreadScreen extends ConsumerStatefulWidget {
   final String opinionId;
@@ -44,6 +45,60 @@ class _CommentThreadScreenState extends ConsumerState<CommentThreadScreen> {
   String? _replyToCommentId;
   String? _replyToQuotedText;
   bool _isSubmitting = false;
+
+  // Spec 1 W10a: the floating composer's height, measured only while the
+  // text is scaled up (see _listBottomRoom).
+  final GlobalKey _composerKey = GlobalKey();
+  double? _composerHeight;
+  final ScrollController _noticeScroll = ScrollController();
+
+  // The phone's own text size: the composer's notice reads it through
+  // AllowLargeText even while the root clamp holds the thread at 1.0.
+  static bool _phoneTextScaledUp(BuildContext context) =>
+      MediaQueryData.fromView(View.of(context)).textScaler.scale(10) > 10;
+
+  static bool _scaledUp(BuildContext context) =>
+      isTextScaledUp(context) || _phoneTextScaledUp(context);
+
+  void _measureComposer() {
+    final box = _composerKey.currentContext?.findRenderObject();
+    if (!mounted || box is! RenderBox || !box.hasSize) return;
+    if (box.size.height != _composerHeight) {
+      setState(() => _composerHeight = box.size.height);
+    }
+  }
+
+  // Spec 1 W10a: the composer's refusal notice, held to a quarter of the
+  // screen once the text (the thread's or the phone's own) is scaled up,
+  // so the floating composer never covers the thread. It scrolls, and
+  // its scrollbar always shows that it does. At the normal size, as before.
+  Widget _composerNotice(BuildContext context, Widget notice) {
+    if (!_scaledUp(context)) return notice;
+    return ConstrainedBox(
+      constraints: BoxConstraints(
+        maxHeight: MediaQuery.sizeOf(context).height * 0.25,
+      ),
+      child: Scrollbar(
+        controller: _noticeScroll,
+        thumbVisibility: true,
+        child: SingleChildScrollView(
+          controller: _noticeScroll,
+          child: notice,
+        ),
+      ),
+    );
+  }
+
+  // The room under the last comment, so the floating composer never covers
+  // it. At the normal size, as before.
+  double _listBottomRoom(BuildContext context) {
+    final room = Spacing.xxl.h + Spacing.xl.h;
+    if (!_scaledUp(context)) return room;
+    WidgetsBinding.instance.addPostFrameCallback((_) => _measureComposer());
+    final scaled = MediaQuery.textScalerOf(context).scale(room);
+    final measured = (_composerHeight ?? 0) + Spacing.md.h;
+    return measured > scaled ? measured : scaled;
+  }
 
   // Inline edit state (§8.11 "Editing"). Only ONE comment can be in edit mode
   // at a time — a second Edit replaces the first — so a single id plus a
@@ -204,6 +259,7 @@ class _CommentThreadScreenState extends ConsumerState<CommentThreadScreen> {
     _commentFocusNode.dispose();
     _editController.dispose();
     _editFocusNode.dispose();
+    _noticeScroll.dispose();
     super.dispose();
   }
 
@@ -456,7 +512,7 @@ class _CommentThreadScreenState extends ConsumerState<CommentThreadScreen> {
                     Spacing.md.w,
                     Spacing.md.h,
                     Spacing.md.w,
-                    Spacing.xxl.h + Spacing.xl.h,
+                    _listBottomRoom(context),
                   ),
                   children: [
                     OpinionCard(
@@ -511,6 +567,7 @@ class _CommentThreadScreenState extends ConsumerState<CommentThreadScreen> {
                 right: 0,
                 bottom: 0,
                 child: SafeArea(
+                  key: _composerKey,
                   top: false,
                   child: Padding(
                     padding: EdgeInsets.fromLTRB(
@@ -586,9 +643,12 @@ class _CommentThreadScreenState extends ConsumerState<CommentThreadScreen> {
                             ),
                           ),
                         if (_commentFilterReason != null)
-                          ContentFilterNotice(
-                            reason: _commentFilterReason!,
-                            part: _commentFilterPart,
+                          _composerNotice(
+                            context,
+                            ContentFilterNotice(
+                              reason: _commentFilterReason!,
+                              part: _commentFilterPart,
+                            ),
                           ),
                         // Comment input, floating pill over the list instead
                         // of a full-width opaque bar.
@@ -1042,12 +1102,26 @@ class _CommentThreadScreenState extends ConsumerState<CommentThreadScreen> {
                         ),
                       ),
                     ],
-                    const Spacer(),
+                    if (!isTextScaledUp(context)) const Spacer(),
 
-                    Text(
-                      timeAgo,
-                      style: textTheme.bodySmall?.copyWith(
-                        color: colorScheme.onBackground.withOpacity(0.5),
+                    // Spec 1 W10a: at the normal size the Spacer pushes the
+                    // time right and the time is unflexed, as before; above
+                    // it the time takes the free space itself (no Spacer to
+                    // split it with), right-aligned, at most two lines.
+                    Flexible(
+                      flex: isTextScaledUp(context) ? 1 : 0,
+                      fit:
+                          isTextScaledUp(context)
+                              ? FlexFit.tight
+                              : FlexFit.loose,
+                      child: Text(
+                        timeAgo,
+                        textAlign: TextAlign.end,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: textTheme.bodySmall?.copyWith(
+                          color: colorScheme.onBackground.withOpacity(0.5),
+                        ),
                       ),
                     ),
                     Gap(Spacing.md.w),
@@ -1203,7 +1277,8 @@ class _CommentThreadScreenState extends ConsumerState<CommentThreadScreen> {
             AlertDialog(
             // Spec 1 W9b: with the flag on, the seven reasons scroll and let
             // large text through; with it off, the dialog is as before.
-            scrollable: safety,
+            // Spec 1 W10a: flag off, they scroll once the text is scaled up.
+            scrollable: safety || isTextScaledUp(context),
             title: const Text('Report this comment'),
             content: Column(
               mainAxisSize: MainAxisSize.min,

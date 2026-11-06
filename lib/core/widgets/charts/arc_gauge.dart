@@ -2,6 +2,7 @@ import 'dart:math' as math;
 
 import 'package:attune/core/ui/motion/reduce_motion.dart';
 import 'package:flutter/material.dart';
+import 'package:attune/core/ui/text/large_text.dart';
 
 /// A rounded three-quarter arc filling toward a target, with a headline and
 /// a caption in the middle ("GHS 70.00 left" / "of GHS 100.00"). The track
@@ -103,7 +104,9 @@ class ArcGaugeState extends State<ArcGauge> with SingleTickerProviderStateMixin 
           child: Padding(
             padding: EdgeInsets.only(top: widget.size * 0.06),
             child: Center(
-              child: Column(mainAxisSize: MainAxisSize.min, children: [
+              child: ScaleDownToFit(
+                alignment: Alignment.center,
+                child: Column(mainAxisSize: MainAxisSize.min, children: [
                 () {
                   final style = theme.textTheme.titleLarge?.copyWith(
                     fontWeight: FontWeight.w600,
@@ -116,6 +119,7 @@ class ArcGaugeState extends State<ArcGauge> with SingleTickerProviderStateMixin 
                     textAlign: TextAlign.center,
                     style: theme.textTheme.bodySmall?.copyWith(color: scheme.onSurfaceVariant)),
               ]),
+              ),
             ),
           ),
         ),

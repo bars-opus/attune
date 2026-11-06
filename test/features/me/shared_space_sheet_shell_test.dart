@@ -17,6 +17,7 @@ import '../../helpers/fake_home_state.dart';
 import '../../helpers/fake_reminder_rpc.dart';
 import '../../helpers/flow_harness.dart';
 import '../../helpers/home_harness.dart';
+import '../../helpers/tap_in_reach.dart';
 
 Future<HomeHarness> _pumpShell(
   WidgetTester tester,
@@ -60,7 +61,7 @@ void main() {
   ) async {
     final h = await _pumpShell(tester, homeJson(path: 'just_me'));
     expect(find.text('More ways to use Attune'), findsOneWidget);
-    await tester.tap(find.text('More ways to use Attune'));
+    await tapInReach(tester, find.text('More ways to use Attune'));
     await tester.pumpAndSettle();
     h.gateway.state = homeJson(
       path: 'relationship',
@@ -74,7 +75,7 @@ void main() {
     expect(find.text('CHAT linked'), findsOneWidget);
     expect(find.byType(MeHomeScreen), findsNothing);
     expect(find.text("You're in a shared space with Kofi"), findsOneWidget);
-    await tester.tap(find.text('Pause our shared space'));
+    await tapInReach(tester, find.text('Pause our shared space'));
     await tester.pumpAndSettle();
     expect(find.text('Pause your shared space?'), findsOneWidget);
   });
@@ -97,7 +98,7 @@ void main() {
       find.text("You're in a shared space with your partner"),
       findsOneWidget,
     );
-    await tester.tap(find.text('End relationship'));
+    await tapInReach(tester, find.text('End relationship'));
     await tester.pumpAndSettle();
     expect(find.text('End your shared space?'), findsOneWidget);
   });

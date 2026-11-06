@@ -15,6 +15,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:flutter_test/flutter_test.dart';
+import '../../helpers/tap_in_reach.dart';
 
 class _FakeRepo implements RemindersRepository {
   final List<Map<String, Object?>> updates = [];
@@ -145,7 +146,7 @@ void main() {
       200,
       scrollable: find.byType(Scrollable).first,
     );
-    await tester.tap(find.text('Delete reminder'));
+    await tapInReach(tester, find.text('Delete reminder'));
     await tester.pumpAndSettle();
     await tester.tap(find.widgetWithText(TextButton, 'Delete'));
     await tester.pumpAndSettle();
@@ -585,7 +586,7 @@ void main() {
       );
       await tester.tap(find.text('open'));
       await tester.pumpAndSettle();
-      await tester.tap(find.text('Delete reminder'));
+      await tapInReach(tester, find.text('Delete reminder'));
       await tester.pumpAndSettle();
       await tester.tap(find.widgetWithText(TextButton, 'Delete'));
       await tester.pumpAndSettle();

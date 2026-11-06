@@ -18,6 +18,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../../../helpers/flow_harness.dart';
 import '../support/fake_journal.dart';
 import '../support/journal_test_app.dart';
+import '../../../helpers/tap_in_reach.dart';
 
 const _card =
     "If things feel heavy right now, you don't have to carry it alone. Support is here if you want it.";
@@ -88,7 +89,7 @@ void main() {
       await t.pumpAndSettle();
       expect(find.text(_card), findsOneWidget); // in the entry, instead of
       expect(find.text('An older reflection.'), findsNothing); // the reflection
-      await t.tap(find.text('Not now'));
+      await tapInReach(t, find.text('Not now'));
       await t.pumpAndSettle();
       expect(find.text(_card), findsNothing);
       final prefs = await SharedPreferences.getInstance();

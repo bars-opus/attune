@@ -80,6 +80,10 @@ class _LinkedMomentState extends ConsumerState<LinkedMoment> {
                 ),
       ),
     );
+    // The avatars settle toward each other (§2.2): the Row mirrors right
+    // to left, so their start offsets do too (W10b, B7 review I-1).
+    final inward =
+        Directionality.of(context) == TextDirection.rtl ? -0.3 : 0.3;
     return FlowFrame(
       title: loc.flow_linkedTitle(couple),
       body: Column(
@@ -89,9 +93,9 @@ class _LinkedMomentState extends ConsumerState<LinkedMoment> {
             child: Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                avatar(widget.myInitial, const Offset(-0.3, 0)),
+                avatar(widget.myInitial, Offset(-inward, 0)),
                 const SizedBox(width: Spacing.sm),
-                avatar(partnerInitial, const Offset(0.3, 0)),
+                avatar(partnerInitial, Offset(inward, 0)),
               ],
             ),
           ),

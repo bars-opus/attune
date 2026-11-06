@@ -26,6 +26,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../../helpers/flow_harness.dart';
 import 'support/healing_fakes.dart';
+import '../../../helpers/tap_in_reach.dart';
 
 const _offered = {'status': 'support_offered'};
 const _paused = {'status': 'paused'};
@@ -77,14 +78,14 @@ void main() {
         overrides: _overrides(gen, repo),
       );
       expect(find.text(_ready), findsOneWidget);
-      await t.tap(find.text('Generate reflection'));
+      await tapInReach(t, find.text('Generate reflection'));
       await t.pumpAndSettle();
       expect(gen.calls, ['post_mortem:j1']);
       expect(find.text(supportCardText), findsOneWidget);
       expect(find.text('One pattern that surfaced:'), findsNothing);
       expect(repo.saved, isEmpty); // nothing saved about the match
 
-      await t.tap(find.text('Not now'));
+      await tapInReach(t, find.text('Not now'));
       await t.pumpAndSettle();
       expect(find.text(supportCardText), findsNothing);
       expect(find.text(_ready), findsOneWidget);
@@ -111,7 +112,7 @@ void main() {
       () => HealingPortraitScreen(journey: testJourney(stage: 4)),
       overrides: _overrides(gen, repo),
     );
-    await t.tap(find.text('Generate portrait'));
+    await tapInReach(t, find.text('Generate portrait'));
     await t.pumpAndSettle();
     expect(gen.calls, ['portrait:j1']);
     expect(find.text(supportCardText), findsOneWidget);
@@ -128,9 +129,9 @@ void main() {
         FakeHealingRepository(),
       ),
     );
-    await t.tap(find.text('Generate reflection'));
+    await tapInReach(t, find.text('Generate reflection'));
     await t.pumpAndSettle();
-    await t.tap(find.text('See support'));
+    await tapInReach(t, find.text('See support'));
     await t.pumpAndSettle();
     expect(find.text('at /safety-resources'), findsOneWidget);
     expect(h.metrics, isEmpty);
@@ -145,7 +146,7 @@ void main() {
         _postMortem(testJourney()),
         overrides: _overrides(FakeHealingGeneration([_paused]), repo),
       );
-      await t.tap(find.text('Generate reflection'));
+      await tapInReach(t, find.text('Generate reflection'));
       await t.pumpAndSettle();
       expect(repo.saved, ['post_mortem:insufficient_evidence']);
       expect(find.text(_notEnough), findsOneWidget);
@@ -175,11 +176,11 @@ void main() {
           repo,
         ),
       );
-      await t.tap(find.text('Generate reflection'));
+      await tapInReach(t, find.text('Generate reflection'));
       await t.pumpAndSettle();
-      await t.tap(find.text('Not now'));
+      await tapInReach(t, find.text('Not now'));
       await t.pumpAndSettle();
-      await t.tap(find.text('Generate reflection'));
+      await tapInReach(t, find.text('Generate reflection'));
       await t.pumpAndSettle();
       expect(find.text('A fresh observation.'), findsOneWidget);
       expect(repo.saved, ['post_mortem:completed']);
@@ -207,7 +208,7 @@ void main() {
       );
       expect(find.text('An older observation.'), findsNothing);
       expect(find.text(supportCardText), findsOneWidget);
-      await t.tap(find.text('Not now'));
+      await tapInReach(t, find.text('Not now'));
       await t.pumpAndSettle();
       expect(find.text('An older observation.'), findsNothing);
       expect(find.text(_notEnough), findsOneWidget);
@@ -242,7 +243,7 @@ void main() {
         _postMortem(testJourney()),
         overrides: _overrides(gen, FakeHealingRepository()),
       );
-      await t.tap(find.text('Generate reflection'));
+      await tapInReach(t, find.text('Generate reflection'));
       await t.pump();
       final c = _container(t);
       c.read(_signedIn.notifier).state = 'kofi';
@@ -265,7 +266,7 @@ void main() {
         FakeHealingRepository(),
       ),
     );
-    await t.tap(find.text('Generate reflection'));
+    await tapInReach(t, find.text('Generate reflection'));
     await t.pumpAndSettle();
     expect(find.text(supportCardText), findsOneWidget);
     _container(t).read(_signedIn.notifier).state = 'kofi';
@@ -283,7 +284,7 @@ void main() {
         FakeHealingRepository(),
       ),
     );
-    await t.tap(find.text('Generate reflection'));
+    await tapInReach(t, find.text('Generate reflection'));
     await t.pumpAndSettle();
     final registry = DeviceWipeRegistry();
     registerDeviceWipes(registry);
@@ -312,7 +313,7 @@ void main() {
         FakeHealingRepository(),
       ),
     );
-    await t.tap(find.text('Generate reflection'));
+    await tapInReach(t, find.text('Generate reflection'));
     await t.pump(); // one frame: the card is there at once
     await t.pump();
     expect(find.text(supportCardText), findsOneWidget);
@@ -426,7 +427,7 @@ void main() {
         _postMortem(testJourney()),
         overrides: _overrides(gen, FakeHealingRepository()),
       );
-      await t.tap(find.text('Generate reflection'));
+      await tapInReach(t, find.text('Generate reflection'));
       await t.pump();
       final c = _container(t);
       h.router.go('/elsewhere'); // the person left the stage
@@ -456,7 +457,7 @@ void main() {
           FakeHealingRepository(),
         ),
       );
-      await t.tap(find.text('Generate reflection'));
+      await tapInReach(t, find.text('Generate reflection'));
       await t.pumpAndSettle();
       await t.scrollUntilVisible(
         find.text('See support'),
@@ -472,7 +473,7 @@ void main() {
 
   testWidgets('goldens: the card on both stages, and the link', (t) async {
     Future<void> generate(WidgetTester t, String label) async {
-      await t.tap(find.text(label));
+      await tapInReach(t, find.text(label));
       await t.pumpAndSettle();
     }
 

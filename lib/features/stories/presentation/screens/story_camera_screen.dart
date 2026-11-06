@@ -68,6 +68,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:video_player/video_player.dart';
+import 'package:attune/app/text_scale_policy.dart';
 
 class StoryCameraScreen extends ConsumerStatefulWidget {
   const StoryCameraScreen({
@@ -366,7 +367,12 @@ class _StoryCameraScreenState extends ConsumerState<StoryCameraScreen> {
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) => KeepsDefaultTextSize(
+    // Spec 1 W10a (B6 I-3): pushed outside GoRouter and not audited yet.
+    child: Builder(builder: _buildAtDefaultSize),
+  );
+
+  Widget _buildAtDefaultSize(BuildContext context) {
     final review = _review;
     return PopScope(
       canPop: review == null && !_posting,

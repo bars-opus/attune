@@ -14,6 +14,7 @@ import 'package:attune/core/widgets/poll_card.dart';
 import 'package:attune/core/polls/presentation/providers/poll_providers.dart';
 
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
+import 'package:attune/core/ui/text/large_text.dart';
 
 class OpinionCard extends ConsumerWidget {
   final OpinionModel opinion;
@@ -367,13 +368,15 @@ class OpinionCard extends ConsumerWidget {
         return SafeArea(
           child: Padding(
             padding: const EdgeInsets.all(Spacing.md),
-            child: Column(
+            child: ScrollWhenScaledUp(
+              child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
                 for (final section in sections)
                   for (final item in section.items)
                     SettingsItem(config: item, showDivider: false),
               ],
+            ),
             ),
           ),
         );

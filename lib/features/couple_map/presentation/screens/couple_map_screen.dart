@@ -1,6 +1,7 @@
 import 'package:attune/features/couple_map/presentation/screens/couple_map_tab.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:attune/app/text_scale_policy.dart';
 
 /// Builds the map's body (a seam: tests swap the Mapbox view out).
 final coupleMapBodyBuilderProvider =
@@ -27,7 +28,12 @@ class CoupleMapScreen extends ConsumerWidget {
   final String relationshipId;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) => Scaffold(
+  Widget build(BuildContext context, WidgetRef ref) => KeepsDefaultTextSize(
+    // Spec 1 W10a (B6 I-3): pushed outside GoRouter and not audited yet.
+    child: Builder(builder: (context) => _buildAtDefaultSize(context, ref)),
+  );
+
+  Widget _buildAtDefaultSize(BuildContext context, WidgetRef ref) => Scaffold(
     body: ref.watch(coupleMapBodyBuilderProvider)(
       relationshipId,
       () => Navigator.of(context).maybePop(),

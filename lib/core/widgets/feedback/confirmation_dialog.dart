@@ -49,7 +49,12 @@ class ConfirmationDialog extends StatelessWidget {
   Widget build(BuildContext context) {
     return ConstrainedBox(
       constraints: BoxConstraints(
-        maxHeight: 350.h, // Limit maximum height
+        // Spec 1 W10a: grows with the phone's text size above 1.0 (350 at
+        // the normal size and below, as before), so large text never
+        // overflows it.
+        maxHeight:
+            350.h *
+            math.max(1.0, MediaQuery.textScalerOf(context).scale(10) / 10),
         minHeight: 150.h, // Set minimum height
       ),
       child: CircularDocumentationContainer(

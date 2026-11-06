@@ -21,6 +21,7 @@ import 'package:flutter_test/flutter_test.dart';
 import '../../../helpers/fake_couple_profile.dart';
 import '../../../helpers/flow_harness.dart';
 import '../../../helpers/home_harness.dart';
+import '../../../helpers/tap_in_reach.dart';
 
 const _rel = 'rel-screen';
 final _enDash = String.fromCharCode(0x2013);
@@ -144,7 +145,7 @@ void main() {
       find.text('You can read this until Tuesday, December 1, 2026.'),
       findsOneWidget,
     );
-    await tester.tap(find.text('Apart, nearby'));
+    await tapInReach(tester, find.text('Apart, nearby'));
     await tester.pumpAndSettle();
     expect(find.text('Where do you two live?'), findsNothing);
     // Batch 5: nothing is opened at all (not even the flow's read-only

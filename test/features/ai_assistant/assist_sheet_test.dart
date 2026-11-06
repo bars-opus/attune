@@ -25,6 +25,7 @@ import 'package:attune/features/chat/domain/entities/message.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import '../../helpers/tap_in_reach.dart';
 
 class _FakeAiAssistantGateway implements AiAssistantGateway {
   Object? nextInvokeError;
@@ -408,7 +409,7 @@ void main() {
         await tester.tap(find.widgetWithText(FilledButton, 'Generate'));
         await tester.pump(const Duration(milliseconds: 30));
 
-        await tester.tap(find.text('Edit as my message'));
+        await tapInReach(tester, find.text('Edit as my message'));
         await tester.pump(const Duration(milliseconds: 30));
 
         expect(editedText, 'A rooftop dinner sounds nice.');
@@ -445,7 +446,7 @@ void main() {
         await tester.tap(find.widgetWithText(FilledButton, 'Generate'));
         await tester.pump(const Duration(milliseconds: 30));
 
-        await tester.tap(find.text('Edit as my message'));
+        await tapInReach(tester, find.text('Edit as my message'));
         await tester.pump(const Duration(milliseconds: 30));
 
         expect(editedText, 'Want to try that new ramen place?');
@@ -468,7 +469,7 @@ void main() {
         await tester.pump(const Duration(milliseconds: 30));
         expect(find.text('Share in chat'), findsOneWidget);
 
-        await tester.tap(find.widgetWithText(TextButton, 'Close'));
+        await tapInReach(tester, find.widgetWithText(TextButton, 'Close'));
         await tester.pump(const Duration(milliseconds: 30));
 
         expect(gateway.rpcCallCount, 0);

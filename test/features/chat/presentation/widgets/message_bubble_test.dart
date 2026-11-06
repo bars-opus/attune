@@ -23,6 +23,7 @@ import 'package:go_router/go_router.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../support/chat_test_harness.dart';
+import '../../../../helpers/tap_in_reach.dart';
 
 class _NoOpGateway implements AiAssistantGateway {
   @override
@@ -752,7 +753,7 @@ void main() {
     await tester.pump(const Duration(milliseconds: 500));
     expect(tester.takeException(), isNull);
 
-    await tester.tap(find.text('❤️'));
+    await tapInReach(tester, find.text('❤️'));
     expect(removed, isTrue);
   });
 
@@ -787,7 +788,7 @@ void main() {
       ),
     );
 
-    await tester.tap(find.text('❤️'));
+    await tapInReach(tester, find.text('❤️'));
 
     expect(removed, isTrue);
   });

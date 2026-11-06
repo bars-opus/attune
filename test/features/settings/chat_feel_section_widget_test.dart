@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../../helpers/tap_in_reach.dart';
 
 void main() {
   testWidgets('Chat feel section exposes an expressiveness switch that persists',
@@ -38,7 +39,7 @@ void main() {
     );
     await tester.pumpAndSettle();
     expect(container.read(chatExpressivenessProvider), ChatExpressiveness.calm);
-    await tester.tap(finder);
+    await tapInReach(tester, finder);
     await tester.pumpAndSettle();
     expect(container.read(chatExpressivenessProvider),
         ChatExpressiveness.expressive);

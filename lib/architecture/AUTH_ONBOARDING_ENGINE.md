@@ -37,8 +37,14 @@ guide for Flutter wiring, state transitions, failure modes, and review checks.
 Attune uses one launch auth method:
 
 ```
-Phone number -> SMS OTP -> Supabase session
+Name -> date of birth -> phone number -> code -> consent -> Supabase session
 ```
+
+*(Amended 2026-11, Spec 1, Q4/Q20.)* The name and date of birth are asked
+first and held on the device; nothing is written until the code is checked,
+and then everything is written in one call (`complete_sign_up`). Under 18,
+nothing is written at all and the server refuses the account. The code goes
+by SMS, or by WhatsApp for a number that has no account yet.
 
 Do not show:
 
@@ -65,8 +71,11 @@ point on Ghanaian carriers. These are requirements, not suggestions:
   on a real MTN SIM before any release, and budget registration lead time
   for every new sender ID. Numeric sender IDs fail outright on several
   Ghanaian carriers; short codes and two-way SMS are unsupported in Ghana.
-- **Voice OTP is the required automatic fallback** when SMS delivery fails
-  or times out — not a nice-to-have.
+- **Voice OTP** *(amended 2026-11, Spec 1 W2)*: built into the Send SMS
+  Hook and switched off until the provider's answering-machine detection is
+  in place, because a code must never be spoken to voicemail. Until then a
+  failed WhatsApp or voice route falls back to SMS, and the app offers
+  "Try WhatsApp" (new numbers only) after the second resend.
 - **Never rely on Firebase phone auth alone**: it has a documented,
   unresolved reliability bug specifically affecting +233 numbers.
 - Real-device, real-carrier OTP testing (MTN, Telecel, AirtelTigo) is a
@@ -80,9 +89,10 @@ pre-launch critical path.
 
 ### Basic Profile Setup
 
-After phone verification, collect only:
+Before the phone number *(amended 2026-11, Spec 1)*, collect only:
 
 - display name
+- date of birth (shown back as an age, never stored on the device past sign-up)
 
 Do not collect username, avatar, gender, or relationship details in this step.
 Those belong to later profile/settings or onboarding surfaces.
@@ -105,11 +115,13 @@ HomeScreen
 ### Phone Verification
 
 ```
-LoginProfile CTA
-  -> Legal acceptance bottom sheet
-  -> LoginScreen (phone OTP)
-  -> OnboardingFlow
+Welcome (/welcome), or LoginProfile "Get started"
+  -> /signup: name, date of birth, phone, code, consent (the legal step
+     comes after the code)
+  -> /onboarding: "What brings you to Attune?"
 ```
+
+*(Amended 2026-11, Spec 1.)*
 
 ### Onboarding
 
@@ -143,7 +155,8 @@ Ask 2 (days later — triggered by real chat activity + a positive signal,
   Intelligence introduction
     -> Attachment quiz
     -> Relationship anchors
-    -> Compatibility preview (completion reward)
+    -> The two anchors reflected back, and "something for tonight"
+       (decision 30: no compatibility preview, no pairing or type)
 ```
 
 Couples do NOT take the attachment quiz or anchors during Ask 1 — those are

@@ -5,6 +5,7 @@ import 'package:attune/app/theme/design_tokens.dart';
 import 'package:attune/core/widgets/circular_documentation_container.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
+import 'dart:math' as math;
 
 class BottomSheetUtils {
   static Future<T?> showDocumentationBottomSheet<T>({
@@ -31,8 +32,18 @@ class BottomSheetUtils {
       'Cannot provide both document and widget parameters',
     );
 
+    // Spec 1 W10a: a fixed height grows with the phone's text size above
+    // 1.0 (never below it), up to 90% of the screen, so large text fits;
+    // a sheet already taller than that is never cut down.
+    final textScale = math.max(
+      1.0,
+      MediaQuery.textScalerOf(context).scale(10) / 10,
+    );
+    final screenMax = MediaQuery.of(context).size.height * 0.9;
     final sheetMaxHeight =
-        maxHeight ?? MediaQuery.of(context).size.height * 0.9;
+        maxHeight == null
+            ? screenMax
+            : math.min(maxHeight * textScale, math.max(maxHeight, screenMax));
     final contentPadding = padding ?? Spacing.xl.h;
 
     return showModalBottomSheet<T>(

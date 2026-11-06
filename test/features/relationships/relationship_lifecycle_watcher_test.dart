@@ -12,6 +12,7 @@ import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../../helpers/tap_in_reach.dart';
 
 RelationshipLifecycle _l({
   LifecycleStatus status = LifecycleStatus.ended,
@@ -108,7 +109,7 @@ void main() {
     expect(find.text('OPINIONS'), findsOneWidget);
     expect(find.text('Ama has ended your shared space.'), findsOneWidget);
     expect(w.clears.length, 1);
-    await t.tap(find.text('Close'));
+    await tapInReach(t, find.text('Close'));
     await t.pumpAndSettle();
     final again = await _pump(t, _l());
     expect(again.clears, isEmpty);
@@ -170,7 +171,7 @@ void main() {
     await t.pumpAndSettle();
     await _pump(t, _l());
     expect(find.text('Ama has ended your shared space.'), findsOneWidget);
-    await t.tap(find.text('Close'));
+    await tapInReach(t, find.text('Close'));
     await t.pumpAndSettle();
     await _pump(t, _l());
     expect(find.text('Ama has ended your shared space.'), findsNothing);

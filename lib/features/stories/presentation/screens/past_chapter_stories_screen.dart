@@ -13,6 +13,7 @@ import 'package:attune/core/utils/exports/export_screens.dart';
 import 'package:attune/features/stories/data/past_story_chapters_repository.dart';
 import 'package:attune/features/stories/data/story_repository.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:attune/app/text_scale_policy.dart';
 
 String _stories(int n) => '$n ${n == 1 ? 'story' : 'stories'}';
 
@@ -85,7 +86,12 @@ class PastChapterStoriesScreen extends ConsumerWidget {
       'that has ended is deleted, with its stories, 12 months after it closes.';
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  Widget build(BuildContext context, WidgetRef ref) => KeepsDefaultTextSize(
+    // Spec 1 W10a (B6 I-3): pushed outside GoRouter and not audited yet.
+    child: Builder(builder: (context) => _buildAtDefaultSize(context, ref)),
+  );
+
+  Widget _buildAtDefaultSize(BuildContext context, WidgetRef ref) {
     final text = Theme.of(context).textTheme;
     final scheme = Theme.of(context).colorScheme;
     final async = ref.watch(pastStoryChaptersProvider);

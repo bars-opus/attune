@@ -34,7 +34,7 @@ import 'dart:io' show Platform;
 import 'dart:typed_data' show Uint8List;
 
 import 'package:flutter/foundation.dart' show kIsWeb;
-import 'package:flutter/widgets.dart' show FlutterError;
+import 'package:flutter/widgets.dart' show FlutterError, Size;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:visibility_detector/visibility_detector.dart';
 
@@ -63,7 +63,26 @@ import 'package:visibility_detector/visibility_detector.dart';
 /// developer's Mac, where these are actually reviewed.
 const double _kGoldenTolerance = 0.02;
 
+/// Spec 1 W10a, the large-text audit (scripts/large_text_audit.py): with
+/// `--dart-define=LARGE_TEXT_AUDIT=2.0` (or any size) every test runs on a
+/// 390 x 844 phone with the phone's text size at that size. Without it
+/// nothing changes.
+const _largeTextAudit = String.fromEnvironment('LARGE_TEXT_AUDIT');
+
 Future<void> testExecutable(FutureOr<void> Function() testMain) async {
+  if (_largeTextAudit.isNotEmpty) {
+    setUp(() {
+      final binding = TestWidgetsFlutterBinding.ensureInitialized();
+      binding.platformDispatcher.textScaleFactorTestValue = double.parse(
+        _largeTextAudit,
+      );
+      binding.platformDispatcher.views.first.physicalSize = const Size(
+        1170,
+        2532,
+      );
+      binding.platformDispatcher.views.first.devicePixelRatio = 3;
+    });
+  }
   // Visibility callbacks run per frame in tests, without pending batch timers.
   VisibilityDetectorController.instance.updateInterval = Duration.zero;
   // macOS is the reference platform these goldens were authored on:

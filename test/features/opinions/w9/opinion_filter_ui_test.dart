@@ -16,6 +16,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../../helpers/flow_harness.dart';
 import 'support/fake_opinions.dart';
+import '../../../helpers/tap_in_reach.dart';
 
 PostgrestException _refusal(String wire, {String? hint}) =>
     PostgrestException(message: 'content:$wire', code: '22023', hint: hint);
@@ -178,7 +179,7 @@ void main() {
 
       // Inline edit of my own comment (the first menu: newest first).
       repo.refuseWith = _refusal('slur');
-      await tester.tap(find.byIcon(Icons.more_horiz).at(0));
+      await tapInReach(tester, find.byIcon(Icons.more_horiz).at(0));
       await tester.pumpAndSettle();
       await tester.tap(find.text('Edit'));
       await tester.pumpAndSettle();
@@ -206,7 +207,7 @@ void main() {
       await tester.tap(find.text('Save'));
       await tester.pumpAndSettle();
       expect(find.text(_slur), findsOneWidget);
-      await tester.tap(find.text('Cancel'));
+      await tapInReach(tester, find.text('Cancel'));
       await tester.pumpAndSettle();
       expect(find.text(_slur), findsNothing);
       // The refused comment, sent at last: its notice goes with it.

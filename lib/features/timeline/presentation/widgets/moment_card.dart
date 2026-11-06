@@ -193,11 +193,13 @@ class _MomentCardState extends ConsumerState<MomentCard> {
                     color: colorScheme.onSurface.withOpacity(0.6),
                   ),
                   Gap(Spacing.xs.w),
-                  Text(
+                  Flexible(
+                    child: Text(
                     'Only you can see this',
                     style: textTheme.bodySmall?.copyWith(
                       color: colorScheme.onSurface.withOpacity(0.6),
                     ),
+                  ),
                   ),
                 ],
               ),

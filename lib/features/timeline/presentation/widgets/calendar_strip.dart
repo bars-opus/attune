@@ -7,6 +7,7 @@ import 'package:attune/features/timeline/presentation/widgets/calendar_day_indic
 import 'package:attune/features/timeline/presentation/widgets/story_month_load_error.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:attune/core/ui/text/large_text.dart';
 
 class CalendarStrip extends StatelessWidget {
   final DateTime focusedMonth;
@@ -192,7 +193,9 @@ class CalendarStrip extends StatelessWidget {
                             )
                             : null,
                   ),
-                  child: Column(
+                  child: ScaleDownToFit(
+                    alignment: Alignment.center,
+                    child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
                       Text(
@@ -214,6 +217,7 @@ class CalendarStrip extends StatelessWidget {
                         hasUpcoming: hasUpcoming,
                       ),
                     ],
+                  ),
                   ),
                 ),
               );

@@ -9,6 +9,7 @@ import 'package:attune/features/opinions/presentation/widgets/need_support_link.
 import 'package:attune/features/settings/models/settings_config.dart';
 import 'package:flutter/services.dart' show Clipboard, ClipboardData;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:attune/core/ui/text/large_text.dart';
 
 /// Overflow-menu actions for a single opinion, in the same
 /// SettingsConfig/SettingsSection shape ProfileMoreData uses so the row is
@@ -267,5 +268,9 @@ class OpinionMoreData {
   }
 
   static Widget _safetySheet(bool on, Widget child) =>
-      on ? AllowLargeText(child: SingleChildScrollView(child: child)) : child;
+      on
+          ? AllowLargeText(child: SingleChildScrollView(child: child))
+          // Spec 1 W10a: flag off, the six reasons scroll only once the
+          // phone's text is scaled up; at the normal size, as before.
+          : ScrollWhenScaledUp(child: child);
 }

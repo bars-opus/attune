@@ -11,6 +11,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'together_repository_test.dart' show FakeTogetherGateway;
 import 'together_widget_sync_test.dart' show FakeWidgetStore;
+import '../../helpers/tap_in_reach.dart';
 
 void main() {
   testWidgets(
@@ -63,7 +64,7 @@ void main() {
         ),
         matching: find.byType(AppToggleSwitch),
       );
-      await t.tap(toggle);
+      await tapInReach(t, toggle);
       await t.pumpAndSettle();
       expect(
         (await SharedPreferences.getInstance()).getBool(

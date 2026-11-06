@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../../helpers/tap_in_reach.dart';
 
 void main() {
   testWidgets('toggling the Message sounds switch flips the preference',
@@ -40,7 +41,7 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    await tester.tap(switchFinder);
+    await tapInReach(tester, switchFinder);
     await tester.pumpAndSettle();
 
     expect(container.read(messageSoundsEnabledProvider), isFalse);

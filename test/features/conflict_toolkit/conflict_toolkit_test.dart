@@ -23,6 +23,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../../helpers/tap_in_reach.dart';
 
 class _FakePauseService extends PauseService {
   final replies = <String>[];
@@ -267,7 +268,7 @@ void main() {
       await tester.pumpWidget(_app(_Opener(showRepairTray, result)));
       await tester.tap(find.text('open'));
       await tester.pumpAndSettle();
-      await tester.tap(find.text('Can we slow down?'));
+      await tapInReach(tester, find.text('Can we slow down?'));
       await tester.pumpAndSettle();
       expect(result.value, 'Can we slow down?');
     });

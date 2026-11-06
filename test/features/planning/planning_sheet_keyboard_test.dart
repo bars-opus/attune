@@ -6,6 +6,8 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'support/fake_planning_gateway.dart';
 import 'support/planning_test_app.dart';
+import '../../helpers/tap_in_reach.dart';
+import 'package:flutter/material.dart';
 
 const _screen = PlanningEntryScreen(relationshipId: 'r1', entryId: 'e1');
 
@@ -49,7 +51,13 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('Add row'));
     await tester.pumpAndSettle();
-    await tester.tap(find.widgetWithText(AppTextFormField, 'Day'));
+    await tapInReach(
+      tester,
+      find.descendant(
+        of: find.widgetWithText(AppTextFormField, 'Day'),
+        matching: find.byType(TextField),
+      ),
+    );
     await tester.pump();
     expect(tester.testTextInput.isVisible, isTrue);
     await tester.tap(find.text('Row 1')); // the header's title: empty space as far as fields go

@@ -27,7 +27,9 @@ class LightColors {
   // ================= SEMANTIC COLOR PALETTE =================
   static const Color success = Color(0xFF4CAF50);
   static const Color warning = Color(0xFFFF9800);
-  static const Color error = Color(0xFFF44336);
+  // Spec 1 W10a: 5.6:1 with white and 5.2:1 on the light background
+  // (#F44336 was 3.7:1 and 3.4:1, under WCAG's 4.5:1).
+  static const Color error = Color(0xFFC62828);
   static const Color info = Color(0xFF2196F3);
   static const Color neutral = Color(0xFFF5F5F5);
 

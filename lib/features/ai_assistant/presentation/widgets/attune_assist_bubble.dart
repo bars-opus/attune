@@ -107,12 +107,14 @@ class AttuneAssistBubble extends ConsumerWidget {
                 color: colorScheme.onSecondaryContainer,
               ),
               const SizedBox(width: 6),
-              Text(
+              Flexible(
+                child: Text(
                 'Attune suggestion',
                 style: Theme.of(context).textTheme.labelSmall?.copyWith(
                   color: colorScheme.onSecondaryContainer,
                   fontWeight: FontWeight.w600,
                 ),
+              ),
               ),
             ],
           ),
@@ -245,8 +247,10 @@ class _AddToPlanningAffordance extends ConsumerWidget {
                 children: [
                   Icon(Icons.check_circle_outline, size: 16, color: color),
                   const SizedBox(width: 6),
-                  Text('Added to Planning',
+                  Flexible(
+                    child: Text('Added to Planning',
                       style: Theme.of(context).textTheme.labelMedium?.copyWith(color: color)),
+                  ),
                   Icon(Icons.chevron_right_rounded, size: 16, color: color),
                 ],
               ),

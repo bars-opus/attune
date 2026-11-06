@@ -143,21 +143,21 @@ class _PhoneStepState extends State<PhoneStep> with SubmitOnce {
 
   /// "Is WhatsApp on {number}?": yes sends by WhatsApp, no by SMS. One
   /// send however fast either is pressed, as [_send].
-  Future<void> _sendWhatsApp() async {
+  Future<void> _sendWhatsApp(BuildContext sheetContext) async {
     final onWhatsApp = widget.onSendWhatsApp;
     if (_busy || onWhatsApp == null) return;
     final number = _validNumber();
     if (number == null) return;
     final loc = AppLocalizations.of(context)!;
     final theme = Theme.of(context);
-    // Room for large text (§2.3): 60% of the screen at 1.0, up to 90% at
-    // 2.0. The question scrolls; the two answers stay in view.
-    final textScale = MediaQueryData.fromView(
-      View.of(context),
-    ).textScaler.scale(1).clamp(1.0, 2.0);
+    // Room for large text (§2.3): 60% of the screen at 1.0; above it
+    // BottomSheetUtils grows it with the text size, up to 90% (Spec 1
+    // W10a). [sheetContext] is inside FlowFrame's AllowLargeText, so it
+    // sees the phone's text size. The question scrolls; the two answers
+    // stay in view.
     final yes = await BottomSheetUtils.showDocumentationBottomSheet<bool>(
-      context: context,
-      maxHeight: MediaQuery.sizeOf(context).height * (0.3 + 0.3 * textScale),
+      context: sheetContext,
+      maxHeight: MediaQuery.sizeOf(context).height * 0.6,
       widget: AllowLargeText(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -266,6 +266,10 @@ class _PhoneStepState extends State<PhoneStep> with SubmitOnce {
             label: loc.flow_phoneLabel,
             hintText: country?.example,
             keyboardType: TextInputType.phone,
+            // Left to right in a right-to-left screen too (W10b, §2.3):
+            // digit groups split by spaces would otherwise show in
+            // reverse order.
+            textDirection: TextDirection.ltr,
             textInputAction: TextInputAction.done,
             autofillHints: const [AutofillHints.telephoneNumberNational],
             inputFormatters: [
@@ -318,10 +322,15 @@ class _PhoneStepState extends State<PhoneStep> with SubmitOnce {
           onPressed: runningTag == #whatsApp ? null : _send,
         ),
         if (widget.onSendWhatsApp != null)
-          FlowSecondaryButton(
-            label: loc.flow_phoneWhatsApp,
-            busy: runningTag == #whatsApp,
-            onPressed: _busy ? null : _sendWhatsApp,
+          // A context under FlowFrame's AllowLargeText (Spec 1 W10a): the
+          // WhatsApp question's sheet grows with the phone's text size.
+          Builder(
+            builder:
+                (inner) => FlowSecondaryButton(
+                  label: loc.flow_phoneWhatsApp,
+                  busy: runningTag == #whatsApp,
+                  onPressed: _busy ? null : () => _sendWhatsApp(inner),
+                ),
           ),
       ],
     );

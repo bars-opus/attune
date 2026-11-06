@@ -55,6 +55,7 @@ import '../widgets/ritual_sheets.dart';
 import '../widgets/together_item_row.dart';
 import '../widgets/together_section.dart';
 import '../widgets/together_settings_sheet.dart';
+import 'package:attune/core/ui/text/large_text.dart';
 
 enum _View { agenda, month }
 
@@ -762,11 +763,13 @@ class _TogetherScreenState extends ConsumerState<TogetherScreen> {
               () => const PlanningEntriesSkeleton(label: 'Loading your plans'),
           error:
               (e, _) => Center(
-                child: ErrorStateWidget(
+                child: ScrollWhenScaledUp(
+                  child: ErrorStateWidget(
                   title: 'Could not load your plans',
                   subtitle: 'Check your connection and try again.',
                   primaryActionLabel: 'Try again',
                   onPrimaryAction: () => _reload(relationshipId),
+                ),
                 ),
               ),
           data:

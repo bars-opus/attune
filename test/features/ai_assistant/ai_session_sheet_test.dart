@@ -62,6 +62,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:supabase_flutter/supabase_flutter.dart' show FunctionException;
+import '../../helpers/tap_in_reach.dart';
 
 // ---------------------------------------------------------------------
 // Fakes
@@ -3672,7 +3673,7 @@ void main() {
         // Now change the intent before retrying.
         await tester.tap(find.text(kAiSessionSharedLabel));
         await tester.pump();
-        await tester.tap(find.text(kAiSessionStartLabel));
+        await tapInReach(tester, find.text(kAiSessionStartLabel));
         await tester.pumpAndSettle();
 
         final prepares = gateway.bodies
@@ -3772,7 +3773,7 @@ void main() {
 
         await tester.tap(find.byType(SwitchListTile));
         await tester.pump();
-        await tester.tap(find.text(kAiSessionStartLabel));
+        await tapInReach(tester, find.text(kAiSessionStartLabel));
         await tester.pumpAndSettle();
 
         final prepares = gateway.bodies

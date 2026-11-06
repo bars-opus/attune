@@ -18,6 +18,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_quill/flutter_quill.dart'
     show FlutterQuillLocalizations;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:attune/app/text_scale_policy.dart';
 
 /// The app's translations, plus the rich-text editor's (Planning). Quill's
 /// own dialogs and menus (link, copy/paste) open in overlays outside any
@@ -78,6 +79,8 @@ class _AppState extends ConsumerState<App> {
     final router = ref.watch(appRouterProvider);
     final themeMode = ref.watch(themeModeProvider);
     final locale = ref.watch(currentLocaleProvider);
+    // Spec 1 W10a: the root text clamp (1.0 unless text_scale_v2 is on).
+    final textScaleCap = ref.watch(textScaleCapProvider);
 
     return ScreenUtilConfig.builder(
       builder: (context) {
@@ -97,6 +100,7 @@ class _AppState extends ConsumerState<App> {
               (context, child) => FeatureFlagRefresher(
                 child: appShell(
                   router: router,
+                  maxTextScale: textScaleCap,
                   child: child ?? const SizedBox.shrink(),
                 ),
               ),

@@ -15,6 +15,7 @@ import 'package:flutter_test/flutter_test.dart';
 import '../../helpers/fake_home_state.dart';
 import '../../helpers/flow_harness.dart';
 import '../../helpers/home_harness.dart';
+import '../../helpers/tap_in_reach.dart';
 
 Future<FakeHomeStateGateway> _pump(
   WidgetTester tester,
@@ -38,7 +39,7 @@ Future<FakeHomeStateGateway> _pump(
 }
 
 Future<void> _openMoreWays(WidgetTester tester) async {
-  await tester.tap(find.text('More ways to use Attune'));
+  await tapInReach(tester, find.text('More ways to use Attune'));
   await tester.pumpAndSettle();
 }
 

@@ -5,6 +5,7 @@ import 'package:attune/core/widgets/info_row_widget.dart';
 import 'package:flutter/material.dart';
 
 import '../planning_ui.dart';
+import 'package:attune/core/ui/text/large_text.dart';
 
 /// One choice in [pickPlanningLink].
 class PlanningLinkOption {
@@ -57,7 +58,8 @@ class _PlanningLinkSheet extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    return Column(
+    return ScrollWhenScaledUp(
+      child: Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         BottomSheetHeader(title: title),
@@ -82,6 +84,7 @@ class _PlanningLinkSheet extends StatelessWidget {
             onTap: () => popPlanningSheet(context, o.id),
           ),
       ],
+    ),
     );
   }
 }

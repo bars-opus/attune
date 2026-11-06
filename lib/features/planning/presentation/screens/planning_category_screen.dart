@@ -26,6 +26,7 @@ import '../planning_ui.dart';
 import '../widgets/category_editor_sheet.dart';
 import '../widgets/planning_skeletons.dart';
 import 'planning_entry_screen.dart';
+import 'package:attune/core/ui/text/large_text.dart';
 
 /// ISO 4217 code for the device locale; USD when the locale has none.
 String _deviceCurrency() {
@@ -303,8 +304,22 @@ class _PlanningCategoryScreenState
                   children: [
                     if (s.entries.isEmpty && s.pinned.isEmpty)
                       // The app's empty state, centred in the screen.
-                      SizedBox(
-                        height: MediaQuery.sizeOf(context).height * 0.6,
+                      ConstrainedBox(
+                        // Spec 1 W10a: at large text the empty state stays
+                        // centred in the same height while it fits, and
+                        // takes the height it needs (scrolling with the
+                        // list) when it doesn't; at the normal size, the
+                        // fixed height as before.
+                        constraints:
+                            isTextScaledUp(context)
+                                ? BoxConstraints(
+                                  minHeight:
+                                      MediaQuery.sizeOf(context).height * 0.6,
+                                )
+                                : BoxConstraints.tightFor(
+                                  height:
+                                      MediaQuery.sizeOf(context).height * 0.6,
+                                ),
                         child: Center(
                           child: PlanningEmptyState(
                             icon: planningIcon(_category.icon),

@@ -97,6 +97,10 @@ class _InviteLandingScreenState extends ConsumerState<InviteLandingScreen> {
           textCapitalization: TextCapitalization.characters,
           textInputAction: TextInputAction.done,
           inputFormatters: [LengthLimitingTextInputFormatter(12)],
+          // Left to right in a right-to-left screen too (W10b, B7 review
+          // M-2): letter and digit groups split by a space would otherwise
+          // show in reverse order.
+          textDirection: TextDirection.ltr,
           autofocus: true,
           onSubmitted: (_) => _submitCode(),
         ),

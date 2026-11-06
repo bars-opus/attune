@@ -12,6 +12,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'support/fake_planning_gateway.dart';
 import 'support/planning_test_app.dart';
+import '../../helpers/tap_in_reach.dart';
 
 const _screen = PlanningEntryScreen(relationshipId: 'r1', entryId: 'e1');
 const _args = (relationshipId: 'r1', entryId: 'e1');
@@ -71,6 +72,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Bonus'), findsOneWidget);
     expect(find.text('+${formatPlanningMoney(25000, 'GHS')}'), findsOneWidget);
+    await bringIntoReach(tester, find.text('Bonus'));
     await tester.drag(find.text('Bonus'), const Offset(500, 0));
     await tester.pumpAndSettle();
     expect(g.callsTo('delete_planning_block_item').single, {'p_id': 'k1'});

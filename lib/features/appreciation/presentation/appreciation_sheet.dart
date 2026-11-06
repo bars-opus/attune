@@ -96,7 +96,7 @@ class _AppreciationSheetState extends ConsumerState<AppreciationSheet> {
               children: [
                 Icon(Icons.eco_outlined, color: scheme.primary),
                 Gap(Spacing.sm.w),
-                Text('I noticed…', style: text.titleMedium),
+                Flexible(child: Text('I noticed…', style: text.titleMedium)),
               ],
             ),
             Gap(Spacing.xs.h),

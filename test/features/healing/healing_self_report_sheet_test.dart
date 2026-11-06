@@ -7,6 +7,7 @@ import 'package:attune/core/widgets/buttons/app_button.dart';
 import 'package:attune/features/healing/data/repositories/healing_repository.dart';
 import 'package:attune/features/healing/presentation/providers/healing_providers.dart';
 import 'package:attune/features/healing/presentation/widgets/healing_self_report_sheet.dart';
+import '../../helpers/tap_in_reach.dart';
 
 void main() {
   testWidgets('primary button is hidden until a date is picked', (tester) async {
@@ -47,7 +48,7 @@ void main() {
     // value into _selectedDate, with no separate confirm tap required.
     await tester.drag(find.byType(CupertinoDatePicker), const Offset(0, -50));
     await tester.pumpAndSettle();
-    await tester.tap(find.byType(AppButton));
+    await tapInReach(tester, find.byType(AppButton));
     await tester.pumpAndSettle();
 
     expect(find.textContaining('Could not start'), findsOneWidget);

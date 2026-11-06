@@ -1,6 +1,7 @@
 import 'package:attune/core/widgets/universal_bubble.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import '../../helpers/tap_in_reach.dart';
 
 Future<void> _pump(WidgetTester tester, Widget child) async {
   await tester.pumpWidget(MaterialApp(home: Scaffold(body: child)));
@@ -425,11 +426,15 @@ void main() {
 
     final center = tester.getCenter(find.text('has end actions'));
     final gesture = await tester.startGesture(center);
-    await gesture.moveBy(const Offset(-60, 0));
+    // Spec 1 W10: the pane opens past half its width, and "Delete" is
+    // wider at large text, so the swipe grows with it (60 at 1.0).
+    await gesture.moveBy(
+      Offset(-60 * tester.platformDispatcher.textScaleFactor, 0),
+    );
     await gesture.up();
     await tester.pumpAndSettle();
 
-    await tester.tap(find.text('Delete'));
+    await tapInReach(tester, find.text('Delete'));
     await tester.pumpAndSettle();
 
     expect(deleted, isTrue);

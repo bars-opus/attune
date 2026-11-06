@@ -165,7 +165,16 @@ class _JournalReminderSheetState extends ConsumerState<JournalReminderSheet> {
   String get _last => _clock(const TimeOfDay(hour: 21, minute: 59));
 
   Future<void> _pickTime(TimeOfDay current) async {
-    final picked = await showTimePicker(context: context, initialTime: current);
+    final picked = await showTimePicker(
+      context: context,
+      initialTime: current,
+      // Spec 1 W10a: Flutter's own picker overflows a phone at 2.0.
+      builder:
+          (context, child) => MediaQuery.withClampedTextScaling(
+            maxScaleFactor: 1.6,
+            child: child!,
+          ),
+    );
     if (picked == null || !mounted) return;
     // Owner ruling P-20: a time outside 08:00-21:59 is never taken (the
     // server's CHECK); the last good time stays and the sheet says why.

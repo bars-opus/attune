@@ -27,6 +27,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../../helpers/flow_harness.dart';
 import 'support/fake_opinions.dart';
+import '../../../helpers/tap_in_reach.dart';
 
 class _Stop implements Exception {}
 
@@ -273,7 +274,7 @@ void main() {
     await tester.pump();
     await tester.tap(find.byIcon(Icons.send_rounded));
     await tester.pumpAndSettle();
-    await tester.tap(find.byIcon(Icons.more_horiz).at(0));
+    await tapInReach(tester, find.byIcon(Icons.more_horiz).at(0));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Edit'));
     await tester.pumpAndSettle();

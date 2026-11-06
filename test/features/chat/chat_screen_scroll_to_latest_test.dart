@@ -20,6 +20,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'support/chat_test_harness.dart';
+import '../../helpers/tap_in_reach.dart';
 
 /// #32b: WhatsApp's "↓ N" pill once the reader has left the newest
 /// messages, and the one-shot "N unread messages" divider on open.
@@ -298,7 +299,7 @@ void main() {
 
     final selectionsBefore = haptics.selectionCount;
 
-    await tester.tap(find.byIcon(Icons.keyboard_arrow_down_rounded));
+    await tapInReach(tester, find.byIcon(Icons.keyboard_arrow_down_rounded));
 
     await frames(tester, 12);
 
@@ -821,7 +822,7 @@ void main() {
     // The margin around the 44 px circle still taps.
     final rect = tester.getRect(find.byType(ScrollToLatestPill));
     await tester.tapAt(rect.topLeft + const Offset(1, 24));
-    await tester.tap(find.byIcon(Icons.keyboard_arrow_down_rounded));
+    await tapInReach(tester, find.byIcon(Icons.keyboard_arrow_down_rounded));
     expect(taps, 2);
     semantics.dispose();
   });

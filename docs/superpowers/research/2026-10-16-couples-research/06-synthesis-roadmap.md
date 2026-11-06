@@ -300,7 +300,7 @@ Each card: tab/screen · user story · mechanism and grade · market signal · d
 3. **Never on device surfaces** — widgets, Live Activity, calendar mirror, notification bodies, app icon.
 4. **Never inferred, never defaulted on.** `faith_content` defaults to `none`; `sexual_content` to `off`.
 5. Exportable and deletable by the user alone; cleared on unlink; not part of the partner's export (05 D.2).
-6. Shared fields change silently (no activity feed, Together D7); the only exception is the per-user plan-change notice the autistic partner can opt into for plans they are *in* (C7).
+6. Shared fields change silently (no activity feed, Together D7); the only exception is the per-user plan-change notice the autistic partner can opt into for plans they are *in* (C7). *Amended 2026-11 (Spec 1, Q8 and Q20):* the four shared "About us" fields each show one quiet attribution line ("Changed by Yaw - Tue, 12 Nov"); still no push, no feed and no history.
 7. No analytics on special-category values; aggregate counts only above n=50 and only for capacity planning (how many faith packs to review).
 
 ### 5.4 How the profile resolves the archetype tensions (from 04 §C)

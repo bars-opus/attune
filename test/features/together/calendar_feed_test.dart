@@ -14,6 +14,7 @@ import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'together_repository_test.dart' show FakeTogetherGateway;
+import '../../helpers/tap_in_reach.dart';
 
 const _token =
     'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
@@ -114,7 +115,7 @@ void main() {
     t,
   ) async {
     final (g, copied) = await _open(t);
-    await t.tap(find.text('Show Together in my calendar app'));
+    await tapInReach(t, find.text('Show Together in my calendar app'));
     await t.pumpAndSettle();
     expect(g.calls.any((c) => c.$1 == 'create_calendar_feed_token'), isTrue);
     expect(find.textContaining('every 12–24 hours'), findsOneWidget);
@@ -163,14 +164,14 @@ void main() {
     expect(find.text('Show Together in my calendar app'), findsNothing);
     expect(find.text("Couldn't check your calendar link"), findsOneWidget);
     fail = false;
-    await t.tap(find.text("Couldn't check your calendar link"));
+    await tapInReach(t, find.text("Couldn't check your calendar link"));
     await t.pumpAndSettle();
     expect(find.textContaining('On since'), findsOneWidget);
   });
 
   testWidgets('Open in Calendar is offered on iPhone only', (t) async {
     await _open(t);
-    await t.tap(find.text('Show Together in my calendar app'));
+    await tapInReach(t, find.text('Show Together in my calendar app'));
     await t.pumpAndSettle();
     // Android: nothing handles webcal://, so no dead-end row.
     expect(find.text('Open in Calendar'), findsNothing);
@@ -181,7 +182,7 @@ void main() {
     debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
     try {
       await _open(t);
-      await t.tap(find.text('Show Together in my calendar app'));
+      await tapInReach(t, find.text('Show Together in my calendar app'));
       await t.pumpAndSettle();
       expect(find.text('Open in Calendar'), findsOneWidget);
     } finally {

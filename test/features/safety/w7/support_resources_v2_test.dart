@@ -25,6 +25,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 import '../../../helpers/flow_harness.dart';
 import '../../../helpers/home_harness.dart';
+import '../../../helpers/tap_in_reach.dart';
 
 Map<String, Object?> _entry(
   String n,
@@ -202,7 +203,7 @@ void main() {
   ) async {
     final launches = _Launches();
     await _pump(tester, launches);
-    await tester.tap(find.text('Call 999'));
+    await tapInReach(tester, find.text('Call 999'));
     await tester.pumpAndSettle();
     expect(find.text('Call 999?'), findsOneWidget);
     expect(
@@ -246,7 +247,7 @@ void main() {
       findsOneWidget,
     );
     expect(find.text('Fixture DV line'), findsNothing);
-    await tester.tap(find.text('Find a helpline'));
+    await tapInReach(tester, find.text('Find a helpline'));
     await tester.pumpAndSettle();
     await tester.tap(find.widgetWithText(FilledButton, 'Open'));
     await tester.pumpAndSettle();
@@ -298,7 +299,7 @@ void main() {
       find.text('Choose your country to see help near you.'),
       findsOneWidget,
     );
-    await tester.tap(find.text('Choose a country'));
+    await tapInReach(tester, find.text('Choose a country'));
     await tester.pumpAndSettle();
     expect(find.byType(PhoneCountryPickerSheet), findsOneWidget);
   });
@@ -332,7 +333,7 @@ void main() {
       find.text('Write about it in your journal'),
       200,
     );
-    await tester.tap(find.text('Write about it in your journal'));
+    await tapInReach(tester, find.text('Write about it in your journal'));
     await tester.pumpAndSettle();
     expect(find.text('at /reflectionJournal'), findsOneWidget);
   });
@@ -406,7 +407,7 @@ void main() {
 
   testWidgets('accessibility guidelines: the confirmation', (tester) async {
     await _pump(tester, _Launches());
-    await tester.tap(find.text('Call 999'));
+    await tapInReach(tester, find.text('Call 999'));
     await tester.pumpAndSettle();
     expect(find.text('Call 999?'), findsOneWidget);
     await expectFlowGuidelines(tester);
@@ -470,7 +471,7 @@ void main() {
     tester,
   ) async {
     await _pump(tester, _Launches(), region: null);
-    await tester.tap(find.text('Choose a country'));
+    await tapInReach(tester, find.text('Choose a country'));
     await tester.pump();
     expect(find.byType(PhoneCountryPickerSheet), findsOneWidget);
     expect(

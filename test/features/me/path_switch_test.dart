@@ -15,6 +15,7 @@ import 'package:flutter_test/flutter_test.dart';
 import '../../helpers/fake_home_state.dart';
 import '../../helpers/flow_harness.dart';
 import '../../helpers/home_harness.dart';
+import '../../helpers/tap_in_reach.dart';
 
 const _uid = 'u-switch';
 
@@ -97,7 +98,7 @@ void main() {
       ),
       findsOneWidget,
     );
-    await tester.tap(find.text('Cancel'));
+    await tapInReach(tester, find.text('Cancel'));
     await tester.pumpAndSettle();
     expect(s.setPaths, 0);
     expect(s.outcomes, [PathChoiceOutcome.cancelled]);
@@ -107,7 +108,7 @@ void main() {
     final s = await _pump(tester, from: dating, to: AppPath.justMe);
     s.gateway.onSetPath = (_) => s.gateway.state = homeJson(path: 'just_me');
     await _switch(tester);
-    await tester.tap(find.text('Switch'));
+    await tapInReach(tester, find.text('Switch'));
     await tester.pumpAndSettle();
     expect(s.gateway.calls.firstWhere((c) => c.$1 == 'set_my_path').$2, {
       'p_path': 'just_me',

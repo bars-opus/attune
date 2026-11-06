@@ -27,6 +27,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 import '../../../helpers/flow_harness.dart';
 import 'support/fake_opinions.dart';
+import '../../../helpers/tap_in_reach.dart';
 
 final _on = [opinionsSafetyProvider.overrideWithValue(true)];
 
@@ -60,7 +61,7 @@ Future<FlowHarness> _thread(
 }
 
 Future<void> _openCommentReport(WidgetTester tester) async {
-  await tester.tap(find.byIcon(Icons.more_horiz).at(1)); // the other person's
+  await tapInReach(tester, find.byIcon(Icons.more_horiz).at(1)); // the other person's
   await tester.pumpAndSettle();
   await tester.tap(find.text('Report'));
   await tester.pumpAndSettle();
@@ -178,7 +179,7 @@ void main() {
   testWidgets('every comment menu has it, mine and others', (tester) async {
     await _thread(tester, FakeOpinionRepository());
     for (final i in [0, 1]) {
-      await tester.tap(find.byIcon(Icons.more_horiz).at(i));
+      await tapInReach(tester, find.byIcon(Icons.more_horiz).at(i));
       await tester.pumpAndSettle();
       expect(
         find.text('Need support now?'),
@@ -216,7 +217,7 @@ void main() {
       expect(tester.getRect(find.text(_thanks)).bottom, lessThanOrEqualTo(844));
       expect(repo.reports, ['opinion:o1:Someone may be at risk']);
       expect(find.text(_old24h), findsNothing);
-      await tester.tap(find.text('See emergency numbers'));
+      await tapInReach(tester, find.text('See emergency numbers'));
       await tester.pumpAndSettle();
       expect(find.text('at /safety-resources'), findsOneWidget);
       expect(h.metrics, ['support_link_opened:opinions']);
@@ -233,7 +234,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(repo.reports, ['comment:c-other:Someone may be at risk']);
     expect(find.text(_thanks), findsOneWidget);
-    await tester.tap(find.text('Close'));
+    await tapInReach(tester, find.text('Close'));
     await tester.pumpAndSettle();
     expect(find.text(_thanks), findsNothing);
   });
@@ -282,7 +283,7 @@ void main() {
     await _thread(tester, repo);
     for (final reason in _sixReasons) {
       await _openCommentReport(tester);
-      await tester.tap(find.text(reason));
+      await tapInReach(tester, find.text(reason));
       await tester.pumpAndSettle();
       expect(repo.reports.last, 'comment:c-other:$reason');
       expect(find.text(_sent), findsOneWidget, reason: reason);
@@ -302,7 +303,7 @@ void main() {
     final repo = FakeOpinionRepository();
     await _thread(tester, repo);
     await _openPostReport(tester);
-    await tester.tap(find.text('Spam'));
+    await tapInReach(tester, find.text('Spam'));
     await tester.pumpAndSettle();
     expect(repo.reports, ['opinion:o1:Spam']);
     expect(find.text(_sent), findsOneWidget);
@@ -328,7 +329,7 @@ void main() {
     ).removeCurrentSnackBar();
     await tester.pumpAndSettle();
     await _openCommentReport(tester);
-    await tester.tap(find.text('Spam'));
+    await tapInReach(tester, find.text('Spam'));
     await tester.pumpAndSettle();
     expect(find.text(_failed), findsOneWidget);
     expect(find.text(_sent), findsNothing);
@@ -513,7 +514,7 @@ void main() {
         .read(flag.notifier)
         .state = false;
     await tester.pump();
-    await tester.tap(find.text('Spam'));
+    await tapInReach(tester, find.text('Spam'));
     await tester.pumpAndSettle();
     expect(repo.reports, ['comment:c-other:Spam']);
     expect(find.text(_sent), findsOneWidget);
@@ -570,7 +571,7 @@ void main() {
       expect(find.text(_thanks), fails ? findsNothing : findsOneWidget);
       expect(find.text('Sending your report'), findsNothing);
       if (!fails) {
-        await tester.tap(find.text('See emergency numbers'));
+        await tapInReach(tester, find.text('See emergency numbers'));
         await tester.pumpAndSettle();
         expect(find.text('at /safety-resources'), findsOneWidget);
         expect(h.metrics, ['support_link_opened:opinions']);
@@ -582,7 +583,7 @@ void main() {
     final repo = FakeOpinionRepository();
     await _thread(tester, repo);
     await _openCommentReport(tester);
-    await tester.tap(find.text('Spam'));
+    await tapInReach(tester, find.text('Spam'));
     await tester.pumpAndSettle();
     expect(find.text(_sent), findsOneWidget);
     expect(find.text('Sending your report'), findsNothing);
@@ -615,11 +616,11 @@ void main() {
     expect(calls, 1);
     expect(find.text(_thanks), findsOneWidget);
     expect(find.text(_failed), findsNothing);
-    await tester.tap(find.text('Close'));
+    await tapInReach(tester, find.text('Close'));
     await tester.pumpAndSettle();
 
     refuse = Exception('offline');
-    await tester.tap(find.text('report'));
+    await tapInReach(tester, find.text('report'));
     await tester.pumpAndSettle();
     expect(calls, 2);
     expect(find.text(_thanks), findsNothing);

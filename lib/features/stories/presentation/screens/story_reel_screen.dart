@@ -75,6 +75,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart' show PostgrestException;
 import 'package:uuid/uuid.dart';
 import 'package:video_player/video_player.dart';
+import 'package:attune/app/text_scale_policy.dart';
 
 /// A photo holds for exactly this long (spec §5.2). Not derived from
 /// anything server-side — there is no `duration_ms` for an image
@@ -1867,7 +1868,12 @@ class _StoryReelScreenState extends ConsumerState<StoryReelScreen> {
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) => KeepsDefaultTextSize(
+    // Spec 1 W10a (B6 I-3): pushed outside GoRouter and not audited yet.
+    child: Builder(builder: _buildAtDefaultSize),
+  );
+
+  Widget _buildAtDefaultSize(BuildContext context) {
     // Day mode (spec §5.3) watches the day-scoped, expired-inclusive
     // provider; author mode watches the exact same
     // storyReelPagesProvider(key) Task 4 already wired — unchanged.

@@ -1,6 +1,7 @@
 import 'package:attune/app/theme/design_tokens.dart';
 import 'package:flutter/material.dart';
 import 'package:attune/core/widgets/animated_rolling_counter.dart';
+import 'package:attune/core/ui/text/large_text.dart';
 
 /// Which stage of the recording gesture the composer is in.
 ///
@@ -106,7 +107,8 @@ class VoiceRecordingBar extends StatelessWidget {
               // Fixed width so the waveform beside it doesn't reflow on
               // every tick as the digits change width.
               width: 52,
-              child: AnimatedRollingCounter(
+              child: ScaleDownToFit(
+                child: AnimatedRollingCounter(
                 // Rolls rather than jumps, so a glance registers the
                 // change without re-reading the digits.
                 count: elapsed.inSeconds,
@@ -115,6 +117,7 @@ class VoiceRecordingBar extends StatelessWidget {
                   color: colorScheme.onSurface,
                   fontFeatures: const [FontFeature.tabularFigures()],
                 ),
+              ),
               ),
             ),
             const SizedBox(width: Spacing.sm),

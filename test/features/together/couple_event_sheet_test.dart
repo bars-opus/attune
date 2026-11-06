@@ -23,6 +23,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'together_ai_test.dart' show FakeAiGateway;
 import 'together_repository_test.dart' show FakeTogetherGateway;
+import '../../helpers/tap_in_reach.dart';
 
 class _FakeExporter implements CalendarExporter {
   final added = <CalendarExport>[];
@@ -466,7 +467,7 @@ void main() {
       200,
       scrollable: find.byType(Scrollable).first,
     );
-    await t.tap(find.text('Delete event'));
+    await tapInReach(t, find.text('Delete event'));
     await t.pumpAndSettle();
     await t.tap(find.widgetWithText(TextButton, 'Delete'));
     await t.pumpAndSettle();
@@ -499,7 +500,7 @@ void main() {
       );
       expect(find.text('Delete event'), findsNothing);
       expect(find.text('Leave event'), findsNothing);
-      await t.tap(find.text('Skip this week'));
+      await tapInReach(t, find.text('Skip this week'));
       await t.pumpAndSettle();
       await t.tap(find.widgetWithText(TextButton, 'Skip it'));
       await t.pumpAndSettle();
@@ -515,7 +516,7 @@ void main() {
       200,
       scrollable: find.byType(Scrollable).first,
     );
-    await t.tap(find.text('Add a memory'));
+    await tapInReach(t, find.text('Add a memory'));
     await t.pumpAndSettle();
     expect(find.text('A line to remember it by'), findsOneWidget);
     expect(g.calls.where((c) => c.$1 == 'add_event_memory'), isEmpty);
@@ -805,7 +806,7 @@ void main() {
         200,
         scrollable: find.byType(Scrollable).first,
       );
-      await t.tap(
+      await tapInReach(t,
         find.descendant(
           of: find.widgetWithText(InfoRowWidget, 'Ask Kofi to pick'),
           matching: find.byType(Switch),
@@ -819,7 +820,7 @@ void main() {
         -200,
         scrollable: find.byType(Scrollable).first,
       );
-      await t.tap(find.text('Save'));
+      await tapInReach(t, find.text('Save'));
       await t.pumpAndSettle();
       final call = g.calls.firstWhere((c) => c.$1 == 'propose_couple_event');
       expect((call.$2['p_options'] as List), hasLength(2));
@@ -835,7 +836,7 @@ void main() {
       200,
       scrollable: find.byType(Scrollable).first,
     );
-    await t.tap(
+    await tapInReach(t,
       find.descendant(
         of: find.byKey(const Key('owner-picker')),
         matching: find.text('Kofi'),
@@ -870,7 +871,7 @@ void main() {
       final g = await _open(t);
       g.handlers['propose_couple_event'] = (_) => 'ev-p';
       await t.enterText(find.byType(TextField).first, 'Dinner');
-      await t.tap(
+      await tapInReach(t,
         find.descendant(
           of: find.widgetWithText(InfoRowWidget, 'Ask Kofi to pick'),
           matching: find.byType(Switch),
@@ -996,7 +997,7 @@ void main() {
     await t.enterText(find.byType(TextField).first, 'Interview');
     await t.tap(find.text('Me').first);
     await t.pumpAndSettle();
-    await t.tap(
+    await tapInReach(t,
       find.descendant(
         of: find.widgetWithText(InfoRowWidget, 'A big day for me'),
         matching: find.byType(Switch),
@@ -1076,14 +1077,14 @@ void main() {
     'Repeat works again once asking my partner is no longer on offer',
     (t) async {
       await _open(t);
-      await t.tap(
+      await tapInReach(t,
         find.descendant(
           of: find.widgetWithText(InfoRowWidget, 'Ask Kofi to pick'),
           matching: find.byType(Switch),
         ),
       );
       await t.pumpAndSettle();
-      await t.tap(find.text('Me').first); // who it's for
+      await tapInReach(t, find.text('Me').first); // who it's for
       await t.pumpAndSettle();
       expect(find.text('Ask Kofi to pick'), findsNothing);
       final repeat = t.widget<InfoRowWidget>(
@@ -1179,7 +1180,7 @@ void main() {
     (t) async {
       final g = await _open(t);
       await t.enterText(find.byType(TextField).first, 'Dinner');
-      await t.tap(
+      await tapInReach(t,
         find.descendant(
           of: find.widgetWithText(InfoRowWidget, 'Ask Kofi to pick'),
           matching: find.byType(Switch),
@@ -1240,7 +1241,7 @@ void main() {
     'the delete question is about the saved event, not unsaved edits',
     (t) async {
       await _open(t, item: _item());
-      await t.tap(find.text('Just me'));
+      await tapInReach(t, find.text('Just me'));
       await t.pumpAndSettle();
       await t.scrollUntilVisible(
         find.text('Delete event'),

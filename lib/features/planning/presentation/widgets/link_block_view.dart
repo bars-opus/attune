@@ -12,6 +12,7 @@ import '../../data/planning_models.dart';
 import '../../domain/youtube_link.dart';
 import '../planning_providers.dart';
 import '../planning_ui.dart';
+import 'package:attune/core/ui/text/large_text.dart';
 
 /// Asks for the link's address in the app's sheet and saves it. Used by the
 /// block's own "Add link" button and by Edit link in its ⋮ menu.
@@ -58,10 +59,12 @@ class LinkBlockView extends ConsumerWidget {
       // A template's link: just its label until the couple adds the address.
       return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Text(block.linkLabel ?? 'Link', style: theme.textTheme.titleMedium),
-        Row(children: [
-          TextButton.icon(
+        Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+          Flexible(
+            flex: isTextScaledUp(context) ? 1 : 0,
+            child: TextButton.icon(
               icon: const Icon(Icons.add_link_rounded), label: const Text('Add link'), onPressed: () => _edit(context, ref)),
-          const Spacer(),
+          ),
           if (menu != null) menu!,
         ]),
       ]);
@@ -247,8 +250,10 @@ class _YouTubeLinkState extends ConsumerState<_YouTubeLink> {
               style: theme.textTheme.bodyMedium?.copyWith(color: scheme.onSurfaceVariant)),
         ),
       const Gap(Spacing.xs),
-      Row(children: [
-        InkWell(
+      Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+        Flexible(
+          flex: isTextScaledUp(context) ? 1 : 0,
+          child: InkWell(
           borderRadius: BorderRadiusTokens.smAll,
           onTap: uri == null ? null : () => launchUrl(uri, mode: LaunchMode.externalApplication),
           child: Padding(
@@ -256,11 +261,11 @@ class _YouTubeLinkState extends ConsumerState<_YouTubeLink> {
             child: Row(mainAxisSize: MainAxisSize.min, children: [
               Icon(Icons.open_in_new_rounded, size: 16, color: scheme.primary),
               const Gap(Spacing.xs),
-              Text('Open in YouTube', style: theme.textTheme.labelLarge?.copyWith(color: scheme.primary)),
+              Flexible(child: Text('Open in YouTube', style: theme.textTheme.labelLarge?.copyWith(color: scheme.primary))),
             ]),
           ),
         ),
-        const Spacer(),
+        ),
         if (widget.menu != null) widget.menu!,
       ]),
     ]);

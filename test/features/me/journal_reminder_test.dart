@@ -13,6 +13,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../helpers/fake_reminder_rpc.dart';
 import '../../helpers/fake_push_asker.dart';
 import '../../helpers/flow_harness.dart';
+import '../../helpers/tap_in_reach.dart';
 
 Future<(FlowHarness, FakeReminderRpc, FakePushAsker)> _pump(
   WidgetTester tester, {
@@ -162,7 +163,7 @@ void main() {
     );
     expect(find.text('08:00 PM'), findsOneWidget);
     expect(find.text('10:30 PM'), findsNothing);
-    await tester.tap(find.text('Turn on'));
+    await tapInReach(tester, find.text('Turn on'));
     await tester.pumpAndSettle();
     final set = rpc.calls.lastWhere((c) => c.$1 == 'set_my_journal_reminder');
     expect(set.$2!['p_local_time'], '20:00');
@@ -249,7 +250,7 @@ void main() {
     await tester.tap(find.text('Remind me to write'));
     await tester.pumpAndSettle();
     expect(find.text('Reminders need notifications.'), findsOneWidget);
-    await tester.tap(find.text('Turn on notifications'));
+    await tapInReach(tester, find.text('Turn on notifications'));
     await tester.pumpAndSettle();
     expect(asker.asked, [PushAskContext.j3]);
     expect(find.text('Reminders need notifications.'), findsNothing);

@@ -235,7 +235,8 @@ class ExpensesBlockView extends ConsumerWidget {
                         child: Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            Text(
+                            Flexible(
+                              child: Text(
                               item.isChecked
                                   ? 'Mark as unpaid'
                                   : 'Mark as paid',
@@ -245,6 +246,7 @@ class ExpensesBlockView extends ConsumerWidget {
                                         ? scheme.onSurfaceVariant
                                         : scheme.onPrimaryContainer,
                               ),
+                            ),
                             ),
                             const Gap(Spacing.sm),
                             Icon(

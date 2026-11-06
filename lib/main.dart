@@ -34,9 +34,12 @@ import 'package:go_router/go_router.dart';
 import 'package:mapbox_maps_flutter/mapbox_maps_flutter.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:attune/app/boot_timeline.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  // Spec 1 W10b (§3.14): how long each step before the first frame takes.
+  bootTimeline.start();
 
   // The couple map (spec 2026-10-16 §6.3). Token from the environment,
   // restricted to the app's bundle IDs in the Mapbox console.
@@ -45,6 +48,7 @@ Future<void> main() async {
   }
 
   await _initializeSupabase();
+  bootTimeline.mark('supabase');
   _initializeDeepLinks();
   // Spec 1 §5.8: every feature's sign-out and quick-exit wipes, once.
   registerDeviceWipes();
@@ -70,8 +74,10 @@ Future<void> main() async {
   } catch (error) {
     debugPrint('[startup] chat cache unavailable: ${error.runtimeType}');
   }
+  bootTimeline.mark('chat cache');
 
   final prefs = await SharedPreferences.getInstance();
+  bootTimeline.mark('prefs');
   // Spec 1 W2a (§3.6): an under-18 block the iOS Keychain kept across a
   // reinstall is copied back before the router reads it. Bounded: the
   // keystore must never hold the first frame.
@@ -80,11 +86,13 @@ Future<void> main() async {
   } catch (error) {
     debugPrint('[startup] age block restore skipped: ${error.runtimeType}');
   }
+  bootTimeline.mark('age block');
   // Spec 1 §5.3: first launch, the flag (last public config read, else the
   // build default), the guest gate and the under-18 block.
   final routingNotifier = bootRoutingNotifier(prefs);
   final appRouter = createAppRouter(routingNotifier);
   final safetyLockSeed = await _safetyLockSeed();
+  bootTimeline.mark('lock seed');
 
   runApp(
     ProviderScope(
@@ -111,6 +119,7 @@ Future<void> main() async {
       child: const App(),
     ),
   );
+  unawaited(bootTimeline.reportFirstFrame());
 }
 
 /// The lock decision before the first frame (Spec 2, review I5): the common

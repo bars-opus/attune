@@ -9,6 +9,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../providers/healing_providers.dart';
 import '../providers/healing_support_providers.dart';
 import '../widgets/healing_support.dart';
+import 'package:attune/core/ui/text/large_text.dart';
 
 class HealingPostMortemScreen extends ConsumerStatefulWidget {
   final HealingJourney journey;
@@ -297,7 +298,8 @@ class _HealingPostMortemScreenState
       ),
       body: Padding(
         padding: EdgeInsets.all(Spacing.lg.w),
-        child: Column(
+        child: ScrollWhenTall(
+          child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
@@ -349,16 +351,12 @@ class _HealingPostMortemScreenState
             ] else if (supportOffered) ...[
               // Spec 1 W9e: the card instead of the AI text.
               Gap(Spacing.md.h),
-              Expanded(
-                child: SingleChildScrollView(
-                  child: HealingSupportCard(
+              ScrollsInPlaceUnlessScaledUp(child: HealingSupportCard(
                     onNotNow:
                         () => ref
                             .read(healingSupportProvider.notifier)
                             .notNow(_supportKey),
-                  ),
-                ),
-              ),
+                  )),
             ] else if (_isComplete && _observation != null) ...[
               Gap(Spacing.xl.h),
               Container(
@@ -507,6 +505,7 @@ class _HealingPostMortemScreenState
               ],
             ),
           ],
+        ),
         ),
       ),
     );

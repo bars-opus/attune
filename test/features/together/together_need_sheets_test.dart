@@ -10,6 +10,7 @@ import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'together_repository_test.dart' show FakeTogetherGateway;
+import '../../helpers/tap_in_reach.dart';
 
 final _proposal = TogetherNeed.fromRow({
   'need_kind': 'proposal',
@@ -89,8 +90,8 @@ void main() {
     await t.tap(find.text('Accept'));
     await t.pumpAndSettle();
     expect(g.calls, isEmpty, reason: 'nothing chosen yet');
-    await t.tap(find.textContaining('Sat'));
-    await t.tap(find.text('Accept'));
+    await tapInReach(t, find.textContaining('Sat'));
+    await tapInReach(t, find.text('Accept'));
     await t.pumpAndSettle();
     expect(g.calls.single.$2, {
       'p_event_id': 'e1',
@@ -125,7 +126,7 @@ void main() {
     });
     final g = await _host(t, (c) => showHandoffSheet(c, handoff));
     expect(find.text('Book the plumber'), findsOneWidget);
-    await t.tap(find.text("I'll take it"));
+    await tapInReach(t, find.text("I'll take it"));
     await t.pumpAndSettle();
     expect(g.calls.single.$2, {'p_event_id': 'e2', 'p_accept': true});
   });

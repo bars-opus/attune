@@ -1,5 +1,6 @@
 import 'dart:math' as math;
 
+import 'package:attune/core/ui/motion/motion_tokens.dart';
 import 'package:attune/core/ui/motion/reduce_motion.dart';
 import 'package:attune/core/utils/exports/export_screens.dart';
 import 'package:attune/features/onboarding/presentation/widgets/animated_stepped_progress_bar.dart';
@@ -85,7 +86,8 @@ class _OnboardingDeckCardState extends State<OnboardingDeckCard>
   static const ValueKey<String> _flyingCardKey = ValueKey('deck-flying-card');
 
   // --- advance motion timing ---
-  static const Duration _advanceDuration = Duration(milliseconds: 900);
+  // Spec 1 §2.2 (W10b): the 150-320 ms band, not 900 ms.
+  static const Duration _advanceDuration = kMakeRoomDuration;
 
   // Two curves, because falling and settling want opposite shapes:
   //

@@ -11,6 +11,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'support/fake_planning_gateway.dart';
 import 'support/planning_test_app.dart';
+import '../../helpers/tap_in_reach.dart';
 
 const _screen = PlanningEntryScreen(relationshipId: 'r1', entryId: 'e1');
 
@@ -153,7 +154,7 @@ void main() {
         findsNothing,
         reason: 'a table without a money column has nothing to count',
       );
-      await t.tap(
+      await tapInReach(t,
         find.descendant(
           of: sheet,
           matching: find.widgetWithText(InfoRowWidget, 'Costs'),

@@ -19,6 +19,7 @@ import 'package:attune/features/ai_assistant/presentation/screens/ai_consent_scr
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import '../../helpers/tap_in_reach.dart';
 
 final _uuidV4Pattern = RegExp(
   r'^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$',
@@ -146,7 +147,7 @@ void main() {
 
         expect(find.byKey(const ValueKey('ai-consent-grant-button')), findsOneWidget);
 
-        await tester.tap(find.byKey(const ValueKey('ai-consent-grant-button')));
+        await tapInReach(tester, find.byKey(const ValueKey('ai-consent-grant-button')));
         await tester.pumpAndSettle();
 
         final consentCalls = <Map<String, dynamic>?>[];
@@ -177,14 +178,14 @@ void main() {
           ];
         await _pumpScreen(tester, gateway: gateway);
 
-        await tester.tap(find.byKey(const ValueKey('ai-consent-grant-button')));
+        await tapInReach(tester, find.byKey(const ValueKey('ai-consent-grant-button')));
         await tester.pumpAndSettle();
 
         // Still shows the grant button because callerGranted stayed
         // false in the faked re-fetch — allows a second, independent
         // grant tap in the same test.
         expect(find.byKey(const ValueKey('ai-consent-grant-button')), findsOneWidget);
-        await tester.tap(find.byKey(const ValueKey('ai-consent-grant-button')));
+        await tapInReach(tester, find.byKey(const ValueKey('ai-consent-grant-button')));
         await tester.pumpAndSettle();
 
         final keys = <String>[];
@@ -216,7 +217,7 @@ void main() {
           ];
         await _pumpScreen(tester, gateway: gateway);
 
-        await tester.tap(find.byKey(const ValueKey('ai-consent-grant-button')));
+        await tapInReach(tester, find.byKey(const ValueKey('ai-consent-grant-button')));
         await tester.pumpAndSettle();
 
         expect(tester.takeException(), isNull);
@@ -265,7 +266,7 @@ void main() {
         await _pumpScreen(tester, gateway: gateway, relationshipId: 'rel-9');
 
         expect(find.byKey(const ValueKey('ai-consent-withdraw-button')), findsOneWidget);
-        await tester.tap(find.byKey(const ValueKey('ai-consent-withdraw-button')));
+        await tapInReach(tester, find.byKey(const ValueKey('ai-consent-withdraw-button')));
         await tester.pumpAndSettle();
 
         // Confirmation dialog appears; confirm it.
@@ -295,7 +296,7 @@ void main() {
           ];
         await _pumpScreen(tester, gateway: gateway);
 
-        await tester.tap(find.byKey(const ValueKey('ai-consent-withdraw-button')));
+        await tapInReach(tester, find.byKey(const ValueKey('ai-consent-withdraw-button')));
         await tester.pumpAndSettle();
 
         expect(find.text('Cancel'), findsOneWidget);

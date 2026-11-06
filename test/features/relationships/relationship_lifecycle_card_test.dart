@@ -14,6 +14,7 @@ import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../../helpers/tap_in_reach.dart';
 
 final _now = DateTime.utc(2026, 10, 10, 9);
 
@@ -157,7 +158,7 @@ void main() {
       ),
       findsOneWidget,
     );
-    await t.tap(find.text('Seal my side now'));
+    await tapInReach(t, find.text('Seal my side now'));
     await t.pumpAndSettle();
     expect(find.text('Seal your side now?'), findsOneWidget);
     expect(w.service.calls, isEmpty);

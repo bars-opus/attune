@@ -26,6 +26,7 @@ import 'package:flutter_test/flutter_test.dart';
 import '../../../helpers/fake_couple_profile.dart';
 import '../../../helpers/flow_harness.dart';
 import '../../../helpers/home_harness.dart';
+import '../../../helpers/tap_in_reach.dart';
 
 const _uid = 'u-about';
 const _rel = 'rel-about';
@@ -57,7 +58,7 @@ Widget _flow(
 );
 
 Future<void> _choose(WidgetTester tester, String fieldKey, String item) async {
-  await tester.tap(find.byKey(ValueKey(fieldKey)));
+  await tapInReach(tester, find.byKey(ValueKey(fieldKey)));
   await tester.pumpAndSettle();
   await tester.tap(find.text(item).last);
   await tester.pumpAndSettle();
@@ -70,7 +71,7 @@ Future<void> _chooseFar(
   String item, {
   double delta = 100,
 }) async {
-  await tester.tap(find.byKey(ValueKey(fieldKey)));
+  await tapInReach(tester, find.byKey(ValueKey(fieldKey)));
   await tester.pumpAndSettle();
   await tester.scrollUntilVisible(
     find.text(item).hitTestable(),
@@ -86,7 +87,7 @@ const _stopTitle = 'Your anniversary reminder will stop';
 
 Future<void> _continue(WidgetTester tester, [String label = 'Continue']) async {
   await tester.ensureVisible(find.text(label));
-  await tester.tap(find.text(label));
+  await tapInReach(tester, find.text(label));
   await tester.pumpAndSettle();
 }
 
@@ -117,7 +118,7 @@ void main() {
       find.text('Any kind of marriage: customary, religious or civil.'),
       findsOneWidget,
     );
-    await tester.tap(find.text('Married'));
+    await tapInReach(tester, find.text('Married'));
     await tester.pumpAndSettle();
     await _continue(tester);
     expect(_lastPatch(server), {'stage': 'married', 'stage_words': null});
@@ -149,10 +150,10 @@ void main() {
     expect(_lastPatch(server), {'living': 'apart_nearby'});
 
     // AU5 with an age band.
-    await tester.tap(find.text('Yes'));
+    await tapInReach(tester, find.text('Yes'));
     await tester.pumpAndSettle();
     expect(find.text('Their ages (optional)'), findsOneWidget);
-    await tester.tap(find.text('18+'));
+    await tapInReach(tester, find.text('18+'));
     await tester.pumpAndSettle();
     await _continue(tester);
     expect(_lastPatch(server), {
@@ -162,7 +163,7 @@ void main() {
 
     // AU6: the month is known, so only the day is asked for, in the same write.
     expect(find.text('6 of 6'), findsOneWidget);
-    await tester.tap(find.text('The day you got together'));
+    await tapInReach(tester, find.text('The day you got together'));
     await tester.pumpAndSettle();
     expect(find.text('What day was it?'), findsOneWidget);
     await _choose(tester, 'about-us-anniversary-day', '14');
@@ -597,7 +598,7 @@ void main() {
       await _continue(tester, 'Save');
       expect(find.text(_stopTitle), findsOneWidget);
       expect(server.count('update_couple_profile'), 0);
-      await tester.tap(find.text('Cancel'));
+      await tapInReach(tester, find.text('Cancel'));
       await tester.pumpAndSettle();
       expect(find.text(_stopTitle), findsNothing);
       expect(server.count('update_couple_profile'), 0, reason: 'Cancel');
@@ -633,7 +634,7 @@ void main() {
         ),
         overrides: _overrides(server),
       );
-      await tester.tap(find.text('Not sure of the month'));
+      await tapInReach(tester, find.text('Not sure of the month'));
       await tester.pumpAndSettle();
       await _continue(tester, 'Save');
       expect(
@@ -655,7 +656,7 @@ void main() {
         () => _flow(const AboutUsTarget.draft(), only: AboutUsQuestion.stage),
         overrides: _overrides(server),
       );
-      await tester.tap(find.text('Something else'));
+      await tapInReach(tester, find.text('Something else'));
       await tester.pumpAndSettle();
       // 39 letters and one family emoji: 40 to the eye, 44 to char_length.
       final family = String.fromCharCodes([
@@ -954,7 +955,7 @@ void main() {
     expect(find.text(_stopTitle), findsOneWidget);
     expect(server.count('update_couple_profile'), 0);
     expect(find.text('The day you got together'), findsOneWidget);
-    await tester.tap(find.text('Turn it off'));
+    await tapInReach(tester, find.text('Turn it off'));
     await tester.pumpAndSettle();
     expect(server.count('update_couple_profile'), 1);
     expect(_lastPatch(server), {
@@ -986,7 +987,7 @@ void main() {
       await tester.tap(find.text('Remove this ceremony'));
       await tester.pumpAndSettle();
       await _continue(tester, 'Save');
-      await tester.tap(find.text('The day you got together'));
+      await tapInReach(tester, find.text('The day you got together'));
       await tester.pumpAndSettle();
       expect(server.count('update_couple_profile'), 1);
       expect(_lastPatch(server), {
@@ -1019,14 +1020,14 @@ void main() {
       );
       await _continue(tester, 'Save');
       expect(find.text(_stopTitle), findsOneWidget);
-      await tester.tap(find.text('The day you got together'));
+      await tapInReach(tester, find.text('The day you got together'));
       await tester.pumpAndSettle();
       expect(server.count('update_couple_profile'), 0, reason: 'no date yet');
       expect(find.text('What day was it?'), findsOneWidget);
       await _choose(tester, 'about-us-stop-year', '2019');
       await _choose(tester, 'about-us-stop-month', 'October');
       await _choose(tester, 'about-us-stop-day', '14');
-      await tester.tap(find.text('Save').last);
+      await tapInReach(tester, find.text('Save').last);
       await tester.pumpAndSettle();
       expect(server.count('update_couple_profile'), 1);
       expect(_lastPatch(server), {
@@ -1059,7 +1060,7 @@ void main() {
       await tester.pumpAndSettle();
       await _continue(tester, 'Save');
       expect(find.text(_stopTitle), findsOneWidget);
-      await tester.tap(find.text('Cancel'));
+      await tapInReach(tester, find.text('Cancel'));
       await tester.pumpAndSettle();
       expect(server.count('update_couple_profile'), 0);
       expect(
@@ -1067,7 +1068,7 @@ void main() {
         findsOneWidget,
       );
       await _continue(tester, 'Save');
-      await tester.tap(find.text('Turn it off'));
+      await tapInReach(tester, find.text('Turn it off'));
       await tester.pumpAndSettle();
       expect(server.count('update_couple_profile'), 1);
       expect(_lastPatch(server), {
@@ -1251,7 +1252,7 @@ void main() {
     await tester.pumpAndSettle();
     await _continue(tester, 'Save');
     await expectFlowGuidelines(tester);
-    await tester.tap(find.text('The day you got together'));
+    await tapInReach(tester, find.text('The day you got together'));
     await tester.pumpAndSettle();
     await expectFlowGuidelines(tester);
     handle.dispose();

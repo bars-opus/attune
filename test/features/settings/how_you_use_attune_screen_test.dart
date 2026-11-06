@@ -21,6 +21,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../../helpers/fake_home_state.dart';
 import '../../helpers/flow_harness.dart';
 import '../../helpers/home_harness.dart';
+import '../../helpers/tap_in_reach.dart';
 
 Future<(GoRouter, FakeHomeStateGateway)> _pump(
   WidgetTester tester,
@@ -155,7 +156,7 @@ void main() {
       gateway.failNext = FakeHomeStateGateway.refusal('path:confirm_withdraw');
       gateway.onSetPath =
           (p) => gateway.state = homeJson(path: p['p_path'] as String);
-      await tester.tap(find.text('Just for me'));
+      await tapInReach(tester, find.text('Just for me'));
       await tester.pumpAndSettle();
       expect(find.text('Cancel your invite?'), findsOneWidget);
       await tester.tap(find.text('Cancel invite and switch'));
@@ -178,7 +179,7 @@ void main() {
         partnerFirstName: 'Kofi',
       ),
     );
-    await tester.tap(find.text('Just for me'));
+    await tapInReach(tester, find.text('Just for me'));
     await tester.pumpAndSettle();
     expect(find.text("You're in a shared space with Kofi"), findsOneWidget);
     expect(find.text('Pause our shared space'), findsOneWidget);
@@ -209,7 +210,7 @@ void main() {
     );
     gateway.onSetPath =
         (p) => gateway.state = homeJson(path: p['p_path'] as String);
-    await tester.tap(find.text('Just for me'));
+    await tapInReach(tester, find.text('Just for me'));
     await tester.pumpAndSettle();
     expect(find.text('Use Attune just for you?'), findsOneWidget);
     await tester.tap(find.text('Switch'));
@@ -342,7 +343,7 @@ void main() {
                 link: 'ended_window',
                 windowEndsAt: '2026-11-20T10:00:00Z',
               );
-      await tester.tap(find.text(label));
+      await tapInReach(tester, find.text(label));
       await tester.pumpAndSettle();
       expect(gateway.calls.lastWhere((c) => c.$1 == 'set_my_path').$2, {
         'p_path': to,
@@ -358,7 +359,7 @@ void main() {
       tester,
       homeJson(path: 'relationship', link: 'paused', relationshipId: 'r1'),
     );
-    await tester.tap(find.text('Just for me'));
+    await tapInReach(tester, find.text('Just for me'));
     await tester.pumpAndSettle();
     expect(find.text('End relationship'), findsOneWidget);
     await expectFlowGuidelines(tester);
@@ -372,7 +373,7 @@ void main() {
       tester,
       homeJson(path: 'relationship', link: 'paused', relationshipId: 'r1'),
     );
-    await tester.tap(find.text('Just for me'));
+    await tapInReach(tester, find.text('Just for me'));
     await tester.pumpAndSettle();
     expect(
       find.ancestor(

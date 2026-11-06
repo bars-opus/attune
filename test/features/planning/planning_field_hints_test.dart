@@ -11,6 +11,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'support/fake_planning_gateway.dart';
 import 'support/planning_test_app.dart';
+import '../../helpers/tap_in_reach.dart';
 
 const _screen = PlanningEntryScreen(relationshipId: 'r1', entryId: 'e1');
 
@@ -143,7 +144,7 @@ void main() {
         'computed': {'spent_minor': 0, 'other_currencies': []},
       },
     ]);
-    await t.tap(find.text('Set budget'));
+    await tapInReach(t, find.text('Set budget'));
     await t.pumpAndSettle();
     expect(_hint('Budget', '500.00'), findsOneWidget);
   });

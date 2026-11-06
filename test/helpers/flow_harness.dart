@@ -68,9 +68,23 @@ Future<FlowHarness> pumpFlowScreen(
   RoutingNotifier? routing,
   List<String> openCountries = const [],
   Size size = const Size(390, 844),
+  // Spec 1 W10a: the root clamp app_shell.dart applies (1.0 unless
+  // text_scale_v2 is on). The audit passes the cap it is checking.
+  double rootTextScaleCap = 1.0,
 }) async {
   tester.view.physicalSize = size;
   tester.view.devicePixelRatio = 1;
+  // Spec 1 W10a: under the large-text audit every flow screen runs at the
+  // audit's text size, with the root clamp at the same cap.
+  const audit = String.fromEnvironment('LARGE_TEXT_AUDIT');
+  if (audit.isNotEmpty) {
+    textScale = double.parse(audit);
+    rootTextScaleCap = textScale;
+    // ...or with the root clamp where it ships (1.0 until text_scale_v2
+    // is on), so only AllowLargeText screens grow.
+    const rootCap = String.fromEnvironment('LARGE_TEXT_AUDIT_ROOT_CAP');
+    if (rootCap.isNotEmpty) rootTextScaleCap = double.parse(rootCap);
+  }
   tester.platformDispatcher.textScaleFactorTestValue = textScale;
   if (reduceMotion) {
     tester.platformDispatcher.accessibilityFeaturesTestValue =
@@ -120,7 +134,7 @@ Future<FlowHarness> pumpFlowScreen(
                     textDirection: direction,
                     // What app_shell.dart does for every route.
                     child: MediaQuery.withClampedTextScaling(
-                      maxScaleFactor: 1.0,
+                      maxScaleFactor: rootTextScaleCap,
                       child: child!,
                     ),
                   ),

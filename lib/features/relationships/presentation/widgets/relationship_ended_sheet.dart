@@ -2,6 +2,7 @@ import 'package:attune/core/utils/date_formatter.dart';
 import 'package:attune/core/utils/exports/export_screens.dart';
 import 'package:attune/features/relationships/domain/relationship_lifecycle.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:attune/core/ui/text/large_text.dart';
 
 /// What the other partner sees, once, on their next open after the ending
 /// (Spec 3a; research 06 §3 F1 (2); 05 D.3 #3): a sentence a friend would
@@ -69,7 +70,8 @@ class RelationshipEndedSheet extends StatelessWidget {
           Spacing.lg.w,
           Spacing.lg.h,
         ),
-        child: Column(
+        child: ScrollWhenScaledUp(
+          child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
@@ -105,6 +107,7 @@ class RelationshipEndedSheet extends StatelessWidget {
               child: const Text('Close'),
             ),
           ],
+        ),
         ),
       ),
     );

@@ -22,6 +22,7 @@ import '../../../helpers/fake_push_asker.dart';
 import '../../../helpers/fake_share_actions.dart';
 import '../../../helpers/flow_harness.dart';
 import '../../../helpers/home_harness.dart';
+import '../../../helpers/tap_in_reach.dart';
 
 const _uid = 'u-join';
 const _slot = 'attune.onboarding.user.$_uid.pending_invite';
@@ -104,7 +105,7 @@ void main() {
     expect(find.text('Welcome, Couples'), findsOneWidget);
     expect(find.text('Your private space with Yaw is open.'), findsOneWidget);
     expect(h.prefs.getBool('attune.linked_moment:$_uid:r-joined'), isTrue);
-    await tester.tap(find.text('Turn on'));
+    await tapInReach(tester, find.text('Turn on'));
     await tester.pumpAndSettle();
     expect(asker.asked, [PushAskContext.r4]);
     await tester.tap(find.text('Continue'));

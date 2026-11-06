@@ -16,6 +16,7 @@ import '../../helpers/fake_home_state.dart';
 import '../../helpers/fake_reminder_rpc.dart';
 import '../../helpers/flow_harness.dart';
 import '../../helpers/home_harness.dart';
+import '../../helpers/tap_in_reach.dart';
 
 const _uid = 'u-me';
 
@@ -131,7 +132,7 @@ void main() {
       200,
       scrollable: find.byType(Scrollable).first,
     );
-    await tester.tap(find.text('More ways to use Attune'));
+    await tapInReach(tester, find.text('More ways to use Attune'));
     await tester.pumpAndSettle();
     expect(find.text('Invite a partner'), findsOneWidget);
     expect(find.text('Single and open to dating'), findsOneWidget);

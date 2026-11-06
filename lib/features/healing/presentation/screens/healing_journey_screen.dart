@@ -6,6 +6,7 @@ import 'package:attune/features/healing/data/models/healing_journey.dart';
 import 'package:attune/features/healing/presentation/providers/healing_providers.dart';
 import 'package:attune/features/safety/domain/services/quick_exit_service.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:attune/core/ui/text/large_text.dart';
 
 class HealingJourneyScreen extends ConsumerWidget {
   const HealingJourneyScreen({super.key});
@@ -84,7 +85,9 @@ class HealingJourneyScreen extends ConsumerWidget {
                           final isComplete = stages[stage] == 'complete';
                           final isCurrent =
                               stage == currentStage && !isComplete;
-                          return Column(
+                          return Flexible(
+                            flex: isTextScaledUp(context) ? 1 : 0,
+                            child: Column(
                             children: [
                               AnimatedScaleFade(
                                 duration: const Duration(milliseconds: 500),
@@ -140,6 +143,7 @@ class HealingJourneyScreen extends ConsumerWidget {
                                 ),
                               ),
                             ],
+                          ),
                           );
                         }),
                       ),

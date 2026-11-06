@@ -27,6 +27,7 @@ import 'package:url_launcher_platform_interface/link.dart';
 import 'package:url_launcher_platform_interface/url_launcher_platform_interface.dart';
 
 import '../../../helpers/flow_harness.dart';
+import '../../../helpers/tap_in_reach.dart';
 
 Future<FlowHarness> _space(WidgetTester tester, {required bool v2}) =>
     pumpFlowScreen(
@@ -111,7 +112,7 @@ void main() {
       () => const UnderAgeStopScreen(),
       overrides: [supportResourcesV2Provider.overrideWithValue(true)],
     );
-    await tester.tap(find.text('Support for young people'));
+    await tapInReach(tester, find.text('Support for young people'));
     await tester.pumpAndSettle();
     expect(find.text('at /safety-resources?focus=youth'), findsOneWidget);
   });
@@ -129,7 +130,7 @@ void main() {
       () => const UnderAgeStopScreen(),
       overrides: [supportResourcesV2Provider.overrideWithValue(false)],
     );
-    await tester.tap(find.text('Support for young people'));
+    await tapInReach(tester, find.text('Support for young people'));
     await tester.pumpAndSettle();
     expect(find.textContaining('/safety-resources'), findsNothing);
     expect(fake.launched, ['https://findahelpline.com']);

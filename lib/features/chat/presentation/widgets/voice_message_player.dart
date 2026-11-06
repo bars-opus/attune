@@ -6,6 +6,7 @@ import 'package:attune/core/widgets/rolling_duration.dart';
 import 'package:attune/features/chat/presentation/state/voice_playback_controller.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:attune/core/ui/text/large_text.dart';
 
 /// What one bubble needs from the controller: null unless it is the
 /// current note. A record compares by value, so a position frame for
@@ -269,7 +270,13 @@ class VoiceMessagePlayer extends ConsumerWidget {
                     const SizedBox(height: 1),
                     Row(
                       children: [
-                        RollingDuration(
+                        // Spec 1 W10a: flex 0 (no flex) at the normal size, so the
+                        // row is exactly as before; above it the time
+                        // shrinks to fit beside the speed pill.
+                        Flexible(
+                          flex: isTextScaledUp(context) ? 1 : 0,
+                          child: ScaleDownToFit(
+                            child: RollingDuration(
                           keyPrefix: 'voice-playback-duration',
                           value:
                               isPlaying || position > Duration.zero
@@ -277,6 +284,8 @@ class VoiceMessagePlayer extends ConsumerWidget {
                                   : total,
                           alwaysShowMinutes: true,
                           style: durationStyle,
+                        ),
+                          ),
                         ),
                         const Spacer(),
                         // Slot reserved even when hidden (maintainSize): no

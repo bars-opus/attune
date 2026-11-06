@@ -29,6 +29,7 @@ import 'ai_consent_screen.dart';
 import 'ai_session_entry.dart';
 import 'assist_sheet.dart';
 import 'understand_sheet.dart';
+import 'package:attune/core/ui/text/large_text.dart';
 
 class AskAttuneModeSheet extends ConsumerWidget {
   const AskAttuneModeSheet({super.key, required this.message});
@@ -382,7 +383,8 @@ Future<void> _chooseAssistKindThenOpen(
     context: context,
     builder: (sheetContext) {
       return SafeArea(
-        child: Column(
+        child: ScrollWhenScaledUp(
+          child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             ListTile(
@@ -400,6 +402,7 @@ Future<void> _chooseAssistKindThenOpen(
               onTap: () => Navigator.of(sheetContext).pop(AssistKind.nearby),
             ),
           ],
+        ),
         ),
       );
     },

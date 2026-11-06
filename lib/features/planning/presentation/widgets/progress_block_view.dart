@@ -18,6 +18,7 @@ import '../planning_ui.dart';
 import 'planning_block_picker.dart';
 import 'planning_progress_bar.dart';
 import 'planning_rolling_amount.dart';
+import 'package:attune/core/ui/text/large_text.dart';
 
 /// The pace line in two parts — its lead (bold) and the rest — or null
 /// when there's nothing to say (no date, nothing to do, or reached).
@@ -298,7 +299,13 @@ class ProgressBlockView extends ConsumerWidget {
                   child: Text(item.text.isEmpty ? 'Added' : item.text,
                       style: TextStyle(color: item.text.isEmpty ? scheme.outline : null)),
                 ),
-                Text('+${_amount(p, item.amountMinor ?? 0)}', style: theme.textTheme.bodyLarge),
+                // Spec 1 W10a: above the normal size the amount shares the
+                // row (it wraps) instead of leaving the label no width.
+                Flexible(
+                  flex: isTextScaledUp(context) ? 1 : 0,
+                  child: Text('+${_amount(p, item.amountMinor ?? 0)}',
+                      textAlign: TextAlign.end, style: theme.textTheme.bodyLarge),
+                ),
               ]),
             ),
           ),

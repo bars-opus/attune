@@ -18,6 +18,7 @@ import 'package:http/testing.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'support/fake_opinions.dart';
+import '../../../helpers/tap_in_reach.dart';
 
 /// Fake reads; deletes go through the real [OpinionRepository] to a server
 /// that answers with [flagOn] as opinions_safety_v1 if anything asks.
@@ -95,7 +96,7 @@ void main() {
         repo: repo,
       );
       // Top-level comments show newest first: mine is the first menu.
-      await tester.tap(find.byIcon(Icons.more_horiz).at(0));
+      await tapInReach(tester, find.byIcon(Icons.more_horiz).at(0));
       await tester.pumpAndSettle();
       await tester.tap(find.text('Delete'));
       await tester.pumpAndSettle();

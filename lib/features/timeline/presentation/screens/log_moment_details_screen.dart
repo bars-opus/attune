@@ -408,8 +408,16 @@ class _LogMomentDetailsScreenState
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    Text('Difficult', style: textTheme.bodySmall),
-                    Text('Amazing', style: textTheme.bodySmall),
+                    Flexible(
+                      child: Text('Difficult', style: textTheme.bodySmall),
+                    ),
+                    Flexible(
+                      child: Text(
+                        'Amazing',
+                        style: textTheme.bodySmall,
+                        textAlign: TextAlign.end,
+                      ),
+                    ),
                   ],
                 ),
                 if (_moodScore != null)

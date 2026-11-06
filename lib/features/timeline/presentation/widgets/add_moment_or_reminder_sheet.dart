@@ -8,6 +8,7 @@ import 'package:attune/features/timeline/presentation/screens/log_moment_details
 import 'package:attune/features/together/presentation/together_providers.dart';
 import 'package:attune/features/together/presentation/widgets/couple_event_sheet.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:attune/core/ui/text/large_text.dart';
 
 enum AddChoice { event, moment, reminder }
 
@@ -96,7 +97,8 @@ class AddMomentOrReminderSheet {
         return SafeArea(
           child: Padding(
             padding: EdgeInsets.all(Spacing.md.h),
-            child: Column(
+            child: ScrollWhenScaledUp(
+              child: Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -132,6 +134,7 @@ class AddMomentOrReminderSheet {
                   ),
                 ],
               ],
+            ),
             ),
           ),
         );

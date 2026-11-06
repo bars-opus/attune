@@ -9,6 +9,7 @@ import 'package:attune/features/quiet_states/presentation/quiet_state_providers.
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:uuid/uuid.dart';
+import 'package:attune/core/ui/text/large_text.dart';
 
 /// The fixed line a person may choose to send once (research 06 B9 (a)).
 const quietLine = "I'm in a heavy patch. I may be quieter; it isn't about you.";
@@ -182,7 +183,8 @@ class _LineSheet extends StatelessWidget {
     return SafeArea(
       child: Padding(
         padding: EdgeInsets.all(Spacing.lg.w),
-        child: Column(
+        child: ScrollWhenScaledUp(
+          child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
@@ -207,6 +209,7 @@ class _LineSheet extends StatelessWidget {
               child: const Text('Not now'),
             ),
           ],
+        ),
         ),
       ),
     );

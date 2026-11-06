@@ -3,6 +3,7 @@
 import 'package:attune/core/utils/exports/export_screens.dart';
 import 'package:attune/core/widgets/image_container.dart';
 import 'package:attune/core/widgets/profile_avatar.dart';
+import 'package:attune/core/ui/text/large_text.dart';
 
 /// A versatile row widget for displaying informational items with multiple interaction patterns.
 ///
@@ -380,7 +381,11 @@ class InfoRowWidget extends StatelessWidget {
                                 fontSize: titleFontSize.sp,
                                 fontWeight: FontWeight.w500,
                               ),
-                          maxLines: titleMaxLines ?? 2,
+                          // Spec 1 W10a: twice the lines once the text is
+                          // scaled up, so large text wraps instead of being cut.
+                          maxLines:
+                              (titleMaxLines ?? 2) *
+                              (isTextScaledUp(context) ? 2 : 1),
                           overflow: TextOverflow.ellipsis,
                         )),
                       // Small gap between title and subtitle
@@ -400,7 +405,9 @@ class InfoRowWidget extends StatelessWidget {
                                       alpha: OpacityTokens.secondaryText,
                                     ),
                               ),
-                          maxLines: subTitleMaxLines ?? 3,
+                          maxLines:
+                              (subTitleMaxLines ?? 3) *
+                              (isTextScaledUp(context) ? 2 : 1),
                           overflow: TextOverflow.ellipsis,
                         ),
                       if (bottomWidget != null) bottomWidget!,
@@ -426,7 +433,19 @@ class InfoRowWidget extends StatelessWidget {
               // Custom trailing widget (highest priority)
               if (effectiveTrailing != null) ...[
                 Gap(Spacing.md.w),
-                Center(child: effectiveTrailing),
+                // Spec 1 W10a: at the normal size, as before. Above it the
+                // trailing keeps its own width up to 40% of the screen (wide
+                // trailing text wraps inside that), and the title column
+                // gets the rest.
+                if (isTextScaledUp(context))
+                  ConstrainedBox(
+                    constraints: BoxConstraints(
+                      maxWidth: MediaQuery.sizeOf(context).width * 0.4,
+                    ),
+                    child: Center(widthFactor: 1, child: effectiveTrailing),
+                  )
+                else
+                  Center(child: effectiveTrailing),
               ]
               // Auto-generated chevron for tappable rows
               else if (showTrailingArrow) ...[

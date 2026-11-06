@@ -20,6 +20,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:intl/intl.dart';
+import '../../helpers/tap_in_reach.dart';
 
 /// No stories on any day (the day sheet asks).
 class _NoStories implements StoryReadGateway {
@@ -242,7 +243,7 @@ void main() {
     await t.tap(find.byTooltip('Add to this day'));
     await t.pumpAndSettle();
     expect(find.text('Add to ${MyDateFormat.toDate(day)}'), findsOneWidget);
-    await t.tap(find.text('Add a reminder'));
+    await tapInReach(t, find.text('Add a reminder'));
     await t.pumpAndSettle();
     expect(find.text(MyDateFormat.toDate(day)), findsOneWidget); // the reminder's date row
   });

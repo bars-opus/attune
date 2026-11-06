@@ -26,6 +26,7 @@ import 'package:flutter_test/flutter_test.dart';
 import '../../../helpers/fake_couple_profile.dart';
 import '../../../helpers/flow_harness.dart';
 import '../../../helpers/home_harness.dart';
+import '../../../helpers/tap_in_reach.dart';
 
 const _uid = 'u-times';
 const _locked = 'Its date, title and type follow About us.';
@@ -143,12 +144,15 @@ Future<void> _tapVisible(WidgetTester tester, Finder finder) async {
     matching: find.byType(Scrollable),
   );
   if (finder.evaluate().isEmpty && form.evaluate().isNotEmpty) {
-    // The form is a lazy list: scroll back up for its header's Save.
-    await tester.scrollUntilVisible(finder, -200, scrollable: form.first);
+    // The form is a lazy list: scroll back up for its header's Save. By
+    // position, not a drag: at large text the drag's centre can miss.
+    final position = tester.state<ScrollableState>(form.first).position;
+    position.jumpTo(position.minScrollExtent);
+    await tester.pumpAndSettle();
   }
   await tester.ensureVisible(finder);
   await tester.pumpAndSettle();
-  await tester.tap(finder);
+  await tapInReach(tester, finder);
   await tester.pumpAndSettle();
 }
 

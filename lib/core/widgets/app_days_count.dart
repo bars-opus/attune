@@ -2,6 +2,7 @@ import 'package:attune/app/theme/design_tokens.dart';
 import 'package:attune/core/widgets/animated_rolling_counter.dart';
 import 'package:flutter/material.dart';
 import 'package:gap/gap.dart';
+import 'package:attune/core/ui/text/large_text.dart';
 
 /// A count of days the couple's way: a big bold number in primary, with two
 /// small words stacked tight beside it — "232 days together", "12 days to
@@ -37,7 +38,8 @@ class AppDaysCount extends StatelessWidget {
     return Semantics(
       label: '$count $top $bottom',
       excludeSemantics: true,
-      child: Row(
+      child: ScaleDownToFit(
+        child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
           roll
@@ -58,6 +60,7 @@ class AppDaysCount extends StatelessWidget {
             children: [Text(top, style: small), Text(bottom, style: small)],
           ),
         ],
+      ),
       ),
     );
   }

@@ -12,6 +12,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'support/fake_opinions.dart';
+import '../../../helpers/tap_in_reach.dart';
 
 Future<void> _golden(String name) => expectLater(
   find.byType(MaterialApp),
@@ -106,7 +107,7 @@ void main() {
       expect(find.text(r), findsOneWidget, reason: r);
     }
     expect(find.text('Someone may be at risk'), findsNothing);
-    await tester.tap(find.text('Spam'));
+    await tapInReach(tester, find.text('Spam'));
     await tester.pumpAndSettle();
     expect(repo.reports, ['opinion:o1:Spam']);
     expect(
@@ -132,12 +133,12 @@ void main() {
     // Top-level comments show newest first: mine (index 0), then the other.
     final menus = find.byIcon(Icons.more_horiz);
     expect(menus, findsNWidgets(2));
-    await tester.tap(menus.at(0));
+    await tapInReach(tester, menus.at(0));
     await tester.pumpAndSettle();
     expect(items(), ['Edit', 'Delete']);
     await tester.tapAt(const Offset(5, 5)); // close the menu
     await tester.pumpAndSettle();
-    await tester.tap(menus.at(1));
+    await tapInReach(tester, menus.at(1));
     await tester.pumpAndSettle();
     expect(items(), ['Report']);
     await tester.tap(find.text('Report'));
@@ -152,7 +153,7 @@ void main() {
           .map((e) => ((e.widget as ListTile).title as Text).data),
       _sixReasons,
     );
-    await tester.tap(find.text('Spam'));
+    await tapInReach(tester, find.text('Spam'));
     await tester.pumpAndSettle();
     // Today a comment report never reaches the server (plan P-14).
     expect(repo.reports, isEmpty);

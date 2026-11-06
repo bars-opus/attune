@@ -31,6 +31,7 @@ class FlowTextField extends StatefulWidget {
     this.onChanged,
     this.textCapitalization = TextCapitalization.none,
     this.labelAbove = false,
+    this.textDirection,
   });
 
   final TextEditingController controller;
@@ -56,6 +57,12 @@ class FlowTextField extends StatefulWidget {
   /// too long to sit inside the border at large text sizes (it wraps there
   /// instead of overlapping the border); still read as the field's name.
   final bool labelAbove;
+
+  /// Spec 1 W10b (§2.3): the direction of what is typed (and of the
+  /// hint), for content that reads left to right in every language, such
+  /// as a phone number; the label and the field itself still follow the
+  /// screen. Null: the screen's direction.
+  final TextDirection? textDirection;
 
   @override
   State<FlowTextField> createState() => _FlowTextFieldState();
@@ -114,6 +121,7 @@ class _FlowTextFieldState extends State<FlowTextField> {
       inputFormatters: widget.inputFormatters,
       autofillHints: widget.autofillHints,
       textCapitalization: widget.textCapitalization,
+      textDirection: widget.textDirection,
       onSubmitted: widget.onSubmitted,
       onChanged: widget.onChanged,
       decoration: InputDecoration(
@@ -127,6 +135,7 @@ class _FlowTextFieldState extends State<FlowTextField> {
         labelStyle: labelStyle,
         floatingLabelStyle: labelStyle,
         hintText: widget.hintText,
+        hintTextDirection: widget.textDirection,
         // The message in body text with an icon, so it reads at full
         // contrast and never by colour alone (§2.3).
         error:

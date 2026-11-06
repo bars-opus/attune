@@ -19,6 +19,7 @@ import '../../helpers/fake_home_state.dart';
 import '../../helpers/fake_reminder_rpc.dart';
 import '../../helpers/flow_harness.dart';
 import '../../helpers/home_harness.dart';
+import '../../helpers/tap_in_reach.dart';
 
 const _uid = 'u-me';
 
@@ -263,7 +264,7 @@ void main() {
     await tester.tap(find.text('Not ready? Use Attune just for me'));
     await tester.pumpAndSettle();
     expect(find.text('Use Attune just for you?'), findsOneWidget);
-    await tester.tap(find.text('Cancel'));
+    await tapInReach(tester, find.text('Cancel'));
     await tester.pumpAndSettle();
     expect(gateway.count('set_my_path'), 0);
   });

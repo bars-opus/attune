@@ -24,6 +24,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 import '../../../helpers/flow_harness.dart';
 import 'support/healing_fakes.dart';
+import '../../../helpers/tap_in_reach.dart';
 
 const _offered = {'status': 'support_offered'};
 const _paused = {'status': 'paused'};
@@ -215,7 +216,7 @@ void main() {
         () => HealingPostMortemScreen(journey: testJourney()),
         overrides: _overrides(gen, repo),
       );
-      await t.tap(find.text('Generate reflection'));
+      await tapInReach(t, find.text('Generate reflection'));
       await t.pump();
       _container(t).read(_signedIn.notifier).state = 'kofi';
       await t.pump();
@@ -234,7 +235,7 @@ void main() {
         () => HealingPortraitScreen(journey: testJourney(stage: 4)),
         overrides: _overrides(gen, repo),
       );
-      await t.tap(find.text('Generate portrait'));
+      await tapInReach(t, find.text('Generate portrait'));
       await t.pump();
       _container(t).read(_signedIn.notifier).state = 'kofi';
       await t.pump();
@@ -264,7 +265,7 @@ void main() {
           overrides: _overrides(gen, repo),
         );
         // The first request is sent, and the person leaves while it is out.
-        await t.tap(find.text(generate));
+        await tapInReach(t, find.text(generate));
         await t.pump();
         final c = _container(t);
         h.router.go('/elsewhere');
@@ -272,7 +273,7 @@ void main() {
         // Back on the stage, a second request: the check matches.
         h.router.go('/test');
         await t.pumpAndSettle();
-        await t.tap(find.text(generate));
+        await tapInReach(t, find.text(generate));
         await t.pump();
         expect(gen.pending, hasLength(2));
         gen.pending[1].complete(_offered);
@@ -367,7 +368,7 @@ void main() {
       await t.pumpAndSettle();
       expect(find.text('An observation on screen.'), findsNothing);
       expect(find.text(supportCardText), findsOneWidget);
-      await t.tap(find.text('Not now'));
+      await tapInReach(t, find.text('Not now'));
       await t.pumpAndSettle();
       expect(find.text('An observation on screen.'), findsNothing);
       expect(
@@ -400,7 +401,7 @@ void main() {
       _container(t).read(healingSupportProvider.notifier).offer(_ptKey);
       await t.pumpAndSettle();
       expect(find.text('A portrait on screen.'), findsNothing);
-      await t.tap(find.text('Not now'));
+      await tapInReach(t, find.text('Not now'));
       await t.pumpAndSettle();
       expect(find.text('A portrait on screen.'), findsNothing);
       expect(find.text('Save portrait \u2192'), findsNothing);
@@ -437,7 +438,7 @@ void main() {
       () => HealingPortraitScreen(journey: testJourney(stage: 4)),
       overrides: _overrides(FakeHealingGeneration([_paused]), repo),
     );
-    await t.tap(find.text('Generate portrait'));
+    await tapInReach(t, find.text('Generate portrait'));
     await t.pumpAndSettle();
     expect(repo.saved, ['portrait:insufficient_evidence']);
     expect(find.text('No portrait available yet.'), findsOneWidget);

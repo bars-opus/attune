@@ -104,12 +104,16 @@ class ScrollToLatestPill extends StatelessWidget {
                         color: theme.colorScheme.primary,
                         borderRadius: BorderRadius.circular(999),
                       ),
-                      child: Text(
+                      child: MediaQuery.withClampedTextScaling(
+                        // Spec 1 W10a: past 1.3 the badge covers the arrow.
+                        maxScaleFactor: 1.3,
+                        child: Text(
                         badge,
                         style: theme.textTheme.labelSmall?.copyWith(
                           color: theme.colorScheme.onPrimary,
                           fontWeight: FontWeight.w700,
                         ),
+                      ),
                       ),
                     ),
                   ),

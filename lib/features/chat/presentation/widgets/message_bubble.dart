@@ -997,7 +997,11 @@ class _ReactionAdornment extends StatelessWidget {
                 clipBehavior: Clip.antiAlias,
                 child: InkWell(
                   onTap: onTap,
-                  child: ConstrainedBox(
+                  child: MediaQuery.withClampedTextScaling(
+                    // Spec 1 W10a: the pill's box is fixed; past 1.3 the
+                    // emoji outgrows it and taps fall through.
+                    maxScaleFactor: 1.3,
+                    child: ConstrainedBox(
                     constraints: const BoxConstraints(minWidth: 36),
                     child: Padding(
                       padding: EdgeInsets.symmetric(
@@ -1024,6 +1028,7 @@ class _ReactionAdornment extends StatelessWidget {
                         ],
                       ),
                     ),
+                  ),
                   ),
                 ),
               ),
@@ -1921,9 +1926,11 @@ class _BubbleBody extends StatelessWidget {
           children: [
             Icon(Icons.videocam_off_outlined, size: 18, color: color),
             const SizedBox(width: 6),
-            Text(
+            Flexible(
+              child: Text(
               'Video expired',
               style: TextStyle(color: color, fontStyle: FontStyle.italic),
+            ),
             ),
           ],
         ),

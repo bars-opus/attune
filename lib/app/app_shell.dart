@@ -6,6 +6,7 @@ import 'package:attune/features/safety/presentation/widgets/safety_lock_gate.dar
 import 'package:attune/features/together/presentation/widgets/share_intake_listener.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:attune/app/text_scale_policy.dart';
 
 /// Everything MaterialApp.router's builder wraps around every route (Spec 2).
 /// Above the Navigator, so it covers every route, dialog and sheet.
@@ -20,7 +21,15 @@ import 'package:go_router/go_router.dart';
 ///   RelationshipLifecycleWatcher -- after a pause or an ending, clears this
 ///                          phone's Together surfaces and shows the ending
 ///                          sheet once (Spec 3a).
-Widget appShell({required GoRouter router, required Widget child}) {
+///
+/// [maxTextScale] is the root text clamp (Spec 1 W10a): 1.0 unless
+/// `text_scale_v2` is on (textScaleCapProvider); RootTextScaleClamp keeps
+/// Games and not-yet-audited routes at 1.0 whatever it says.
+Widget appShell({
+  required GoRouter router,
+  required Widget child,
+  double maxTextScale = TextScalePolicy.offCap,
+}) {
   return ShareIntakeListener(
     onShare: () => showTogetherForShare(router),
     child: SafetyLockGate(
@@ -31,8 +40,9 @@ Widget appShell({required GoRouter router, required Widget child}) {
             router: router,
             child: RelationshipLifecycleWatcher(
               router: router,
-              child: MediaQuery.withClampedTextScaling(
-                maxScaleFactor: 1.0,
+              child: RootTextScaleClamp(
+                router: router,
+                cap: maxTextScale,
                 child: child,
               ),
             ),

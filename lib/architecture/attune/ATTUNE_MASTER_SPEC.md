@@ -1,7 +1,7 @@
 # ATTUNE — MASTER SPECIFICATION
 ### The complete product, technical, and architectural bible
-**Version:** 2.22 (Two-ask couples onboarding; SMS delivery requirements)
-**Last updated:** July 2026
+**Version:** 2.28 (App flow and identity: three paths, sign-up order, a two-tab home per path; forums retired)
+**Last updated:** November 2026
 **Status:** Locked and buildable
 **Build tool:** OpenAI Codex (implementation) + Claude (this session, review)
 **Review process:** All code reviewed against this document before merge
@@ -242,31 +242,36 @@ Countermeasures (each specced elsewhere; this section names the strategy):
 
 ## 2. PRODUCT MODES
 
-| Mode | Who it's for | Core value | Status |
+*(Amended 2026-11, decision 34: an account carries a **path**, not a mode.)*
+
+Every account chooses one of three paths after sign-up, stored on the account (`users.path`) and switched only by the person:
+
+| Path | Who it's for | Tab 2 of the home | Status |
 |---|---|---|---|
-| Couples mode | Active couples using Attune as their primary chat | Shared chat + AI intelligence + games + insights | Build first |
-| Personal mode | Individuals — between relationships, solo users, waiting partners | Self-reflection, pattern awareness, growth | Build alongside couples |
-| Healing mode | Post-breakup users | Structured recovery journey before dating unlocks | Month 4 |
-| Dating mode | Single users ready to date again | Psychology-first matching using real behavioural data | Month 6+ |
+| In a relationship (`relationship`) | Couples, including a partner who hasn't joined yet | **Chat**: the shared space once linked; "Your space" and the invite while waiting | Live |
+| Single and open to dating (`dating`) | Single adults in a country where Dating is open | **Me**, with the Dating section on top | Dating opens in Ghana and the UK (Spec 2) |
+| Just for me (`just_me`) | Anyone: single, partnered or in between | **Me**: journal, quizzes, Healing | Live |
 
-Couple shape is a profile on the relationship (stage, distance, intent, household) plus per-partner preferences — not a mode and not a type. Modes remain personal / couplesPending / couples. *(Added 2026-10-16, §8.11.)*
+Relationship and Dating are never active together. Healing is a space inside Me ("After a breakup or a loss"), offered and never required: it is not a mode, and no readiness score gates Dating. Couple shape is a profile on the relationship ("About us": the owner's four fields), never a mode or a type.
 
-### Mode transitions
+### Path transitions
 ```
-New user (taken) → Couples mode (only after partner accepts invite and completes their onboarding)
-New user (taken) → Personal mode / waiting state (if partner doesn't join within 7 days)
-New user (single) → Personal mode immediately
-Couples mode → Personal mode (if relationship ends or partner unlinks)
-Personal mode → Healing mode (if user flags a recent breakup)
-Healing mode → Dating mode eligibility (latest valid readiness score > 70,
-minimum 8 weeks, all trusted gates pass); separate opt-in and profile activation
-Dating mode → Couples mode (after match forms and both users link)
+Any path → another: Settings → How you use Attune; nobody is told
+Just for me → Relationship: the invite flow (the path is set when the invite is sent)
+Dating → Relationship: inviting a partner pauses Dating (confirmed first)
+Dating → Just for me: Dating is paused and hidden (confirmed first)
+Relationship (invite pending) → another path: the invite is withdrawn (confirmed first)
+Relationship (linked or paused) → another path: pause or end the shared space first
+Relationship ended inside Attune → Dating: a gentle wait for the 30-day ending
+  window, with Healing offered (Spec 2)
+Dating → Relationship after a match: the couple link (Spec 2)
 ```
 
-### Onboarding fork (screen one — locked in)
-The very first screen after signup asks one question: **"Are you single or in a relationship?"**
-- **Single** → Personal mode onboarding (attachment quiz + personal anchors, no invite flow — self-initiated self-knowledge is the value, so the quiz stays up front here)
-- **In a relationship** → Couples onboarding, two-ask design (8.8, decision 29): Ask 1 is profile + partner invite only — chat unlocks on mutual verified linking; the intelligence layer, quiz, and anchors are introduced as Ask 2 after chat value exists
+### Path choice (after sign-up — replaces the screen-one fork)
+Sign-up comes first: name → date of birth → phone → code → consent (8.8). Then one question, **"What brings you to Attune?"**, with three equal cards and nothing preselected:
+- **In a relationship** → the partner invite (or "My partner already invited me"); the two-ask design (8.8, decision 29) is unchanged: Ask 1 is the invite only, and the quiz, anchors and intelligence layer come as Ask 2 after chat value exists
+- **Single and open to dating** → Me with the Dating section ("Not open in {country} yet" where Dating isn't open)
+- **Just for me** → Me straight away; the quiz is optional (8.8 Track A)
 
 The partner invite is only a relationship-linking invite. It is not the same as
 the public "Invite a friend" action on `LoginProfile`. A user is not recognised
@@ -1942,6 +1947,8 @@ Future<List<SafetyResourceEvent>> getSafetyEvents() async {
 ### 8.8 Onboarding & Cold Start
 
 #### Screen one fork (non-negotiable — routes entire onboarding)
+
+*(Revised by decision 34: sign-up comes first, then "What brings you to Attune?" with three paths; see section 2. The fork below is kept as the history of decision 18.)*
 ```
 ┌─────────────────────────────────────┐
 │  Are you single or in a            │
@@ -1993,16 +2000,19 @@ Invite links must not include partner names, phone numbers, email addresses,
 relationship IDs, or mode labels. Any display metadata is fetched after server
 validation and must be safe to show to the invite recipient.
 
-#### Track A: Single onboarding
+#### Track A: Just for me *(amended 2026-11, decision 34)*
 ```
-1. Sign up + profile setup
-2. "Are you single or in a relationship?" → Single
-3. Relationship reflection quiz (final attachment instrument pending clinical decision)
-4. Three personal anchors:
+1. Sign up: name → date of birth → phone → code → consent
+2. "What brings you to Attune?" → Just for me
+3. → The Me home straight away (no quiz up front, no waiting, no invite):
+   one first-action card, "Write your first note" or
+   "Take a 3-minute look at how you connect"
+4. The relationship reflection quiz is optional, self-facing, with its
+   caveat (final attachment instrument pending clinical decision)
+5. The three personal anchors are optional, offered after the quiz:
    - "What do you most want to understand about yourself in relationships?"
    - "What pattern from past relationships are you trying to do differently?"
    - "What does a steady relationship feel like to you?"
-5. → Personal mode home (no waiting, no invite)
 ```
 
 #### Track B: Couples onboarding — the two-ask design (revised v2.22, decision 29)
@@ -2689,8 +2699,12 @@ A user could post "my partner does X" and their partner — also on the platform
 
 ```
 Tab 1: Opinions  ← anonymous community surface
-Tab 2: Chat      ← relationship workspace / personal workspace
+Tab 2: Chat      ← the relationship workspace (In a relationship)
+       Me        ← your own space, with Dating inside it (Dating, Just for me)
+       Sign in   ← guests: "Join Attune"
 ```
+
+*(Amended 2026-11, decision 34: Tab 2 follows the path. "Dating" never appears on the tab bar.)*
 
 The shell has only two top-level tabs. Pulse, Games, Insights, Profile, and
 Settings are not equal top-level destinations; they are tools attached to the
@@ -2699,22 +2713,22 @@ user's current relationship or personal workspace.
 #### Default selected tab
 
 ```
-Anonymous user:       Opinions
-Personal/single user: Opinions
-Couples user:         Chat
+Anonymous user:          Opinions
+Signed in, any path:     Tab 2 (Chat on In a relationship; Me on Dating and Just for me)
 ```
 
-Anonymous users and singles start in Opinions because browsing and community
-context are the safest first surfaces. Couples start in Chat because an active
-relationship has one primary workspace: the partner chat.
+*(Amended 2026-11, decision 34: after sign-in every path lands on its own space, with Opinions one tap away.)*
+
+Guests start in Opinions, the safest first surface. Signed-in people start on
+their own space (Tab 2), with Opinions one tap away. *(Amended 2026-11,
+decision 34.)*
 
 ### Flutter shell setup
 ```dart
 // Pseudocode: actual implementation is Flutter.
 final initialTab = switch (sessionState) {
   anonymous => opinions,
-  personal => opinions,
-  couples => chat,
+  signedIn => tabTwo, // Chat or Me, by path
 }
 ```
 
@@ -2729,20 +2743,27 @@ final initialTab = switch (sessionState) {
 **Opinions tab:**
 - Anonymous community browsing
 - Opinions prompts and relationship discussion
-- Nested Forums area for categories and threaded posts
+- Forums retired 2026-10, Spec 3
 - Read-only access for anonymous users
 - Phone-auth gated posting, replying, flagging, saving, and personalization
 - Account creation / onboarding CTA for anonymous users
 
-**Chat tab:**
-- Couples mode: exactly one active partner chat
-- Personal mode: personal reflection workspace or onboarding CTA, depending MVP scope
-- Anonymous mode: `LoginProfile` guest gate with phone-auth CTA
+**Tab 2 — Chat (In a relationship):**
+- Linked: exactly one active partner chat
+- Not linked yet, paused or ended: "Your space" with the invite or the lifecycle card; never Dating
+
+**Tab 2 — Me (Dating, Just for me):** the Dating section (Dating path only), then "Your space": journal, quizzes, Healing, reminders.
+
+**Tab 2 — Sign in (guests):** `LoginProfile` as "Join Attune" (below).
+
+**Chat tab, as before:**
 - Message thread, image sharing, read receipts, delivery status
 - "Help me say this" button in composer
 - Chat header with pulse summary (Month 2)
 
 #### Anonymous Chat gate
+
+*(Revised by decision 34: the guest's Tab 2 is labelled "Sign in"; with the new sign-in on, `LoginProfile` reads "Join Attune" with "Get started", "I already have an account" and "I have an invite", still phone only. A neutral birth-year question comes before a guest reads Opinions.)*
 
 When an anonymous user opens the Chat tab, show the legacy app's
 `LoginProfile` pattern adapted for Attune. This screen is a guest-facing home
@@ -2801,8 +2822,8 @@ A relationship is recognised as an active couple only when:
 - User B completed their onboarding flow.
 - The backend relationship row is active with both users attached.
 
-Until all conditions are true, both users remain outside the active Couples mode
-experience. The inviting user may see a waiting/pending relationship state, but
+Until all conditions are true, both users remain outside the linked relationship
+space *(amended 2026-11, decision 34: paths, not modes)*. The inviting user may see a waiting/pending relationship state, but
 Attune must not unlock shared partner chat, shared insights, Pulse, games, or
 couple recognition.
 
@@ -3058,21 +3079,21 @@ All 25 major architectural decisions made in the review session. These are locke
 | 8 | Session detection | Server-side 30min cron at :07/:37, no day boundaries, one-sided sessions as valid signal, 80-message cap | Client timers are unreliable, midnight splits are emotionally false |
 | 9 | Verdict input | Derived data only, ~1,700 tokens, game insights added | Verdict synthesises intelligence already extracted — never re-reads raw messages |
 | 10 | Conflict translator | Opt-in only via "Help me say this", recipient never knows, logs feed pattern memory | Automatic activation is condescending; push not pull |
-| 11 | Navigation | 2 tabs: Opinions and Chat; Opinions default for anonymous/single users, Chat default for couples; dot not badge | Attune has two primary surfaces: anonymous community and relationship workspace. Pulse/Games/Insights/Profile are tools under Chat, not equal apps |
+| 11 | Navigation | 2 tabs: Opinions and Chat; Opinions default for anonymous/single users, Chat default for couples; dot not badge *(revised by decision 34)* | Attune has two primary surfaces: anonymous community and relationship workspace. Pulse/Games/Insights/Profile are tools under Chat, not equal apps |
 | 12 | Asymmetric data | `personal_insights` table with RLS iron wall, no couple report ever | The pattern is shared. The role is private. This is permanent. |
 | 13 | Cold start | Compatibility preview day one, profile-based with explicit labelling, 48hr content plan *(revised by decision 30)* | Honesty about data confidence is a retention mechanic |
 | 14 | Safety system | At-risk user only, 3-tier hard-coded triggers, discreet exit top of Month 3 | DV organisations confirmed: dual notification escalates risk |
 | 15 | Asymmetric adoption | 48hr solo reflection fallback, one notification only, day 7 pivot, "Personal mode" label | Hard gate churns most motivated users; waiting screen is accelerated onboarding |
 | 16 | Clinical validation | Advisor found Month 1, full review Month 2, credential line in marketing | Psychological claims require psychological accountability |
 | 17 | Chat architecture | Optimistic UI + Supabase source of truth + drift (SQLite) read cache — NOT local-first | Local-first breaks the AI pipeline; optimistic UI creates WhatsApp feel. (Cache library was MMKV pre-Flutter-pivot; drift is the Flutter equivalent, v2.16) |
-| 18 | Onboarding fork | Screen one asks "single or in a relationship?" — routes entire onboarding experience | Different users need different flows from the first second |
+| 18 | Onboarding fork | Screen one asks "single or in a relationship?" — routes entire onboarding experience *(revised by decision 34)* | Different users need different flows from the first second |
 | 19 | Chat locking | One chat section per couple. Read-only after relationship ends. Permanently archived when either partner starts new relationship *(revised by decision 31)* | Prevents ex-communication on platform; creates clean new starts |
-| 20 | Dating pool entry | Eligibility is automatic after trusted Healing gates; enrollment requires separate Dating opt-in, terms/privacy acceptance, adults-only gate, profile review/activation, and an optional separate historical-data choice | Existing self-data may seed a private draft, but the user controls enrollment and historical-data use |
-| 21 | Forum anonymity | Daily-rotating keyed author hash (HMAC with server secret) — no direct user_id FK on forum posts | Identity-free discussion; daily rotation prevents cross-day correlation while enabling coherent same-day threads; server-secret HMAC prevents retroactive de-anonymisation by anyone holding a user list |
-| 22 | Opinion/forum labels | 'taken', 'single', 'exploring', 'just having fun' are Opinions/forum display labels only — not account states | Keeps mode architecture clean; labels are social signal only, no backend consequence |
-| 23 | Auth strategy | Phone OTP only at launch; no Apple/Google, email/password, or email magic link | Phone identity fits chat-first onboarding and partner invites; a single verified-phone auth path keeps abuse response and safety escalation simpler |
+| 20 | Dating pool entry | Eligibility is automatic after trusted Healing gates; enrollment requires separate Dating opt-in, terms/privacy acceptance, adults-only gate, profile review/activation, and an optional separate historical-data choice *(revised by decision 34)* | Existing self-data may seed a private draft, but the user controls enrollment and historical-data use |
+| 21 | Forum anonymity | Daily-rotating keyed author hash (HMAC with server secret) — no direct user_id FK on forum posts *(revised by decision 34)* | Identity-free discussion; daily rotation prevents cross-day correlation while enabling coherent same-day threads; server-secret HMAC prevents retroactive de-anonymisation by anyone holding a user list |
+| 22 | Opinion/forum labels | 'taken', 'single', 'exploring', 'just having fun' are Opinions/forum display labels only — not account states *(revised by decision 34)* | Keeps mode architecture clean; labels are social signal only, no backend consequence |
+| 23 | Auth strategy | Phone OTP only at launch; no Apple/Google, email/password, or email magic link *(revised by decision 34)* | Phone identity fits chat-first onboarding and partner invites; a single verified-phone auth path keeps abuse response and safety escalation simpler |
 | 24 | Anonymous browsing | Anonymous users can browse Opinions read-only before account creation; all write/personal/relationship actions require phone auth | Lets users understand Attune before committing while keeping accountability for abuse-sensitive actions |
-| 25 | Anonymous Chat gate | Anonymous Chat tab shows adapted legacy `LoginProfile`, with phone OTP only and no Google/Apple/email/password | Preserves low-pressure guest exploration from the cloned app without weakening phone-only identity and moderation rules |
+| 25 | Anonymous Chat gate | Anonymous Chat tab shows adapted legacy `LoginProfile`, with phone OTP only and no Google/Apple/email/password *(revised by decision 34)* | Preserves low-pressure guest exploration from the cloned app without weakening phone-only identity and moderation rules |
 | 26 | Invite distinction | `LoginProfile` "Invite a friend" is public app sharing only; partner invites live only at the end of couples onboarding | Prevents accidental relationship creation from a generic referral action and keeps couple recognition tied to mutual verified onboarding |
 | 27 | Lovers'-space positioning + conflict capture | Attune is the dedicated chat for one relationship (not a general-messenger replacement); ceremonial-drift named as the key usage risk; translator designated the conflict-capture mechanism; conflict-capture metric added to launch gate | Dedicated couple spaces are a proven adoption model (Between), but the intelligence layer starves if only ritual conversation migrates — onboarding/retention metrics alone cannot detect that failure mode |
 | 28 | Non-conversational AI posture | Attune's AI is never a conversational companion: insights, Pulse, Verdicts, and game reflections are reports about the couple's own data; no chatty AI persona, no sustained AI-user dialogue, no anthropomorphic AI character — permanently | Dual grounding: (a) design — the product's voice is a wise attentive friend *writing observations*, not a synthetic relationship partner (ATTUNE_SOUL.md); (b) regulatory — 2026 US state companion-chatbot laws (CA SB 243, OR SB 1546 et al.) regulate AI that "sustains a relationship across multiple interactions"; a report-generating AI is likely out of scope, a companion is squarely in it. See ATTUNE_RISK_SOLUTIONS.md Section 7.5 |
@@ -3082,6 +3103,7 @@ All 25 major architectural decisions made in the review session. These are locke
 | 31 | Relationship lifecycle (revises 3 and 19; same documented reason, §8.11, 05 Part D) | Either partner can pause or end alone, instantly, with no notification to the other. Ended → 30-day read-only window per person with export (including full chat text; never AI-derived partner data or safety data) → archived (or immediately when either starts a new relationship, or by "seal my side now"). Archived media and messages hard-deleted at 12 months unless legal hold, told at ending. Both re-inviting within 90 days with no new relationship reopens the same space. The ending design reserves a child-only "Keep the family calendar" for co-parents | Separation is the highest-risk window; the market's angriest reviews are lost memories and old data resurfacing with a new partner (01 §5); the soul promised export (SOUL §7) |
 | 32 | Attunement loop (2026-10-16, owner Q3/Q7) | A quarterly strengths-first check-up is the primary attunement artefact; the weekly check-in is optional and private. The Verdict is held and renamed "Monthly readout", an optional AI appendix only after the verdict gates and the AI safety suites pass | Marriage Checkup RCT (Córdova 2014); gains fade without boosters; responsiveness predicts quality more than insight (Joel 2020) |
 | 33 | Scope decisions (2026-10-16, owner Q1, Q5, Q6, Q8–Q18) | Intimacy in scope narrowly in Phase C (clinician- and sex-therapist-authored, both partners opt in, no frequency anything); couple profile fields, never types; faith opt-in per partner — Christian (Protestant/Pentecostal, Catholic) and Muslim at the Ghana launch, Jewish for diaspora, secular default always; one plan covers both partners, free core, premium = packs/depth/permanence; Mirror attentiveness flag removed; no polyamory support now (stated honestly); no in-app video calling; "Plans" card first under Chat; advisory board formed now; WhatsApp import only after Phase B is stable; co-parenting surface committed in principle; opt-in aggregate outcome panel | 06-synthesis-roadmap.md §10, each with its recommendation and sources |
+| 34 | App flow and identity (revises 11, 18, 20, 21, 22, 23 and 25; documented reason: the 2026-10-24 flow and dating research, owner rulings Q1-Q20 (Q4, Q6, Q7, Q8, Q11, Q18, Q20), built as Spec 1 W1-W10) | **Paths, not modes:** In a relationship, Single and open to dating, or Just for me, chosen after sign-up ("What brings you to Attune?") and switched silently in Settings; Relationship and Dating never together. **Navigation (11):** two tabs: Opinions, and Tab 2 = Chat (Relationship) or Me (Dating, Just for me); guests land on Opinions with Tab 2 "Sign in"; signed-in people land on Tab 2; "Dating" never on the tab bar. **Sign-up (18):** name, date of birth, phone, code, consent, then the path. **Dating entry (20):** a path, open only where the server lists the country (Ghana and the UK at launch); after an ending inside Attune a gentle wait for the 30-day window with Healing offered, no readiness score or 8-week timer (Spec 2); enrollment still needs the Dating opt-in, terms, the age checks and profile review. **Opinions anonymity (21):** a stable keyed pseudonym per author (HMAC with a server secret; the user_id never reaches a client); forums retired 2026-10 (Spec 3); per-post handles stay deferred (Q9). **Labels (22):** 'taken', 'single' and 'figuring_it_out' are self-declared Opinions labels, written once at the first path choice and never re-synced; not account states. **Sign-in (23):** phone only (SMS; WhatsApp for a number with no account yet; voice built but off until it can never speak a code to voicemail); the date of birth comes before the phone and the server refuses under 18; a seam to link other sign-in methods later, no work now (Q18). **Guest Tab 2 (25):** "Sign in", showing "Join Attune" (Get started / I already have an account / I have an invite); a neutral birth-year question before a guest reads Opinions | One app with three ways in needs the way in on the account, not on the phone; a minor must be stopped before they hand over a number; the specs and the code must say the same thing again (06 section 2.1.7) |
 ---
 
 ## 16. OPEN QUESTIONS & FUTURE UPDATES
@@ -3169,6 +3191,15 @@ All 25 major architectural decisions made in the review session. These are locke
 ### Update log
 
 ```
+[November 2026 — v2.28] — app flow and identity (decision 34)
+- Section 2: an account carries a path (In a relationship, Single and open
+  to dating, Just for me), not a mode; Healing is a space inside Me
+- 8.8: sign-up is name, date of birth, phone, code, consent, then the path;
+  Track A is now Just for me, with the quiz and anchors optional
+- Section 9: Tab 2 is Chat or Me by path, "Sign in" for guests; every
+  signed-in path lands on Tab 2; forums retired 2026-10, Spec 3
+- Decisions 11, 18, 20, 21, 22, 23 and 25 revised by decision 34
+
 [July 2026 — v2.27] — tags on opinions and forum topics
 - Added 8.11 "Tags": fixed, app-defined 20-tag starter vocabulary (not
   user-editable, never freeform) attachable to opinions and forum topics,

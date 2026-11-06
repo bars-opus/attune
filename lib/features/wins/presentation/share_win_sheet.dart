@@ -77,7 +77,7 @@ class _ShareWinSheetState extends ConsumerState<ShareWinSheet> {
               children: [
                 Icon(Icons.emoji_events_outlined, color: scheme.primary),
                 Gap(Spacing.sm.w),
-                Text('Share a win', style: text.titleMedium),
+                Flexible(child: Text('Share a win', style: text.titleMedium)),
               ],
             ),
             Gap(Spacing.xs.h),

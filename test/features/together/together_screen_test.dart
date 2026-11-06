@@ -38,6 +38,7 @@ import 'together_widget_sync_test.dart' show FakeWidgetStore;
 import 'together_repository_test.dart' show FakeTogetherGateway;
 import '../../helpers/fake_couple_profile.dart';
 import '../../helpers/home_harness.dart' show FakeHomeAuth, testUser;
+import '../../helpers/tap_in_reach.dart';
 
 Map<String, dynamic> _row(
   String id,
@@ -349,7 +350,7 @@ void main() {
     ]);
     expect(find.text('Kofi shared a win: Got the grant!'), findsOneWidget);
     expect(find.text('Ask Kofi about it — what was the best part?'), findsOneWidget);
-    await t.tap(find.byTooltip('Not now'));
+    await tapInReach(t, find.byTooltip('Not now'));
     await t.pumpAndSettle();
     expect(g.calls.where((c) => c.$1 == 'dismiss_win_card').single.$2, {'p_event_id': 'w1'});
     expect(find.text('Kofi shared a win: Got the grant!'), findsNothing);
@@ -386,7 +387,7 @@ void main() {
     final server = FakeCoupleProfileServer();
     await _pump(t, aboutUs: true, aboutUsServer: server);
     expect(find.text('About us'), findsOneWidget);
-    await t.tap(find.text('Add your anniversary'));
+    await tapInReach(t, find.text('Add your anniversary'));
     await t.pumpAndSettle();
     expect(find.text('Remember your anniversary?'), findsOneWidget);
     // Preflight F-3: an empty About us never dead-ends here. "The day you
@@ -431,7 +432,7 @@ void main() {
   testWidgets('About us off: Start with is as it was', (t) async {
     await _pump(t);
     expect(find.text('About us'), findsNothing);
-    await t.tap(find.text('Add your anniversary'));
+    await tapInReach(t, find.text('Add your anniversary'));
     await t.pumpAndSettle();
     expect(find.text('Add reminder'), findsOneWidget);
   });
@@ -473,7 +474,7 @@ void main() {
     );
     expect(find.text('Try again'), findsOneWidget);
     _stopFailing();
-    await t.tap(find.text('Try again'));
+    await tapInReach(t, find.text('Try again'));
     await t.pumpAndSettle();
     expect(find.text('Rent'), findsOneWidget);
   });
@@ -613,7 +614,7 @@ void main() {
       );
       expect(find.text('Rituals'), findsOneWidget);
       expect(find.text('Date night'), findsOneWidget);
-      await t.tap(find.text('Add a ritual'));
+      await tapInReach(t, find.text('Add a ritual'));
       await t.pumpAndSettle();
       expect(find.text('A ritual for couples'), findsOneWidget); // no name chosen yet
       // A divider sits right under the sheet's title.
@@ -647,7 +648,7 @@ void main() {
         ],
       );
     await t.scrollUntilVisible(find.text('Add a ritual'), 200, scrollable: find.byType(Scrollable).first);
-    await t.tap(find.text('Add a ritual'));
+    await tapInReach(t, find.text('Add a ritual'));
     await t.pumpAndSettle();
     expect(find.text('A ritual for The Harolds'), findsOneWidget);
   });
@@ -751,7 +752,7 @@ void main() {
       200,
       scrollable: find.byType(Scrollable).first,
     );
-    await t.tap(find.text('All memories'));
+    await tapInReach(t, find.text('All memories'));
     await t.pumpAndSettle();
     expect(find.text('Your relationship story starts here.'), findsOneWidget);
   });

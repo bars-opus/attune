@@ -11,6 +11,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:attune/features/planning/presentation/widgets/planning_progress_bar.dart';
 import 'support/fake_planning_gateway.dart';
 import 'support/planning_test_app.dart';
+import '../../helpers/tap_in_reach.dart';
 
 const _screen = PlanningEntryScreen(relationshipId: 'r1', entryId: 'e1');
 
@@ -31,7 +32,7 @@ void main() {
     g.handlers['update_planning_block_target'] = (p) => _budget(target: p['p_target_minor'] as int);
     await tester.pumpWidget(planningTestApp(g, _screen));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Set budget'));
+    await tapInReach(tester, find.text('Set budget'));
     await tester.pumpAndSettle();
     expect(find.byType(AlertDialog), findsNothing);
     expect(find.byType(DraggableScrollableSheet), findsOneWidget, reason: 'BottomSheetUtils');
@@ -50,7 +51,7 @@ void main() {
     final g = _gateway();
     await tester.pumpWidget(planningTestApp(g, _screen));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Set budget'));
+    await tapInReach(tester, find.text('Set budget'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Save'));
     await tester.pumpAndSettle();

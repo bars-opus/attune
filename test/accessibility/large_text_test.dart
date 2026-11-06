@@ -91,6 +91,21 @@ void main() {
     expect(t.getSize(find.byType(GameGridTile)).height, closeTo(170 / 0.86, 0.5));
   });
 
+  testWidgets('W10a: a row keeps a long trailing value and wraps at 2x', (t) async {
+    Widget row() => InfoRowWidget(
+      icon: Icons.notifications_none,
+      title: 'Remind me to write',
+      subtitle: _long,
+      trailing: const Text('Sundays at 9:45 PM'),
+      onTap: () {},
+    );
+    await _pump(t, row());
+    expect(t.takeException(), isNull);
+    expect(t.widget<Text>(find.text(_long)).maxLines, 6);
+    await _pump(t, row(), scale: 1.0);
+    expect(t.widget<Text>(find.text(_long)).maxLines, 3);
+  });
+
   testWidgets('Stagger renders at rest under reduced motion (I7)', (t) async {
     await t.pumpWidget(MaterialApp(
       home: MediaQuery(

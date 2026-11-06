@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:flutter_test/flutter_test.dart';
+import '../../helpers/tap_in_reach.dart';
 
 const _line = "I'm in a heavy patch. I may be quieter; it isn't about you.";
 
@@ -84,7 +85,7 @@ void main() {
     await t.tap(find.byType(Switch).first);
     await t.pumpAndSettle();
     expect(find.text(_line), findsOneWidget);
-    await t.tap(find.text('Send'));
+    await tapInReach(t, find.text('Send'));
     await t.pumpAndSettle();
     expect(sent, [_line]);
     expect(fake.calls, ['start:hard_time', 'offered']);
@@ -100,7 +101,7 @@ void main() {
     final (fake, sent) = await _pump(t, null);
     await t.tap(find.byType(Switch).last);
     await t.pumpAndSettle();
-    await t.tap(find.text('Not now'));
+    await tapInReach(t, find.text('Not now'));
     await t.pumpAndSettle();
     expect(sent, isEmpty);
     expect(fake.calls, ['start:loss', 'offered']);
@@ -121,7 +122,7 @@ void main() {
     );
     expect(t.widget<Switch>(find.byType(Switch).last).value, isTrue);
     expect(t.widget<Switch>(find.byType(Switch).first).value, isFalse);
-    await t.tap(find.text('End now'));
+    await tapInReach(t, find.text('End now'));
     await t.pumpAndSettle();
     expect(fake.calls, ['end']);
     expect(find.text('End now'), findsNothing);

@@ -6,6 +6,7 @@ import 'package:attune/core/utils/exports/export_screens.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:gap/gap.dart';
+import 'package:attune/core/ui/text/large_text.dart';
 
 class IntroGuideWidget extends StatelessWidget {
   final DocumentationModule module;
@@ -45,7 +46,8 @@ class IntroGuideWidget extends StatelessWidget {
         },
         padding: EdgeInsets.all((compact ? Spacing.md : Spacing.xl).h),
         // color: colorScheme.background,
-        child: Column(
+        child: ScrollWhenTall(
+          child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             // Icon
@@ -91,6 +93,7 @@ class IntroGuideWidget extends StatelessWidget {
               ),
             ),
           ],
+        ),
         ),
       ),
     );

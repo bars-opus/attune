@@ -46,6 +46,7 @@ import 'package:supabase_flutter/supabase_flutter.dart' show User;
 import '../../../helpers/flow_harness.dart';
 import '../support/fake_journal.dart';
 import '../support/journal_test_app.dart';
+import '../../../helpers/tap_in_reach.dart';
 
 const _card =
     "If things feel heavy right now, you don't have to carry it alone. Support is here if you want it.";
@@ -264,7 +265,7 @@ void main() {
         isNull,
       );
 
-      await t.tap(find.text('Not now'));
+      await tapInReach(t, find.text('Not now'));
       await t.pumpAndSettle();
       expect(find.text(_card), findsNothing);
       expect(find.text(_old), findsNothing); // put away, still no reflection
