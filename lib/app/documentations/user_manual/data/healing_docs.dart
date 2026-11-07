@@ -127,19 +127,20 @@ class HealingDocs implements DocumentationModule {
         ),
       ],
     ),
+    // Spec 2 W2 (§2.1): Healing no longer decides anything about Dating.
     ManualSection(
-      id: 'healing_dating_readiness',
-      title: 'When Dating Mode becomes available',
-      subtitle: 'A gate, not a race',
-      icon: Icons.hourglass_bottom,
+      id: 'healing_and_dating',
+      title: 'Healing and Dating',
+      subtitle: 'Healing is there for you; it never decides when you can date',
+      icon: Icons.self_improvement_outlined,
       category: 'Healing Mode',
       order: 4,
       contents: [
         ManualContent(
-          id: 'healing_gate_explained',
-          title: 'Why there\'s a waiting period',
+          id: 'healing_never_decides',
+          title: 'Healing never decides when you can date',
           content:
-              'Completing the journey doesn\'t automatically unlock Dating Mode. There\'s a minimum waiting period after your relationship ended (around 8 weeks) and a readiness score that needs to reflect genuine readiness, not just finishing the steps quickly. This exists because rushing back into dating right after a breakup carries real, well-documented risk — the gate exists to protect you, not to slow you down for its own sake.',
+              'Healing is there to help, at your own pace, and it\'s never required. Finishing the journey, or your readiness check-in, doesn\'t decide when you can date, and nothing from Healing is used to introduce you to anyone.',
           numberPrefix: '1',
           type: ManualContentType.text,
         ),
@@ -149,14 +150,6 @@ class HealingDocs implements DocumentationModule {
           content:
               'Your readiness score reflects how you answered today — it\'s not a permanent verdict on you, and it can change as you do.',
           type: ManualContentType.tip,
-        ),
-        ManualContent(
-          id: 'healing_dating_consent_separate',
-          title: 'Dating Mode still requires its own consent',
-          content:
-              'Becoming eligible for Dating Mode is not the same as joining it. If and when Dating Mode is available to you, you\'ll be asked for a separate, explicit opt-in — and your former partner\'s data is never used for matching, no matter what.',
-          numberPrefix: '2',
-          type: ManualContentType.text,
         ),
       ],
     ),
@@ -208,10 +201,10 @@ class HealingDocs implements DocumentationModule {
         order: 5,
       ),
       FAQModel(
-        id: 'faq_healing_dating_automatic',
-        question: 'Does finishing the journey put me straight into Dating Mode?',
+        id: 'faq_healing_and_dating',
+        question: 'Does finishing the journey decide when I can date?',
         answer:
-            'No. Completing all five stages makes you potentially eligible, but entering Dating Mode always requires a separate, explicit opt-in and its own consent — nothing happens automatically.',
+            'No. Healing never decides that, and nothing from it is used to introduce you. Dating has its own steps and its own consent, and nothing happens automatically.',
         category: 'Healing Mode',
         order: 6,
       ),

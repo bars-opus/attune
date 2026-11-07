@@ -1,8 +1,8 @@
 # ATTUNE - DATING MODE SPECIFICATION
 
-**Version:** 1.3  
+**Version:** 1.4 (Spec 2 W2 amended §2, §2.1, §3.1 and §3.2; the rest of the Spec 2 §1.5 amendments follow in W3–W7, then 2.0)  
 **Created:** July 2026  
-**Updated:** July 2026  
+**Updated:** November 2026  
 **Status:** Implementation-ready after the production gates in Section 16  
 **Part of:** Post-launch matching infrastructure (Month 6+)  
 **Authority:** `attune/ATTUNE_MASTER_SPEC.md` remains the product source of truth. Where an older Master example conflicts with the clinical, safety, privacy, or algorithm-quality documents listed below, those governing constraints win and the Master must be reconciled in the same change.
@@ -51,11 +51,11 @@ The words `candidate`, `introduction`, and `mutual match` are preferred. `Compat
 
 | Area | Contract |
 |---|---|
-| Launch gate | Month 6+ and sufficient eligible local pool; target 2,000 active couples is a planning signal, not an authorization bypass |
-| Eligibility | Server-authoritative Healing v1.3 eligibility; score greater than 70, all stages complete, path-specific time gate met (3.1), no active/pending relationship, account in good standing |
+| Launch gate | Per country, behind the gates of `docs/superpowers/specs/2026-10-24-dating-mode-design.md` §8 and production mode (Ghana: Greater Accra and Ashanti first, men–women; the UK); a thin pool is never a reason to open early (2.1) |
+| Eligibility | Server-authoritative `dating_eligibility` (3.1): an adult by the account's date of birth, a confirmed phone, EULA v2, an account in good standing, no pending, active or paused relationship, Dating open in the person's Dating country and region; to be introduced, also outside the gentle wait. Healing never gates Dating |
 | Enrollment | Separate explicit Dating Mode opt-in; eligibility alone never enrolls |
 | Historical data | Separate, optional, revocable consent for the current user's own eligible historical behavioral summaries |
-| Profile | User verifies identity-facing fields and preferences before activation; no silent public profile creation |
+| Profile | The fields of the Spec 2 design §3.2 (D2–D13), one question per screen, special-category answers encrypted; activated only after age assurance and the identity check; no silent public profile creation |
 | Discovery | Small curated introductions; no browsable dating pool |
 | Interest | Double-blind; neither person learns about one-sided interest or rejection |
 | Ranking | Deterministic, versioned, server-side, clinically reviewed, monitored for disparate performance |
@@ -71,46 +71,47 @@ eligibility funnel is deliberately long — the pressure to weaken gates will
 fall on the product owner, not on the code. This section pre-commits the
 response:
 
-**Legitimate levers under pool pressure:** grow the solo-journey supply
-(Healing Mode marketed standalone), regional staged enablement, marketing,
-extending the pilot, and patience.
+**Legitimate levers under pool pressure:** regional staged enablement,
+marketing, extending the pilot, and patience.
 
-**Never legitimate without fresh recorded clinical sign-off:** lowering the
-readiness threshold (>70), shortening the eight-week gate, removing Healing
-stages, weakening moderation SLAs, widening a user's stated preferences, or
-softening any Section 5 hard filter. A thin pool is a growth problem;
-re-labelling it an eligibility problem is the failure mode this section exists
-to prevent.
+**Never legitimate without fresh recorded clinical sign-off:** shortening or
+removing the gentle wait (3.1: the 30-day ending window after a relationship
+ended on Attune, shorter only when both close the shared space while both
+accounts exist, or when the former partner starts a new relationship; a former
+partner deleting their account never shortens it), weakening the
+trust friction (the 72-hour cool-off from account creation, the daily and
+waiting caps, same country by default, other countries only for verified
+accounts 14 or more days old), weakening moderation SLAs, widening a user's
+stated preferences, or softening any Section 5 hard filter. A thin pool is a
+growth problem; re-labelling it an eligibility problem is the failure mode
+this section exists to prevent. The gentle wait's clinical note is
+`DATING_MODE_CLINICAL_REVIEW_PACKET.md` §7.
+
 ---
 
 ## 3. Eligibility, consent, and enrollment
 
 ### 3.1 Eligibility source
 
-The Dating backend reads eligibility from the trusted Healing transition defined in `HEALING_MODE_SPEC.md`. It must revalidate all gates transactionally when the user opts in and whenever their account or relationship state changes. A stale `eligible_for_dating_opt_in_at` timestamp is not sufficient by itself.
+Eligibility is one server predicate, `dating_eligibility(user, scope)` (Spec 2 design §2.1), which returns the first failing reason: the feature switch, the account (an adult by the account's date of birth, a confirmed phone, EULA v2), standing, the relationship guard, the gentle wait, the Dating country and region (then, from later waves, the trusted device and where the person is). Every RPC that gates Dating calls it, transactionally, each time; nothing is cached.
 
-There are three approved eligibility paths, all of them server-authoritative and all of them ending in the same `eligible_for_dating_opt_in` state (HEALING_MODE_SPEC v1.3 Sections 2.1 and 7):
+**The gentle wait** applies only after a relationship ended on Attune: while any relationship of the person's is ended and its `ended_at` is within the last 30 days (the shared space's read-only window). It ends early in exactly two ways: both partners close the space while both accounts still exist, or the former partner starts a new relationship (the space is then archived; the one who moved on keeps the wait from the first ending). A former partner deleting their account never shortens it: a lone close after that still waits, and so does a second account opened only to be closed alone or together. An ending with no recorded date fails closed (refused as `account_unavailable` and counted), never "no wait". The predicate reads the window, not the status alone, so it ends on the open date even before the archive sweep runs. During the wait a person can set up and activate Dating; introductions start on the open date (or after the 72-hour cool-off, whichever is later). The wait screen (D0) offers a private three-question reflection and Healing; neither is required, and nothing is scored. Only the author reads or writes the reflection; they can clear it at any time, and leaving Dating or deleting the account hard-deletes it.
 
-| Path | `breakup_at_source` | Who it is for | Time gate |
-| --- | --- | --- | --- |
-| Ended Attune relationship | `relationship` | A relationship that ended on Attune | Eight weeks from trusted `ended_at` |
-| Solo journey | `user_reported` | A breakup that happened off Attune | Eight weeks from the reported date **and** four weeks of observed journey |
-| Readiness journey | `no_prior_relationship` | Never-partnered users, and users not processing any breakup | Four weeks of observed journey |
+**Healing never gates Dating.** No readiness score, Healing stage, journey or self-reported breakup date opens or delays Dating, and nothing from Healing is read by Dating. A breakup that happened off Attune, or none, means no wait. The former-partner exclusion stays mandatory whatever the wait says (Section 5.1).
 
-The solo journey's tightened clock exists because a user-reported breakup date is self-attested and cannot be trusted the way `relationships.ended_at` can. The readiness journey carries no breakup clock at all, because there is no loss to recover from; its four-week observed-journey floor is the same anti-speed-run control, measured from server-set `journey_created_at`.
-
-Do not fabricate a breakup date, bypass the journey in the client, or route a never-partnered user through the solo path to make the numbers work. Before v1.3 that user had no eligible path, and the tempting workaround — self-reporting a breakup that did not happen — is exactly the fabricated provenance this section forbids.
+**Dating is for someone on the Dating path** (Spec 1 D18). Choosing Just for me pauses an active or draft Dating profile (`pause_reason = 'path_change'`; choosing Relationship pauses it as a relationship pause), nobody who has chosen another path is introduced, and resuming or activating is refused (`path_not_dating`) until the person chooses Dating again.
 
 ### 3.2 Required decisions
 
-Enrollment requires four affirmative, independently recorded decisions:
+Enrollment requires these affirmative, independently recorded decisions and results:
 
-1. accept the current Dating Mode terms and privacy notice;
-2. opt in to Dating Mode;
-3. confirm that the user is at least 18 using a server-trusted date of birth or approved age-verification result;
-4. activate the reviewed dating profile.
+1. accept the current Dating terms and privacy notice (`dating_terms`);
+2. opt in to Dating (`dating_opt_in`);
+3. consent to the special-category profile answers (`special_category_profile`; faith separately, `special_category_faith`, only if the person answers it);
+4. pass age assurance and the identity check (Spec 2 design §3.3, recorded as results, never as a stored date of birth). The typed date of birth never unlocks Dating, and there is no age checkbox;
+5. activate the reviewed dating profile.
 
-Historical-data consent is a fifth, optional decision. Refusing it must not block Dating Mode. Without it, matching uses current self-reported quiz dimensions and explicit dating preferences only.
+There is no historical-data consent: Dating reads no historical Attune data (quiz results, journal, Healing, messages). Section 3.3 no longer applies (Spec 2 design §1.5).
 
 ### 3.3 Historical-data consent
 

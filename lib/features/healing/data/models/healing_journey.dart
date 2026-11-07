@@ -9,7 +9,7 @@ class HealingJourney extends Equatable {
   final DateTime breakupAt;
   final String breakupAtSource; // 'relationship' or 'user_reported'
   final String
-  status; // 'active', 'paused', 'completed', 'eligible_for_dating_opt_in', 'archived'
+  status; // 'active', 'paused', 'completed', 'archived' (Spec 2 W2: no Dating outcome)
   final int currentStage; // 1-5
   final Map<String, dynamic> reflectionAnswers;
   final DateTime? reflectionCompletedAt;
@@ -28,7 +28,6 @@ class HealingJourney extends Equatable {
   final DateTime? portraitCompletedAt;
   final DateTime? readinessStageCompletedAt;
   final DateTime? completedAt;
-  final DateTime? eligibleForDatingOptInAt;
   final DateTime createdAt;
   final DateTime updatedAt;
 
@@ -55,7 +54,6 @@ class HealingJourney extends Equatable {
     this.portraitCompletedAt,
     this.readinessStageCompletedAt,
     this.completedAt,
-    this.eligibleForDatingOptInAt,
     required this.createdAt,
     required this.updatedAt,
   });
@@ -102,10 +100,6 @@ class HealingJourney extends Equatable {
           json['completed_at'] != null
               ? DateTime.parse(json['completed_at'])
               : null,
-      eligibleForDatingOptInAt:
-          json['eligible_for_dating_opt_in_at'] != null
-              ? DateTime.parse(json['eligible_for_dating_opt_in_at'])
-              : null,
       createdAt: DateTime.parse(json['created_at']),
       updatedAt: DateTime.parse(json['updated_at']),
     );
@@ -114,7 +108,6 @@ class HealingJourney extends Equatable {
   bool get isActive => status == 'active';
   bool get isPaused => status == 'paused';
   bool get isCompleted => status == 'completed';
-  bool get isEligibleForDating => status == 'eligible_for_dating_opt_in';
   bool get isArchived => status == 'archived';
 
   bool get isReflectionComplete => reflectionCompletedAt != null;
@@ -180,6 +173,5 @@ class HealingJourney extends Equatable {
     postMortemStatus,
     portraitStatus,
     completedAt,
-    eligibleForDatingOptInAt,
   ];
 }

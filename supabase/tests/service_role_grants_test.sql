@@ -41,7 +41,10 @@ BEGIN
                           'dating_profile_sensitive', 'dating_messages', 'dating_couple_link_requests',
                           -- Spec 2 W1d (batch-9 fix round 1, M-5): the never-introduce
                           -- list is no API role's either; definer functions reach it.
-                          'dating_never_introduce')
+                          'dating_never_introduce',
+                          -- Spec 2 W2: the gentle-wait reflections are the author's alone,
+                          -- read and written through two definer RPCs.
+                          'dating_gentle_wait_reflections')
     AND NOT has_table_privilege('service_role', c.oid, 'SELECT');
 
   IF v_count > 0 THEN
@@ -71,7 +74,10 @@ BEGIN
                           'dating_profile_sensitive', 'dating_messages', 'dating_couple_link_requests',
                           -- Spec 2 W1d (batch-9 fix round 1, M-5): the never-introduce
                           -- list is no API role's either; definer functions reach it.
-                          'dating_never_introduce')
+                          'dating_never_introduce',
+                          -- Spec 2 W2: the gentle-wait reflections are the author's alone,
+                          -- read and written through two definer RPCs.
+                          'dating_gentle_wait_reflections')
     -- Spec 2 W1b (batch-4 fix round 1, C-1): the service role only reads
     -- country_safety_config (no worker claims rows there); publish_country_config,
     -- a definer, is its one writer, and dating_rls_canary.sql pins SELECT only.

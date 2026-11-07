@@ -55,7 +55,7 @@ class DatingModeDocs implements DocumentationModule {
           id: 'dating_who',
           title: 'Who can access it',
           content:
-              'Dating Mode only becomes available once you\'re eligible through Healing Mode — a genuine waiting period and readiness check-in, not something you can skip. Being eligible still requires a separate, explicit opt-in of its own before anything activates.',
+              'Dating Mode is for adults whose account is in good standing and who aren\'t in a relationship. Healing never decides when you can date. If your relationship ended on Attune, Dating opens for you when your shared space closes, 30 days after it ended, or sooner if you both close it. You still opt in, separately, before anything activates.',
           numberPrefix: '2',
           type: ManualContentType.text,
         ),
@@ -193,7 +193,7 @@ class DatingModeDocs implements DocumentationModule {
         id: 'faq_dating_when_available',
         question: 'When can I access Dating Mode?',
         answer:
-            'Only after you\'re eligible through Healing Mode — which requires a genuine waiting period after a breakup and a readiness check-in reflecting real readiness, not just finishing steps quickly. Eligibility alone doesn\'t enroll you either; you\'ll still need to explicitly opt in.',
+            'When you choose, as an adult whose account is in good standing and who isn\'t in a relationship. Healing never decides it. If your relationship ended on Attune, Dating opens for you when your shared space closes, 30 days after it ended, or sooner if you both close it; you can set up Dating in the meantime. You still need to opt in explicitly.',
         category: 'Dating Mode',
         order: 1,
       ),

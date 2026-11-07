@@ -373,3 +373,12 @@ GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public
 -- Spec 1 W9d: complete_sign_up stays the signed-in app's; the restore helper
 -- is no API role's.
 \i supabase/migrations/20261107110010_opinion_enforcement_restore_grants.sql
+
+-- Spec 2 W2: the open date, eligibility, the candidate check and the gate cron are the database's own; the shim and begin stay the app's.
+\i supabase/migrations/20261107120010_dating_v2_gentle_wait_grants.sql
+
+-- Spec 2 W2: the users.path trigger function is no API role's.
+\i supabase/migrations/20261107130010_dating_v2_path_pause_grants.sql
+
+-- Spec 2 W2: the reflection table is no API role's; the home and the two reflection RPCs are the app's.
+\i supabase/migrations/20261107140010_dating_v2_home_grants.sql

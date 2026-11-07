@@ -24,12 +24,9 @@ class HealingRepository {
         .from('healing_journeys')
         .select('*')
         .eq('user_id', userId)
-        .inFilter('status', [
-          'active',
-          'paused',
-          'completed',
-          'eligible_for_dating_opt_in',
-        ])
+        // Spec 2 W2: no journey has a Dating outcome any more (the
+        // migration made each one 'completed').
+        .inFilter('status', ['active', 'paused', 'completed'])
         .order('created_at', ascending: false)
         .limit(1)
         .maybeSingle()

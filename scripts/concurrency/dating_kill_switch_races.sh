@@ -11,11 +11,22 @@
 # person's action was lost (final review races r3, r4, r4c, r5).
 #
 # What each case proves (none can be proven in one transaction):
-#   same-country (pause, plain pause, withdrawal, country change, exit):
+#   same-country (pause, plain pause, withdrawal, country change, exit,
+#   and Spec 2 W2's path change):
 #     every Dating writer takes the person's same-gender locks SHARED with
 #     the setup lock, before any row, and the switch takes them EXCLUSIVE
 #     before any row, so the two serialise: no deadlock at all, and the
 #     person's action takes effect.
+#   path change behind a long switch (Spec 2 W2 Task 3 fix round 1): the
+#     path change never fails, even under a statement timeout shorter than
+#     the switch; its pause gives up after its own lock_timeout, is counted,
+#     and the gate cron's sweep pauses the person afterwards.
+#   resume vs a path change (both orders): whichever lands first, the
+#     person ends paused with path_change on Just for me.
+#   the gentle-wait reflection (Spec 2 W2 Task 4 fix round 1): clearing it
+#     and opening D0 never wait, neither behind a long country switch nor
+#     behind the person's own setup write, under a 3s statement timeout;
+#     a view D0 could not mark is skipped and counted.
 #   cross-border (pause, withdrawal): a writer in another country whose
 #     introductions the switch is ending can still close a lock cycle on
 #     the introduction rows; the loser retries inside its own transaction
@@ -28,7 +39,10 @@
 # Usage: scripts/concurrency/dating_kill_switch_races.sh <scratch_db>
 # The database MUST be a throwaway copy with every migration applied and
 # the seed rows present (for example: createdb from `pg_dump -s` of a
-# migrated database plus its config tables). This script installs a "race"
+# migrated database plus its config tables, public.metric_key_prefixes
+# among them: without its 'dating.' row no Dating counter is kept and the
+# "was counted" cases fail; setup refuses such a copy. `createdb -T` of a
+# migrated database copies everything). This script installs a "race"
 # schema, delay triggers on six Dating tables and test keys on the
 # database (ALTER DATABASE). It refuses attune_test and attune_spec3a.
 set -uo pipefail
@@ -48,6 +62,11 @@ cat > "$T/setup.sql" <<SQL
 ALTER DATABASE $DB SET app.settings.dating_field_key = 'race-field-key-0123456789abcdef-0123456789';
 ALTER DATABASE $DB SET app.settings.dating_exclusion_key = 'race-exclusion-key';
 \c $DB
+DO \$\$ BEGIN -- W2 final review M-7: the counters these cases read need their prefix row
+  IF NOT EXISTS (SELECT 1 FROM public.metric_key_prefixes WHERE prefix = 'dating.') THEN
+    RAISE EXCEPTION 'race setup: public.metric_key_prefixes has no dating. row (copy the config tables too)';
+  END IF;
+END \$\$;
 SELECT private.seed_dating_exclusion_key_fingerprint(), private.seed_dating_field_key_fingerprint();
 UPDATE public.feature_flags SET enabled = true WHERE key IN ('dating_mode_enabled', 'dating_same_gender_matching');
 SELECT public.publish_country_config('GH', '{"dating_enabled": true, "same_gender_enabled": true}') ->> 'ok';
@@ -140,12 +159,40 @@ BEGIN
   DELETE FROM public.users WHERE id::text LIKE '5e2f%';
   DELETE FROM private.dating_kill_switch_pending;
   DELETE FROM public.dating_rpc_idempotency WHERE user_id::text LIKE '5e2f%';
+  DELETE FROM race.outcome; -- Spec 2 W2 Task 3 fix round 1
+  IF EXISTS (SELECT 1 FROM race.saved_fn) THEN -- a stubbed completeness check is put back
+    EXECUTE (SELECT def FROM race.saved_fn);
+    DELETE FROM race.saved_fn;
+  END IF;
   UPDATE public.feature_flags SET enabled = true WHERE key = 'dating_same_gender_matching';
   IF NOT (public.dating_country_config('GH')).same_gender_enabled THEN
     PERFORM public.publish_country_config('GH', '{"same_gender_enabled": true}');
   END IF;
 END \$\$;
 CREATE SEQUENCE IF NOT EXISTS race.s1;
+-- Spec 2 W2 Task 3 fix round 1: a refusal the check must see.
+CREATE TABLE IF NOT EXISTS race.outcome (name text PRIMARY KEY, result text);
+CREATE TABLE IF NOT EXISTS race.saved_fn (def text);
+-- [p_user] runs [p_sql]; its error (or 'ok') is kept under [p_name].
+CREATE OR REPLACE FUNCTION race.try(p_name text, p_user uuid, p_sql text) RETURNS text LANGUAGE plpgsql AS \$\$
+DECLARE v text := 'ok';
+BEGIN
+  BEGIN
+    PERFORM race.call(p_user, p_sql);
+  EXCEPTION WHEN OTHERS THEN
+    v := SQLERRM;
+  END;
+  INSERT INTO race.outcome (name, result) VALUES (p_name, v) ON CONFLICT (name) DO UPDATE SET result = EXCLUDED.result;
+  RETURN v;
+END \$\$;
+-- Resume's completeness check passes (the fixtures have no photos); race.reset() puts it back.
+CREATE OR REPLACE FUNCTION race.stub_complete() RETURNS void LANGUAGE plpgsql AS \$\$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM race.saved_fn) THEN
+    INSERT INTO race.saved_fn (def) SELECT pg_get_functiondef('public.dating_profile_complete(uuid)'::regprocedure);
+  END IF;
+  CREATE OR REPLACE FUNCTION public.dating_profile_complete(p_user_id uuid) RETURNS boolean LANGUAGE sql STABLE AS 'SELECT true';
+END \$\$;
 CREATE OR REPLACE FUNCTION race.deadlocks() RETURNS bigint LANGUAGE sql AS \$\$
   SELECT deadlocks FROM pg_stat_database WHERE datname = current_database();
 \$\$;
@@ -228,6 +275,17 @@ run "exit vs the country switch" "$FX_GH" \
   "$SWITCH_GH" \
   "SELECT CASE WHEN NOT ($SWITCH_RAN) THEN 'the switch did not run' WHEN race.enrol(race.id('02')) = 'exited/-' THEN 'ok' ELSE 'exit lost: ' || coalesce(race.enrol(race.id('02')), 'none') END;" serialised
 
+# Spec 2 W2: the users.path trigger (Dating -> Just for me) takes the same
+# lock order, so a path change and the switch serialise and the pause holds.
+run "path change (Dating to Just for me) vs the country switch" "$FX_GH" \
+  "SET race.sleep_dating_profiles_update = '2:race.s1';
+   SELECT race.call(race.id('03'), 'SELECT public.set_my_path(''just_me'')') ->> 'tab';" \
+  "$SWITCH_GH" \
+  "SELECT CASE WHEN NOT ($SWITCH_RAN) THEN 'the switch did not run'
+               WHEN race.enrol(race.id('03')) = 'paused/path_change'
+                    AND (SELECT path FROM public.users WHERE id = race.id('03')) = 'just_me'
+               THEN 'ok' ELSE 'path pause lost: ' || coalesce(race.enrol(race.id('03')), 'none') END;" serialised
+
 run "country change (GB to GH) vs the global flag off" \
   "SELECT race.reset(); ALTER SEQUENCE race.s1 RESTART;
    SELECT race.person('01', 'GB', 'TLI', 'woman', ARRAY['woman']), race.person('02', 'GB', 'TLI', 'woman', ARRAY['woman']);
@@ -262,6 +320,146 @@ run "withdrawal across the border vs the country switch" "$FX_XB" \
   "$SWITCH_GH" \
   "SELECT CASE WHEN race.enrol(race.id('06')) = 'exited/-' AND race.enrol(race.id('07')) = 'paused/same_gender_switch'
                THEN 'ok' ELSE 'withdrawal or switch lost: ' || concat_ws(' ', race.enrol(race.id('06')), race.enrol(race.id('07'))) END;"
+
+# Spec 2 W2 (migration 1): begin_dating_enrollment and the 15-minute gate
+# cron take the shared lock order too. A begin re-tap and the cron each
+# serialise with the country switch; the cron against the global flag off
+# (country locks in id order across GH and GB) may meet a real deadlock,
+# which the switch's own retry absorbs: nobody's pause is lost, nothing is
+# left pending. Everyone here fails gate 2 (EULA v1) so the cron pauses them.
+# The begin re-tap lands first (it holds the setup lock), then the switch
+# pauses the same-gender draft: begin's write and the switch's pause both hold.
+run "gate cron vs the country switch" "$FX_GH
+   UPDATE public.users SET eula_version = '1' WHERE id::text LIKE '5e2f%';" \
+  "SET race.sleep_dating_profiles_update = '2:race.s1';
+   SELECT public.enforce_dating_lifecycle_gates();" \
+  "$SWITCH_GH" \
+  "SELECT CASE WHEN (public.dating_country_config('GH')).same_gender_enabled OR EXISTS (SELECT 1 FROM private.dating_kill_switch_pending)
+               THEN 'the switch did not run'
+               WHEN (SELECT count(*) FROM public.dating_enrollments
+                      WHERE user_id IN (race.id('01'), race.id('02'), race.id('03')) AND state = 'paused' AND pause_reason IS NOT NULL) = 3
+               THEN 'ok' ELSE 'a pause lost: ' || concat_ws(' ', race.enrol(race.id('01')), race.enrol(race.id('02')), race.enrol(race.id('03'))) END;" serialised
+
+run "begin (re-tap) vs the country switch" "$FX_GH
+   UPDATE public.dating_enrollments SET state = 'profile_draft', opted_in_at = now() - interval '1 day' WHERE user_id = race.id('02');" \
+  "SET race.sleep_dating_enrollments_update = '2:race.s1';
+   SELECT race.call(race.id('02'), format('SELECT to_jsonb(public.begin_dating_enrollment(''dating-2.0'', %L))', race.key('begin'))) ->> 'state';" \
+  "$SWITCH_GH" \
+  "SELECT CASE WHEN NOT ($SWITCH_RAN) THEN 'the switch did not run'
+               WHEN race.enrol(race.id('02')) = 'paused/same_gender_switch'
+                    AND (SELECT e.terms_version = 'dating-2.0' AND e.opted_in_at > now() - interval '1 minute'
+                           FROM public.dating_enrollments AS e WHERE e.user_id = race.id('02'))
+               THEN 'ok' ELSE 'begin lost: ' || coalesce(race.enrol(race.id('02')), 'none') END;" serialised
+
+run "gate cron vs the global flag off" \
+  "SELECT race.reset(); ALTER SEQUENCE race.s1 RESTART;
+   SELECT race.person('01', 'GH', 'AA', 'woman', ARRAY['woman']), race.person('02', 'GB', 'TLI', 'woman', ARRAY['woman']);
+   UPDATE public.users SET eula_version = '1' WHERE id::text LIKE '5e2f%';" \
+  "SET race.sleep_dating_profiles_update = '2:race.s1';
+   SELECT public.enforce_dating_lifecycle_gates();" \
+  "SELECT pg_sleep(0.5); UPDATE public.feature_flags SET enabled = false WHERE key = 'dating_same_gender_matching';" \
+  "SELECT CASE WHEN EXISTS (SELECT 1 FROM private.dating_kill_switch_pending) THEN 'the switch left work pending'
+               WHEN (SELECT count(*) FROM public.dating_enrollments
+                      WHERE user_id IN (race.id('01'), race.id('02')) AND state = 'paused' AND pause_reason IS NOT NULL) = 2
+               THEN 'ok' ELSE 'a pause lost: ' || concat_ws(' ', race.enrol(race.id('01')), race.enrol(race.id('02'))) END;"
+
+# Spec 2 W2 Task 3 fix round 1 (batch-2 review C-1, I-1): the switch first.
+# It holds Ghana's same-gender lock about 8s; the path change starts 1s in,
+# under an Auth-like 3s statement timeout. The path change completes (its
+# pause gives up and is counted); the gate cron's sweep then pauses it.
+run "path change behind a long country switch (3s statement timeout)" "$FX_GH
+   INSERT INTO race.outcome SELECT 'failed_before', coalesce(sum(count), 0)::text FROM public.metric_counters WHERE key = 'dating.path_pause.failed';" \
+  "SELECT pg_sleep(1); SET statement_timeout = '3s';
+   SELECT race.call(race.id('03'), 'SELECT public.set_my_path(''just_me'')') ->> 'tab';" \
+  "SET race.sleep_dating_profiles_update = '8:race.s1';
+   SELECT public.publish_country_config('GH', '{\"same_gender_enabled\": false}') ->> 'affected';" \
+  "SELECT CASE WHEN NOT ($SWITCH_RAN) THEN 'the switch did not run'
+               WHEN (SELECT path FROM public.users WHERE id = race.id('03')) IS DISTINCT FROM 'just_me' THEN 'the path change was lost'
+               WHEN race.enrol(race.id('03')) IS DISTINCT FROM 'active/-' THEN 'the pause did not wait: ' || coalesce(race.enrol(race.id('03')), 'none')
+               WHEN (SELECT coalesce(sum(count), 0) FROM public.metric_counters WHERE key = 'dating.path_pause.failed')
+                    <= (SELECT result::bigint FROM race.outcome WHERE name = 'failed_before') THEN 'the failed pause was not counted'
+               ELSE 'ok' END AS before_sweep \\gset
+   SELECT public.enforce_dating_lifecycle_gates();
+   SELECT CASE WHEN :'before_sweep' <> 'ok' THEN :'before_sweep'
+               WHEN race.enrol(race.id('03')) = 'paused/path_change' THEN 'ok'
+               ELSE 'not swept: ' || coalesce(race.enrol(race.id('03')), 'none') END;" serialised
+
+# Resume vs a path change, the path change first: it holds the setup lock
+# while it pauses; resume waits, then reads Just for me and refuses.
+run "path change (first) vs resume" "$FX_GH" \
+  "SET race.sleep_dating_enrollments_update = '2:race.s1';
+   SELECT race.call(race.id('03'), 'SELECT public.set_my_path(''just_me'')') ->> 'tab';" \
+  "SELECT pg_sleep(0.5);
+   SELECT race.try('resume', race.id('03'), format('SELECT to_jsonb(public.resume_dating_mode(%L))', race.key('resume')));" \
+  "SELECT CASE WHEN (SELECT result FROM race.outcome WHERE name = 'resume') IS DISTINCT FROM 'path_not_dating'
+               THEN 'resume was not refused: ' || coalesce((SELECT result FROM race.outcome WHERE name = 'resume'), 'none')
+               WHEN (SELECT path FROM public.users WHERE id = race.id('03')) = 'just_me' AND race.enrol(race.id('03')) = 'paused/path_change'
+               THEN 'ok' ELSE 'path pause lost: ' || coalesce(race.enrol(race.id('03')), 'none') END;" serialised
+
+# Resume first: it holds the setup lock while it resumes; the path pause
+# waits (its own 1s lock_timeout, retried), then pauses the resumed person.
+run "resume (first) vs path change" "$FX_GH
+   SELECT race.stub_complete();
+   UPDATE public.dating_enrollments SET state = 'paused', pause_reason = 'user', paused_at = now() WHERE user_id = race.id('03');
+   UPDATE public.dating_profiles SET profile_state = 'paused' WHERE user_id = race.id('03');" \
+  "SET race.sleep_dating_profiles_update = '2:race.s1';
+   SELECT race.try('resume', race.id('03'), format('SELECT to_jsonb(public.resume_dating_mode(%L))', race.key('resume')));" \
+  "SELECT pg_sleep(0.5);
+   SELECT race.call(race.id('03'), 'SELECT public.set_my_path(''just_me'')') ->> 'tab';" \
+  "SELECT CASE WHEN (SELECT result FROM race.outcome WHERE name = 'resume') IS DISTINCT FROM 'ok'
+               THEN 'resume refused: ' || coalesce((SELECT result FROM race.outcome WHERE name = 'resume'), 'none')
+               WHEN (SELECT path FROM public.users WHERE id = race.id('03')) = 'just_me' AND race.enrol(race.id('03')) = 'paused/path_change'
+               THEN 'ok' ELSE 'path pause lost: ' || coalesce(race.enrol(race.id('03')), 'none') END;" serialised
+
+# Spec 2 W2 Task 4 fix round 1 (batch-3 review I-1, I-2): person 02 (a
+# Ghanaian woman meeting women) is in a gentle wait with saved answers. A
+# clear and a D0 open each start 1s into an 8s country switch, or into an
+# 5s hold of 02's own setup lock (a setup writer), under an Auth-like 3s
+# statement timeout: both answer at once, and the switch still runs.
+FX_WAIT="DELETE FROM public.relationships WHERE user_a::text LIKE '5e2f%' OR user_b::text LIKE '5e2f%';
+$FX_GH
+INSERT INTO auth.users (id, phone, phone_confirmed_at, created_at) VALUES (race.id('09'), '1555870909', now(), now());
+INSERT INTO public.users (id, phone, display_name, path, created_at) VALUES (race.id('09'), '1555870909', 'Race Ex', 'dating', now());
+INSERT INTO public.relationships (user_a, user_b, status, ended_at) VALUES (race.id('02'), race.id('09'), 'ended', now() - interval '5 days');
+INSERT INTO public.dating_gentle_wait_reflections (user_id, answers, saved_at) VALUES (race.id('02'), '{\"q1\": \"private words\"}', now());
+INSERT INTO race.outcome SELECT 'skipped_before', coalesce(sum(count), 0)::text FROM public.metric_counters WHERE key = 'dating.gentle_wait.seen_skipped';"
+REFLECTION="(SELECT answers::text || '/' || CASE WHEN seen_at IS NULL THEN 'unseen' ELSE 'seen' END
+               FROM public.dating_gentle_wait_reflections WHERE user_id = race.id('02'))"
+SWITCH_LONG="SET race.sleep_dating_profiles_update = '8:race.s1';
+   SELECT public.publish_country_config('GH', '{\"same_gender_enabled\": false}') ->> 'affected';"
+OWN_LOCK="BEGIN; SELECT pg_advisory_xact_lock(hashtext('dating_setup'), hashtext(race.id('02')::text)); SELECT pg_sleep(5); COMMIT;"
+
+run "clear a reflection behind a long country switch (3s statement timeout)" "$FX_WAIT" \
+  "SELECT pg_sleep(1); SET statement_timeout = '3s';
+   SELECT race.call(race.id('02'), 'SELECT public.save_gentle_wait_reflection(''{}'')') ->> 'ok';" \
+  "$SWITCH_LONG" \
+  "SELECT CASE WHEN NOT ($SWITCH_RAN) THEN 'the switch did not run'
+               WHEN (SELECT answers IS NULL AND saved_at IS NULL FROM public.dating_gentle_wait_reflections WHERE user_id = race.id('02'))
+               THEN 'ok' ELSE 'not cleared: ' || coalesce($REFLECTION, 'none') END;" serialised
+
+run "open D0 behind a long country switch (3s statement timeout)" "$FX_WAIT" \
+  "SELECT pg_sleep(1); SET statement_timeout = '3s';
+   SELECT race.call(race.id('02'), 'SELECT public.get_my_gentle_wait_reflection()') ->> 'ok';" \
+  "$SWITCH_LONG" \
+  "SELECT CASE WHEN NOT ($SWITCH_RAN) THEN 'the switch did not run'
+               WHEN $REFLECTION = '{\"q1\": \"private words\"}/seen' THEN 'ok'
+               ELSE 'view not marked: ' || coalesce($REFLECTION, 'none') END;" serialised
+
+run "clear a reflection behind the person's own setup write (3s statement timeout)" "$FX_WAIT" \
+  "SELECT pg_sleep(1); SET statement_timeout = '3s';
+   SELECT race.call(race.id('02'), 'SELECT public.save_gentle_wait_reflection(''{}'')') ->> 'ok';" \
+  "$OWN_LOCK" \
+  "SELECT CASE WHEN (SELECT answers IS NULL AND saved_at IS NULL FROM public.dating_gentle_wait_reflections WHERE user_id = race.id('02'))
+               THEN 'ok' ELSE 'not cleared: ' || coalesce($REFLECTION, 'none') END;"
+
+run "open D0 behind the person's own setup write (3s statement timeout)" "$FX_WAIT" \
+  "SELECT pg_sleep(1); SET statement_timeout = '3s';
+   SELECT race.call(race.id('02'), 'SELECT public.get_my_gentle_wait_reflection()') ->> 'ok';" \
+  "$OWN_LOCK" \
+  "SELECT CASE WHEN $REFLECTION IS DISTINCT FROM '{\"q1\": \"private words\"}/unseen' THEN 'the view was marked under a held lock: ' || coalesce($REFLECTION, 'none')
+               WHEN (SELECT coalesce(sum(count), 0) FROM public.metric_counters WHERE key = 'dating.gentle_wait.seen_skipped')
+                    <= (SELECT result::bigint FROM race.outcome WHERE name = 'skipped_before') THEN 'the skipped view was not counted'
+               ELSE 'ok' END;"
 
 $P -c "SELECT race.reset();" > /dev/null 2>&1
 exit $fail

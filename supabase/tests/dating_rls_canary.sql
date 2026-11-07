@@ -95,7 +95,6 @@ INSERT INTO allowed_fn (sig, clients) VALUES
   ('dating_former_partner_excluded(uuid,uuid)', ''),
   ('dating_has_historical_consent(uuid)', ''),
   ('dating_has_relationship(uuid)', ''),
-  ('dating_healing_gates_hold(uuid)', ''),
   ('dating_normalize_scalar(numeric,numeric,numeric)', ''),
   ('dating_pair_key(uuid,uuid)', ''),
   ('dating_pair_passes_hard_filters(uuid,uuid)', ''),
@@ -331,6 +330,33 @@ INSERT INTO allowed_fn (sig, clients, service) VALUES
   ('private.dating_kill_switch_mark(text,text)', '', ''), -- batch-11 fix round 1, I-1
   ('private.dating_switch_identity(uuid,jsonb)', '', ''),
   ('private.dating_switch_read(bytea)', '', '');
+-- ---------------------------------------------------------------------
+-- W2 (migration 1): the gentle wait's open date is the database's own.
+-- ---------------------------------------------------------------------
+INSERT INTO allowed_fn (sig, clients, service) VALUES
+  ('private.dating_gentle_wait_opens_at(uuid)', '', '');
+-- ---------------------------------------------------------------------
+-- W2 (migration 2): the users.path trigger function is no API role's.
+-- ---------------------------------------------------------------------
+INSERT INTO allowed_fn (sig, clients, service) VALUES
+  ('dating_pause_on_path_change()', '', ''),
+  -- W2 Task 3 fix round 1 (I-1): the one path_change writer, the trigger's and the gate cron's.
+  ('private.dating_apply_path_pause(uuid)', '', '');
+-- ---------------------------------------------------------------------
+-- W2 (migration 3): the reflection table is no API role's (the service
+-- role included); the home and the two reflection RPCs are the app's; the
+-- helpers are the database's own.
+-- ---------------------------------------------------------------------
+INSERT INTO allowed_rel (name, authenticated, service_dml) VALUES
+  ('dating_gentle_wait_reflections', '', '');
+INSERT INTO allowed_fn (sig, clients, service) VALUES
+  ('get_dating_home()', 'authenticated', ''),
+  ('get_my_gentle_wait_reflection()', 'authenticated', ''),
+  ('private.dating_first_drop_at(uuid,timestamp with time zone)', '', ''),
+  ('private.dating_gentle_wait_can_shorten(uuid)', '', ''), -- W2 final review M-4
+  ('private.dating_next_step(uuid)', '', ''),
+  ('private.dating_unavailable_state(uuid)', '', ''),
+  ('save_gentle_wait_reflection(jsonb)', 'authenticated', '');
 -- ---------------------------------------------------------------------
 -- Checks (every batch adds its rows above this line).
 -- ---------------------------------------------------------------------

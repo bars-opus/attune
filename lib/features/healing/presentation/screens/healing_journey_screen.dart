@@ -169,38 +169,9 @@ class HealingJourneyScreen extends ConsumerWidget {
                 ),
                 const Spacer(),
 
+                // Spec 2 W2 (§2.1): a finished journey offers no Dating
+                // outcome; Healing never decides when someone can date.
                 if (journey.isFullyComplete) ...[
-                  if (journey.isEligibleForDating)
-                    Container(
-                      padding: EdgeInsets.all(Spacing.md.w),
-                      decoration: BoxDecoration(
-                        color: colorScheme.primary.withValues(alpha: 0.05),
-                        borderRadius: BorderRadius.circular(
-                          BorderRadiusTokens.md.r,
-                        ),
-                        border: Border.all(
-                          color: colorScheme.primary.withValues(alpha: 0.2),
-                        ),
-                      ),
-                      child: Column(
-                        children: [
-                          Text(
-                            'You can choose whether to explore Dating Mode when it becomes available.',
-                            style: textTheme.bodyMedium,
-                            textAlign: TextAlign.center,
-                          ),
-                          Gap(Spacing.md.h),
-                          Text(
-                            'Dating Mode is coming soon.',
-                            style: textTheme.bodySmall?.copyWith(
-                              color: colorScheme.onSurface.withValues(
-                                alpha: 0.6,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
                   Gap(Spacing.md.h),
                   _RetakeReadinessButton(journey: journey),
                 ] else ...[

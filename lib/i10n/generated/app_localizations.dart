@@ -5694,6 +5694,150 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Your entries are saved and stay private to you.'**
   String get journal_supportPatternsAwayBody;
+
+  /// Under the v1 Dating dashboard's heading when the eligibility answer has no message of its own (Spec 2 W2 batch 4 fix round 1, I-1). Never names Healing: Healing never decides when someone can date (§2.1). W3 replaces this screen.
+  ///
+  /// In en, this message translates to:
+  /// **'You always opt in separately, and nothing starts until you do.'**
+  String get dating_dashboardFallbackReason;
+
+  /// Spec 2 D0 (the gentle wait): the title. Clinician-reviewed copy (W2 gate).
+  ///
+  /// In en, this message translates to:
+  /// **'Before you begin'**
+  String get dating_gentleWaitTitle;
+
+  /// Spec 2 D0: when the relationship ended and when Dating opens. Both dates in full words (MyDateFormat.toDate). Clinician-reviewed copy (W2 gate).
+  ///
+  /// In en, this message translates to:
+  /// **'Your relationship on Attune ended on {endDate}. Dating opens for you on {openDate}, when your shared space closes. If you both close it sooner, Dating opens then.'**
+  String dating_gentleWaitBody(String endDate, String openDate);
+
+  /// Spec 2 D0: why there is a wait. Clinician-reviewed copy (W2 gate).
+  ///
+  /// In en, this message translates to:
+  /// **'This pause is because your relationship ended here. It isn\'t a judgement about you.'**
+  String get dating_gentleWaitNotJudgement;
+
+  /// Spec 2 D0: the heading above the private reflection.
+  ///
+  /// In en, this message translates to:
+  /// **'Three questions, just for you'**
+  String get dating_gentleWaitQuestionsTitle;
+
+  /// Spec 2 D0: under the reflection heading.
+  ///
+  /// In en, this message translates to:
+  /// **'Only you can see these, and nothing is scored.'**
+  String get dating_gentleWaitQuestionsHint;
+
+  /// Spec 2 D0: reflection question 1 (optional answer, up to 500 characters).
+  ///
+  /// In en, this message translates to:
+  /// **'What do you want to carry into your next relationship?'**
+  String get dating_gentleWaitQuestion1;
+
+  /// Spec 2 D0: reflection question 2 (optional answer, up to 500 characters).
+  ///
+  /// In en, this message translates to:
+  /// **'What are you hoping for now?'**
+  String get dating_gentleWaitQuestion2;
+
+  /// Spec 2 D0: reflection question 3 (optional answer, up to 500 characters).
+  ///
+  /// In en, this message translates to:
+  /// **'How will you know if you need more time?'**
+  String get dating_gentleWaitQuestion3;
+
+  /// Spec 2 D0: under each answer, how many characters it holds.
+  ///
+  /// In en, this message translates to:
+  /// **'{count} of {max} characters'**
+  String dating_gentleWaitAnswerCount(int count, int max);
+
+  /// Spec 2 D0: the secondary button that saves the three answers.
+  ///
+  /// In en, this message translates to:
+  /// **'Save my answers'**
+  String get dating_gentleWaitSave;
+
+  /// Spec 2 D0: read out after the answers are saved.
+  ///
+  /// In en, this message translates to:
+  /// **'Your answers are saved.'**
+  String get dating_gentleWaitSaved;
+
+  /// Spec 2 D0: the card that opens Healing. Clinician-reviewed copy (W2 gate).
+  ///
+  /// In en, this message translates to:
+  /// **'Healing is here if you want it. It\'s there to help, and it\'s never required.'**
+  String get dating_gentleWaitHealing;
+
+  /// Spec 2 D0: the primary button; setup runs as usual and introductions start on the open date.
+  ///
+  /// In en, this message translates to:
+  /// **'Set up Dating now'**
+  String get dating_gentleWaitSetUp;
+
+  /// Spec 2 §3.0: the banner on a Dating screen while the phone is offline.
+  ///
+  /// In en, this message translates to:
+  /// **'You\'re offline. Dating needs a connection.'**
+  String get dating_offline;
+
+  /// Spec 2 §3.0: under a save button that is off while the phone is offline.
+  ///
+  /// In en, this message translates to:
+  /// **'Connect to save this answer.'**
+  String get dating_connectToSave;
+
+  /// Spec 2 §3.0: a server failure on a Dating screen.
+  ///
+  /// In en, this message translates to:
+  /// **'Something went wrong. Try again.'**
+  String get dating_errorGeneric;
+
+  /// Spec 2 §3.0: the button that tries a failed Dating read again.
+  ///
+  /// In en, this message translates to:
+  /// **'Retry'**
+  String get dating_retry;
+
+  /// Spec 2 D0: the save button while every answer is blank and answers are saved; saving blank answers clears them (B3 carry).
+  ///
+  /// In en, this message translates to:
+  /// **'Clear my answers'**
+  String get dating_gentleWaitClear;
+
+  /// Spec 2 D0: read out after the answers are cleared.
+  ///
+  /// In en, this message translates to:
+  /// **'Your answers are cleared.'**
+  String get dating_gentleWaitCleared;
+
+  /// Spec 2 D0: the server was busy saving or clearing (reason busy); calm, never an error. Your answers stay in the fields. DV reviewer read (W2 gate).
+  ///
+  /// In en, this message translates to:
+  /// **'This is taking a little longer than usual. Your answers are still here, so try again in a moment.'**
+  String get dating_gentleWaitBusy;
+
+  /// Spec 2 §3.0: the server was busy on a Dating read; calm, never an error; a Retry button follows. DV reviewer read (W2 gate).
+  ///
+  /// In en, this message translates to:
+  /// **'This is taking a little longer than usual. Try again in a moment.'**
+  String get dating_busy;
+
+  /// Spec 2 D0: the server was busy clearing the answers (reason busy); calm, never an error, and never says the answers are kept. DV reviewer read (W2 gate).
+  ///
+  /// In en, this message translates to:
+  /// **'This is taking a little longer than usual. Try clearing again in a moment.'**
+  String get dating_gentleWaitClearBusy;
+
+  /// Spec 2 D0: when the relationship ended and when Dating opens, when closing the shared space together can no longer end the wait sooner (the former partner's account is gone, or the person moved on; W2 final review M-4). Both dates in full words (MyDateFormat.toDate). Clinician- and DV-reviewed copy (W2 gate).
+  ///
+  /// In en, this message translates to:
+  /// **'Your relationship on Attune ended on {endDate}. Dating opens for you on {openDate}.'**
+  String dating_gentleWaitBodyNoShortcut(String endDate, String openDate);
 }
 
 class _AppLocalizationsDelegate extends LocalizationsDelegate<AppLocalizations> {

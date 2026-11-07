@@ -120,9 +120,10 @@ class DatingDashboardScreen extends ConsumerWidget {
   ) {
     final textTheme = Theme.of(context).textTheme;
     final isEligible = eligibility['is_eligible'] == true;
+    // Spec 2 W2 (§2.1): the fallback never names Healing as a gate.
     final reason =
         eligibility['message'] as String? ??
-        'Dating Mode unlocks only after the Healing eligibility transition and a separate opt-in.';
+        AppLocalizations.of(context)!.dating_dashboardFallbackReason;
 
     return Center(
       child: Padding(

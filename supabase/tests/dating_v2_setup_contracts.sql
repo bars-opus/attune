@@ -1445,7 +1445,9 @@ BEGIN
   -- Spec 2 W1d (Task 12): delete_dating_profile is gone; exit's hard delete
   -- (queues the photos) and readiness's completeness (counts them) are the
   -- database's own.
-  IF v_got IS DISTINCT FROM 'private.dating_exit_internal(uuid, boolean):; public.create_dating_photo_upload_intent(text):; public.dating_photos_queue_media_before_delete():; public.dating_profile_complete(uuid):; public.delete_dating_profile_photo(uuid):authenticated; public.get_dating_operational_health():service_role; public.get_dating_profile_preview():authenticated; public.insert_dating_profile_photo(uuid, smallint):; public.list_dating_profile_photos():authenticated; public.prepare_account_deletion(uuid):service_role' THEN
+  -- Spec 2 W2: get_dating_home's resume step counts the person's own
+  -- approved photos (private.dating_next_step, no API role).
+  IF v_got IS DISTINCT FROM 'private.dating_exit_internal(uuid, boolean):; private.dating_next_step(uuid):; public.create_dating_photo_upload_intent(text):; public.dating_photos_queue_media_before_delete():; public.dating_profile_complete(uuid):; public.delete_dating_profile_photo(uuid):authenticated; public.get_dating_operational_health():service_role; public.get_dating_profile_preview():authenticated; public.insert_dating_profile_photo(uuid, smallint):; public.list_dating_profile_photos():authenticated; public.prepare_account_deletion(uuid):service_role' THEN
     RAISE EXCEPTION 'CONTRACT VIOLATED: the functions reading Dating photos changed (review photos after mutual interest): %', v_got;
   END IF;
 END $$;

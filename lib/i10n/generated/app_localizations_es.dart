@@ -3046,4 +3046,82 @@ class AppLocalizationsEs extends AppLocalizations {
 
   @override
   String get journal_supportPatternsAwayBody => 'Your entries are saved and stay private to you.';
+
+  @override
+  String get dating_dashboardFallbackReason => 'You always opt in separately, and nothing starts until you do.';
+
+  @override
+  String get dating_gentleWaitTitle => 'Before you begin';
+
+  @override
+  String dating_gentleWaitBody(String endDate, String openDate) {
+    return 'Your relationship on Attune ended on $endDate. Dating opens for you on $openDate, when your shared space closes. If you both close it sooner, Dating opens then.';
+  }
+
+  @override
+  String get dating_gentleWaitNotJudgement => 'This pause is because your relationship ended here. It isn\'t a judgement about you.';
+
+  @override
+  String get dating_gentleWaitQuestionsTitle => 'Three questions, just for you';
+
+  @override
+  String get dating_gentleWaitQuestionsHint => 'Only you can see these, and nothing is scored.';
+
+  @override
+  String get dating_gentleWaitQuestion1 => 'What do you want to carry into your next relationship?';
+
+  @override
+  String get dating_gentleWaitQuestion2 => 'What are you hoping for now?';
+
+  @override
+  String get dating_gentleWaitQuestion3 => 'How will you know if you need more time?';
+
+  @override
+  String dating_gentleWaitAnswerCount(int count, int max) {
+    return '$count of $max characters';
+  }
+
+  @override
+  String get dating_gentleWaitSave => 'Save my answers';
+
+  @override
+  String get dating_gentleWaitSaved => 'Your answers are saved.';
+
+  @override
+  String get dating_gentleWaitHealing => 'Healing is here if you want it. It\'s there to help, and it\'s never required.';
+
+  @override
+  String get dating_gentleWaitSetUp => 'Set up Dating now';
+
+  @override
+  String get dating_offline => 'You\'re offline. Dating needs a connection.';
+
+  @override
+  String get dating_connectToSave => 'Connect to save this answer.';
+
+  @override
+  String get dating_errorGeneric => 'Something went wrong. Try again.';
+
+  @override
+  String get dating_retry => 'Retry';
+
+  @override
+  String get dating_gentleWaitClear => 'Clear my answers';
+
+  @override
+  String get dating_gentleWaitCleared => 'Your answers are cleared.';
+
+  @override
+  String get dating_gentleWaitBusy => 'This is taking a little longer than usual. Your answers are still here, so try again in a moment.';
+
+  @override
+  String get dating_busy => 'This is taking a little longer than usual. Try again in a moment.';
+
+  @override
+  String get dating_gentleWaitClearBusy => 'This is taking a little longer than usual. Try clearing again in a moment.';
+
+  @override
+  String dating_gentleWaitBodyNoShortcut(String endDate, String openDate) {
+    return 'Your relationship on Attune ended on $endDate. Dating opens for you on $openDate.';
+  }
 }

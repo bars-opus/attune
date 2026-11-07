@@ -71,7 +71,7 @@ class AboutAttuneDocs implements DocumentationModule {
           id: 'about_lifecycle',
           title: 'A companion through the whole arc',
           content:
-              'Relationships end — so Attune doesn\'t stop there. A private healing journey helps you make sense of an ending, on your own timeline. And when you\'re genuinely ready (never rushed, never based on loneliness), Dating Mode can introduce you to people matched on who you actually are in relationships — not a photo, not a swipe.',
+              'Relationships end — so Attune doesn\'t stop there. A private healing journey helps you make sense of an ending, on your own timeline. And when you\'re genuinely ready (never rushed, never based on loneliness), Dating Mode can introduce you to a few people, based on what you both say you want — not a photo, not a swipe.',
           numberPrefix: '1',
           type: ManualContentType.text,
         ),

@@ -1911,7 +1911,9 @@ BEGIN
   EXECUTE v_def;
 END $$;
 
--- G6. D18 with the real pause: Relationship pauses Dating; Just for me doesn't.
+-- G6. D18 with the real pause: Relationship pauses Dating with Spec 1's
+--     'relationship'; Just for me is paused by Spec 2 W2's path trigger with
+--     'path_change' (amended by Spec 2 W2: until then nothing paused it).
 DO $$
 BEGIN
   PERFORM pg_temp.as_user('5f1a0000-0000-0000-0000-000000000036');
@@ -1920,8 +1922,10 @@ BEGIN
   PERFORM pg_temp.as_user('5f1a0000-0000-0000-0000-000000000037');
   PERFORM public.set_my_path('just_me');
   RESET ROLE;
-  IF (SELECT state FROM public.dating_enrollments WHERE user_id = '5f1a0000-0000-0000-0000-000000000036') <> 'paused'
-     OR (SELECT state FROM public.dating_enrollments WHERE user_id = '5f1a0000-0000-0000-0000-000000000037') <> 'active' THEN
+  IF (SELECT state || '/' || coalesce(pause_reason, '-') FROM public.dating_enrollments
+       WHERE user_id = '5f1a0000-0000-0000-0000-000000000036') IS DISTINCT FROM 'paused/relationship'
+     OR (SELECT state || '/' || coalesce(pause_reason, '-') FROM public.dating_enrollments
+          WHERE user_id = '5f1a0000-0000-0000-0000-000000000037') IS DISTINCT FROM 'paused/path_change' THEN
     RAISE EXCEPTION 'CONTRACT VIOLATED: the D18 pause rule is wrong with the real pause function';
   END IF;
 END $$;

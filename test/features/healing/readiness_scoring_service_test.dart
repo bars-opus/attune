@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:attune/features/healing/domain/services/readiness_scoring_service.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -45,24 +47,6 @@ void main() {
       expect(score, 50);
     });
 
-    test('does not allow score 70 to qualify', () {
-      final eligible = ReadinessScoringService.isEligibleForDating(
-        score: 70,
-        breakupAt: DateTime.now().subtract(const Duration(days: 56)),
-      );
-
-      expect(eligible, isFalse);
-    });
-
-    test('requires eight weeks as a separate gate', () {
-      final eligible = ReadinessScoringService.isEligibleForDating(
-        score: 71,
-        breakupAt: DateTime.now().subtract(const Duration(days: 55)),
-      );
-
-      expect(eligible, isFalse);
-    });
-
     test('rejects an incomplete answer set rather than scoring it', () {
       // A partial submission must not be scored: six answers out of seven
       // would produce a number that looks like a readiness score and is
@@ -97,28 +81,6 @@ void main() {
       );
     });
 
-    test('a high score still fails inside the eight-week window', () {
-      // Both gates are independent and both must hold. This is the one an
-      // impatient user hits: they feel ready, and the clock disagrees.
-      expect(
-        ReadinessScoringService.isEligibleForDating(
-          score: 100,
-          breakupAt: DateTime.now().subtract(const Duration(days: 55)),
-        ),
-        isFalse,
-      );
-    });
-
-    test('the eight-week boundary is inclusive on the far side', () {
-      expect(
-        ReadinessScoringService.isEligibleForDating(
-          score: 71,
-          breakupAt: DateTime.now().subtract(const Duration(days: 57)),
-        ),
-        isTrue,
-      );
-    });
-
     test('the retake date is a week after the attempt', () {
       final attempt = DateTime(2026, 3, 1);
       expect(
@@ -130,11 +92,35 @@ void main() {
     test('a sub-threshold result never names a date', () {
       // Copy check: someone who did not pass must not be handed a countdown
       // to when they will. The message points at the work, not the clock.
-      final message = ReadinessScoringService.getResultMessage(
-        40,
-        DateTime.now().subtract(const Duration(days: 400)),
-      );
+      final message = ReadinessScoringService.getResultMessage(40);
       expect(message, isNot(contains('until')));
+    });
+
+    // Spec 2 W2 (§2.1, R7): Healing never decides anything about Dating.
+    test('no result message names Dating or a date', () {
+      for (final score in [0, 40, 70, 71, 100]) {
+        final message = ReadinessScoringService.getResultMessage(score);
+        expect(message.toLowerCase(), isNot(contains('dating')));
+        expect(message, isNot(contains('until')));
+      }
+      expect(
+        ReadinessScoringService.getResultMessage(71),
+        'Your check-in is complete. Healing stays here whenever you want it.',
+      );
+      expect(
+        ReadinessScoringService.getResultMessage(70),
+        'Your answers suggest there may be more you want to explore. Go at your own pace.',
+      );
+    });
+
+    test('the service has no Dating eligibility left', () {
+      final source =
+          File(
+            'lib/features/healing/domain/services/readiness_scoring_service.dart',
+          ).readAsStringSync();
+      expect(source, isNot(contains('isEligibleForDating')));
+      expect(source, isNot(contains('getEligibilityDate')));
+      expect(source, isNot(contains('minimumWeeks')));
     });
   });
 }

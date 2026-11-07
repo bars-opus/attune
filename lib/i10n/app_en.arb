@@ -1795,5 +1795,134 @@
   "journal_supportPatternsAwayBody": "Your entries are saved and stay private to you.",
   "@journal_supportPatternsAwayBody": {
     "description": "Under journal_supportPatternsAway, on the Patterns tab after Not now on its support card (Spec 1 W9c, ruling PF-C6; batch-8 review M-5)."
+  },
+
+  "dating_dashboardFallbackReason": "You always opt in separately, and nothing starts until you do.",
+  "@dating_dashboardFallbackReason": {
+    "description": "Under the v1 Dating dashboard's heading when the eligibility answer has no message of its own (Spec 2 W2 batch 4 fix round 1, I-1). Never names Healing: Healing never decides when someone can date (§2.1). W3 replaces this screen."
+  },
+
+  "dating_gentleWaitTitle": "Before you begin",
+  "@dating_gentleWaitTitle": {
+    "description": "Spec 2 D0 (the gentle wait): the title. Clinician-reviewed copy (W2 gate)."
+  },
+  "dating_gentleWaitBody": "Your relationship on Attune ended on {endDate}. Dating opens for you on {openDate}, when your shared space closes. If you both close it sooner, Dating opens then.",
+  "@dating_gentleWaitBody": {
+    "description": "Spec 2 D0: when the relationship ended and when Dating opens. Both dates in full words (MyDateFormat.toDate). Clinician-reviewed copy (W2 gate).",
+    "placeholders": {
+      "endDate": {
+        "type": "String",
+        "example": "Sunday, November 1, 2026"
+      },
+      "openDate": {
+        "type": "String",
+        "example": "Tuesday, December 1, 2026"
+      }
+    }
+  },
+  "dating_gentleWaitNotJudgement": "This pause is because your relationship ended here. It isn't a judgement about you.",
+  "@dating_gentleWaitNotJudgement": {
+    "description": "Spec 2 D0: why there is a wait. Clinician-reviewed copy (W2 gate)."
+  },
+  "dating_gentleWaitQuestionsTitle": "Three questions, just for you",
+  "@dating_gentleWaitQuestionsTitle": {
+    "description": "Spec 2 D0: the heading above the private reflection."
+  },
+  "dating_gentleWaitQuestionsHint": "Only you can see these, and nothing is scored.",
+  "@dating_gentleWaitQuestionsHint": {
+    "description": "Spec 2 D0: under the reflection heading."
+  },
+  "dating_gentleWaitQuestion1": "What do you want to carry into your next relationship?",
+  "@dating_gentleWaitQuestion1": {
+    "description": "Spec 2 D0: reflection question 1 (optional answer, up to 500 characters)."
+  },
+  "dating_gentleWaitQuestion2": "What are you hoping for now?",
+  "@dating_gentleWaitQuestion2": {
+    "description": "Spec 2 D0: reflection question 2 (optional answer, up to 500 characters)."
+  },
+  "dating_gentleWaitQuestion3": "How will you know if you need more time?",
+  "@dating_gentleWaitQuestion3": {
+    "description": "Spec 2 D0: reflection question 3 (optional answer, up to 500 characters)."
+  },
+  "dating_gentleWaitAnswerCount": "{count} of {max} characters",
+  "@dating_gentleWaitAnswerCount": {
+    "description": "Spec 2 D0: under each answer, how many characters it holds.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      },
+      "max": {
+        "type": "int"
+      }
+    }
+  },
+  "dating_gentleWaitSave": "Save my answers",
+  "@dating_gentleWaitSave": {
+    "description": "Spec 2 D0: the secondary button that saves the three answers."
+  },
+  "dating_gentleWaitSaved": "Your answers are saved.",
+  "@dating_gentleWaitSaved": {
+    "description": "Spec 2 D0: read out after the answers are saved."
+  },
+  "dating_gentleWaitHealing": "Healing is here if you want it. It's there to help, and it's never required.",
+  "@dating_gentleWaitHealing": {
+    "description": "Spec 2 D0: the card that opens Healing. Clinician-reviewed copy (W2 gate)."
+  },
+  "dating_gentleWaitSetUp": "Set up Dating now",
+  "@dating_gentleWaitSetUp": {
+    "description": "Spec 2 D0: the primary button; setup runs as usual and introductions start on the open date."
+  },
+  "dating_offline": "You're offline. Dating needs a connection.",
+  "@dating_offline": {
+    "description": "Spec 2 §3.0: the banner on a Dating screen while the phone is offline."
+  },
+  "dating_connectToSave": "Connect to save this answer.",
+  "@dating_connectToSave": {
+    "description": "Spec 2 §3.0: under a save button that is off while the phone is offline."
+  },
+  "dating_errorGeneric": "Something went wrong. Try again.",
+  "@dating_errorGeneric": {
+    "description": "Spec 2 §3.0: a server failure on a Dating screen."
+  },
+  "dating_retry": "Retry",
+  "@dating_retry": {
+    "description": "Spec 2 §3.0: the button that tries a failed Dating read again."
+  },
+
+  "dating_gentleWaitClear": "Clear my answers",
+  "@dating_gentleWaitClear": {
+    "description": "Spec 2 D0: the save button while every answer is blank and answers are saved; saving blank answers clears them (B3 carry)."
+  },
+  "dating_gentleWaitCleared": "Your answers are cleared.",
+  "@dating_gentleWaitCleared": {
+    "description": "Spec 2 D0: read out after the answers are cleared."
+  },
+  "dating_gentleWaitBusy": "This is taking a little longer than usual. Your answers are still here, so try again in a moment.",
+  "@dating_gentleWaitBusy": {
+    "description": "Spec 2 D0: the server was busy saving or clearing (reason busy); calm, never an error. Your answers stay in the fields. DV reviewer read (W2 gate)."
+  },
+  "dating_busy": "This is taking a little longer than usual. Try again in a moment.",
+  "@dating_busy": {
+    "description": "Spec 2 §3.0: the server was busy on a Dating read; calm, never an error; a Retry button follows. DV reviewer read (W2 gate)."
+  },
+
+  "dating_gentleWaitClearBusy": "This is taking a little longer than usual. Try clearing again in a moment.",
+  "@dating_gentleWaitClearBusy": {
+    "description": "Spec 2 D0: the server was busy clearing the answers (reason busy); calm, never an error, and never says the answers are kept. DV reviewer read (W2 gate)."
+  },
+
+  "dating_gentleWaitBodyNoShortcut": "Your relationship on Attune ended on {endDate}. Dating opens for you on {openDate}.",
+  "@dating_gentleWaitBodyNoShortcut": {
+    "description": "Spec 2 D0: when the relationship ended and when Dating opens, when closing the shared space together can no longer end the wait sooner (the former partner's account is gone, or the person moved on; W2 final review M-4). Both dates in full words (MyDateFormat.toDate). Clinician- and DV-reviewed copy (W2 gate).",
+    "placeholders": {
+      "endDate": {
+        "type": "String",
+        "example": "Sunday, November 1, 2026"
+      },
+      "openDate": {
+        "type": "String",
+        "example": "Tuesday, December 1, 2026"
+      }
+    }
   }
 }

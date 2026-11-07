@@ -33,6 +33,11 @@ BEGIN;
 -- Spec 2 W1d: readiness v2 reads the encrypted answers, so the fixture
 -- encrypts them under a transaction-local field key.
 SET LOCAL app.settings.dating_field_key = 'dating-mode-contracts-field-key-0123456789abcdef';
+-- Spec 2 W2: the candidate check is dating_eligibility now (gates 1-6), so
+-- the fixture holds what its gates read: a ready exclusion key, adults by
+-- Spec 1's DOB with EULA v2, and Ghana open in each candidate's region.
+SET LOCAL app.settings.dating_exclusion_key = 'dating-mode-contracts-exclusion-key';
+SELECT private.seed_dating_exclusion_key_fingerprint() AS seeded \gset
 
 -- ---------------------------------------------------------------------------
 -- Fixture
@@ -75,6 +80,12 @@ BEGIN
     (c, '+233200000003', 'Dating C','dating'),
     (d, '+233200000004', 'Dating D','dating')
   ON CONFLICT (id) DO UPDATE SET phone=EXCLUDED.phone, display_name=EXCLUDED.display_name;
+  -- Spec 2 W2: gate 2 (Spec 1's DOB, EULA v2) and gate 6 (Ghana open).
+  UPDATE public.users SET eula_accepted_at = now(), eula_version = '2' WHERE id IN (a, b, c, d);
+  INSERT INTO public.account_birthdates (user_id, birth_date)
+  SELECT u, current_date - interval '30 years' FROM (VALUES (a), (b), (c), (d)) AS x(u)
+  ON CONFLICT (user_id) DO NOTHING;
+  PERFORM public.publish_country_config('GH', '{"dating_enabled": true}');
 
   -- Spec 2 W1d (batch-10 fix round 1, I-1): readiness v2 needs the D4
   -- consents standing, so the three candidates hold them.
@@ -104,7 +115,7 @@ BEGIN
   VALUES
     (a, 'Dating A','Accra','Intentional dating',NULL,'active','approved','verified','GH','AA','committed',now(),'2026-10-v1',false,'yes'),
     (b, 'Dating B','Kumasi','Intentional dating',NULL,'active','approved','verified','GH','AH','committed',now(),'2026-10-v1',false,'yes'),
-    (d, 'Dating D','Takoradi','Intentional dating',NULL,'active','approved','verified','GH','WP','committed',now(),'2026-10-v1',false,'yes'),
+    (d, 'Dating D','Takoradi','Intentional dating',NULL,'active','approved','verified','GH','AA','committed',now(),'2026-10-v1',false,'yes'), -- Spec 2 W2: an open region (gate 6)
     (c, 'Dating C','Tamale','Intentional dating',NULL,'draft','approved','verified','GH','NP','committed',now(),'2026-10-v1',false,'yes')
   ON CONFLICT (user_id) DO UPDATE
     SET profile_state=EXCLUDED.profile_state,
