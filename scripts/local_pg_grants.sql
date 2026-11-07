@@ -364,3 +364,12 @@ GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public
 -- Spec 2 W1d: the kill switch, its helpers and its flag trigger are the
 -- database's own; publishing and health stay the service role's.
 \i supabase/migrations/20261106200010_dating_v2_kill_switch_grants.sql
+
+-- Spec 1 W9d: admin_confirm_content_removal and prepare_account_deletion stay
+-- the service role's; the Opinions carry-over's stamps and helpers are no API
+-- role's.
+\i supabase/migrations/20261107100010_opinion_enforcement_records_grants.sql
+
+-- Spec 1 W9d: complete_sign_up stays the signed-in app's; the restore helper
+-- is no API role's.
+\i supabase/migrations/20261107110010_opinion_enforcement_restore_grants.sql

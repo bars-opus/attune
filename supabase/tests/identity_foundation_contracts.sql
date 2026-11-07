@@ -1031,10 +1031,10 @@ BEGIN
     RAISE EXCEPTION 'CONTRACT VIOLATED: the service role cannot read the metric report';
   END IF;
 
-  -- Seeds: 26 exact client keys (9 pre-auth), 10 server prefixes.
+  -- Seeds: 26 exact client keys (9 pre-auth), 11 server prefixes (Spec 1 W9d: 'opinions.').
   IF (SELECT count(*) FROM public.metric_client_keys WHERE owner_spec = 'spec1') <> 26
      OR (SELECT count(*) FROM public.metric_client_keys WHERE owner_spec = 'spec1' AND anon_ok) <> 9
-     OR (SELECT count(*) FROM public.metric_key_prefixes WHERE owner_spec = 'spec1') <> 10 THEN
+     OR (SELECT count(*) FROM public.metric_key_prefixes WHERE owner_spec = 'spec1') <> 11 THEN
     RAISE EXCEPTION 'CONTRACT VIOLATED: the Spec 1 metric seeds are wrong';
   END IF;
   -- No client key sits under a server prefix (P-12; batch 3 fix round 1,

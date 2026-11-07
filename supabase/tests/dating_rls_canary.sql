@@ -183,6 +183,19 @@ INSERT INTO allowed_fn (sig, clients, service) VALUES
   ('private.dating_stamp_restriction_on_insert()', '', ''),
   ('private.dating_restriction_user_immutable()', '', ''); -- W1 final fix (M-8)
 
+-- Spec 1 W9d (O4): the Opinions carry-over's helpers name enforcement_records
+-- and the Dating HMAC helpers; no API role's, the service role included.
+INSERT INTO allowed_fn (sig, clients, service) VALUES
+  ('private.opinion_carry_on_auth_user_delete()', '', ''),
+  ('private.opinion_carry_window()', '', ''),
+  ('private.opinion_deletion_carry(uuid,boolean)', '', ''),
+  ('private.opinion_enforcement_purge()', '', ''),
+  ('private.opinion_stamp_backfill()', '', ''),
+  ('private.opinion_stamp_enforcement(uuid,integer,timestamp with time zone)', '', '');
+-- Spec 1 W9d (O4): the sign-up restore helper, the same.
+INSERT INTO allowed_fn (sig, clients, service) VALUES
+  ('private.opinion_restore_on_sign_up(uuid)', '', '');
+
 -- ---------------------------------------------------------------------
 -- W1b (migration 4): the country model and the session context.
 -- service pinned (batch-2 carry): only the two service entry points keep
