@@ -321,3 +321,46 @@ GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public
 
 -- Spec 1 W9b: removing your own opinion or comment, signed in only.
 \i supabase/migrations/20261104130010_opinion_remove_own_grants.sql
+
+-- Spec 2 W1a: the Dating HMAC helpers are the database's own; the
+-- exclusion recorder and backfill stay the service role's.
+\i supabase/migrations/20261106100010_dating_v2_phone_hmac_grants.sql
+
+-- Spec 2 W1a: every Dating table's and function's client grants re-asserted;
+-- introductions, interest actions and matches revoked from the service role (S-5).
+\i supabase/migrations/20261106110010_dating_v2_enforcement_survival_grants.sql
+
+-- Spec 2 W1a: prepare_account_deletion stays the service role's.
+\i supabase/migrations/20261106120010_dating_v2_account_deletion_grants.sql
+
+-- Spec 2 W1b: anyone reads the open countries; publishing and the session
+-- context are the service role's; the tables are no client's.
+\i supabase/migrations/20261106130010_dating_v2_country_config_grants.sql
+
+-- Spec 2 W1b: eligibility and the home-summary seam are the database's own.
+\i supabase/migrations/20261106140010_dating_v2_eligibility_base_grants.sql
+
+-- Spec 2 W1c: the encrypted answers are no API role's, the service role's
+-- included; prompts and settings are the service role's; the key helpers are
+-- the database's own.
+\i supabase/migrations/20261106150010_dating_v2_profile_fields_grants.sql
+
+-- Spec 2 W1c: the D2-D8 writers are the signed-in app's; their helpers are
+-- the database's own.
+\i supabase/migrations/20261106160010_dating_v2_setup_writers_grants.sql
+
+-- Spec 2 W1c: the remaining writers and the own-profile readers are the
+-- signed-in app's.
+\i supabase/migrations/20261106170010_dating_v2_profile_readers_grants.sql
+
+-- Spec 2 W1d: never-introduce is reached through its three RPCs; the
+-- filter helper is the database's own.
+\i supabase/migrations/20261106180010_dating_v2_never_introduce_grants.sql
+
+-- Spec 2 W1d: the lifecycle RPCs are the signed-in app's; the hard delete,
+-- readiness and the parked trigger are the database's own.
+\i supabase/migrations/20261106190010_dating_v2_lifecycle_grants.sql
+
+-- Spec 2 W1d: the kill switch, its helpers and its flag trigger are the
+-- database's own; publishing and health stay the service role's.
+\i supabase/migrations/20261106200010_dating_v2_kill_switch_grants.sql

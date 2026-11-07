@@ -30,6 +30,10 @@
 
 BEGIN;
 
+-- Spec 2 W1d: readiness v2 reads the encrypted answers, so the fixture
+-- encrypts them under a transaction-local field key.
+SET LOCAL app.settings.dating_field_key = 'dating-mode-contracts-field-key-0123456789abcdef';
+
 -- ---------------------------------------------------------------------------
 -- Fixture
 -- ---------------------------------------------------------------------------
@@ -51,14 +55,17 @@ BEGIN
   ON CONFLICT (key) DO UPDATE SET enabled = true;
 
   -- Auth + app users.
+  -- Spec 2 W1a: Dating HMACs read Auth's number, so the fixture's phones
+  -- are on auth.users (Auth's form, no '+'), confirmed.
   INSERT INTO auth.users (
     id, aud, role, email, encrypted_password, email_confirmed_at,
-    raw_app_meta_data, raw_user_meta_data, created_at, updated_at
+    raw_app_meta_data, raw_user_meta_data, created_at, updated_at,
+    phone, phone_confirmed_at
   ) VALUES
-    (a, 'authenticated','authenticated','+233200000001','x',now(),'{}','{}',now(),now()),
-    (b, 'authenticated','authenticated','+233200000002','x',now(),'{}','{}',now(),now()),
-    (c, 'authenticated','authenticated','+233200000003','x',now(),'{}','{}',now(),now()),
-    (d, 'authenticated','authenticated','+233200000004','x',now(),'{}','{}',now(),now())
+    (a, 'authenticated','authenticated','+233200000001','x',now(),'{}','{}',now(),now(),'233200000001',now()),
+    (b, 'authenticated','authenticated','+233200000002','x',now(),'{}','{}',now(),now(),'233200000002',now()),
+    (c, 'authenticated','authenticated','+233200000003','x',now(),'{}','{}',now(),now(),'233200000003',now()),
+    (d, 'authenticated','authenticated','+233200000004','x',now(),'{}','{}',now(),now(),'233200000004',now())
   ON CONFLICT (id) DO NOTHING;
 
   -- B and D carry verified phones so the C4 phone-HMAC exclusion is exercisable.
@@ -68,6 +75,12 @@ BEGIN
     (c, '+233200000003', 'Dating C','dating'),
     (d, '+233200000004', 'Dating D','dating')
   ON CONFLICT (id) DO UPDATE SET phone=EXCLUDED.phone, display_name=EXCLUDED.display_name;
+
+  -- Spec 2 W1d (batch-10 fix round 1, I-1): readiness v2 needs the D4
+  -- consents standing, so the three candidates hold them.
+  INSERT INTO public.dating_consent_events (user_id, idempotency_key, purpose, action, policy_version, occurred_at)
+  SELECT x.u, 'dating-mode-consent-' || y.purpose, y.purpose, 'granted', 'dating-2.0', clock_timestamp()
+    FROM (VALUES (a), (b), (d)) AS x(u), unnest(ARRAY['dating_terms', 'dating_opt_in', 'special_category_profile']) AS y(purpose);
 
   -- Enrollments: A/B/D active current candidates, C only opted-in (not active).
   INSERT INTO public.dating_enrollments(user_id, state, activated_at) VALUES
@@ -84,12 +97,15 @@ BEGIN
   -- every candidate fail dating_candidate_is_current and every
   -- act_on_dating_introduction call raise introduction_unavailable --
   -- before reaching the double-blind contracts this file exists to test.
-  INSERT INTO public.dating_profiles(user_id, display_name, city_region_code, relationship_intention, bio, profile_state, moderation_state, verification_state)
+  -- Spec 2 W1d: readiness v2 also needs the place, the intention and its
+  -- attestation, and the children answers.
+  INSERT INTO public.dating_profiles(user_id, display_name, city_region_code, relationship_intention, bio, profile_state, moderation_state, verification_state,
+                                     country_code, region_code, intention, not_married_attested_at, attestation_version, children_have, children_want)
   VALUES
-    (a, 'Dating A','Accra','Intentional dating',NULL,'active','approved','verified'),
-    (b, 'Dating B','Kumasi','Intentional dating',NULL,'active','approved','verified'),
-    (d, 'Dating D','Takoradi','Intentional dating',NULL,'active','approved','verified'),
-    (c, 'Dating C','Tamale','Intentional dating',NULL,'draft','approved','verified')
+    (a, 'Dating A','Accra','Intentional dating',NULL,'active','approved','verified','GH','AA','committed',now(),'2026-10-v1',false,'yes'),
+    (b, 'Dating B','Kumasi','Intentional dating',NULL,'active','approved','verified','GH','AH','committed',now(),'2026-10-v1',false,'yes'),
+    (d, 'Dating D','Takoradi','Intentional dating',NULL,'active','approved','verified','GH','WP','committed',now(),'2026-10-v1',false,'yes'),
+    (c, 'Dating C','Tamale','Intentional dating',NULL,'draft','approved','verified','GH','NP','committed',now(),'2026-10-v1',false,'yes')
   ON CONFLICT (user_id) DO UPDATE
     SET profile_state=EXCLUDED.profile_state,
         moderation_state=EXCLUDED.moderation_state,
@@ -105,6 +121,20 @@ BEGIN
     SET gender_preferences=EXCLUDED.gender_preferences,
         region_preferences=EXCLUDED.region_preferences,
         intention_preferences=EXCLUDED.intention_preferences;
+
+  -- Spec 2 W1d: readiness v2's encrypted identity and who-to-meet, two
+  -- approved prompts and two approved photos each (before any snapshot or
+  -- introduction exists, so the photo trigger invalidates nothing).
+  INSERT INTO public.dating_profile_sensitive (user_id, identity_enc, seeking_enc)
+  SELECT u, private.dating_field_encrypt(jsonb_build_object('identity', g, 'pools', jsonb_build_array(g))),
+         private.dating_field_encrypt(jsonb_build_object('seeking', jsonb_build_array(CASE g WHEN 'man' THEN 'woman' ELSE 'man' END)))
+    FROM (VALUES (a, 'man'), (b, 'woman'), (d, 'woman')) AS x(u, g);
+  INSERT INTO public.dating_prompts (user_id, position, prompt_id, answer)
+  SELECT u, n, CASE n WHEN 1 THEN 'perfect_sunday' ELSE 'ask_me_about' END, 'A contract fixture answer ' || n
+    FROM (VALUES (a), (b), (d)) AS x(u), generate_series(1, 2) AS n;
+  INSERT INTO public.dating_profile_photos (user_id, storage_key, position, moderation_state)
+  SELECT u, 'dating-contract/' || u || '-' || n || '.jpg', n, 'approved'
+    FROM (VALUES (a), (b), (d)) AS x(u), generate_series(1, 2) AS n;
 
   -- Age gate: A/B/D adults, verified, not revoked/expired.
   INSERT INTO public.dating_age_verifications(user_id, birth_date, verification_method, verified_at)

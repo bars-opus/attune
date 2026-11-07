@@ -49,9 +49,12 @@ DECLARE
   v_rel uuid;
   v int;
 BEGIN
-  INSERT INTO auth.users(id) VALUES (a), (b) ON CONFLICT DO NOTHING;
+  -- Spec 2 W1a: the recorder reads Auth's number (auth.users.phone, Auth's
+  -- form without '+'), never public.users.phone.
+  INSERT INTO auth.users(id, phone, phone_confirmed_at)
+  VALUES (a, '15550000001', now()), (b, '15550000002', now()) ON CONFLICT DO NOTHING;
   INSERT INTO public.users(id, phone, display_name)
-  VALUES (a, '+15550000001', 'A'), (b, '+15550000002', 'B')
+  VALUES (a, '15550000001', 'A'), (b, '15550000002', 'B')
   ON CONFLICT (id) DO UPDATE SET phone = EXCLUDED.phone;
 
   INSERT INTO public.relationships(user_a, user_b, status)
@@ -74,6 +77,15 @@ BEGIN
   WHERE relationship_id = v_rel;
   IF v <> 2 THEN
     RAISE EXCEPTION 'expected 2 exclusion rows after ending, got %', v;
+  END IF;
+
+  -- Spec 2 W1a tamper case: rewriting public.users.phone (it is only a
+  -- mirror of Auth's) changes nothing; the pair stays excluded both ways.
+  UPDATE public.users SET phone = '+15559990001' WHERE id = a;
+  UPDATE public.users SET phone = '+15559990002' WHERE id = b;
+  IF NOT public.dating_former_partner_excluded(a, b)
+     OR NOT public.dating_former_partner_excluded(b, a) THEN
+    RAISE EXCEPTION 'CONTRACT VIOLATED: a tampered public.users.phone undid the former-partner exclusion';
   END IF;
 END $$;
 
@@ -132,8 +144,10 @@ END $$;
 -- Operational health surfaces the exclusion key (checklist 4.9).
 --
 -- An unset key makes end_relationship record no exclusion and raise only a
--- WARNING, leaving former partners mutually matchable with nothing to show
--- it. Health must report both the key's presence and the relationships that
+-- WARNING. While both accounts exist the ended relationship itself still
+-- excludes the pair (Spec 2 W1a), but once one deletes their account and
+-- comes back on the same number nothing does, with nothing to show it.
+-- Health must report both the key's presence and the relationships that
 -- already ended without an exclusion row.
 -- ---------------------------------------------------------------------
 DO $$
@@ -175,9 +189,10 @@ DECLARE
 BEGIN
   DELETE FROM vault.decrypted_secrets WHERE name = 'dating_exclusion_key';
 
-  INSERT INTO auth.users(id) VALUES (a), (b) ON CONFLICT DO NOTHING;
+  INSERT INTO auth.users(id, phone, phone_confirmed_at)
+  VALUES (a, '15550000003', now()), (b, '15550000004', now()) ON CONFLICT DO NOTHING;
   INSERT INTO public.users(id, phone, display_name)
-  VALUES (a, '+15550000003', 'C'), (b, '+15550000004', 'D')
+  VALUES (a, '15550000003', 'C'), (b, '15550000004', 'D')
   ON CONFLICT (id) DO UPDATE SET phone = EXCLUDED.phone;
   INSERT INTO public.relationships(user_a, user_b, status)
   VALUES (a, b, 'active') RETURNING id INTO v_rel;
@@ -191,9 +206,14 @@ BEGIN
   END IF;
 
   -- The silent failure just happened: this relationship ended and recorded
-  -- no exclusion, so the two former partners stay mutually matchable. That
-  -- is precisely what health must surface -- a counter that cannot count
-  -- past zero would report the system healthy while the damage accrues.
+  -- no exclusion. While both accounts exist the ended relationship still
+  -- excludes them (Spec 2 W1a); after one deletes and re-registers on the
+  -- same number nothing would. That is precisely what health must surface --
+  -- a counter that cannot count past zero would report the system healthy
+  -- while the damage accrues.
+  IF NOT public.dating_former_partner_excluded(a, b) OR NOT public.dating_former_partner_excluded(b, a) THEN
+    RAISE EXCEPTION 'CONTRACT VIOLATED: an ended pair is matchable while both accounts exist';
+  END IF;
   IF EXISTS (SELECT 1 FROM public.dating_former_partner_exclusions
              WHERE relationship_id = v_rel) THEN
     RAISE EXCEPTION

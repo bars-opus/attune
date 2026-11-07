@@ -58,6 +58,74 @@ jobs:
         working-directory: supabase/functions
         run: deno test --allow-read --allow-env --lock=../../.github/deno-w9.lock --frozen _shared/unicode_normaliser.test.ts _shared/writer_crisis_check.test.ts _shared/healing_ai_gate.test.ts analyse-journal-entry/ generate-healing-portrait/ generate-healing-post-mortem/
 
+  repo-guards:
+    # Spec 2 W1a (§4.5, §7.6 items 2.7 and 7.3): fail on a committed secret
+    # (a Vault key, a service-role key). The whole history is scanned, so a
+    # secret committed and later deleted is still found. gitleaks is pinned
+    # by version and sha256 and run as the released binary (no action
+    # licence needed); checkout is pinned by commit, as in deno-w9 (PF-F12).
+    name: Repository guards (secret scan)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          fetch-depth: 0
+
+      - name: Install gitleaks 8.18.4
+        run: |
+          curl -sSfL -o gitleaks.tar.gz https://github.com/gitleaks/gitleaks/releases/download/v8.18.4/gitleaks_8.18.4_linux_x64.tar.gz
+          echo "ba6dbb656933921c775ee5a2d1c13a91046e7952e9d919f9bac4cec61d628e7d  gitleaks.tar.gz" | sha256sum -c -
+          tar -xzf gitleaks.tar.gz gitleaks
+
+      - name: Scan the repository and its history
+        run: ./gitleaks detect --source . --redact --no-banner --exit-code 1
+
+      # Spec 2 W1b (R-6, Q19b, §7.1): only the owner sets the project to
+      # production mode; no migration, script or edge function writes
+      # app.settings.attune_environment or Vault's attune_environment.
+      # Batch-5 fix round 1 (M-5): any non-comment mention fails except the
+      # known readers (private.attune_environment(), get_attune_environment,
+      # current_setting(...), vault_setting_strict(...)), so a direct
+      # vault.secrets insert, a quoted GUC or a concatenated name is caught.
+      - name: Nothing sets attune_environment
+        run: |
+          hits=$(grep -rniI "attune_environment" supabase/migrations supabase/sql scripts supabase/functions \
+            | perl -ne 'next unless /^([^:]+:\d+:)(.*)$/; my ($loc, $c) = ($1, $2);
+                next if $c =~ m{^\s*(--|//|/?\*|#)};
+                $c =~ s{\s(--|//)[^\x27"]*$}{};
+                $c =~ s{\b(?:private\.|public\.)?get_attune_environment\b(?:\s*\(\s*\))?}{}gi;
+                $c =~ s{\bprivate\.attune_environment\s*\(\s*\)}{}gi;
+                $c =~ s{\b(?:current_setting|vault_setting_strict)\s*\([^()]*\)}{}gi;
+                print "$loc$c\n" if $c =~ /attune_environment/i;')
+          if [ -n "$hits" ]; then
+            echo "$hits"
+            echo "::error::A migration, script or edge function names attune_environment outside a known reader; only the owner sets it (Spec 2 R-6)"
+            exit 1
+          fi
+
+      # Spec 2 W1d (batch-11 fix round 1, M-1): turning same-gender off is the
+      # kill switch, a production purge. No migration may write the
+      # dating_same_gender_matching flag (except W1b's insert, ON CONFLICT DO
+      # NOTHING), truncate feature_flags, or run apply_same_gender_switch outside
+      # a function body; only the owner does, from the SQL editor.
+      - name: No migration runs the kill switch
+        run: |
+          hits=$(for f in supabase/migrations/*.sql; do
+            perl -0777 -ne '
+              my $f = $ARGV; (my $base = $f) =~ s{.*/}{};
+              s{\bAS\s+\$(\w*)\$.*?\$\1\$}{}gis;
+              s{--[^\n]*}{}g;
+              for my $st (split /;/) {
+                my $w = ($st =~ /\b(?:insert\s+into|update|delete\s+from)\s+(?:only\s+)?(?:public\.)?feature_flags\b/i)
+                        && ($st =~ /dating_same_gender_matching|dating\\?_%|dating%/i)
+                        && !($base eq "20261106130000_dating_v2_country_config.sql" && $st =~ /on\s+conflict\s*\(\s*key\s*\)\s*do\s+nothing/i);
+                $w ||= $st =~ /\btruncate(?:\s+table)?\s+(?:only\s+)?(?:public\.)?feature_flags\b/i;
+                my $c = ($st =~ /apply_same_gender_switch\s*\(/i) && ($st !~ /\A\s*(?:create|revoke|grant|comment|alter|drop)\b/i);
+                if ($w || $c) { (my $one = $st) =~ s/\s+/ /g; print "$base: $one\n"; }
+              }' "$f"
+          done)
+          if [ -n "$hits" ]; then echo "$hits"; echo "::error::A migration writes dating_same_gender_matching or runs the kill switch; only the owner turns it off (batch-11 M-1)"; exit 1; fi
+
   sql-contracts:
     name: SQL contract tests
     runs-on: ubuntu-latest

@@ -67,7 +67,7 @@ Not built in this spec, on purpose (11 §8 unless noted):
 | **Q1 Launch** | Dating opens in Ghana (Greater Accra + Ashanti first, men–women) and the UK. Everywhere else: "Dating isn't open in {country} yet" + "Tell me when it's here". Country-aware config with tiers, per-country region lists and per-country switches (§2.2). |
 | **Q2 Same-gender** | Off in Ghana and every Tier 1/2 country: server-enforced, nothing sent, logged or stored, an honest note and resources. On in the UK and other safe countries (§2.4). |
 | **Q3 Age check** | Liveness + facial age estimation (challenge age 25) + CompareFaces against the photos + ID fallback (Ghana Card) + human review within 24 h, for every Dating user. A UK-recognised estimation vendor plus Smile ID or equivalent, behind a vendor seam (§3.3, §4.7). |
-| **Q4, Q5** (accepted) | The typed DOB (Spec 1) never unlocks Dating. Enforcement records, blocks and anonymised reports survive deletion as phone HMACs computed from `auth.users`, kept 2 years (§6.3). |
+| **Q4, Q5** (accepted) | The typed DOB (Spec 1) never unlocks Dating. Enforcement records, blocks and pseudonymised (HMAC)<!-- Spec 2 W1 B3 M-6: was "anonymised" --> reports survive deletion as phone HMACs computed from `auth.users`, kept 2 years (§6.3). |
 | **Q6 Navigation** | Dating is a section inside **Me**, with the optional Dating lock (Spec 1 owns the shell and the setting; this spec fills the section and makes every Dating route honour the lock). |
 | **Q12** (accepted) | The gentle wait applies only after a relationship ended inside Attune; it lasts the 30-day ending window (shorter if both seal) plus a private 3-question reflection; Healing offered, never required; no score. The ex-exclusion is mandatory. The Healing predicates are replaced everywhere they occur (§2.1, §4.10). A clinical note is recorded (W2 gate). |
 | **Q13 Dating rules** | Four intentions: Marriage / A committed relationship / Companionship, at my own pace / Not sure yet. No casual. Anyone currently married in any form, or separated and not divorced, is excluded (attestation + a "hiding a relationship" report). Faith optional and region-aware with a "must share" dealbreaker. Age range 18–99; default at most +7 years for ages 18–20. Photos after mutual interest available from account day 30. |
@@ -354,7 +354,7 @@ Each step saves on Continue through its own idempotent RPC (§4.4) and returns t
 | Links | "Dating terms" · "Privacy notice" |
 | Primary | "Agree and continue" |
 
-- **Storage:** three `dating_consent_events` rows with policy version `dating-2.0`: `dating_terms`, `dating_opt_in`, `special_category_profile`; then `begin_dating_enrollment` sets `opted_in_at`. D2 and D3 hold no special-category data: `save_dating_intention` creates the enrolment row in `profile_draft` if it is missing, under the D1 disclosure and EULA v2. Every special-category writer (D5, D6, D8) refuses without the `special_category_profile` consent (and D8 without `special_category_faith`). Withdrawing any of them later = exit (§3.8).
+- **Storage:** three `dating_consent_events` rows with policy version `dating-2.0`: `dating_terms`, `dating_opt_in`, `special_category_profile`; then `begin_dating_enrollment` sets `opted_in_at`. D2 and D3 hold no special-category data: `save_dating_intention` creates the enrolment row in `profile_draft` if it is missing, under the D1 disclosure and EULA v2. Every special-category writer (D5, D6, D8) refuses without the `special_category_profile` consent (and D8 without `special_category_faith`). Withdrawing any of them later = exit (§3.8), except faith's, which clears only the faith answer<!-- Spec 2 W1 B10 M-11: owner ruling 2026-11-06 (PF-F3) -->.
 - **Motion:** none. **Accessibility:** headings are semantic headers; the checkbox carries the full sentence.
 
 #### D5 — Which best describes you? (Step 4 of 12)
@@ -726,6 +726,7 @@ No animation, no waitlist number. Store copy and the Welcome preview say the sam
 - Title "Never introduce me to these numbers"
 - "Add a phone number and Attune will never introduce you to the person who uses it, now or later. They're never told."
 - "We keep a code made from the number, not the number itself."
+- The code is made with `dating_exclusion_key`, which is never rotated in place: the list can't be re-keyed, because the number is never stored (rotation needs a verify-only secondary key, a later wave).<!-- Spec 2 W1 final fix I-3 -->
 - Fields: country code + number; "A name only you'll see (optional)" (20 characters).
 - List rows: "{label} · ending {last two digits}" [Remove]. Up to 50.
 - Adding gives the same "Added." whatever the number, so it can't be used to test whether someone uses Attune. It affects introductions not yet matched; an existing conversation is ended with Block.
@@ -791,7 +792,7 @@ Every Dating push uses the title "Attune" and the body "You have something new i
 - Fully qualified names everywhere; pgcrypto is called as `extensions.hmac`, `extensions.digest`, `extensions.pgp_sym_encrypt` (`20260951020000` explains why).
 - Special-category data (gender identity, pools, who you'd like to meet, faith, marital history, pronouns) lives only in `dating_profile_sensitive`, encrypted (§4.2), and never in logs, counters, push payloads, console views, exports to anyone else, or AI prompts.
 - Every phone HMAC is computed from `auth.users.phone`, never `public.users.phone`.
-- Deletion deletes, with three named survivors keyed by phone HMAC: enforcement records, block pairs, anonymised reports (2 years).
+- Deletion deletes, with three named survivors keyed by phone HMAC: enforcement records, block pairs, pseudonymised (HMAC)<!-- Spec 2 W1 B3 M-6: was "anonymised" --> reports (2 years).
 - No analytics SDK; Dating writes only aggregate keys into Spec 1's `metric_counters`, after registering the prefix `dating.` in `metric_key_prefixes`, and **only server-side**: Dating definer functions call `private.bump_metric_internal` and Dating edge functions call `bump_metric_server`. W1a inserts the server prefix `dating.` into `metric_key_prefixes` and adds no `metric_client_keys` row, so no client can bump a Dating key (S-2, §6.9).
 - Derived special-category data: who was introduced to whom, who matched whom, and whether a moderation case involves a pair that is not man–woman can each reveal orientation. Introductions, interest actions, matches and couple-link requests are revoked from `service_role` too (read only through definer functions), and case routing is computed at read time, never stored (S-5, §6.4, §6.8).
 - Error results are uniform and opaque (`*_unavailable`), and a membership check never branches before the validity checks (Fable H2).
@@ -935,7 +936,7 @@ Every Dating push uses the title "Attune" and the body "You have something new i
 | Matches | while active; closed: 30 days (`evidence_until`) | row deleted after the window unless a report holds it |
 | Dating messages | while the match is active; after close: 30 days | hard-deleted by `purge_dating_retention`, unless an open case holds the match |
 | Report evidence snapshots | until the case closes + 180 days, or as long as a resulting enforcement record lasts (≤ 2 years after deletion) | deleted |
-| Reports (anonymised after either side's deletion) | 2 years | deleted |
+| Reports (pseudonymised (HMAC)<!-- Spec 2 W1 B3 M-6: was "anonymised" --> after either side's deletion) | 2 years | deleted |
 | Enforcement records, block HMAC pairs | 2 years after the account's deletion | deleted |
 | Never-introduce list | while the owner is in Dating; at exit, deleted unless the person ticked "Keep" (unticked by default, R-2) | deleted with the account |
 | Verification sessions | 30 days | deleted |
@@ -1100,7 +1101,7 @@ The contract tests only ever exercise generation with the flag off, which is why
 | Cron `dating-candidate-generation` (weekly) | Replace [W5] | hourly tick (§4.6) |
 | Crons `expire-dating-introductions`, `revalidate-dating-lifecycle-gates` | Keep | bodies change |
 | Bucket `dating-profile-photos` | Keep | — |
-| Vault secret `dating_exclusion_key` | Keep | **provision it** (W5 gate) |
+| Vault secret `dating_exclusion_key` | Keep | **provision it** (W5 gate). **Never rotated in place**<!-- Spec 2 W1 final fix I-3 -->: never-introduce lists and restriction stamps (and the carried records of deleted numbers) hold HMACs only and can't be re-keyed, so a new key would silently re-allow introductions to listed numbers. Rotation needs a verify-only secondary key (readers match either HMAC; a later wave); a compromised key is an incident (owner checklist), never a re-key |
 
 **Edge functions and shared modules**
 
@@ -1499,11 +1500,11 @@ Published policy, points it states:
 | Lawful basis | explicit consent for special-category and biometric processing (GDPR / UK GDPR Art. 9(2)(a); Ghana Act 843 s.37 consent); contract for the service; legitimate interests and legal obligation for safety and enforcement records |
 | Minimisation | §3.7 of the decision doc's not-collected list; no GPS, no ethnicity, no income, no health, no templates; side and region only; resolved introductions lose their actions, reasons and ranking detail after 30 days and are deleted when either person leaves; no stored routing bit; no repeat-pair history kept for deleted accounts |
 | Storage | encryption at rest in the application layer (§4.2); RPC-only access; no client table reads; `service_role` cannot read the sensitive table, messages, introductions, interest actions, matches or link requests; the console cannot read special-category fields; the only service-role path to decrypted fields is `dating_export_for_job`, bound to an export the person asked for, capped at 3 calls per job and logged (S-4) |
-| Retention | §4.8; survivors after deletion named in the privacy policy (enforcement records, block pairs, anonymised reports; 2 years) |
+| Retention | §4.8; survivors after deletion named in the privacy policy (enforcement records, block pairs, pseudonymised (HMAC)<!-- Spec 2 W1 B3 M-6: was "anonymised" --> reports; 2 years) |
 | Transfers | Supabase project region; AWS Rekognition in an EU/UK region; the estimation and ID vendors' processing regions and retention, recorded per contract |
 | Risks | outing and entrapment (same-gender off in Tier 1/2; nothing stored there); compelled disclosure (minimal retention, LE policy); breach (encryption, canaries, bucket test, secret scanning, pen test); insider (no console access to sensitive fields, sensitive routing, audit log); re-identification in thin pools (no side shown, no counts, n ≥ 50); minors (assurance, holds, CSAM hashing); biometric misuse (no templates, vendor deletion terms); unfair exposure (fairness job) |
-| Residual risks stated | a live `postgres`-level attacker can decrypt; VPNs hide travellers; a real person can pass liveness and act in bad faith; third parties can relay what they see |
-| Rights | export of one's own Dating data (W9); deletion (exit, account deletion); correction (DOB through Spec 1; everything else in Dating settings); withdrawal of consent = exit |
+| Residual risks stated | a live `postgres`-level attacker can decrypt; VPNs hide travellers; a real person can pass liveness and act in bad faith; third parties can relay what they see; `dating_exclusion_key` can't be rotated until a verify-only secondary key exists (a compromise is an incident)<!-- Spec 2 W1 final fix I-3 -->; a carried enforcement record follows a recycled number to its next holder until W7a's carried-over restriction and appeal exist<!-- Spec 2 W1 final fix M-10 (Spec 1 O3) --> |
+| Rights | export of one's own Dating data (W9); deletion (exit, account deletion); correction (DOB through Spec 1; everything else in Dating settings); withdrawal of consent = exit, except faith's, which clears only the faith answer<!-- Spec 2 W1 B10 M-11: owner ruling 2026-11-06 (PF-F3) --> |
 | Registrations | Ghana DPC; UK representative if the controller is outside the UK; EU Art. 27 representative before any EU country opens |
 | US (later) | BIPA written release and a public retention and destruction schedule before any US user verifies; CUBI consent (not written, 08 04-38) |
 

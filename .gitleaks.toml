@@ -1,0 +1,19 @@
+# gitleaks configuration for the repo-guards CI job (Spec 2 W1a, §4.5).
+# The default rules apply in full; the allowlist below names only known
+# false positives, each as the exact source line it sits on. gitleaks 8.18
+# ORs an allowlist's paths with its regexes, so a path entry would allow
+# anything in that file; the line regexes are the narrowest scope it offers.
+# Add a line here only for a test fixture, never for a real value: a real
+# secret is rotated at its provider first (owner checklist 7).
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Known SQL contract fixtures (not secrets)"
+regexTarget = "line"
+regexes = [
+  # supabase/tests/opinion_remove_own_contracts.sql: a feature-flag key
+  # name, matched by generic-api-key ("key = '...'").
+  '''^\s*UPDATE public\.feature_flags SET enabled = v_flag WHERE key = 'opinions_safety_v1';\s*$''',
+]

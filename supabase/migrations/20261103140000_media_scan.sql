@@ -444,8 +444,11 @@ $$;
 -- dropped first (CREATE OR REPLACE can't change it).
 DO $$
 BEGIN
+  -- (Spec 2 W1 final fix, N-I2: to_regprocedure, never a ::regprocedure
+  -- literal, which is resolved when the statement is planned and fails on a
+  -- fresh database where the function doesn't exist yet.)
   IF to_regprocedure('public.claim_media_scan_jobs(integer)') IS NOT NULL
-     AND pg_catalog.pg_get_function_result('public.claim_media_scan_jobs(integer)'::regprocedure) !~ 'lease_id' THEN
+     AND pg_catalog.pg_get_function_result(to_regprocedure('public.claim_media_scan_jobs(integer)')) !~ 'lease_id' THEN
     DROP FUNCTION public.claim_media_scan_jobs(integer);
   END IF;
 END;

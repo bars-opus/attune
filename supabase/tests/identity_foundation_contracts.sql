@@ -781,18 +781,18 @@ BEGIN
     FROM pg_proc p
    WHERE p.oid IN ('public.activate_dating_profile(text)'::regprocedure,
                    'public.pause_dating_mode(text)'::regprocedure,
-                   'public.exit_dating_mode(text)'::regprocedure,
+                   'public.exit_dating_mode(text,boolean)'::regprocedure, -- Spec 2 W1d: (text) became (text, boolean)
                    'public.pause_dating_for_relationship_user(uuid)'::regprocedure,
-                   'public.delete_dating_profile(text)'::regprocedure)
+                   'public.resume_dating_mode(text)'::regprocedure) -- Spec 2 W1d: replaces delete_dating_profile
      AND p.proconfig IS DISTINCT FROM ARRAY['search_path=""'];
   IF v_bad IS NOT NULL THEN
     RAISE EXCEPTION 'CONTRACT VIOLATED: dating functions without search_path = '''': %', v_bad;
   END IF;
   IF has_function_privilege('authenticated', 'public.pause_dating_for_relationship_user(uuid)', 'EXECUTE')
      OR NOT has_function_privilege('authenticated', 'public.pause_dating_mode(text)', 'EXECUTE')
-     OR NOT has_function_privilege('authenticated', 'public.exit_dating_mode(text)', 'EXECUTE')
+     OR NOT has_function_privilege('authenticated', 'public.exit_dating_mode(text,boolean)', 'EXECUTE')
      OR NOT has_function_privilege('authenticated', 'public.activate_dating_profile(text)', 'EXECUTE')
-     OR NOT has_function_privilege('authenticated', 'public.delete_dating_profile(text)', 'EXECUTE') THEN
+     OR NOT has_function_privilege('authenticated', 'public.resume_dating_mode(text)', 'EXECUTE') THEN
     RAISE EXCEPTION 'CONTRACT VIOLATED: a dating function''s grants changed';
   END IF;
 END $$;
@@ -843,7 +843,8 @@ END $$;
 --     their bodies run under search_path = '', so an unqualified name fails
 --     only when called, and proconfig alone can't show it. activate runs
 --     with the flag and every gate really met (inside this file's rollback),
---     delete on a profile with a photo and preferences. Fixtures 90-91.
+--     Spec 2 W1d's exit (the hard delete that replaced delete_dating_profile)
+--     on a profile with a photo and preferences. Fixtures 90-91.
 DO $$
 BEGIN
   PERFORM pg_temp.make_account('5f1a0000-0000-0000-0000-000000000090', '+15558100090', 'Dating W1 C');
@@ -862,12 +863,38 @@ DECLARE
   v_mode text;
   v_activated timestamptz;
 BEGIN
-  INSERT INTO public.dating_enrollments (user_id, state, adults_only_confirmed_at) VALUES
-    (v_c, 'profile_draft', now()), (v_d, 'active', now());
+  -- Spec 2 W1d: no checkbox; readiness v2 (place, intention and attestation,
+  -- children, verified, encrypted answers, two prompts, two photos); gate 2
+  -- needs Spec 1's DOB and EULA v2; gate 6 an open country.
+  PERFORM set_config('app.settings.dating_field_key', 'w1-contract-dating-field-key-0123456789abcdef', true);
+  -- Spec 2 W1d (batch 10): eligibility needs the exclusion key and its
+  -- seeded fingerprint (B5 I-1); both are reset at the end of this block.
+  PERFORM set_config('app.settings.dating_exclusion_key', 'w1-contract-dating-exclusion-key', true);
+  PERFORM private.seed_dating_exclusion_key_fingerprint();
+  PERFORM public.publish_country_config('GH', '{"dating_enabled": true}');
+  UPDATE public.users SET eula_accepted_at = now(), eula_version = '2' WHERE id = v_c;
+  INSERT INTO public.account_birthdates (user_id, birth_date) VALUES (v_c, DATE '1990-01-01');
+  INSERT INTO public.dating_enrollments (user_id, state) VALUES
+    (v_c, 'profile_draft'), (v_d, 'active');
+  -- Spec 2 W1d (batch-10 fix round 1, I-1): activation needs the standing D4
+  -- consents (v1 had the age_gate checkbox instead).
+  INSERT INTO public.dating_consent_events (user_id, idempotency_key, purpose, action, policy_version, occurred_at)
+  SELECT v_c, 'w1-contract-consent-' || c, c, 'granted', 'dating-2.0', clock_timestamp()
+    FROM unnest(ARRAY['dating_terms', 'dating_opt_in', 'special_category_profile']) AS c;
   INSERT INTO public.dating_profiles (user_id, display_name, city_region_code, relationship_intention,
-                                      moderation_state, profile_state) VALUES
-    (v_c, 'Dating C', 'GH-AA', 'long_term', 'approved', 'draft'),
-    (v_d, 'Dating D', 'GH-AA', 'long_term', 'approved', 'active');
+                                      moderation_state, profile_state, verification_state, country_code, region_code,
+                                      intention, not_married_attested_at, attestation_version, children_have, children_want) VALUES
+    (v_c, 'Dating C', 'GH-AA', 'long_term', 'approved', 'draft', 'verified', 'GH', 'AA',
+     'committed', now(), '2026-10-v1', false, 'yes'),
+    (v_d, 'Dating D', 'GH-AA', 'long_term', 'approved', 'active', 'unverified', 'GH', 'AA',
+     'committed', now(), '2026-10-v1', false, 'yes');
+  INSERT INTO public.dating_profile_sensitive (user_id, identity_enc, seeking_enc) VALUES
+    (v_c, private.dating_field_encrypt('{"identity": "man", "pools": ["man"]}'),
+          private.dating_field_encrypt('{"seeking": ["woman"]}'));
+  INSERT INTO public.dating_prompts (user_id, position, prompt_id, answer) VALUES
+    (v_c, 1, 'perfect_sunday', 'A walk and a long lunch.'), (v_c, 2, 'ask_me_about', 'My grandmother''s stories.');
+  INSERT INTO public.dating_profile_photos (user_id, position, storage_key, moderation_state) VALUES
+    (v_c, 1, 'w1-contract/c1.jpg', 'approved'), (v_c, 2, 'w1-contract/c2.jpg', 'approved');
   INSERT INTO public.dating_preferences (user_id, min_age, max_age, gender_preferences, region_preferences,
                                          intention_preferences) VALUES
     (v_c, 18, 40, '["woman"]', '["GH-AA"]', '["long_term"]'),
@@ -923,11 +950,11 @@ BEGIN
   END IF;
   UPDATE public.feature_flags SET enabled = false WHERE key = 'dating_mode_enabled';
 
-  -- 3. delete_dating_profile: photo, preferences and profile go; the
-  --    enrollment is back to profile_draft.
+  -- 3. Spec 2 W1d: exit_dating_mode's hard delete (delete_dating_profile is
+  --    gone): photo, preferences and profile go; the enrollment is exited.
   PERFORM pg_temp.as_user(v_d);
   BEGIN
-    PERFORM public.delete_dating_profile('w1-contract-delete-0001');
+    PERFORM public.exit_dating_mode('w1-contract-delete-0001');
     v_msg := NULL;
   EXCEPTION WHEN OTHERS THEN
     v_msg := SQLERRM;
@@ -937,10 +964,12 @@ BEGIN
      OR EXISTS (SELECT 1 FROM public.dating_profile_photos WHERE user_id = v_d)
      OR EXISTS (SELECT 1 FROM public.dating_preferences WHERE user_id = v_d)
      OR EXISTS (SELECT 1 FROM public.dating_profiles WHERE user_id = v_d)
-     OR (SELECT state FROM public.dating_enrollments WHERE user_id = v_d) IS DISTINCT FROM 'profile_draft' THEN
-    RAISE EXCEPTION 'CONTRACT VIOLATED: delete_dating_profile gave % (enrollment %)',
+     OR (SELECT state FROM public.dating_enrollments WHERE user_id = v_d) IS DISTINCT FROM 'exited' THEN
+    RAISE EXCEPTION 'CONTRACT VIOLATED: exit_dating_mode gave % (enrollment %)',
       coalesce(v_msg, 'no error'), (SELECT state FROM public.dating_enrollments WHERE user_id = v_d);
   END IF;
+  DELETE FROM private.dating_key_fingerprints WHERE name = 'dating_exclusion_key';
+  PERFORM set_config('app.settings.dating_exclusion_key', '', true);
 END $$;
 
 -- =====================================================================
@@ -2248,7 +2277,8 @@ BEGIN
    WHERE p.oid IN ('private.attune_environment()'::regprocedure,
                    'private.assert_development_project()'::regprocedure,
                    'private.guard_flag_production_gate()'::regprocedure,
-                   'private.dating_open_countries()'::regprocedure,
+                   -- private.dating_open_countries() left the list in Spec 2
+                   -- W1b, which re-creates the seam over country_safety_config (I-3).
                    'public.get_public_app_config()'::regprocedure,
                    'public.record_flag_gate_evidence(text,text)'::regprocedure,
                    'public.production_flag_violations()'::regprocedure)
@@ -2376,16 +2406,18 @@ BEGIN
         <> ARRAY['age_signal_storefronts', 'dating_open_countries'] THEN
     RAISE EXCEPTION 'CONTRACT VIOLATED: get_public_app_config returned other keys: %', v_cfg;
   END IF;
-  IF v_cfg -> 'config' -> 'dating_open_countries' IS DISTINCT FROM '["GB", "GH"]'::jsonb
+  IF v_cfg -> 'config' -> 'dating_open_countries' IS DISTINCT FROM to_jsonb(private.dating_open_countries())
      OR v_cfg -> 'config' -> 'age_signal_storefronts' IS DISTINCT FROM '["USA", "BRA"]'::jsonb
      OR v_cfg -> 'flags' -> 'support_resources_v2' IS DISTINCT FROM 'true'::jsonb
      OR v_cfg -> 'flags' -> 'flow_signin_v2' IS DISTINCT FROM 'false'::jsonb THEN
     RAISE EXCEPTION 'CONTRACT VIOLATED: get_public_app_config values are wrong: %', v_cfg;
   END IF;
   UPDATE public.feature_flags SET enabled = false WHERE key = 'support_resources_v2';
-  UPDATE public.app_public_config SET value = '["GH"]' WHERE key = 'dating_open_countries';
-  IF public.get_public_app_config() -> 'config' -> 'dating_open_countries' IS DISTINCT FROM '["GH"]'::jsonb
-     OR private.dating_open_countries() IS DISTINCT FROM ARRAY['GH'] THEN
+  -- Spec 2 W1b (I-3): the seam reads country_safety_config and the interim
+  -- row is gone (country_safety_config_contracts.sql section D pins the rest).
+  IF EXISTS (SELECT 1 FROM public.app_public_config WHERE key = 'dating_open_countries')
+     OR public.get_public_app_config() -> 'config' -> 'dating_open_countries'
+          IS DISTINCT FROM to_jsonb(private.dating_open_countries()) THEN
     RAISE EXCEPTION 'CONTRACT VIOLATED: the open-country list does not come through the one seam';
   END IF;
 END $$;
@@ -2395,8 +2427,11 @@ END $$;
 --     decides its gate); the fail-closed Vault reader is server-only.
 DO $$
 BEGIN
-  IF EXISTS (SELECT 1 FROM private.flag_production_gates WHERE flag_key = 'dating_mode_enabled') THEN
-    RAISE EXCEPTION 'CONTRACT VIOLATED: dating_mode_enabled carries a production gate (ruling: it stays out)';
+  -- Spec 2 W1b decided dating_mode_enabled's gate (the ruling left it to
+  -- Spec 2): its W10 launch gate.
+  IF NOT EXISTS (SELECT 1 FROM private.flag_production_gates
+                  WHERE flag_key = 'dating_mode_enabled' AND gate LIKE 'Spec 2 W10 gate:%') THEN
+    RAISE EXCEPTION 'CONTRACT VIOLATED: dating_mode_enabled lacks Spec 2''s production gate';
   END IF;
   IF to_regprocedure('private.vault_setting_strict(text)') IS NULL
      OR has_function_privilege('anon', 'private.vault_setting_strict(text)', 'EXECUTE')

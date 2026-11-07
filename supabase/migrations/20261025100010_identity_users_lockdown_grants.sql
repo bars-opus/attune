@@ -38,11 +38,23 @@ REVOKE ALL ON FUNCTION private.users_display_name_clean() FROM PUBLIC, anon, aut
 -- REPLACE keeps an ACL); re-asserted so the twin states them.
 REVOKE ALL ON FUNCTION public.activate_dating_profile(text) FROM PUBLIC, anon;
 REVOKE ALL ON FUNCTION public.pause_dating_mode(text) FROM PUBLIC, anon;
-REVOKE ALL ON FUNCTION public.exit_dating_mode(text) FROM PUBLIC, anon;
-REVOKE ALL ON FUNCTION public.delete_dating_profile(text) FROM PUBLIC, anon;
 REVOKE ALL ON FUNCTION public.pause_dating_for_relationship_user(uuid) FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.activate_dating_profile(text) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.pause_dating_mode(text) TO authenticated;
-GRANT EXECUTE ON FUNCTION public.exit_dating_mode(text) TO authenticated;
-GRANT EXECUTE ON FUNCTION public.delete_dating_profile(text) TO authenticated;
+-- Spec 2 W1 final fix (I-2): exit_dating_mode(text) and
+-- delete_dating_profile(text) are dropped by 20261106190000 (Spec 2 W1d),
+-- so they are re-asserted only while they exist: a first apply grants
+-- them exactly as before; a replay after Spec 2 W1d (scripts/
+-- local_pg_grants.sql) skips them instead of failing.
+DO $$
+DECLARE
+  v_sig text;
+BEGIN
+  FOREACH v_sig IN ARRAY ARRAY['public.exit_dating_mode(text)', 'public.delete_dating_profile(text)'] LOOP
+    IF to_regprocedure(v_sig) IS NOT NULL THEN
+      EXECUTE format('REVOKE ALL ON FUNCTION %s FROM PUBLIC, anon', v_sig);
+      EXECUTE format('GRANT EXECUTE ON FUNCTION %s TO authenticated', v_sig);
+    END IF;
+  END LOOP;
+END $$;
 COMMIT;
