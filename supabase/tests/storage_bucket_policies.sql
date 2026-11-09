@@ -47,9 +47,22 @@ BEGIN
     FROM pg_policies AS p
    WHERE p.schemaname = 'storage' AND p.tablename = 'objects'
      AND p.policyname IN ('dating_profile_photos_insert_by_intent', 'dating_profile_photos_select_owner');
-  IF v_got IS DISTINCT FROM 'dating_profile_photos_insert_by_intent=05db310ea7b8f81fdc3d1e6c5dacc318;'
-                            'dating_profile_photos_select_owner=17e2b968cf902d0ad91fde017e587929' THEN
+  -- Spec 2 W3c (R-2): both policies call definer predicates now.
+  IF v_got IS DISTINCT FROM 'dating_profile_photos_insert_by_intent=9d7dc3110cf2de1a35eb71135348cca5;'
+                            'dating_profile_photos_select_owner=91e5256f5bc6ddfba83d30e571585244' THEN
     RAISE EXCEPTION 'CONTRACT VIOLATED: a Dating storage policy''s expression changed: %', v_got;
+  END IF;
+  -- Spec 2 W3c fix round 1 (M-3): the policies call definer predicates, so
+  -- a predicate weakened under the same name changes no policy hash: the
+  -- two predicates' bodies, definer flag and settings are pinned too.
+  SELECT string_agg(p.proname || '=' || md5(p.prosrc || '|' || p.prosecdef::text || '|' || coalesce(array_to_string(p.proconfig, ','), '')),
+                    ';' ORDER BY p.proname)
+    INTO v_got
+    FROM pg_proc AS p JOIN pg_namespace AS n ON n.oid = p.pronamespace
+   WHERE n.nspname = 'public' AND p.proname IN ('dating_storage_intent_open', 'dating_storage_owns');
+  IF v_got IS DISTINCT FROM 'dating_storage_intent_open=e06c835fdb2d5569b475e782c3052437;'
+                            'dating_storage_owns=2c9a38d7244b6e2211bdcb298f1262e0' THEN
+    RAISE EXCEPTION 'CONTRACT VIOLATED: a Dating storage predicate changed: %', v_got;
   END IF;
 
   -- I-2: the shape of every permissive policy on storage.objects. The

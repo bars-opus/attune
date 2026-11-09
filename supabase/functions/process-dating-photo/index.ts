@@ -1,293 +1,89 @@
 // supabase/functions/process-dating-photo/index.ts
+// Spec 2 W3c: the wiring for handler.ts (CSAM first, inline; I-10). The
+// stub CSAM matcher only through matcherFromEnv (development environment
+// AND the development or a local-serve host; Spec 1 W7b). Every database
+// call below is one statement or RPC, awaited on its own (Task 9 carry C);
+// errors answer fixed codes only (carry E). Spec 2 W3 final (M-6): a missing
+// GOOGLE_VISION_API_KEY no longer stops the run: the CSAM scan, its record
+// and the orphan sweep run without it; only the Vision step fails closed
+// (visionStep). (M-5): the strip's re-upload is an update that never asks
+// storage to create a missing object (upsert: false), checked before and
+// after on the server (handler.ts).
 import { serve } from "https://deno.land/std@0.177.0/http/server.ts";
-import {
-  HttpError,
-  jsonResponse,
-  requireServiceRole,
-  serviceRoleClient,
-} from "../_shared/attune_auth.ts";
-import {
-  analyzeDatingPhoto,
-  computeFaceAreaRatio,
-  decideModerationOutcome,
-} from "../_shared/google_vision.ts";
+import { HttpError, jsonResponse, requireServiceRole, serviceRoleClient } from "../_shared/attune_auth.ts";
+import { matcherFromEnv } from "../_shared/csam_matcher.ts";
+import { storageQuarantine, type StorageLike } from "../_shared/csam_match_path.ts";
+import { BUCKET, BusyError, errorCode, isBusy, runWorker, visionStep } from "./handler.ts";
 
-const MAX_ATTEMPTS = 5;
 const VISION_API_KEY = Deno.env.get("GOOGLE_VISION_API_KEY");
 
 serve(async (req) => {
   if (req.method === "OPTIONS") return jsonResponse({ ok: true });
   try {
     requireServiceRole(req);
-    if (!VISION_API_KEY) {
-      throw new Error("missing_vision_api_key");
-    }
     const supabase = serviceRoleClient();
     const body = await req.json().catch(() => ({}));
     const requestedId = typeof body.photo_id === "string" ? body.photo_id : null;
-
-    const { data: jobs, error } = await supabase.rpc("claim_dating_photo_jobs", {
-      p_limit: requestedId ? 1 : 20,
-      p_photo_id: requestedId,
+    const { data: env, error: envError } = await supabase.rpc("get_attune_environment");
+    const matcher = matcherFromEnv({
+      env: (name) => Deno.env.get(name),
+      fetch,
+      environment: !envError && env === "development" ? "development" : "production",
     });
-    if (error) throw error;
-
-    const { data: configRows } = await supabase
-      .from("dating_photo_moderation_config")
-      .select("min_face_confidence, min_face_area_ratio")
-      .limit(1);
-    const config = configRows?.[0] ?? {
-      min_face_confidence: 0.7,
-      min_face_area_ratio: 0.06,
+    const { data: configRows } = await supabase.from("dating_photo_moderation_config")
+      .select("min_face_confidence, min_face_area_ratio, child_label_reject, child_label_review").limit(1);
+    const c = configRows?.[0];
+    const config = {
+      minFaceConfidence: Number(c?.min_face_confidence ?? 0.7),
+      minFaceAreaRatio: Number(c?.min_face_area_ratio ?? 0.06),
+      childLabelReject: Number(c?.child_label_reject ?? 0.7),
+      childLabelReview: Number(c?.child_label_review ?? 0.5),
     };
-
-    let processed = 0;
-    for (const job of jobs ?? []) {
-      try {
-        const { data: photo, error: photoError } = await supabase
-          .from("dating_profile_photos")
-          .select("id, storage_key")
-          .eq("id", job.photo_id)
-          .single();
-        if (photoError || !photo) throw new Error("photo_missing");
-
-        const { data: image, error: downloadError } = await supabase.storage
-          .from("dating-profile-photos")
-          .download(photo.storage_key);
-        if (downloadError || !image) throw new Error("decode_failed");
-
-        const bytes = new Uint8Array(await image.arrayBuffer());
-        const dimensions = await readImageDimensions(bytes);
-        if (!dimensions || dimensions.width < 600 || dimensions.height < 600) {
-          await writeVerdict(supabase, photo.id, "rejected", "image_too_small");
-          await finish(supabase, job.photo_id, "done", null);
-          processed++;
-          continue;
-        }
-
-        const visionResult = await analyzeDatingPhoto({
-          imageBytes: bytes,
-          apiKey: VISION_API_KEY,
-        });
-
-        // Vision doesn't return image dimensions, so the precise face-area
-        // ratio is computed here using the decode step's own known
-        // dimensions plus the bounding-box vertices already fetched by
-        // analyzeDatingPhoto — no second Vision call needed.
-        const faceAreaRatio = visionResult.faceBoundingPolyVertices
-          ? computeFaceAreaRatio(
-            visionResult.faceBoundingPolyVertices,
-            dimensions.width,
-            dimensions.height,
-          )
-          : null;
-
-        const outcome = decideModerationOutcome(
-          { ...visionResult, faceAreaRatio },
-          {
-            minFaceConfidence: config.min_face_confidence,
-            minFaceAreaRatio: config.min_face_area_ratio,
-          },
-        );
-
-        // Strip metadata BEFORE the photo can become visible (§4.3). Only
-        // an approved photo is ever shown, so doing this here means no
-        // EXIF-bearing object is reachable by another user at any point.
-        //
-        // A failure to strip must not approve the photo: a photo we could
-        // not clean goes to needs_review rather than being published with
-        // its GPS intact.
-        if (outcome.state === "approved") {
-          const stripped = stripJpegMetadata(bytes);
-          if (stripped) {
-            const { error: reuploadError } = await supabase.storage
-              .from("dating-profile-photos")
-              .update(photo.storage_key, stripped, {
-                contentType: "image/jpeg",
-                upsert: true,
-              });
-            if (reuploadError) throw new Error("strip_reupload_failed");
-          } else {
-            // Not a JPEG we can walk safely. PNG carries no EXIF by the
-            // spec's own structure, but an unrecognised container is not
-            // something to publish unexamined.
-            const isPng = bytes.length > 8 && bytes[0] === 0x89 &&
-              bytes[1] === 0x50;
-            if (!isPng) {
-              await writeVerdict(
-                supabase,
-                photo.id,
-                "needs_review",
-                "metadata_strip_unsupported",
-              );
-              await finish(supabase, job.photo_id, "done", null);
-              processed++;
-              continue;
-            }
-          }
-        }
-
-        await writeVerdict(supabase, photo.id, outcome.state, outcome.reason);
-        await finish(supabase, job.photo_id, "done", null);
-        processed++;
-      } catch (jobError) {
-        const dead = Number(job.attempts ?? 0) >= MAX_ATTEMPTS;
-        if (dead) {
-          await writeVerdict(supabase, job.photo_id, "needs_review", "moderation_failed");
-        }
-        await finish(
-          supabase,
-          job.photo_id,
-          dead ? "dead_letter" : "pending",
-          errorCode(jobError),
-        );
-      }
-    }
-    return jsonResponse({ success: true, processed });
+    const failed = (error: unknown, code: string) => (isBusy(error) ? new BusyError() : new Error(code));
+    const result = await runWorker(requestedId, {
+      rpc: (fn, args) => supabase.rpc(fn, args),
+      photo: async (id) => {
+        const { data, error } = await supabase.from("dating_profile_photos").select("id, user_id, storage_key").eq("id", id).maybeSingle();
+        if (error) throw failed(error, "photo_read_failed");
+        return data ?? null;
+      },
+      download: async (key) => {
+        const { data } = await supabase.storage.from(BUCKET).download(key);
+        return data ? new Uint8Array(await data.arrayBuffer()) : null;
+      },
+      replace: async (key, bytes) => {
+        const { error } = await supabase.storage.from(BUCKET).update(key, bytes, { contentType: "image/jpeg", upsert: false });
+        return !error;
+      },
+      verdict: async (id, state, reason) => {
+        // A CSAM hit is final (the recorder's): no verdict ever writes over it.
+        const { error } = await supabase.from("dating_profile_photos")
+          .update({ moderation_state: state, rejection_reason: reason, reviewed_at: new Date().toISOString() })
+          .eq("id", id).neq("csam_state", "hit");
+        if (error) throw failed(error, "verdict_failed");
+      },
+      finish: async (id, state, code) => {
+        const now = new Date().toISOString();
+        const { error } = await supabase.from("dating_photo_moderation_outbox").update({
+          state,
+          last_error_code: code,
+          processing_started_at: state === "pending" ? null : undefined,
+          completed_at: state === "pending" ? null : now,
+          updated_at: now,
+        }).eq("photo_id", id).eq("state", "processing");
+        if (error) throw failed(error, "finish_failed");
+      },
+      vision: visionStep(VISION_API_KEY),
+      matcher,
+      quarantine: storageQuarantine(supabase.storage as unknown as StorageLike),
+      config,
+    });
+    return jsonResponse({ success: true, ...result });
   } catch (error) {
     const status = error instanceof HttpError ? error.status : 500;
-    return jsonResponse({ success: false, error: errorCode(error) }, status);
+    const code = error instanceof HttpError
+      ? (status === 401 ? "unauthorized" : status === 403 ? "forbidden" : "bad_request")
+      : errorCode(error);
+    return jsonResponse({ success: false, error: code }, status);
   }
 });
-
-async function writeVerdict(
-  supabase: ReturnType<typeof serviceRoleClient>,
-  photoId: string,
-  state: "approved" | "rejected" | "needs_review",
-  reason: string | null,
-) {
-  const { error } = await supabase
-    .from("dating_profile_photos")
-    .update({
-      moderation_state: state,
-      rejection_reason: reason,
-      reviewed_at: new Date().toISOString(),
-    })
-    .eq("id", photoId);
-  if (error) throw error;
-}
-
-async function finish(
-  supabase: ReturnType<typeof serviceRoleClient>,
-  photoId: string,
-  state: "pending" | "done" | "dead_letter",
-  code: string | null,
-) {
-  const { error } = await supabase.from("dating_photo_moderation_outbox")
-    .update({
-      state,
-      last_error_code: code,
-      processing_started_at: state === "pending" ? null : undefined,
-      completed_at: state === "done" || state === "dead_letter"
-        ? new Date().toISOString()
-        : null,
-      updated_at: new Date().toISOString(),
-    })
-    .eq("photo_id", photoId).eq("state", "processing");
-  if (error) throw error;
-}
-
-/**
- * Removes EXIF and every other metadata segment from a JPEG.
- *
- * Spec §4.3 requires stripping server-side. The client already passes
- * `keepExif: false`, but that is a courtesy the client can withdraw: a
- * modified or replayed upload can carry GPS coordinates, a capture
- * timestamp, and a device serial straight into a dating photo other users
- * will see. Stripping here is what makes it true regardless of the client.
- *
- * JPEG is a sequence of marker segments. Everything a camera writes lives
- * in APPn (0xE0-0xEF, holding EXIF/GPS in APP1 and thumbnails that carry
- * their own EXIF) or COM (0xFE). Dropping those segments leaves the
- * compressed image data untouched, so this re-encodes nothing and cannot
- * degrade the picture.
- *
- * Returns null when the input is not a JPEG we can safely walk, so callers
- * fall back to leaving the object alone rather than writing something
- * corrupt.
- */
-function stripJpegMetadata(bytes: Uint8Array): Uint8Array | null {
-  if (bytes.length < 4 || bytes[0] !== 0xFF || bytes[1] !== 0xD8) return null;
-
-  const keep: Array<[number, number]> = [];
-  let offset = 2;
-
-  while (offset < bytes.length - 1) {
-    if (bytes[offset] !== 0xFF) return null;
-
-    const marker = bytes[offset + 1];
-
-    // Start of scan: the entropy-coded image data runs to the end of the
-    // file, so copy the remainder verbatim and stop parsing.
-    if (marker === 0xDA) {
-      keep.push([offset, bytes.length]);
-      break;
-    }
-
-    // Standalone markers carry no length field.
-    if (marker === 0x01 || (marker >= 0xD0 && marker <= 0xD7)) {
-      keep.push([offset, offset + 2]);
-      offset += 2;
-      continue;
-    }
-
-    const segmentLength = (bytes[offset + 2] << 8) | bytes[offset + 3];
-    if (segmentLength < 2 || offset + 2 + segmentLength > bytes.length) {
-      return null;
-    }
-
-    const isAppSegment = marker >= 0xE0 && marker <= 0xEF;
-    const isComment = marker === 0xFE;
-    if (!isAppSegment && !isComment) {
-      keep.push([offset, offset + 2 + segmentLength]);
-    }
-
-    offset += 2 + segmentLength;
-  }
-
-  let size = 2;
-  for (const [start, end] of keep) size += end - start;
-
-  const out = new Uint8Array(size);
-  out[0] = 0xFF;
-  out[1] = 0xD8;
-  let cursor = 2;
-  for (const [start, end] of keep) {
-    out.set(bytes.subarray(start, end), cursor);
-    cursor += end - start;
-  }
-  return out;
-}
-
-async function readImageDimensions(
-  bytes: Uint8Array,
-): Promise<{ width: number; height: number } | null> {
-  // Minimal JPEG/PNG header parse sufficient for the dimension gate; a full
-  // decode is not required here since Vision already validated decodability.
-  if (bytes.length > 24 && bytes[0] === 0x89 && bytes[1] === 0x50) {
-    // PNG: width/height are big-endian uint32 at offset 16/20.
-    const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
-    return { width: view.getUint32(16), height: view.getUint32(20) };
-  }
-  if (bytes.length > 4 && bytes[0] === 0xFF && bytes[1] === 0xD8) {
-    // JPEG: scan markers for SOF0/SOF2 to find dimensions.
-    let offset = 2;
-    while (offset < bytes.length - 8) {
-      if (bytes[offset] !== 0xFF) { offset++; continue; }
-      const marker = bytes[offset + 1];
-      if (marker === 0xC0 || marker === 0xC2) {
-        const height = (bytes[offset + 5] << 8) | bytes[offset + 6];
-        const width = (bytes[offset + 7] << 8) | bytes[offset + 8];
-        return { width, height };
-      }
-      const segmentLength = (bytes[offset + 2] << 8) | bytes[offset + 3];
-      offset += 2 + segmentLength;
-    }
-    return null;
-  }
-  return null;
-}
-
-function errorCode(error: unknown) {
-  return (error instanceof Error ? error.message : "unknown_error").slice(0, 120);
-}

@@ -50,10 +50,6 @@ Widget _buildTestApp({required bool hasActiveSoloJourney}) {
         builder:
             (context, state) => const Scaffold(body: Text('Reflection stub')),
       ),
-      GoRoute(
-        path: RouteNames.datingMode,
-        builder: (context, state) => const Scaffold(body: Text('Dating stub')),
-      ),
     ],
   );
 

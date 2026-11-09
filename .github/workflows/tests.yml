@@ -56,7 +56,7 @@ jobs:
 
       - name: Run Deno tests
         working-directory: supabase/functions
-        run: deno test --allow-read --allow-env --lock=../../.github/deno-w9.lock --frozen _shared/unicode_normaliser.test.ts _shared/writer_crisis_check.test.ts _shared/healing_ai_gate.test.ts analyse-journal-entry/ generate-healing-portrait/ generate-healing-post-mortem/
+        run: deno test --allow-read --allow-env --lock=../../.github/deno-w9.lock --frozen _shared/unicode_normaliser.test.ts _shared/writer_crisis_check.test.ts _shared/healing_ai_gate.test.ts process-dating-photo/handler.test.ts process-dating-photo/worker.test.ts _shared/google_vision.test.ts analyse-journal-entry/ generate-healing-portrait/ generate-healing-post-mortem/ process-scheduled-notifications/privacy_allowlist.test.ts
 
   repo-guards:
     # Spec 2 W1a (§4.5, §7.6 items 2.7 and 7.3): fail on a committed secret

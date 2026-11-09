@@ -489,6 +489,26 @@ Future<void> _openLink(
   }
 }
 
+/// One resource as this screen shows it: the police tag, the hours, and
+/// each way to reach it (the dial string; what each may leave behind on
+/// the phone). Public for Spec 2's "Support for you" sheet (D5).
+class SupportResourceCard extends StatelessWidget {
+  const SupportResourceCard({super.key, required this.resource});
+
+  final SupportResource resource;
+
+  @override
+  Widget build(BuildContext context) => _ResourceCard(resource: resource);
+}
+
+/// Opens [url] after this screen's own confirm ("It may show in your
+/// browser history."). Public for Spec 2's "Support for you" sheet (D5).
+Future<void> openSupportLinkConfirmed(
+  BuildContext context,
+  WidgetRef ref,
+  String url,
+) => _openLink(context, ref, url);
+
 class _ResourceCard extends ConsumerWidget {
   const _ResourceCard({required this.resource});
 

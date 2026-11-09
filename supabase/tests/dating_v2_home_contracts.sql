@@ -10,6 +10,10 @@
 --   psql -X -q -v ON_ERROR_STOP=1 -d attune_spec3a -f supabase/tests/dating_v2_home_contracts.sql
 -- Fixture ids 5e2f0000-0000-0000-0000-0000000000NN; phones 15558705NN.
 BEGIN;
+-- Spec 2 W3c (R-24): this file's photo fixtures stand for photos the
+-- inline CSAM scan cleared (an approval needs csam_state 'clear');
+-- rolled back with the file.
+ALTER TABLE public.dating_profile_photos ALTER COLUMN csam_state SET DEFAULT 'clear';
 
 DO $$
 BEGIN
@@ -53,6 +57,11 @@ BEGIN
   PERFORM pg_temp.as_person(p);
   v := public.get_dating_home();
   PERFORM pg_temp.as_db();
+  -- Spec 2 W3a (R-4): the keys W3a adds are pinned in dating_v2_client_reads_contracts.sql.
+  v := v - 'notify' - 'can_shorten' - 'has_data' - 'can_resume'; -- Spec 2 W3a (T4 fix round 1, I-2)
+  IF v ->> 'state' IN ('not_started', 'setup_in_progress', 'gentle_wait') THEN
+    v := v - 'first_drop_at';
+  END IF;
   RETURN v;
 END $$;
 CREATE FUNCTION pg_temp.state(p uuid) RETURNS text LANGUAGE sql AS $$
@@ -1019,8 +1028,11 @@ DECLARE
               WHERE n.nspname NOT IN ('pg_catalog', 'information_schema') AND n.nspname NOT LIKE 'pg_temp%'
                 AND p.prosrc LIKE '%dating_gentle_wait_reflections%');
 BEGIN
+  -- Spec 2 W3a (C-2, R-43): private.dating_has_data reads only whether the
+  -- person's own row exists (get_dating_home's has_data), never the text.
   IF v IS DISTINCT FROM 'get_my_gentle_wait_reflection(), private.dating_carry_on_auth_user_delete(), '
-                        'private.dating_exit_internal(uuid,boolean), save_gentle_wait_reflection(jsonb)' THEN
+                        'private.dating_exit_internal(uuid,boolean), private.dating_has_data(uuid), '
+                        'save_gentle_wait_reflection(jsonb)' THEN
     RAISE EXCEPTION 'CONTRACT VIOLATED: the functions reaching the reflections changed: %', v;
   END IF;
 END $h9$;

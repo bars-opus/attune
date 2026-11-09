@@ -217,8 +217,13 @@ NotificationConfig buildNanoEmbryoNotificationConfig() {
           }
           return;
 
+        // Spec 2 W3a (§3.13, I-9): every Dating push is the neutral
+        // me_update and opens Me, where the Dating section shows its locked
+        // row while the Dating lock is on. The old match push opens Me too
+        // for one release (A-7; W10 removes it).
+        case 'me_update':
         case 'dating_mutual_match':
-          GoRouter.of(context).go(RouteNames.datingMatches);
+          GoRouter.of(context).go(homeLocation(tab: AppTab.me));
           return;
 
         case 'reminder_upcoming':

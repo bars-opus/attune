@@ -32,7 +32,7 @@ class GentleWaitScreen extends ConsumerStatefulWidget {
   ConsumerState<GentleWaitScreen> createState() => _GentleWaitScreenState();
 }
 
-enum _Status { none, saved, cleared, busy, clearBusy, failed }
+enum _Status { none, saved, cleared, busy, clearBusy, failed, notEligible, reverify }
 
 class _GentleWaitScreenState extends ConsumerState<GentleWaitScreen> {
   final _answers = {
@@ -153,6 +153,9 @@ class _GentleWaitScreenState extends ConsumerState<GentleWaitScreen> {
         // Calm: nothing is lost and Save tries again (B3 carry); a clear
         // never says the answers are "still here" (fix round 1, M-5).
         GentleWaitSave.busy => clearing ? _Status.clearBusy : _Status.busy,
+        // Spec 2 W3a (W2 carry M-3): their own states, never "went wrong".
+        GentleWaitSave.notEligible => _Status.notEligible,
+        GentleWaitSave.reverifyDevice => _Status.reverify,
         _ => _Status.failed,
       };
       if (result == GentleWaitSave.saved) _savedAny = !clearing;
@@ -181,6 +184,11 @@ class _GentleWaitScreenState extends ConsumerState<GentleWaitScreen> {
       body:
           data != null
               ? _body(context, loc, data, online)
+              // Spec 2 W3a (W2 carry M-3): an untrusted phone can't read the
+              // answers but can still clear them (the clear needs no device).
+              : wait is AsyncError<GentleWait> &&
+                  wait.error is GentleWaitUnavailable
+              ? _unavailable(loc)
               : wait is AsyncError<GentleWait>
               ? _readFailed(
                 context,
@@ -199,6 +207,54 @@ class _GentleWaitScreenState extends ConsumerState<GentleWaitScreen> {
               ),
     );
   }
+
+  Future<void> _clearOnly() async {
+    final account = ref.read(gentleWaitAccountProvider);
+    setState(() {
+      _saving = true;
+      _status = _Status.none;
+    });
+    var result = GentleWaitSave.failed;
+    try {
+      result = await ref.read(gentleWaitGatewayProvider).clear();
+    } catch (_) {
+      result = GentleWaitSave.failed;
+    }
+    if (!mounted || ref.read(gentleWaitAccountProvider) != account) return;
+    setState(() {
+      _saving = false;
+      _status = switch (result) {
+        GentleWaitSave.saved => _Status.cleared,
+        GentleWaitSave.busy => _Status.clearBusy,
+        _ => _Status.failed,
+      };
+    });
+  }
+
+  Widget _unavailable(AppLocalizations loc) => Column(
+    crossAxisAlignment: CrossAxisAlignment.stretch,
+    children: [
+      _CalmLine(text: loc.dating_sectionReverify),
+      const SizedBox(height: Spacing.md),
+      FlowSecondaryButton(
+        label: loc.dating_gentleWaitClear,
+        busy: _saving,
+        onPressed: _saving ? null : _clearOnly,
+      ),
+      if (_status == _Status.cleared) ...[
+        const SizedBox(height: Spacing.sm),
+        _CalmLine(text: loc.dating_gentleWaitCleared),
+      ],
+      if (_status == _Status.clearBusy) ...[
+        const SizedBox(height: Spacing.sm),
+        _CalmLine(text: loc.dating_gentleWaitClearBusy),
+      ],
+      if (_status == _Status.failed) ...[
+        const SizedBox(height: Spacing.sm),
+        FlowErrorLine(text: loc.dating_errorGeneric, liveRegion: true),
+      ],
+    ],
+  );
 
   Widget _readFailed(
     BuildContext context,
@@ -353,6 +409,14 @@ class _GentleWaitScreenState extends ConsumerState<GentleWaitScreen> {
           const SizedBox(height: Spacing.sm),
           FlowErrorLine(text: loc.dating_errorGeneric, liveRegion: true),
         ],
+        if (_status == _Status.notEligible) ...[
+          const SizedBox(height: Spacing.sm),
+          _CalmLine(text: loc.dating_gentleWaitNotEligible),
+        ],
+        if (_status == _Status.reverify) ...[
+          const SizedBox(height: Spacing.sm),
+          _CalmLine(text: loc.dating_sectionReverify),
+        ],
         const SizedBox(height: Spacing.lg),
         _HealingCard(
           text: loc.dating_gentleWaitHealing,
@@ -438,6 +502,11 @@ class _ReflectionField extends StatelessWidget {
           label: label,
           child: TextField(
             controller: controller,
+            // Spec 2 W3 final fix (M-12): a shared phone: the keyboard
+            // learns and suggests nothing from these answers.
+            enableSuggestions: false,
+            autocorrect: false,
+            enableIMEPersonalizedLearning: false,
             minLines: 3,
             maxLines: 8,
             keyboardType: TextInputType.multiline,

@@ -31,6 +31,7 @@ import 'package:supabase_flutter/supabase_flutter.dart' show User;
 
 import '../../../helpers/flow_harness.dart';
 import '../../../helpers/tap_in_reach.dart';
+import '../support/dating_private_keyboard.dart';
 
 const _body =
     'Your relationship on Attune ended on Sunday, November 1, 2026. Dating opens for you on Tuesday, December 1, 2026, when your shared space closes. If you both close it sooner, Dating opens then.';
@@ -210,6 +211,10 @@ void main() {
   ) async {
     final p = await _open(t);
     p.gateway.saveResult = GentleWaitSave.failed;
+    // Spec 2 W3 final fix (M-12): the keyboard learns nothing from them.
+    for (final q in ['q1', 'q2', 'q3']) {
+      expectPrivateKeyboard(t, find.byKey(ValueKey('gentle_wait_$q')));
+    }
     await t.enterText(find.byKey(const ValueKey('gentle_wait_q2')), 'Kindness');
     await tapInReach(t, find.text('Save my answers'));
     await t.pumpAndSettle();

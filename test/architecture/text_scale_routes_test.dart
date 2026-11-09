@@ -38,13 +38,6 @@ const _notYetAudited = {
   'communicationStyleLoading',
   'communicationStyleResult',
   'partnerQuizResult',
-  'datingConsent',
-  'datingProfile',
-  'datingMatches',
-  'datingGuidedDate',
-  'datingPhotos',
-  'datingVerification',
-  'datingMode',
   'communityFeed',
   'notificationInbox',
   'previousRelationships',
@@ -72,6 +65,12 @@ const _notYetAudited = {
 /// until it is listed here or in [_notYetAudited], even one that falls
 /// under an audited prefix (W10 final W-m2).
 const _audited = {
+  // Spec 2 W3a (§3.0): every Dating screen.
+  'datingSetupStep',
+  'datingUnlock',
+  'datingSettings',
+  'datingNotOpen',
+  'datingLeave',
   'aboutUs',
   'addEditReminder',
   'ageStop',

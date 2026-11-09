@@ -105,6 +105,7 @@ void main() {
       'coupleMap',
       'communicationQuiz',
       'conflictStyleQuiz',
+      'datingMode',
     ]) {
       expect(ids, contains(gated));
       expect(

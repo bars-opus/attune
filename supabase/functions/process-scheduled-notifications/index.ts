@@ -115,6 +115,8 @@ function privacySafeData(metadata: Record<string, unknown>) {
     "entry_id",
     // Together event alarm deep link (Together spec §6.1).
     "event_id",
+    // Spec 2 W3a (§3.13): the neutral Dating push's only data, {"route": "me"}.
+    "route",
   ];
   return Object.fromEntries(
     allowed.filter((key) => metadata[key] != null).map((key) => [key, metadata[key]]),

@@ -561,7 +561,7 @@ Raw Dating tables are denied to `anon` and, except narrowly scoped self-owned pr
 
 Required operations include:
 
-- `get_dating_eligibility()`
+- ~~`get_dating_eligibility()`~~ removed in Spec 2 W3a: the app reads `get_dating_home()` (Task 3 drops the function)
 - `begin_dating_enrollment(idempotency_key, terms_version)`
 - `record_dating_consent(idempotency_key, purpose, action, policy_version, categories)`
 - `save_dating_profile_draft(...)`
@@ -576,7 +576,7 @@ Required operations include:
 - `submit_dating_report(idempotency_key, target_id, category, details)`
 - `save_private_date_reflection(idempotency_key, match_id, response, note)`
 - `delete_private_date_reflection(idempotency_key, match_id)`
-- `delete_dating_profile(idempotency_key)`
+- ~~`delete_dating_profile(idempotency_key)`~~ removed in Spec 2 W1d: leaving is `exit_dating_mode(idempotency_key, keep_never_introduce)` (Spec 2 W3 final, M-9)
 
 Candidate payloads are minimized views assembled server-side. They include only fields approved for that viewer and introduction. They never include user IDs where an opaque introduction/match ID suffices, raw feature vectors, exact scores, preference filters, consent state, profile popularity, reports, blocks, or moderation metadata.
 

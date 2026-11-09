@@ -276,7 +276,9 @@ BEGIN
     RAISE EXCEPTION 'CONTRACT VIOLATED: an orphaned Tier 3 country did not read closed, Tier 1, same-gender off: %', to_jsonb(v_cfg);
   END IF;
   SET LOCAL session_replication_role = replica;
-  UPDATE public.country_safety_config SET is_current = true WHERE country_code = 'GB' AND version = 1;
+  -- Spec 2 W3b (I-3): the newest row was the current one before the probe.
+  UPDATE public.country_safety_config SET is_current = true WHERE country_code = 'GB'
+     AND version = (SELECT max(c.version) FROM public.country_safety_config AS c WHERE c.country_code = 'GB');
   SET LOCAL session_replication_role = origin;
 
   -- With triggers on, orphaning a country fails when the constraint is checked.
@@ -301,6 +303,8 @@ END $$;
 DO $$
 DECLARE
   v jsonb;
+  v_gh_before integer; -- Spec 2 W3b (I-3)
+  v_gb_before integer; -- Spec 2 W3b (I-3)
   v_evidence constant jsonb := '{"osa_illegal_harms_assessment": "REF-1", "osa_childrens_access_assessment": "REF-2",
     "highly_effective_age_assurance": "REF-3", "dpia": "REF-4", "pen_test": "REF-5",
     "safety_owner_and_moderator": "REF-6", "reviewer_signoffs": "REF-7"}';
@@ -308,18 +312,22 @@ BEGIN
   IF private.attune_environment() IS DISTINCT FROM 'development' THEN
     RAISE EXCEPTION 'CONTRACT VIOLATED: with attune_environment unset the project does not read development';
   END IF;
+  -- Spec 2 W3b (I-3): a later migration may have published GH again (its
+  -- faith list), so the new version is the current one plus one.
+  v_gh_before := (pg_temp.current('GH')).version;
   v := pg_temp.publish('GH', '{"dating_enabled": true, "published_by": "contract"}');
-  IF (v ->> 'ok')::boolean IS NOT TRUE OR (v ->> 'version')::int IS DISTINCT FROM 2
+  IF (v ->> 'ok')::boolean IS NOT TRUE OR (v ->> 'version')::int IS DISTINCT FROM v_gh_before + 1
      OR v -> 'checks' IS DISTINCT FROM '["evidence_missing", "resources_not_verified"]'::jsonb
      OR NOT (pg_temp.current('GH')).dating_enabled
-     OR (SELECT is_current FROM public.country_safety_config WHERE country_code = 'GH' AND version = 1) IS NOT FALSE THEN
+     OR (SELECT is_current FROM public.country_safety_config WHERE country_code = 'GH' AND version = v_gh_before) IS NOT FALSE THEN
     RAISE EXCEPTION 'CONTRACT VIOLATED: development did not publish GH with the checks reported: %', v;
   END IF;
 
   PERFORM set_config('app.settings.attune_environment', 'production', true);
+  v_gb_before := (pg_temp.current('GB')).version; -- Spec 2 W3b (I-3)
   v := pg_temp.publish('GB', '{"dating_enabled": true}');
   IF v IS DISTINCT FROM '{"ok": false, "reason": "config:production_checks_failed", "checks": ["evidence_missing", "resources_not_verified"]}'::jsonb
-     OR (pg_temp.current('GB')).version IS DISTINCT FROM 1 THEN
+     OR (pg_temp.current('GB')).version IS DISTINCT FROM v_gb_before THEN
     RAISE EXCEPTION 'CONTRACT VIOLATED: production published Dating on without evidence: %', v;
   END IF;
   v := pg_temp.publish('GB', jsonb_build_object('dating_enabled', true, 'legal_checklist', v_evidence,

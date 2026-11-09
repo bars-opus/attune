@@ -24,7 +24,8 @@
 //
 // So availability is derived from a server RPC instead -- exactly as
 // `DatingFeatureFlags.isDatingModeAvailable` derives Dating's from
-// `get_dating_eligibility()`, the precedent that migration points at.
+// a server RPC (`get_dating_home()` since Spec 2 W3a), the precedent that
+// migration points at.
 // The RPC is `get_ai_session_capabilities()` (migration
 // 20260953200500), which takes no parameter and so is not a key-by-key
 // oracle, and reports only the five capabilities this client renders

@@ -29,6 +29,10 @@
 --      payloads never expose user_id/pair_key, unreviewed active config rejected).
 
 BEGIN;
+-- Spec 2 W3c (R-24): this file's photo fixtures stand for photos the
+-- inline CSAM scan cleared (an approval needs csam_state 'clear');
+-- rolled back with the file.
+ALTER TABLE public.dating_profile_photos ALTER COLUMN csam_state SET DEFAULT 'clear';
 
 -- Spec 2 W1d: readiness v2 reads the encrypted answers, so the fixture
 -- encrypts them under a transaction-local field key.
@@ -238,20 +242,30 @@ END;
 $$;
 
 -- ---------------------------------------------------------------------------
--- 1. Owner RLS — each account sees only its own dating rows.
+-- 1. Owner reads — Spec 2 W3a (R11): the app reads its own Dating rows
+--    only through definer RPCs; a direct SELECT is refused outright.
 -- ---------------------------------------------------------------------------
 SELECT public.test_set_dating_auth('00000000-0000-0000-0000-00000000da01');
 DO $$ DECLARE v int; BEGIN
-  SELECT count(*) INTO v FROM public.dating_profiles;
-  IF v <> 1 THEN RAISE EXCEPTION 'A: profile RLS expected 1 own row, got %', v; END IF;
-  SELECT count(*) INTO v FROM public.dating_enrollments;
-  IF v <> 1 THEN RAISE EXCEPTION 'A: enrollment RLS expected 1 own row, got %', v; END IF;
+  BEGIN
+    SELECT count(*) INTO v FROM public.dating_profiles;
+    RAISE EXCEPTION 'A: a signed-in user can still SELECT dating_profiles (% rows)', v;
+  EXCEPTION WHEN insufficient_privilege THEN NULL;
+  END;
+  BEGIN
+    SELECT count(*) INTO v FROM public.dating_enrollments;
+    RAISE EXCEPTION 'A: a signed-in user can still SELECT dating_enrollments (% rows)', v;
+  EXCEPTION WHEN insufficient_privilege THEN NULL;
+  END;
 END $$;
 
 SELECT public.test_set_dating_auth('00000000-0000-0000-0000-00000000dc03');
 DO $$ DECLARE v int; BEGIN
-  SELECT count(*) INTO v FROM public.dating_profiles;
-  IF v <> 1 THEN RAISE EXCEPTION 'C: profile RLS expected 1 own row, got %', v; END IF;
+  BEGIN
+    SELECT count(*) INTO v FROM public.dating_profiles;
+    RAISE EXCEPTION 'C: a signed-in user can still SELECT dating_profiles (% rows)', v;
+  EXCEPTION WHEN insufficient_privilege THEN NULL;
+  END;
   -- C is an outsider to the A/B and A/D intros and must not see them.
   --
   -- Two distinct mechanisms enforce that, and BOTH satisfy the

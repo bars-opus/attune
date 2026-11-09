@@ -3048,9 +3048,6 @@ class AppLocalizationsIt extends AppLocalizations {
   String get journal_supportPatternsAwayBody => 'Your entries are saved and stay private to you.';
 
   @override
-  String get dating_dashboardFallbackReason => 'You always opt in separately, and nothing starts until you do.';
-
-  @override
   String get dating_gentleWaitTitle => 'Before you begin';
 
   @override
@@ -3124,4 +3121,1126 @@ class AppLocalizationsIt extends AppLocalizations {
   String dating_gentleWaitBodyNoShortcut(String endDate, String openDate) {
     return 'Your relationship on Attune ended on $endDate. Dating opens for you on $openDate.';
   }
+
+  @override
+  String get dating_unlockButton => 'Enter my PIN';
+
+  @override
+  String get dating_sectionReverify => 'Confirm it\'s you on this phone to see Dating.';
+
+  @override
+  String get dating_gentleWaitNotEligible => 'Dating isn\'t available on this account right now, so your answers weren\'t saved.';
+
+  @override
+  String get dating_countryUk => 'the United Kingdom';
+
+  @override
+  String dating_countryWithRegions(String country, String regions) {
+    return '$country ($regions)';
+  }
+
+  @override
+  String dating_sectionNotOpen(String country) {
+    return 'Dating isn\'t open in $country yet.';
+  }
+
+  @override
+  String dating_sectionRegionOpenOnly(String regions) {
+    return 'Dating is open in $regions for now.';
+  }
+
+  @override
+  String get dating_tellMe => 'Tell me when it\'s here';
+
+  @override
+  String dating_tellMeRegion(String region) {
+    return 'Tell me when it\'s open in $region';
+  }
+
+  @override
+  String get dating_tellMeDone => 'We\'ll let you know. You can turn this off in Settings.';
+
+  @override
+  String get dating_tellMeOff => 'Turn this off';
+
+  @override
+  String dating_notOpenTitle(String country) {
+    return 'Dating isn\'t open in $country yet';
+  }
+
+  @override
+  String dating_notOpenBody(String countries) {
+    return 'Attune opens Dating one country at a time, so we can keep it safe and well looked after. It\'s open in $countries now.';
+  }
+
+  @override
+  String dating_notOpenRegionTitle(String regions) {
+    return 'Dating is open in $regions for now';
+  }
+
+  @override
+  String get dating_notOpenRegionBody => 'We\'re opening other regions as soon as we can look after them well.';
+
+  @override
+  String get dating_justForMe => 'Use Attune just for me';
+
+  @override
+  String get dating_sectionNotStarted => 'Meet a few people a day. Only when it\'s mutual.';
+
+  @override
+  String get dating_sectionFinish => 'Finish setting up Dating';
+
+  @override
+  String dating_sectionFirstDrop(String date, String time) {
+    return 'Your first introductions arrive $date at $time.';
+  }
+
+  @override
+  String get dating_sectionActive => 'Dating is on. Your introductions will show here.';
+
+  @override
+  String get dating_sectionPaused => 'Dating is paused. Nobody new sees you.';
+
+  @override
+  String get dating_resume => 'Resume';
+
+  @override
+  String get dating_sectionPausedRelationship => 'Dating is paused while you have a shared space on Attune.';
+
+  @override
+  String dating_sectionSameGenderNote(String country) {
+    return 'Introductions between people of the same gender aren\'t available in $country now. We\'ve removed that choice from your profile.';
+  }
+
+  @override
+  String get dating_why => 'Why?';
+
+  @override
+  String dating_whyBody(String country) {
+    return 'In $country, relationships between people of the same gender can carry legal risk, and people have been targeted through dating apps, including by people they know. Until we can protect people properly here, Attune only introduces men and women to each other. Nothing you choose here is stored unless you continue. We\'ll look at this again after legal advice and talking with local groups.';
+  }
+
+  @override
+  String get dating_close => 'Close';
+
+  @override
+  String get dating_chooseAgain => 'Choose again';
+
+  @override
+  String get dating_sectionAway => 'Dating is hidden while you\'re away.';
+
+  @override
+  String get dating_sectionRestricted => 'Your Dating account is restricted. The rest of Attune works as usual.';
+
+  @override
+  String get dating_sectionHold => 'Your Dating profile is paused while we look into something. This isn\'t a decision yet.';
+
+  @override
+  String get dating_sectionAgeReview => 'We need to confirm your age before you can use Dating.';
+
+  @override
+  String get dating_sectionUnavailable => 'Dating isn\'t available on this account right now.';
+
+  @override
+  String get dating_sectionLockedLabel => 'Dating, locked';
+
+  @override
+  String get dating_settingsTitle => 'Dating settings';
+
+  @override
+  String get dating_settingsNotice => 'Tell me when Dating opens';
+
+  @override
+  String get dating_settingsClearReflection => 'Clear my answers to the three questions';
+
+  @override
+  String get dating_errorPathNotDating => 'Choose Dating in How you use Attune to carry on.';
+
+  @override
+  String get dating_openHowYouUse => 'How you use Attune';
+
+  @override
+  String get dating_errorResumeGates => 'Dating can\'t resume on this account right now.';
+
+  @override
+  String get dating_errorConsent => 'Agree to Dating\'s terms again to carry on.';
+
+  @override
+  String get dating_errorIncomplete => 'Finish setting up Dating first.';
+
+  @override
+  String get dating_errorRateLimited => 'You\'ve done this a lot today. Try again tomorrow.';
+
+  @override
+  String get dating_region_gh_af => 'Ahafo';
+
+  @override
+  String get dating_region_gh_ah => 'Ashanti';
+
+  @override
+  String get dating_region_gh_bo => 'Bono';
+
+  @override
+  String get dating_region_gh_be => 'Bono East';
+
+  @override
+  String get dating_region_gh_cp => 'Central';
+
+  @override
+  String get dating_region_gh_ep => 'Eastern';
+
+  @override
+  String get dating_region_gh_aa => 'Greater Accra';
+
+  @override
+  String get dating_region_gh_ne => 'North East';
+
+  @override
+  String get dating_region_gh_np => 'Northern';
+
+  @override
+  String get dating_region_gh_ot => 'Oti';
+
+  @override
+  String get dating_region_gh_sv => 'Savannah';
+
+  @override
+  String get dating_region_gh_ue => 'Upper East';
+
+  @override
+  String get dating_region_gh_uw => 'Upper West';
+
+  @override
+  String get dating_region_gh_tv => 'Volta';
+
+  @override
+  String get dating_region_gh_wp => 'Western';
+
+  @override
+  String get dating_region_gh_wn => 'Western North';
+
+  @override
+  String get dating_side_gh_accra => 'Accra';
+
+  @override
+  String get dating_side_gh_tema => 'Tema and Ashaiman';
+
+  @override
+  String get dating_side_gh_kumasi => 'Kumasi';
+
+  @override
+  String get dating_side_gh_outside_kumasi => 'Outside Kumasi';
+
+  @override
+  String get dating_region_gb_tlc => 'North East';
+
+  @override
+  String get dating_region_gb_tld => 'North West';
+
+  @override
+  String get dating_region_gb_tle => 'Yorkshire and the Humber';
+
+  @override
+  String get dating_region_gb_tlf => 'East Midlands';
+
+  @override
+  String get dating_region_gb_tlg => 'West Midlands';
+
+  @override
+  String get dating_region_gb_tlh => 'East of England';
+
+  @override
+  String get dating_region_gb_tli => 'London';
+
+  @override
+  String get dating_region_gb_tlj => 'South East';
+
+  @override
+  String get dating_region_gb_tlk => 'South West';
+
+  @override
+  String get dating_region_gb_tll => 'Wales';
+
+  @override
+  String get dating_region_gb_tlm => 'Scotland';
+
+  @override
+  String get dating_region_gb_tln => 'Northern Ireland';
+
+  @override
+  String get dating_noticeNotEligible => 'We can\'t set this up on this account.';
+
+  @override
+  String get dating_faith_christian => 'Christian';
+
+  @override
+  String get dating_faith_muslim => 'Muslim';
+
+  @override
+  String get dating_faith_traditional => 'Traditional';
+
+  @override
+  String get dating_faith_hindu => 'Hindu';
+
+  @override
+  String get dating_faith_sikh => 'Sikh';
+
+  @override
+  String get dating_faith_jewish => 'Jewish';
+
+  @override
+  String get dating_faith_buddhist => 'Buddhist';
+
+  @override
+  String get dating_faith_other => 'Other';
+
+  @override
+  String get dating_faith_none => 'None';
+
+  @override
+  String get dating_faith_prefer_not_to_say => 'Prefer not to say';
+
+  @override
+  String get dating_denomination_catholic => 'Catholic';
+
+  @override
+  String get dating_denomination_anglican => 'Anglican';
+
+  @override
+  String get dating_denomination_methodist => 'Methodist';
+
+  @override
+  String get dating_denomination_presbyterian => 'Presbyterian';
+
+  @override
+  String get dating_denomination_pentecostal_charismatic => 'Pentecostal or Charismatic';
+
+  @override
+  String get dating_denomination_seventh_day_adventist => 'Seventh-day Adventist';
+
+  @override
+  String get dating_denomination_other_christian => 'Other Christian';
+
+  @override
+  String get dating_denomination_church_of_england_anglican => 'Church of England or Anglican';
+
+  @override
+  String get dating_denomination_orthodox => 'Orthodox';
+
+  @override
+  String dating_stepOf(int n, int total) {
+    return 'Step $n of $total';
+  }
+
+  @override
+  String get dating_skip => 'Skip';
+
+  @override
+  String get dating_continue => 'Continue';
+
+  @override
+  String get dating_notAvailableHere => 'This choice isn\'t available here.';
+
+  @override
+  String get dating_contactFilter => 'Contact details can\'t go on your profile. You can swap them in a chat when you\'re both ready.';
+
+  @override
+  String get dating_kindnessFilter => 'Please rephrase this so it\'s kind to everyone.';
+
+  @override
+  String get dating_countryChangeLimited => 'You can change your Dating country once every 30 days.';
+
+  @override
+  String get dating_howTitle => 'How Dating works';
+
+  @override
+  String get dating_how1 => 'Up to 3 introductions a day, at a time you choose.';
+
+  @override
+  String get dating_how2 => 'Saying \'Interested\' is private. You only match when you\'re both interested.';
+
+  @override
+  String get dating_how3 => 'Dating chats are separate from the rest of Attune. Phone numbers stay hidden until you both choose to swap.';
+
+  @override
+  String get dating_how4 => 'Before your first introduction, a short video selfie checks your age and that your photos are you. The video is deleted straight away.';
+
+  @override
+  String get dating_how5 => 'You\'ll add at least 2 photos and answer 2 short questions.';
+
+  @override
+  String dating_how6(String date) {
+    return 'Your first introductions can arrive from $date.';
+  }
+
+  @override
+  String dating_how7(String countries) {
+    return 'Dating is open in $countries.';
+  }
+
+  @override
+  String get dating_how8 => 'Setting up uses about 15 MB of data, mostly for the video check.';
+
+  @override
+  String get dating_setUpLater => 'Set up later';
+
+  @override
+  String get dating_justMeDone => 'You\'re on \'Just for me\'.';
+
+  @override
+  String get dating_undo => 'Undo';
+
+  @override
+  String get dating_lookingTitle => 'What are you looking for?';
+
+  @override
+  String get dating_intentMarriage => 'Marriage';
+
+  @override
+  String get dating_intentCommitted => 'A committed relationship';
+
+  @override
+  String get dating_intentCompanionship => 'Companionship, at my own pace';
+
+  @override
+  String get dating_intentNotSure => 'Not sure yet';
+
+  @override
+  String get dating_timelineQ => 'When would you like to marry?';
+
+  @override
+  String get dating_timelineSoon => 'In the next year or two';
+
+  @override
+  String get dating_timelineFew => 'In a few years';
+
+  @override
+  String get dating_timelineNone => 'No set time';
+
+  @override
+  String get dating_timelineShow => 'Show this on my profile';
+
+  @override
+  String get dating_attestation => 'I\'m not married in any form (customary, religious or civil), I\'m not separated from a spouse, and I\'m not in a relationship.';
+
+  @override
+  String get dating_attestationHelper => 'Dating on Attune is for people who are free to start a relationship.';
+
+  @override
+  String get dating_attestationError => 'Please confirm you\'re free to start a relationship.';
+
+  @override
+  String get dating_separatedLink => 'I\'m separated but not divorced';
+
+  @override
+  String get dating_separatedSheet => 'Dating isn\'t open to you yet. Once your divorce is final, you\'re welcome here. Attune just for me is open to you now.';
+
+  @override
+  String get dating_marriedBefore => 'Married before? (optional)';
+
+  @override
+  String get dating_maritalNever => 'Never';
+
+  @override
+  String get dating_maritalDivorced => 'Divorced';
+
+  @override
+  String get dating_maritalWidowed => 'Widowed';
+
+  @override
+  String get dating_maritalShow => 'Show on my profile';
+
+  @override
+  String get dating_whereTitle => 'Where are you?';
+
+  @override
+  String get dating_countryLabel => 'Country';
+
+  @override
+  String get dating_regionLabel => 'Region';
+
+  @override
+  String get dating_countryNotListed => 'My country isn\'t listed';
+
+  @override
+  String dating_regionClosed(String regions) {
+    return 'Dating is open in $regions for now. We\'re opening other regions as soon as we can look after them well.';
+  }
+
+  @override
+  String dating_sideLabel(String region) {
+    return 'Which side of $region? (optional)';
+  }
+
+  @override
+  String get dating_sideEither => 'Either side';
+
+  @override
+  String get dating_scopeQ => 'How far would you like to meet people?';
+
+  @override
+  String get dating_scopeSide => 'My side';
+
+  @override
+  String get dating_scopeRegion => 'My region';
+
+  @override
+  String dating_scopeCountry(String country) {
+    return 'Anywhere in $country';
+  }
+
+  @override
+  String get dating_abroadRow => 'Also open to people in other countries';
+
+  @override
+  String get dating_abroadDisabled => 'Available once you\'re verified and your account is 14 days old.';
+
+  @override
+  String get dating_whereHelper => 'We never use your exact location. Others see your region only.';
+
+  @override
+  String get dating_search => 'Search';
+
+  @override
+  String get dating_choose => 'Choose';
+
+  @override
+  String get dating_privacyTitle => 'Your answers stay private';
+
+  @override
+  String get dating_privacyWhyHead => 'Why we ask';
+
+  @override
+  String get dating_privacyWhoHead => 'Who sees what';
+
+  @override
+  String get dating_privacyNeverHead => 'What we never do';
+
+  @override
+  String get dating_privacyProtectedHead => 'How it\'s protected';
+
+  @override
+  String get dating_privacyLeavingHead => 'Leaving';
+
+  @override
+  String get dating_privacyWhy => 'The next questions are about you and who you\'d like to meet. We use your answers only to introduce you to people who\'d like to meet you too.';
+
+  @override
+  String get dating_privacyWho => 'Nobody ever sees who you\'d like to meet. Your gender, faith and marriage history appear on your profile only if you choose. We never collect your exact location.';
+
+  @override
+  String get dating_privacyNever => 'Nothing from your journal, quizzes or Healing is used to introduce you. Your answers are never used for ads, never sold, and never read by AI.';
+
+  @override
+  String get dating_privacyProtected => 'These answers are stored encrypted. The people who review reports can\'t see them.';
+
+  @override
+  String get dating_privacyLeaving => 'You can leave Dating at any time, and these answers are deleted.';
+
+  @override
+  String get dating_privacyConsent => 'I agree that Attune can use my answers about my gender and who I\'d like to meet to introduce me.';
+
+  @override
+  String get dating_datingTerms => 'Dating terms';
+
+  @override
+  String get dating_privacyNotice => 'Privacy notice';
+
+  @override
+  String get dating_agreeContinue => 'Agree and continue';
+
+  @override
+  String get dating_youTitle => 'Which best describes you?';
+
+  @override
+  String get dating_identityWoman => 'Woman';
+
+  @override
+  String get dating_identityMan => 'Man';
+
+  @override
+  String get dating_identityNonBinary => 'Non-binary';
+
+  @override
+  String get dating_moreSpecific => 'Add something more specific';
+
+  @override
+  String get dating_specificTransWoman => 'Trans woman';
+
+  @override
+  String get dating_specificTransMan => 'Trans man';
+
+  @override
+  String get dating_specificGenderfluid => 'Genderfluid';
+
+  @override
+  String get dating_specificGenderqueer => 'Genderqueer';
+
+  @override
+  String get dating_specificAgender => 'Agender';
+
+  @override
+  String get dating_specificIntersex => 'Intersex';
+
+  @override
+  String get dating_specificOwnWords => 'In my own words';
+
+  @override
+  String get dating_specificInvalid => 'Use letters, spaces and hyphens only, up to 30.';
+
+  @override
+  String get dating_nbPoolsQ => 'Should we also introduce you to people looking for:';
+
+  @override
+  String get dating_poolWomen => 'Women';
+
+  @override
+  String get dating_poolMen => 'Men';
+
+  @override
+  String get dating_nbPoolsHelper => 'People open to everyone can always be introduced to you.';
+
+  @override
+  String get dating_pronouns => 'Pronouns (optional)';
+
+  @override
+  String get dating_genderShow => 'Show my gender on my profile';
+
+  @override
+  String get dating_youHelper => 'We use this only to introduce you to people who want to meet someone like you.';
+
+  @override
+  String dating_offCountryLine(String country) {
+    return 'In $country, Dating introduces men and women to each other for now. If neither of these fits you, Dating can\'t introduce you safely here yet.';
+  }
+
+  @override
+  String get dating_supportForYou => 'Support for you';
+
+  @override
+  String get dating_meetTitle => 'Who would you like to meet?';
+
+  @override
+  String get dating_seekMen => 'Men';
+
+  @override
+  String get dating_seekWomen => 'Women';
+
+  @override
+  String get dating_seekEveryone => 'Everyone';
+
+  @override
+  String get dating_meetPrivate => 'Only you can see this. It\'s never on your profile.';
+
+  @override
+  String get dating_offMeetMen => 'You\'ll be introduced to men.';
+
+  @override
+  String get dating_offMeetWomen => 'You\'ll be introduced to women.';
+
+  @override
+  String dating_offMeetLine(String country) {
+    return 'In $country, Attune introduces men and women to each other for now.';
+  }
+
+  @override
+  String dating_ages(int min, int max) {
+    return 'Ages $min to $max';
+  }
+
+  @override
+  String dating_agesYoungest(int age) {
+    return 'Youngest $age';
+  }
+
+  @override
+  String dating_agesOldest(int age) {
+    return 'Oldest $age';
+  }
+
+  @override
+  String get dating_noteTitle => 'Before you save this';
+
+  @override
+  String dating_notePhone(String country) {
+    return 'Your phone number is from $country, where relationships between people of the same gender can carry legal risk, and people have been targeted through dating apps, including by people they know.';
+  }
+
+  @override
+  String get dating_noteThen => 'Attune never shows who you\'d like to meet, never shows distance, and keeps Dating out of your notifications. You can also set a PIN, use a plain app icon, and leave Dating at any time to delete these answers.';
+
+  @override
+  String get dating_noteSave => 'Save';
+
+  @override
+  String get dating_noteSetPin => 'Set a PIN first';
+
+  @override
+  String get dating_noteBack => 'Go back';
+
+  @override
+  String get dating_childrenTitle => 'Children';
+
+  @override
+  String get dating_childrenHaveQ => 'Do you have children?';
+
+  @override
+  String get dating_yes => 'Yes';
+
+  @override
+  String get dating_no => 'No';
+
+  @override
+  String get dating_childrenWantQ => 'Do you want children (or more children)?';
+
+  @override
+  String get dating_openToIt => 'Open to it';
+
+  @override
+  String get dating_childrenMustMatch => 'Only introduce me to people whose answer fits mine';
+
+  @override
+  String get dating_childrenExcludeParents => 'I\'d rather not meet people who have children';
+
+  @override
+  String get dating_childrenHelper => 'We never ask for your children\'s names or ages, and photos with children can\'t be used.';
+
+  @override
+  String get dating_faithTitle => 'Faith';
+
+  @override
+  String get dating_optional => 'Optional';
+
+  @override
+  String get dating_denomination => 'Denomination (optional)';
+
+  @override
+  String get dating_importanceQ => 'How much does sharing a faith matter to you?';
+
+  @override
+  String get dating_importanceNo => 'It doesn\'t matter';
+
+  @override
+  String get dating_importanceNice => 'Nice if we share';
+
+  @override
+  String get dating_importanceMust => 'We must share it';
+
+  @override
+  String get dating_faithShow => 'Show my faith on my profile';
+
+  @override
+  String get dating_faithConsent => 'Faith is sensitive information. I agree that Attune can use it to introduce me.';
+
+  @override
+  String get dating_faithConsentError => 'Please agree, or choose Skip.';
+
+  @override
+  String get dating_agesYoungestLabel => 'Youngest';
+
+  @override
+  String get dating_agesOldestLabel => 'Oldest';
+
+  @override
+  String get dating_photosTitle => 'Add your photos';
+
+  @override
+  String get dating_photosBody => 'Add 2 to 6 photos. Clear, recent photos of just you work best.';
+
+  @override
+  String get dating_photoAdd => 'Add photo';
+
+  @override
+  String dating_photoPreparing(int n) {
+    return 'Preparing photo $n…';
+  }
+
+  @override
+  String dating_photoUploading(int n) {
+    return 'Uploading photo $n…';
+  }
+
+  @override
+  String get dating_photoChecking => 'Checking…';
+
+  @override
+  String get dating_photoReady => 'Ready';
+
+  @override
+  String get dating_photoReview => 'Needs a person to check it. That usually takes less than a day.';
+
+  @override
+  String dating_photoFaceUnclear(int n) {
+    return 'Photo $n: we couldn\'t see your face clearly.';
+  }
+
+  @override
+  String dating_photoTooSmall(int n) {
+    return 'Photo $n is too small.';
+  }
+
+  @override
+  String dating_photoChild(int n) {
+    return 'Photo $n: photos with children can\'t be used on Dating. Crop to just you?';
+  }
+
+  @override
+  String get dating_photoCrop => 'Crop';
+
+  @override
+  String dating_photoCantUse(int n) {
+    return 'Photo $n can\'t be used.';
+  }
+
+  @override
+  String dating_photoFailed(int n) {
+    return 'Photo $n didn\'t upload. Try again.';
+  }
+
+  @override
+  String dating_photoSlot(int n, String state) {
+    return 'Photo $n of 6, $state';
+  }
+
+  @override
+  String get dating_photoMoveEarlier => 'Move earlier';
+
+  @override
+  String get dating_photoMoveLater => 'Move later';
+
+  @override
+  String get dating_photoRemove => 'Remove';
+
+  @override
+  String get dating_photoReplace => 'Replace';
+
+  @override
+  String get dating_photoCaption => 'Add a caption (only you see it)';
+
+  @override
+  String get dating_photoCaptionLabel => 'Caption';
+
+  @override
+  String get dating_photoSave => 'Save';
+
+  @override
+  String get dating_photosAfterMutual => 'Show my photos only after we\'re both interested';
+
+  @override
+  String dating_photosAfterMutualFrom(String date) {
+    return 'Available from $date. New accounts show their photos for the first 30 days, which helps stop fake profiles.';
+  }
+
+  @override
+  String get dating_photosData => 'Each photo uses about 300 KB.';
+
+  @override
+  String get dating_photosOffline => 'You\'re offline. Add photos when you\'re connected.';
+
+  @override
+  String get dating_promptsTitle => 'A little about you';
+
+  @override
+  String get dating_promptsBody => 'Answer 2 of these. Short is fine.';
+
+  @override
+  String get dating_prompt_perfect_sunday => 'A perfect Sunday for me looks like…';
+
+  @override
+  String get dating_prompt_feel_at_home => 'I feel most at home when…';
+
+  @override
+  String get dating_prompt_friends_say => 'My friends would say I\'m…';
+
+  @override
+  String get dating_prompt_looking_for => 'I\'m looking for someone who…';
+
+  @override
+  String get dating_prompt_small_thing => 'A small thing that makes my day…';
+
+  @override
+  String get dating_prompt_win_me_over => 'The way to win me over is…';
+
+  @override
+  String get dating_prompt_learning_to => 'I\'m learning to…';
+
+  @override
+  String get dating_prompt_family_describe => 'My family would describe me as…';
+
+  @override
+  String get dating_prompt_place_love => 'A kind of place I love spending time…';
+
+  @override
+  String get dating_prompt_ask_me_about => 'Ask me about…';
+
+  @override
+  String get dating_promptTooShort => 'At least 10 characters.';
+
+  @override
+  String dating_photoPickFailed(int n) {
+    return 'Photo $n: your photos couldn\'t be opened. Check that Attune can use them in Settings, then try again.';
+  }
+
+  @override
+  String dating_photoCropFailed(int n) {
+    return 'Photo $n couldn\'t be cropped. Try again.';
+  }
+
+  @override
+  String get dating_textInvisible => 'Some emoji and symbols can\'t be used here. Try taking them out.';
+
+  @override
+  String get dating_promptNeedsWords => 'Add a few words, not just emoji or symbols.';
+
+  @override
+  String get dating_verifyTitle => 'Verify it\'s you';
+
+  @override
+  String get dating_verifyBody => 'A short video selfie checks that you\'re a real person, that your photos are you, and that you\'re over 18. The video is deleted at once. We keep only whether it passed.';
+
+  @override
+  String get dating_verifyLater => 'You\'ll do this check before your first introduction.';
+
+  @override
+  String get dating_previewTitle => 'This is what others see';
+
+  @override
+  String get dating_previewNever => 'Never shown: who you\'d like to meet, your exact location, your date of birth.';
+
+  @override
+  String get dating_previewUnavailable => 'Your preview can\'t be shown right now.';
+
+  @override
+  String get dating_tryAgain => 'Try again';
+
+  @override
+  String get dating_nameLabel => 'First name';
+
+  @override
+  String get dating_nameHelper => 'Use your first name or what friends call you.';
+
+  @override
+  String get dating_nameInvalid => 'Use 1 to 30 characters.';
+
+  @override
+  String get dating_save => 'Save';
+
+  @override
+  String get dating_editName => 'Edit first name';
+
+  @override
+  String get dating_editLooking => 'Edit what you\'re looking for';
+
+  @override
+  String get dating_editWhere => 'Edit where you are';
+
+  @override
+  String get dating_editPrompts => 'Edit your answers';
+
+  @override
+  String get dating_editChildren => 'Edit children';
+
+  @override
+  String get dating_editAbout => 'Edit what you show about yourself';
+
+  @override
+  String get dating_editPhotos => 'Edit photos';
+
+  @override
+  String get dating_pushDigest => 'Tell me about new introductions and matches, at most once a day.';
+
+  @override
+  String get dating_pushTurnOn => 'Turn on';
+
+  @override
+  String get dating_pushDigestOn => 'We\'ll tell you about new introductions and matches, at most once a day.';
+
+  @override
+  String get dating_pushMessages => 'Tell me when someone messages me';
+
+  @override
+  String dating_cardHeading(String name, int age) {
+    return '$name, $age';
+  }
+
+  @override
+  String get dating_cardMarriage => 'Looking for marriage';
+
+  @override
+  String get dating_cardMarriageSoon => 'Looking for marriage, in the next year or two';
+
+  @override
+  String get dating_cardMarriageFew => 'Looking for marriage, in a few years';
+
+  @override
+  String get dating_cardMarriageNone => 'Looking for marriage, with no set time';
+
+  @override
+  String get dating_cardCommitted => 'Looking for a committed relationship';
+
+  @override
+  String get dating_cardCompanionship => 'Looking for companionship, at a comfortable pace';
+
+  @override
+  String get dating_cardNotSure => 'Not sure yet';
+
+  @override
+  String get dating_cardHasChildren => 'Has children';
+
+  @override
+  String get dating_cardNoChildren => 'No children';
+
+  @override
+  String get dating_cardWantsChildren => 'Wants children';
+
+  @override
+  String get dating_cardNoWantChildren => 'Doesn\'t want children';
+
+  @override
+  String get dating_cardOpenChildren => 'Open to children';
+
+  @override
+  String get dating_cardPhotosLater => 'Photos appear after you\'re both interested.';
+
+  @override
+  String get dating_cardShowPhotos => 'Show photos (about 1 MB)';
+
+  @override
+  String dating_cardPhoto(int n, int count) {
+    return 'Photo $n of $count';
+  }
+
+  @override
+  String get dating_readyTitle => 'You\'re all set';
+
+  @override
+  String dating_readyFirst(String date, String time) {
+    return 'Your first introductions arrive $date at $time.';
+  }
+
+  @override
+  String get dating_readyChangeTime => 'Change time';
+
+  @override
+  String get dating_readyTimeTitle => 'Pick a time when you have a few quiet minutes.';
+
+  @override
+  String get dating_readyWhile => 'While you wait';
+
+  @override
+  String get dating_readyJournal => 'Write in your journal';
+
+  @override
+  String get dating_readySharedQ => 'Does anyone else use this phone?';
+
+  @override
+  String get dating_readyLock => 'Lock Dating with your PIN';
+
+  @override
+  String get dating_readyEveryOpen => 'Ask for my PIN every time Attune opens';
+
+  @override
+  String get dating_done => 'Done';
+
+  @override
+  String get dating_readyGates => 'We still need to check it\'s you before introductions start.';
+
+  @override
+  String get dating_editFaith => 'Edit faith';
+
+  @override
+  String get dating_editMarital => 'Edit marital status';
+
+  @override
+  String dating_cardPhotos(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count photos',
+      one: '1 photo',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get dating_settingsTime => 'Introduction time';
+
+  @override
+  String get dating_settingsWho => 'Who I\'d like to meet';
+
+  @override
+  String get dating_settingsAges => 'Ages';
+
+  @override
+  String dating_settingsAgesValue(int min, int max) {
+    return '$min to $max';
+  }
+
+  @override
+  String get dating_settingsHowFar => 'How far';
+
+  @override
+  String get dating_settingsPhotosAfter => 'Photos after mutual interest';
+
+  @override
+  String get dating_settingsDataSaver => 'Data saver';
+
+  @override
+  String get dating_settingsDataSaverSub => 'Show photos only when I tap';
+
+  @override
+  String get dating_settingsNotifications => 'Notifications';
+
+  @override
+  String get dating_settingsPause => 'Pause Dating';
+
+  @override
+  String get dating_pausedLine => 'Dating is paused. Nobody new sees you, and your conversations stay open.';
+
+  @override
+  String get dating_settingsResume => 'Resume Dating';
+
+  @override
+  String get dating_settingsLeave => 'Leave Dating and delete my data';
+
+  @override
+  String get dating_leaveTitle => 'Leave Dating?';
+
+  @override
+  String get dating_leaveNow => 'Deleted now: your Dating profile, photos, prompts, who you\'d like to meet, your gender and faith answers, your settings and your private notes.';
+
+  @override
+  String get dating_leave30 => 'Kept for 30 days, then deleted: your conversations, so either of you can still report a problem.';
+
+  @override
+  String get dating_leaveSafety => 'Kept for safety, for up to 2 years, only if your account is restricted or you\'ve blocked someone: a code made from your phone number, never the number itself.';
+
+  @override
+  String get dating_leaveRecord => 'Kept as a record: when you agreed to Dating\'s terms and when you left.';
+
+  @override
+  String get dating_leaveKeepList => 'Keep my \'Never introduce me\' list in case I come back. It holds codes, not numbers.';
+
+  @override
+  String get dating_leaveConfirm => 'Leave and delete';
+
+  @override
+  String get dating_leavePause => 'Pause instead';
+
+  @override
+  String get dating_leftDone => 'You\'ve left Dating. You can set it up again any time.';
+
+  @override
+  String get dating_leftSuspended => 'You\'ve left Dating.';
+
+  @override
+  String dating_photoRemoveQ(int n) {
+    return 'Remove photo $n?';
+  }
+
+  @override
+  String get dating_photoRemoveBody => 'It\'s deleted at once. A photo you add later is checked again before anyone sees it.';
+
+  @override
+  String get dating_photoKeep => 'Keep it';
 }

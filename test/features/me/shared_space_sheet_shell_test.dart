@@ -18,6 +18,7 @@ import '../../helpers/fake_reminder_rpc.dart';
 import '../../helpers/flow_harness.dart';
 import '../../helpers/home_harness.dart';
 import '../../helpers/tap_in_reach.dart';
+import '../dating/support/dating_shell.dart';
 
 Future<HomeHarness> _pumpShell(
   WidgetTester tester,
@@ -49,6 +50,8 @@ Future<HomeHarness> _pumpShell(
       publicAppConfigGatewayProvider.overrideWithValue(
         FakePublicConfigGateway(),
       ),
+      // Spec 2 W3a: Me's Dating card is the section now.
+      ...datingHomeOnlyOverrides(account: 'u-home'),
     ],
   );
   await tester.pumpAndSettle();

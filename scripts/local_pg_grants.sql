@@ -382,3 +382,12 @@ GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public
 
 -- Spec 2 W2: the reflection table is no API role's; the home and the two reflection RPCs are the app's.
 \i supabase/migrations/20261107140010_dating_v2_home_grants.sql
+
+-- Spec 2 W3a: the four owner-read grants revoked (R11); the notice RPCs are the app's; the push helpers are the database's own.
+\i supabase/migrations/20261107150010_dating_v2_client_reads_grants.sql
+
+-- Spec 2 W3b: the setup lists RPC is the app's.
+\i supabase/migrations/20261107160010_dating_v2_setup_lists_grants.sql
+
+-- Spec 2 W3c: the photo and intent tables lose the client SELECT (R11); the photo RPCs and the storage predicates are the app's; the CSAM recorder and the orphan sweep are the service role's.
+\i supabase/migrations/20261107170010_dating_v2_photos_grants.sql

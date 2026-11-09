@@ -670,69 +670,17 @@ BEGIN
 END $e2$;
 
 -- =====================================================================
--- F. (W2, I-4) get_dating_eligibility() is a same-shape shim over the
---    setup scope until W3a: feature_unavailable and relationship_active
---    as before, every other failure account_unavailable, never
---    healing_not_complete.
+-- F. (W3a, I-4, R21) get_dating_eligibility() is gone. Its W2 fixture
+--    (person 55 and the pending relationship) stays for later sections.
 -- =====================================================================
 DO $shim$
 DECLARE
-  v_wait constant uuid := pg_temp.id('40');
-  v_solo constant uuid := pg_temp.id('46');
-  v_young constant uuid := pg_temp.id('02');
   v_inviter constant uuid := pg_temp.person('55');
-  v jsonb;
-  v_reason text;
 BEGIN
   INSERT INTO public.relationships (user_a, user_b, status, invite_code, invite_expires_at)
   VALUES (v_inviter, NULL, 'pending', 'W2SHIM01', now() + interval '1 day');
-  PERFORM pg_temp.as_person(v_wait);
-  v := public.get_dating_eligibility();
-  PERFORM pg_temp.as_db();
-  IF v IS DISTINCT FROM jsonb_build_object('is_eligible', true, 'age_verification_complete', false, 'reason', NULL,
-                                           'message', 'You can opt in to Dating Mode when you are ready.') THEN
-    RAISE EXCEPTION 'CONTRACT VIOLATED: the shim for a person in the wait (setup scope) is %', v;
-  END IF;
-  PERFORM pg_temp.as_person(v_solo);
-  v := public.get_dating_eligibility();
-  PERFORM pg_temp.as_db();
-  IF v ->> 'is_eligible' IS DISTINCT FROM 'true' THEN
-    RAISE EXCEPTION 'CONTRACT VIOLATED: the shim still reads Healing (%)', v;
-  END IF;
-  PERFORM pg_temp.as_person(v_inviter);
-  v := public.get_dating_eligibility();
-  PERFORM pg_temp.as_db();
-  IF v IS DISTINCT FROM jsonb_build_object('is_eligible', false, 'reason', 'relationship_active',
-       'message', 'Dating Mode stays unavailable while a relationship is pending or active.') THEN
-    RAISE EXCEPTION 'CONTRACT VIOLATED: the shim with a pending relationship is %', v;
-  END IF;
-  PERFORM pg_temp.as_person(v_young);
-  v := public.get_dating_eligibility();
-  PERFORM pg_temp.as_db();
-  IF v IS DISTINCT FROM jsonb_build_object('is_eligible', false, 'reason', 'account_unavailable',
-       'message', 'Dating Mode is not available for this account.') THEN
-    RAISE EXCEPTION 'CONTRACT VIOLATED: the shim for an under-18 account is %', v;
-  END IF;
-  UPDATE public.feature_flags SET enabled = false WHERE key = 'dating_mode_enabled';
-  PERFORM pg_temp.as_person(v_wait);
-  v := public.get_dating_eligibility();
-  PERFORM pg_temp.as_db();
-  UPDATE public.feature_flags SET enabled = true WHERE key = 'dating_mode_enabled';
-  IF v IS DISTINCT FROM jsonb_build_object('is_eligible', false, 'reason', 'feature_unavailable',
-       'message', 'Dating Mode is not available yet.') THEN
-    RAISE EXCEPTION 'CONTRACT VIOLATED: the shim with the flag off is %', v;
-  END IF;
-  v_reason := pg_temp.probe(ARRAY[
-    $s$CREATE OR REPLACE FUNCTION public.dating_eligibility(p_user uuid, p_scope text DEFAULT 'candidate') RETURNS text LANGUAGE sql STABLE AS $f$ SELECT NULL::text $f$$s$,
-    format($s$SELECT pg_temp.as_person(%L)$s$, v_wait)],
-    $q$SELECT public.get_dating_eligibility() ->> 'reason'$q$);
-  PERFORM pg_temp.as_db();
-  IF v_reason IS DISTINCT FROM 'account_unavailable' THEN
-    RAISE EXCEPTION 'CONTRACT VIOLATED: with a NULL eligibility the shim answered %', v_reason;
-  END IF;
-  IF NOT has_function_privilege('authenticated', 'public.get_dating_eligibility()', 'EXECUTE')
-     OR has_function_privilege('anon', 'public.get_dating_eligibility()', 'EXECUTE') THEN
-    RAISE EXCEPTION 'CONTRACT VIOLATED: the shim''s grants changed';
+  IF to_regprocedure('public.get_dating_eligibility()') IS NOT NULL THEN
+    RAISE EXCEPTION 'CONTRACT VIOLATED: get_dating_eligibility() still exists (W3a drops it)';
   END IF;
 END $shim$;
 
@@ -934,16 +882,6 @@ BEGIN
     format($s$SELECT pg_temp.begin_as(%L, 'spec2-w2-b1-0082') || '/' || currval('pg_temp.w2_b1_begin_calls')$s$, v_busy));
   IF v IS DISTINCT FROM 'dating:busy/none/3' THEN
     RAISE EXCEPTION 'CONTRACT VIOLATED: three lock conflicts did not end as dating:busy after three tries (%)', v;
-  END IF;
-
-  -- The shim: a NULL age answer is not verified.
-  v := pg_temp.probe(ARRAY[
-    $s$CREATE OR REPLACE FUNCTION public.dating_age_gate_holds(p_user_id uuid) RETURNS boolean LANGUAGE sql STABLE AS $f$ SELECT NULL::boolean $f$$s$,
-    format($s$SELECT pg_temp.as_person(%L)$s$, v_wait)],
-    $q$SELECT (public.get_dating_eligibility() ->> 'is_eligible') || '/' || (public.get_dating_eligibility() ->> 'age_verification_complete')$q$);
-  PERFORM pg_temp.as_db();
-  IF v IS DISTINCT FROM 'true/false' THEN
-    RAISE EXCEPTION 'CONTRACT VIOLATED: the shim read a NULL age answer as % (expected true/false)', v;
   END IF;
 
   -- The gate cron: each own-gate answer that is NULL pauses.

@@ -358,6 +358,50 @@ INSERT INTO allowed_fn (sig, clients, service) VALUES
   ('private.dating_unavailable_state(uuid)', '', ''),
   ('save_gentle_wait_reflection(jsonb)', 'authenticated', '');
 -- ---------------------------------------------------------------------
+-- W3a (migration 1): the four 20260811120000 tables lose the client
+-- SELECT (R11); the shim is gone (I-4); the notice RPCs are the app's;
+-- the push and notice helpers are no API role's.
+-- ---------------------------------------------------------------------
+UPDATE allowed_rel SET authenticated = ''
+ WHERE name IN ('dating_consent_events', 'dating_enrollments', 'dating_preferences', 'dating_profiles');
+DELETE FROM allowed_fn WHERE sig = 'get_dating_eligibility()';
+INSERT INTO allowed_fn (sig, clients, service) VALUES
+  ('cancel_dating_country_notice()', 'authenticated', ''),
+  ('request_dating_country_notice(text,text)', 'authenticated', ''),
+  ('private.dating_has_data(uuid)', '', ''),
+  ('private.dating_notice_state(uuid,text,text)', '', ''),
+  ('private.dating_notify_opened(text,boolean,text[],text[])', '', ''),
+  ('private.dating_push_source_key(uuid,text,date)', '', ''),
+  ('private.dating_queue_me_update(uuid,text,text)', '', '');
+-- W3b (migration 1): the setup lists RPC is the app's.
+INSERT INTO allowed_fn (sig, clients, service) VALUES
+  ('get_dating_setup_lists()', 'authenticated', '');
+-- W3c (migration 1): the photo and intent tables lose the client SELECT
+-- (R11, R-2); the v2 photo RPCs and the storage predicates are the app's;
+-- the CSAM recorder is the service role's.
+UPDATE allowed_rel SET authenticated = '' WHERE name IN ('dating_photo_upload_intents', 'dating_profile_photos');
+UPDATE allowed_fn SET clients = 'authenticated'
+ WHERE sig IN ('create_dating_photo_upload_intent(text)', 'insert_dating_profile_photo(uuid,smallint)');
+INSERT INTO allowed_fn (sig, clients, service) VALUES
+  ('private.dating_photo_setup_guard()', '', ''), -- Spec 2 W3c (C): the photo writers' guard retry
+  ('private.dating_photo_hit_final()', '', ''), -- Spec 2 W3c (fix round 1, M-7): a CSAM hit is final
+  ('dating_storage_intent_open(text)', 'authenticated', ''),
+  ('dating_storage_owns(text)', 'authenticated', ''),
+  ('claim_dating_orphan_uploads(integer)', '', 'service_role'),
+  ('record_dating_orphan_scan(uuid,text)', '', 'service_role'),
+  ('record_dating_photo_csam(uuid,text)', '', 'service_role'),
+  ('record_dating_csam_hold(uuid)', '', 'service_role'), -- Spec 2 W3c (Task 9, B): a gone hit's Dating hold
+  ('reorder_dating_photos(text,uuid[])', 'authenticated', ''),
+  ('set_dating_photo_caption(uuid,text)', 'authenticated', '');
+-- W3 final: the notice sweep (I-3, the gate cron's), the photo consent
+-- helper (M-7) and the bucket-limit helper (M-3) are the database's own;
+-- the strip check (M-5) is the photo worker's (the service role's).
+INSERT INTO allowed_fn (sig, clients, service) VALUES
+  ('private.dating_notify_sweep()', '', ''), -- Spec 2 W3 final (I-3)
+  ('private.dating_photo_allowed(uuid)', '', ''), -- Spec 2 W3 final (M-7)
+  ('private.dating_photo_bucket_limits()', '', ''), -- Spec 2 W3 final (M-3)
+  ('check_dating_photo_strip(uuid,text,text)', '', 'service_role'); -- Spec 2 W3 final (M-5)
+-- ---------------------------------------------------------------------
 -- Checks (every batch adds its rows above this line).
 -- ---------------------------------------------------------------------
 CREATE FUNCTION pg_temp.table_privs(p_rel oid, p_role text, p_dml_only boolean) RETURNS text LANGUAGE sql AS $$

@@ -35,6 +35,7 @@ import 'package:attune/app/documentations/user_manual/data/truth_or_dare_docs.da
 import 'package:attune/app/documentations/user_manual/data/verdict_docs.dart';
 import 'package:attune/app/documentations/user_manual/models/documentation_model.dart';
 import 'package:attune/features/chat/domain/services/chat_feature_flags.dart';
+import 'package:attune/features/dating/domain/services/dating_feature_flags.dart';
 import 'package:attune/features/onboarding/presentation/data/anchors_docs.dart';
 import 'package:attune/features/onboarding/presentation/data/attachment_quiz_docs.dart';
 
@@ -69,6 +70,13 @@ class DocumentationRegistry {
       'flow_paths_v2',
       'flow_couples_v2',
       'couple_profile',
+    ],
+    // Spec 2 W3c: Dating (dating_mode_enabled is read through
+    // get_dating_home, R-35).
+    'datingMode': [
+      'flow_signin_v2',
+      'flow_paths_v2',
+      DatingFeatureFlags.datingModeEnabled,
     ],
   };
 

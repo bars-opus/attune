@@ -26,6 +26,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import '../../helpers/fake_couple_profile.dart';
+import '../../features/dating/support/dating_shell.dart';
 import '../../helpers/fake_home_state.dart';
 import '../../helpers/fake_invites.dart';
 import '../../helpers/fake_push_asker.dart';
@@ -86,6 +87,8 @@ void main() {
             hasNote: true,
             hasQuiz: true,
           )),
+          // Spec 2 W3a: Me's Dating card is the section now.
+          ...datingHomeOnlyOverrides(account: 'u-rtl'),
         ],
       );
       await tapInReach(t, find.text('More ways to use Attune'));

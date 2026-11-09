@@ -63,6 +63,8 @@ abstract final class TextScalePolicy {
   /// Opinion engagement and the Opinion loader).
   static const List<String> auditedRoutePrefixes = [
     '/home',
+    // Spec 2 W3a: every Dating screen is audited before it lands (§3.0).
+    '/dating/',
     '/welcome',
     '/signup',
     '/guest-age',

@@ -17,6 +17,10 @@
 -- auth.users (Auth's form, no '+'), copied to public.users by Spec 1's
 -- trigger. Every refusal is checked by its message.
 BEGIN;
+-- Spec 2 W3c (R-24): this file's photo fixtures stand for photos the
+-- inline CSAM scan cleared (an approval needs csam_state 'clear');
+-- rolled back with the file.
+ALTER TABLE public.dating_profile_photos ALTER COLUMN csam_state SET DEFAULT 'clear';
 
 DO $$
 BEGIN
@@ -2139,11 +2143,12 @@ BEGIN
   END IF;
   -- Only the four never-introduce functions and Task 12's exit (which
   -- deletes the list unless kept) read the list (an introduction filter
-  -- only).
+  -- only). Spec 2 W3 final (M-4): and has_data, which reads only whether the
+  -- person's own list exists (kept by choice, a second Leave deletes it).
   IF (SELECT string_agg(p.oid::regprocedure::text, ',' ORDER BY p.oid::regprocedure::text)
         FROM pg_proc AS p JOIN pg_namespace AS ns ON ns.oid = p.pronamespace
        WHERE ns.nspname NOT IN ('pg_catalog', 'information_schema') AND p.prosrc ~ '\mdating_never_introduce\M')
-     IS DISTINCT FROM 'add_dating_never_introduce(text,text,text),dating_never_introduce_excludes(uuid,uuid),list_dating_never_introduce(),private.dating_exit_internal(uuid,boolean),remove_dating_never_introduce(uuid)' THEN
+     IS DISTINCT FROM 'add_dating_never_introduce(text,text,text),dating_never_introduce_excludes(uuid,uuid),list_dating_never_introduce(),private.dating_exit_internal(uuid,boolean),private.dating_has_data(uuid),remove_dating_never_introduce(uuid)' THEN
     RAISE EXCEPTION 'CONTRACT VIOLATED: a function other than the four never-introduce functions and exit reads the list: %',
       (SELECT string_agg(p.oid::regprocedure::text, ',') FROM pg_proc AS p WHERE p.prosrc ~ '\mdating_never_introduce\M');
   END IF;
@@ -3975,21 +3980,22 @@ BEGIN
   IF v_msg IS DISTINCT FROM 'permission denied for function save_dating_profile_draft' THEN
     RAISE EXCEPTION 'CONTRACT VIOLATED: a signed-in user can still run the v1 draft writer (%)', v_msg;
   END IF;
-  -- N-I1: no client can start a Dating upload: both v1 photo writers are
-  -- refused, no client can write an upload intent, and no function a client
-  -- can run writes one (the bucket's INSERT policy needs an intent).
+  -- N-I1, as of Spec 2 W3c: the v2 intent and insert RPCs are the app's
+  -- (the setup guard and the intent answer, never a raw error); no client
+  -- writes the intent table itself, and no other client function does.
   v_msg := pg_temp.err_as(v_a, 'SELECT * FROM public.create_dating_photo_upload_intent(''image/jpeg'')');
-  IF v_msg IS DISTINCT FROM 'permission denied for function create_dating_photo_upload_intent' THEN
-    RAISE EXCEPTION 'CONTRACT VIOLATED: a signed-in user can still create a Dating upload intent (%)', v_msg;
+  IF v_msg IS NOT NULL THEN
+    RAISE EXCEPTION 'CONTRACT VIOLATED: the v2 upload intent raised for a signed-in user (%)', v_msg;
   END IF;
   v_msg := pg_temp.err_as(v_a, format('SELECT public.insert_dating_profile_photo(%L, 1::smallint)', gen_random_uuid()));
-  IF v_msg IS DISTINCT FROM 'permission denied for function insert_dating_profile_photo' THEN
-    RAISE EXCEPTION 'CONTRACT VIOLATED: a signed-in user can still attach a Dating photo (%)', v_msg;
+  IF v_msg IS NOT NULL THEN
+    RAISE EXCEPTION 'CONTRACT VIOLATED: the v2 photo insert raised for a signed-in user (%)', v_msg;
   END IF;
   IF has_table_privilege('authenticated', 'public.dating_photo_upload_intents', 'INSERT')
      OR has_table_privilege('anon', 'public.dating_photo_upload_intents', 'INSERT')
      OR EXISTS (SELECT 1 FROM pg_proc AS p JOIN pg_namespace AS n ON n.oid = p.pronamespace
                  WHERE n.nspname IN ('public', 'private') AND p.prosrc ~* 'insert\s+into\s+public\.dating_photo_upload_intents'
+                   AND p.oid IS DISTINCT FROM 'public.create_dating_photo_upload_intent(text)'::regprocedure
                    AND (has_function_privilege('authenticated', p.oid, 'EXECUTE') OR has_function_privilege('anon', p.oid, 'EXECUTE'))) THEN
     RAISE EXCEPTION 'CONTRACT VIOLATED: a client can still write a Dating upload intent';
   END IF;

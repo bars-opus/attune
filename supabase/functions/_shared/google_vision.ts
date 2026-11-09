@@ -12,11 +12,15 @@ export interface VisionModerationResult {
   faceUnderexposed: boolean;
   faceAreaRatio: number | null;
   faceBoundingPolyVertices: Array<{ x?: number; y?: number }> | null;
+  /** Spec 2 W3c: Child, Baby, Toddler or Infant (LABEL_DETECTION). */
+  childLabelScore: number | null;
 }
 
 export interface ModerationConfig {
   minFaceConfidence: number;
   minFaceAreaRatio: number;
+  childLabelReject?: number;
+  childLabelReview?: number;
 }
 
 export interface ModerationOutcome {
@@ -31,39 +35,35 @@ export function decideModerationOutcome(
   result: VisionModerationResult,
   config: ModerationConfig,
 ): ModerationOutcome {
-  if (REJECT_AT_POSSIBLE.has(result.safeSearchFlags.adult)) {
-    return { state: "rejected", reason: "adult_content_detected" };
+  // Spec 2 W3c (§3.2 D9): the five slot reasons. Unsafe first, then
+  // children (a photo with a child can't be used), then the face.
+  const flags = result.safeSearchFlags;
+  if (REJECT_AT_POSSIBLE.has(flags.adult) || REJECT_AT_POSSIBLE.has(flags.violence) || REJECT_AT_LIKELY.has(flags.racy)) {
+    return { state: "rejected", reason: "unsafe" };
   }
-  if (REJECT_AT_POSSIBLE.has(result.safeSearchFlags.violence)) {
-    return { state: "rejected", reason: "violent_content_detected" };
+  const child = result.childLabelScore ?? 0;
+  if (child >= (config.childLabelReject ?? 0.7)) return { state: "rejected", reason: "contains_child" };
+  if (child >= (config.childLabelReview ?? 0.5)) return { state: "needs_review", reason: "needs_review" };
+  if (!result.faceDetected || result.faceConfidence === null || result.faceConfidence < config.minFaceConfidence) {
+    return { state: "needs_review", reason: "needs_review" };
   }
-  if (REJECT_AT_LIKELY.has(result.safeSearchFlags.racy)) {
-    return { state: "rejected", reason: "racy_content_detected" };
+  if (result.faceBlurred || result.faceUnderexposed || result.faceAreaRatio === null || result.faceAreaRatio < config.minFaceAreaRatio) {
+    return { state: "rejected", reason: "face_unclear" };
   }
-
-  if (!result.faceDetected) {
-    return { state: "needs_review", reason: "no_face_detected" };
-  }
-  if (
-    result.faceConfidence === null ||
-    result.faceConfidence < config.minFaceConfidence
-  ) {
-    return { state: "needs_review", reason: "low_face_confidence" };
-  }
-  if (result.faceBlurred) {
-    return { state: "rejected", reason: "face_blurred" };
-  }
-  if (result.faceUnderexposed) {
-    return { state: "rejected", reason: "face_underexposed" };
-  }
-  if (
-    result.faceAreaRatio === null ||
-    result.faceAreaRatio < config.minFaceAreaRatio
-  ) {
-    return { state: "rejected", reason: "face_too_small" };
-  }
-
   return { state: "approved", reason: null };
+}
+
+/** Spec 2 W3c: the highest score among the labels that mean a child. */
+const CHILD_LABELS = new Set(["child", "baby", "toddler", "infant"]);
+export function childScore(labels: unknown): number | null {
+  if (!Array.isArray(labels)) return null;
+  let best: number | null = null;
+  for (const l of labels) {
+    const name = typeof l?.description === "string" ? l.description.toLowerCase() : "";
+    const score = typeof l?.score === "number" ? l.score : null;
+    if (CHILD_LABELS.has(name) && score !== null && (best === null || score > best)) best = score;
+  }
+  return best;
 }
 
 const VISION_URL = "https://vision.googleapis.com/v1/images:annotate";
@@ -83,6 +83,7 @@ export async function analyzeDatingPhoto(params: {
           features: [
             { type: "SAFE_SEARCH_DETECTION" },
             { type: "FACE_DETECTION", maxResults: 5 },
+            { type: "LABEL_DETECTION", maxResults: 50 }, // Spec 2 W3c fix round 1 (M-2): a Child label is not crowded out
           ],
         },
       ],
@@ -131,6 +132,7 @@ export async function analyzeDatingPhoto(params: {
       : false,
     faceAreaRatio: null,
     faceBoundingPolyVertices,
+    childLabelScore: childScore(annotation.labelAnnotations),
   };
 }
 

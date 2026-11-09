@@ -9,6 +9,10 @@
 -- leftover fixture fails loudly instead of being skipped. Every refusal is
 -- checked by its exact message.
 BEGIN;
+-- Spec 2 W3c (R-24): this file's photo fixtures stand for photos the
+-- inline CSAM scan cleared (an approval needs csam_state 'clear');
+-- rolled back with the file.
+ALTER TABLE public.dating_profile_photos ALTER COLUMN csam_state SET DEFAULT 'clear';
 
 CREATE FUNCTION pg_temp.as_user(p uuid) RETURNS void LANGUAGE plpgsql AS $$
 BEGIN

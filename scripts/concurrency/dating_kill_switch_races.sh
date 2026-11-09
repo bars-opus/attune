@@ -27,6 +27,13 @@
 #     and opening D0 never wait, neither behind a long country switch nor
 #     behind the person's own setup write, under a 3s statement timeout;
 #     a view D0 could not mark is skipped and counted.
+#   photo writers vs leaving (Spec 2 W3c): an insert, an exit behind
+#     which the insert waits past its lock_timeout, a CSAM hit (its hold
+#     suspends the enrolment) and a delete behind a held photo row: the
+#     setup lock serialises them, leaving always completes, the loser
+#     answers a named refusal, and a delete answers busy in time.
+#   a gone CSAM hit's Dating hold vs leaving (Spec 2 W3c Task 9): the
+#     hold takes the setup lock first; exit completes, the hold is kept.
 #   cross-border (pause, withdrawal): a writer in another country whose
 #     introductions the switch is ending can still close a lock cycle on
 #     the introduction rows; the loser retries inside its own transaction
@@ -61,6 +68,7 @@ cat > "$T/setup.sql" <<SQL
 \set ON_ERROR_STOP 1
 ALTER DATABASE $DB SET app.settings.dating_field_key = 'race-field-key-0123456789abcdef-0123456789';
 ALTER DATABASE $DB SET app.settings.dating_exclusion_key = 'race-exclusion-key';
+ALTER DATABASE $DB SET app.settings.dating_push_key = 'race-push-key'; -- Spec 2 W3 final (M-1): the notice cases queue a push (R-44)
 \c $DB
 DO \$\$ BEGIN -- W2 final review M-7: the counters these cases read need their prefix row
   IF NOT EXISTS (SELECT 1 FROM public.metric_key_prefixes WHERE prefix = 'dating.') THEN
@@ -86,7 +94,8 @@ DO \$\$
 DECLARE t text;
 BEGIN
   FOREACH t IN ARRAY ARRAY['dating_profile_sensitive', 'dating_enrollments', 'dating_profiles', 'dating_preferences',
-                           'dating_introductions', 'dating_matches'] LOOP
+                           'dating_introductions', 'dating_matches',
+                           'dating_profile_photos', 'dating_photo_upload_intents'] LOOP -- Spec 2 W3c (Task 8)
     EXECUTE format('DROP TRIGGER IF EXISTS zz_race_delay ON public.%I', t);
     EXECUTE format('CREATE TRIGGER zz_race_delay BEFORE UPDATE OR DELETE ON public.%I FOR EACH ROW EXECUTE FUNCTION race.delay()', t);
   END LOOP;
@@ -460,6 +469,172 @@ run "open D0 behind the person's own setup write (3s statement timeout)" "$FX_WA
                WHEN (SELECT coalesce(sum(count), 0) FROM public.metric_counters WHERE key = 'dating.gentle_wait.seen_skipped')
                     <= (SELECT result::bigint FROM race.outcome WHERE name = 'skipped_before') THEN 'the skipped view was not counted'
                ELSE 'ok' END;"
+
+# Spec 2 W3a (R-6): "Tell me when it's here" vs the publish that opens it.
+# The request takes the publisher's advisory lock, so whichever lands first,
+# no request is left behind for a place that is open, and a request made
+# first is told.
+FX_NOTICE="SELECT race.reset(); DELETE FROM public.scheduled_notifications WHERE user_id::text LIKE '5e2f%';
+SELECT public.publish_country_config('GH', '{\"open_regions\": [\"AA\", \"AH\"]}') ->> 'ok';
+SELECT race.person('05', 'GH', 'AA', 'woman', ARRAY['man']);"
+NOTICE_LEFT="(SELECT count(*) FROM public.dating_notify_requests WHERE user_id = race.id('05'))"
+NOTICE_TOLD="(SELECT count(*) FROM public.scheduled_notifications WHERE user_id = race.id('05') AND metadata ->> 'type' = 'me_update')"
+
+run "a notice request behind the publish that opens its region" "$FX_NOTICE" \
+  "SELECT pg_sleep(0.5); SELECT race.call(race.id('05'), 'SELECT public.request_dating_country_notice(''GH'', ''TV'')') ->> 'reason';" \
+  "BEGIN; SELECT public.publish_country_config('GH', '{\"open_regions\": [\"AA\", \"AH\", \"TV\"]}') ->> 'ok'; SELECT pg_sleep(1.2); COMMIT;" \
+  "SELECT CASE WHEN $NOTICE_LEFT = 0 THEN 'ok' ELSE 'a request was left for an open region' END;" serialised
+
+run "the publish behind a notice request for its region" "$FX_NOTICE" \
+  "BEGIN; SELECT race.call(race.id('05'), 'SELECT public.request_dating_country_notice(''GH'', ''TV'')') ->> 'ok'; SELECT pg_sleep(1.2); COMMIT;" \
+  "SELECT pg_sleep(0.5); SELECT public.publish_country_config('GH', '{\"open_regions\": [\"AA\", \"AH\", \"TV\"]}') ->> 'notified';" \
+  "SELECT CASE WHEN $NOTICE_LEFT = 0 AND $NOTICE_TOLD = 1 THEN 'ok' ELSE 'left ' || $NOTICE_LEFT || ', told ' || $NOTICE_TOLD END;" serialised
+
+# Spec 2 W3a fix round 1 (M-7): leaving while a publish both opens the
+# region the person asked about and turns same-gender off. The publish
+# tells after its kill switch, so it takes the notice row last, as exit
+# does: they serialise, and leaving never meets a deadlock.
+FX_EXIT_NOTICE="SELECT race.reset(); ALTER SEQUENCE race.s1 RESTART; DELETE FROM public.scheduled_notifications WHERE user_id::text LIKE '5e2f%';
+SELECT public.publish_country_config('GH', '{\"open_regions\": [\"AA\", \"AH\"]}') ->> 'ok';
+SELECT race.person('06', 'GH', 'AA', 'woman', ARRAY['woman']);
+SELECT race.call(race.id('06'), 'SELECT public.request_dating_country_notice(''GH'', ''TV'')') ->> 'ok';"
+
+run "exit vs a publish that opens the asked-for region and switches same-gender off" "$FX_EXIT_NOTICE" \
+  "SET race.sleep_dating_profile_sensitive_delete = '2:race.s1';
+   SELECT race.call(race.id('06'), format('SELECT to_jsonb(public.exit_dating_mode(%L))', race.key('exit'))) ->> 'state';" \
+  "SELECT pg_sleep(0.5); SELECT public.publish_country_config('GH', '{\"open_regions\": [\"AA\", \"AH\", \"TV\"], \"same_gender_enabled\": false}') ->> 'ok';" \
+  "SELECT CASE WHEN race.enrol(race.id('06')) IS DISTINCT FROM 'exited/-' THEN 'exit lost: ' || coalesce(race.enrol(race.id('06')), 'none')
+               WHEN (public.dating_country_config('GH')).same_gender_enabled THEN 'the switch did not publish'
+               WHEN EXISTS (SELECT 1 FROM private.dating_kill_switch_pending) THEN 'the switch was left pending'
+               WHEN EXISTS (SELECT 1 FROM public.dating_notify_requests WHERE user_id = race.id('06')) THEN 'a request was left after leaving'
+               ELSE 'ok' END;" serialised
+
+# Spec 2 W3c (Task 8): a photo writer vs leaving. Every photo writer that
+# adds takes the person's setup lock first, as exit does, through a bounded
+# retry (dating:busy after three), and the CSAM recorder takes it before the
+# photo row (a hit's hold suspends the enrolment, which exit locks first),
+# so a photo write and leaving serialise: no deadlock, leaving completes
+# and removes every photo and upload, and the writer that loses answers a
+# named refusal, never a raw lock error. A photo delete is never gated and
+# never waits without bound: behind a held row it answers busy in time.
+FX_PHOTO="SELECT race.reset(); ALTER SEQUENCE race.s1 RESTART;
+-- A CSAM hit's hold survives the account (enforcement survival, by phone):
+-- the race people's phones are reused, so a scratch copy forgets it here.
+DELETE FROM public.enforcement_records WHERE scope = 'dating';
+INSERT INTO storage.buckets (id, name) VALUES ('dating-profile-photos', 'dating-profile-photos') ON CONFLICT (id) DO NOTHING;
+SELECT race.person('04', 'GB', 'TLI', 'woman', ARRAY['man']);
+INSERT INTO race.outcome SELECT 'intent', race.call(race.id('04'), 'SELECT public.create_dating_photo_upload_intent(''image/jpeg'')')::text;
+DO \$\$ BEGIN
+  IF (SELECT (result::jsonb ->> 'ok')::boolean FROM race.outcome WHERE name = 'intent') IS NOT TRUE THEN
+    RAISE EXCEPTION 'photo fixture: no upload intent: %', (SELECT result FROM race.outcome WHERE name = 'intent');
+  END IF;
+END \$\$;
+INSERT INTO storage.objects (bucket_id, name, owner)
+SELECT 'dating-profile-photos', result::jsonb ->> 'storage_key', race.id('04') FROM race.outcome WHERE name = 'intent';"
+PHOTO_INTENT="(SELECT result::jsonb ->> 'intent_id' FROM race.outcome WHERE name = 'intent')"
+PHOTO_KEY="(SELECT result::jsonb ->> 'storage_key' FROM race.outcome WHERE name = 'intent')"
+PHOTO_ROW="(SELECT id FROM public.dating_profile_photos WHERE user_id = race.id('04'))"
+PHOTO_LEFT="((SELECT count(*) FROM public.dating_profile_photos WHERE user_id = race.id('04'))
+             + (SELECT count(*) FROM public.dating_photo_upload_intents WHERE user_id = race.id('04')))"
+LEFT_04="(SELECT e.exited_at IS NOT NULL FROM public.dating_enrollments AS e WHERE e.user_id = race.id('04'))"
+FX_PHOTO_IN="$FX_PHOTO
+SELECT race.call(race.id('04'), format('SELECT public.insert_dating_profile_photo(%L, 1::smallint)', $PHOTO_INTENT)) ->> 'ok';
+DO \$\$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM public.dating_profile_photos WHERE user_id = race.id('04')) THEN
+    RAISE EXCEPTION 'photo fixture: the photo was not attached';
+  END IF;
+END \$\$;"
+
+run "a photo insert vs exit" "$FX_PHOTO" \
+  "SET race.sleep_dating_photo_upload_intents_update = '2:race.s1';
+   SELECT race.call(race.id('04'), format('SELECT public.insert_dating_profile_photo(%L, 1::smallint)', $PHOTO_INTENT)) ->> 'ok';" \
+  "SELECT pg_sleep(0.5);
+   SELECT race.call(race.id('04'), format('SELECT to_jsonb(public.exit_dating_mode(%L))', race.key('exit'))) ->> 'state';" \
+  "SELECT CASE WHEN $LEFT_04 IS NOT TRUE THEN 'exit lost: ' || coalesce(race.enrol(race.id('04')), 'none')
+               WHEN $PHOTO_LEFT <> 0 THEN 'a photo or upload was left after leaving'
+               WHEN NOT EXISTS (SELECT 1 FROM public.media_deletion_queue WHERE object_name = $PHOTO_KEY) THEN 'the object was not queued for deletion'
+               ELSE 'ok' END;" serialised
+
+run "exit vs a photo insert (behind the insert's 2s lock_timeout)" "$FX_PHOTO" \
+  "SET race.sleep_dating_profile_sensitive_delete = '3:race.s1';
+   SELECT race.call(race.id('04'), format('SELECT to_jsonb(public.exit_dating_mode(%L))', race.key('exit'))) ->> 'state';" \
+  "SELECT pg_sleep(0.5);
+   INSERT INTO race.outcome SELECT 'insert', race.call(race.id('04'), format('SELECT public.insert_dating_profile_photo(%L, 1::smallint)', $PHOTO_INTENT))::text;" \
+  "SELECT CASE WHEN $LEFT_04 IS NOT TRUE THEN 'exit lost: ' || coalesce(race.enrol(race.id('04')), 'none')
+               WHEN $PHOTO_LEFT <> 0 THEN 'a photo or upload was left after leaving'
+               WHEN (SELECT result::jsonb ->> 'reason' FROM race.outcome WHERE name = 'insert') IN ('intent_unavailable', 'not_eligible') THEN 'ok'
+               ELSE 'the insert answered ' || coalesce((SELECT result FROM race.outcome WHERE name = 'insert'), 'nothing') END;" serialised
+
+run "a CSAM hit vs exit (the hit first)" "$FX_PHOTO_IN" \
+  "SET race.sleep_dating_profile_photos_update = '2:race.s1';
+   SELECT public.record_dating_photo_csam($PHOTO_ROW, 'hit') ->> 'ok';" \
+  "SELECT pg_sleep(0.5);
+   SELECT race.call(race.id('04'), format('SELECT to_jsonb(public.exit_dating_mode(%L))', race.key('exit'))) ->> 'state';" \
+  "SELECT CASE WHEN $LEFT_04 IS NOT TRUE THEN 'exit lost: ' || coalesce(race.enrol(race.id('04')), 'none')
+               WHEN $PHOTO_LEFT <> 0 THEN 'a photo or upload was left after leaving'
+               WHEN NOT EXISTS (SELECT 1 FROM public.dating_account_restrictions
+                                 WHERE user_id = race.id('04') AND restriction_type = 'moderation_hold' AND lifted_at IS NULL)
+               THEN 'the hit''s hold was lost'
+               ELSE 'ok' END;" serialised
+
+run "a photo delete behind a held photo row (answers within its bound)" "$FX_PHOTO_IN" \
+  "BEGIN; SELECT 1 FROM public.dating_profile_photos WHERE user_id = race.id('04') FOR UPDATE; SELECT pg_sleep(5); COMMIT;" \
+  "SELECT pg_sleep(0.5); SET statement_timeout = '4500ms';
+   INSERT INTO race.outcome SELECT 'delete', race.call(race.id('04'), format('SELECT public.delete_dating_profile_photo(%L)', $PHOTO_ROW))::text;" \
+  "SELECT CASE WHEN (SELECT result FROM race.outcome WHERE name = 'delete') IS DISTINCT FROM '{\"ok\": false, \"reason\": \"busy\"}'
+               THEN 'the delete answered ' || coalesce((SELECT result FROM race.outcome WHERE name = 'delete'), 'nothing')
+               ELSE 'ok' END AS held \\gset
+   SELECT race.call(race.id('04'), format('SELECT public.delete_dating_profile_photo(%L)', $PHOTO_ROW)) ->> 'ok' AS again \\gset
+   SELECT CASE WHEN :'held' <> 'ok' THEN :'held'
+               WHEN :'again' IS DISTINCT FROM 'true' OR $PHOTO_ROW IS NOT NULL THEN 'the delete after the hold did not remove the photo'
+               ELSE 'ok' END;"
+
+# Spec 2 W3c fix round 1 (M-4): the CSAM recorder's photo-row lock is under
+# its bounded retry: behind a held row it answers dating:busy (the job
+# retries), never a raw lock timeout. (I-1): an orphan match takes the
+# person's setup lock before the intent row, so it and leaving serialise.
+run "a CSAM outcome behind a held photo row (dating:busy in time)" "$FX_PHOTO_IN" \
+  "BEGIN; SELECT 1 FROM public.dating_profile_photos WHERE user_id = race.id('04') FOR UPDATE; SELECT pg_sleep(8); COMMIT;" \
+  "SELECT pg_sleep(0.5); SET statement_timeout = '7500ms';
+   DO \$\$ BEGIN
+     PERFORM public.record_dating_photo_csam((SELECT id FROM public.dating_profile_photos WHERE user_id = race.id('04')), 'clear');
+     INSERT INTO race.outcome VALUES ('csam', 'answered');
+   EXCEPTION WHEN OTHERS THEN
+     INSERT INTO race.outcome VALUES ('csam', SQLSTATE || ':' || SQLERRM);
+   END \$\$;" \
+  "SELECT CASE WHEN (SELECT result FROM race.outcome WHERE name = 'csam') = '55P03:dating:busy' THEN 'ok'
+               ELSE 'the CSAM outcome answered ' || coalesce((SELECT result FROM race.outcome WHERE name = 'csam'), 'nothing') END;"
+
+run "an orphan CSAM match vs exit (the match first)" "$FX_PHOTO
+UPDATE public.dating_photo_upload_intents SET expires_at = now() - interval '1 hour', orphan_claimed_at = now() WHERE user_id = race.id('04');" \
+  "SET race.sleep_dating_photo_upload_intents_update = '2:race.s1';
+   SELECT public.record_dating_orphan_scan($PHOTO_INTENT::uuid, 'hit') ->> 'ok';" \
+  "SELECT pg_sleep(0.5);
+   SELECT race.call(race.id('04'), format('SELECT to_jsonb(public.exit_dating_mode(%L))', race.key('exit'))) ->> 'state';" \
+  "SELECT CASE WHEN $LEFT_04 IS NOT TRUE THEN 'exit lost: ' || coalesce(race.enrol(race.id('04')), 'none')
+               WHEN $PHOTO_LEFT <> 0 THEN 'a photo or upload was left after leaving'
+               WHEN NOT EXISTS (SELECT 1 FROM public.dating_account_restrictions
+                                 WHERE user_id = race.id('04') AND restriction_type = 'moderation_hold' AND lifted_at IS NULL)
+               THEN 'the orphan match''s hold was lost'
+               ELSE 'ok' END;" serialised
+
+# Spec 2 W3c (Task 9, B; R-25): a gone hit's Dating hold
+# (record_dating_csam_hold, the photo row deleted mid-scan) takes the
+# person's setup lock before the enrolment and profile its hold suspends
+# (it sleeps holding the enrolment), as exit does: the two serialise, exit
+# completes and the hold is kept.
+run "a gone hit's Dating hold vs exit (the hold first)" "$FX_PHOTO" \
+  "SET race.sleep_dating_profiles_update = '2:race.s1';
+   SELECT public.record_dating_csam_hold(race.id('04')) ->> 'ok';" \
+  "SELECT pg_sleep(0.5);
+   SELECT race.call(race.id('04'), format('SELECT to_jsonb(public.exit_dating_mode(%L))', race.key('exit'))) ->> 'state';" \
+  "SELECT CASE WHEN NOT (SELECT is_called FROM race.s1) THEN 'the hold never reached the profile (no race)'
+               WHEN $LEFT_04 IS NOT TRUE THEN 'exit lost: ' || coalesce(race.enrol(race.id('04')), 'none')
+               WHEN $PHOTO_LEFT <> 0 THEN 'a photo or upload was left after leaving'
+               WHEN NOT EXISTS (SELECT 1 FROM public.dating_account_restrictions
+                                 WHERE user_id = race.id('04') AND restriction_type = 'moderation_hold' AND lifted_at IS NULL)
+               THEN 'the gone hit''s hold was lost'
+               ELSE 'ok' END;" serialised
 
 $P -c "SELECT race.reset();" > /dev/null 2>&1
 exit $fail

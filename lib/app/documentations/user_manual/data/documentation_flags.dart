@@ -1,5 +1,7 @@
 import 'package:attune/app/documentations/user_manual/data/manual_documentation_registry.dart';
 import 'package:attune/features/chat/domain/services/chat_feature_flags.dart';
+import 'package:attune/features/dating/data/dating_supabase_client.dart';
+import 'package:attune/features/dating/domain/services/dating_feature_flags.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -13,7 +15,14 @@ final documentationFlagsProvider = FutureProvider<Set<String>>((ref) async {
   try {
     final client = Supabase.instance.client;
     for (final flag in DocumentationRegistry.allRequiredFlags) {
-      if (await ChatFeatureFlags.isEnabled(client, flag)) enabled.add(flag);
+      // R-35: dating_% flags are server-only; Dating's own read answers,
+      // on Dating's own client (T12 carry E; W4b's device header).
+      final on = flag == DatingFeatureFlags.datingModeEnabled
+          ? await DatingFeatureFlags.isDatingModeAvailable(
+            ref.read(datingSupabaseClientProvider),
+          )
+          : await ChatFeatureFlags.isEnabled(client, flag);
+      if (on) enabled.add(flag);
     }
   } catch (_) {
     return const <String>{};

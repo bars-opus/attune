@@ -1,6 +1,5 @@
 import 'package:attune/app/app_info/app_info_screen.dart';
 import 'package:attune/app/documentations/legal_documentation/widgets/all_legal_documentations_screen.dart';
-import 'package:attune/app/documentations/user_manual/data/dating_mode_docs.dart';
 import 'package:attune/app/documentations/user_manual/data/healing_docs.dart';
 import 'package:attune/app/licenses_screen.dart';
 import 'package:attune/core/intro/presentation/widgets/feature_intro_flow_gate.dart';
@@ -21,7 +20,7 @@ import 'package:attune/features/auth/sign_up/presentation/screens/invite_landing
 import 'package:attune/features/auth/sign_up/presentation/screens/sign_up_flow.dart';
 import 'package:attune/features/auth/sign_up/presentation/screens/under_age_stop_screen.dart';
 import 'package:attune/features/auth/sign_up/presentation/screens/welcome_screen.dart';
-import 'package:attune/features/dating/presentation/screens/dating_dashboard_screen.dart';
+import 'package:attune/features/dating/routes/dating_routes.dart';
 import 'package:attune/features/games/paint_ball/presentation/screens/paint_ball_battle_screen.dart';
 import 'package:attune/features/games/paint_ball/presentation/screens/paint_ball_history_screen.dart';
 import 'package:attune/features/games/paint_ball/presentation/screens/paint_ball_knockout_screen.dart';
@@ -130,12 +129,6 @@ import 'package:attune/features/quiz/presentation/screens/quiz_result_screen.dar
 import 'package:attune/features/quiz/presentation/screens/partner_quiz_result_screen.dart';
 import 'package:attune/features/healing/data/models/healing_journey.dart';
 import 'package:attune/features/healing/presentation/screens/healing_stage_screen.dart';
-import 'package:attune/features/dating/presentation/screens/dating_consent_screen.dart';
-import 'package:attune/features/dating/presentation/screens/dating_guided_date_screen.dart';
-import 'package:attune/features/dating/presentation/screens/dating_matches_screen.dart';
-import 'package:attune/features/dating/presentation/screens/dating_profile_screen.dart';
-import 'package:attune/features/dating/presentation/screens/dating_photos_screen.dart';
-import 'package:attune/features/dating/presentation/screens/dating_verification_screen.dart';
 import 'package:attune/features/profile/widgets/profile_screen.dart';
 import 'package:attune/core/notifications/presentation/screens/notification_inbox_screen.dart';
 import 'package:attune/features/safety/domain/services/quick_exit_service.dart';
@@ -280,7 +273,6 @@ class RouteNames {
   static const String productForm = '/productForm';
   static const String blockedAccountsScreen = '/blockedAccountsScreen';
   static const String mutedAuthorsScreen = '/mutedAuthorsScreen';
-  static const String datingMode = '/dating-mode';
   static const String ask2Flow = '/ask2/:relationshipId';
   static const String anonymousProfile = '/anonymousProfile';
   static const String commentThread = '/commentThread';
@@ -318,12 +310,6 @@ class RouteNames {
   static const String communicationStyleResult = '/communicationStyleResult';
   static const String partnerQuizResult = '/partnerQuizResult';
   static const String healingStage = '/healingStage';
-  static const String datingConsent = '/datingConsent';
-  static const String datingProfile = '/datingProfile';
-  static const String datingMatches = '/datingMatches';
-  static const String datingGuidedDate = '/datingGuidedDate';
-  static const String datingPhotos = '/datingPhotos';
-  static const String datingVerification = '/datingVerification';
   static const String logMomentDetails = '/logMomentDetails';
   static const String thirtySixChapterInvitation =
       '/thirtySixChapterInvitation';
@@ -1029,44 +1015,8 @@ GoRouter createAppRouter(RoutingNotifier routingNotifier) {
           return HealingStageScreen(journey: args.journey, stage: args.stage);
         },
       ),
-      GoRoute(
-        path: RouteNames.datingConsent,
-        name: 'datingConsent',
-        builder: (context, state) => const DatingConsentScreen(),
-      ),
-      GoRoute(
-        path: RouteNames.datingProfile,
-        name: 'datingProfile',
-        builder: (context, state) => const DatingProfileScreen(),
-      ),
-      GoRoute(
-        path: RouteNames.datingMatches,
-        name: 'datingMatches',
-        builder: (context, state) => const DatingMatchesScreen(),
-      ),
-      GoRoute(
-        path: RouteNames.datingGuidedDate,
-        name: 'datingGuidedDate',
-        builder: (context, state) {
-          final matchId = routeExtra<String>(state);
-          if (matchId == null) {
-            return const Scaffold(
-              body: Center(child: Text('Match unavailable.')),
-            );
-          }
-          return DatingGuidedDateScreen(matchId: matchId);
-        },
-      ),
-      GoRoute(
-        path: RouteNames.datingPhotos,
-        name: 'datingPhotos',
-        builder: (context, state) => const DatingPhotosScreen(),
-      ),
-      GoRoute(
-        path: RouteNames.datingVerification,
-        name: 'datingVerification',
-        builder: (context, state) => const DatingVerificationScreen(),
-      ),
+      // Spec 2 W3a (§3.14): the Dating routes, behind the Dating lock.
+      ...datingRoutes(signedIn: () => routingNotifier.isSignedIn),
       GoRoute(
         path: RouteNames.logMomentDetails,
         name: 'logMomentDetails',
@@ -1810,20 +1760,6 @@ GoRouter createAppRouter(RoutingNotifier routingNotifier) {
         path: RouteNames.mutedAuthorsScreen,
         name: 'mutedAuthorsScreen',
         builder: (context, state) => const MutedAuthorsScreen(),
-      ),
-      GoRoute(
-        path: RouteNames.datingMode,
-        name: 'datingMode',
-        builder:
-            (context, state) => FeatureIntroFlowGate(
-              module: DatingModeDocs(),
-              briefParagraph:
-                  'Dating Mode is separate from Healing Mode, and never automatic. '
-                  'Before you can browse introductions, you\'ll go through a short, '
-                  'explicit consent step — nothing here is enabled without your say-so.',
-              launchLabel: 'Continue to Dating Mode',
-              buildFeature: () => const DatingDashboardScreen(),
-            ),
       ),
       GoRoute(
         path: '/games/paint-ball/lobby/:relationshipId',

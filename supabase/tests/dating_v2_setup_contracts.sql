@@ -35,6 +35,10 @@
 --   psql -X -q -v ON_ERROR_STOP=1 -d attune_spec3a -f supabase/tests/dating_v2_setup_contracts.sql
 -- Fixture ids 5e2d0000-0000-0000-0000-0000000000NN; phones 15558703NN.
 BEGIN;
+-- Spec 2 W3c (R-24): this file's photo fixtures stand for photos the
+-- inline CSAM scan cleared (an approval needs csam_state 'clear');
+-- rolled back with the file.
+ALTER TABLE public.dating_profile_photos ALTER COLUMN csam_state SET DEFAULT 'clear';
 
 DO $$
 BEGIN
@@ -1411,8 +1415,9 @@ BEGIN
     PERFORM set_config('request.jwt.claim.sub', v_x::text, true);
     PERFORM set_config('request.jwt.claims', json_build_object('sub', v_x, 'role', v_role)::text, true);
     v_read := (SELECT count(*) FROM storage.objects WHERE bucket_id = 'dating-profile-photos' AND name = v_key1);
-    IF v_role = 'authenticated' THEN
-      v_read := v_read + (SELECT count(*) FROM public.dating_profile_photos WHERE user_id = v_u);
+    -- Spec 2 W3c (R11): no client reads the photo table any more.
+    IF v_role = 'authenticated' AND has_table_privilege('authenticated', 'public.dating_profile_photos', 'SELECT') THEN
+      RAISE EXCEPTION 'CONTRACT VIOLATED: authenticated can read dating_profile_photos';
     END IF;
     WITH u AS (UPDATE storage.objects SET metadata = '{"w1c": true}'::jsonb
                 WHERE bucket_id = 'dating-profile-photos' AND name = v_key1 RETURNING 1)
@@ -1422,8 +1427,8 @@ BEGIN
     RESET ROLE;
     PERFORM set_config('request.jwt.claim.sub', '', true);
     PERFORM set_config('request.jwt.claims', '', true);
-    IF v_read IS DISTINCT FROM (CASE WHEN v_x = v_u THEN 3 ELSE 0 END)::bigint OR v_upd <> 0 OR v_del <> 0 THEN
-      RAISE EXCEPTION 'CONTRACT VIOLATED: % (%) reads % / updates % / deletes % Dating photo rows and objects (stranger 0/0/0, owner 3/0/0)',
+    IF v_read IS DISTINCT FROM (CASE WHEN v_x = v_u THEN 1 ELSE 0 END)::bigint OR v_upd <> 0 OR v_del <> 0 THEN
+      RAISE EXCEPTION 'CONTRACT VIOLATED: % (%) reads % / updates % / deletes % Dating photo rows and objects (stranger 0/0/0, owner 1/0/0)',
         v_role, CASE WHEN v_x = v_u THEN 'the owner' ELSE 'a stranger' END, v_read, v_upd, v_del;
     END IF;
   END LOOP;
@@ -1447,7 +1452,16 @@ BEGIN
   -- database's own.
   -- Spec 2 W2: get_dating_home's resume step counts the person's own
   -- approved photos (private.dating_next_step, no API role).
-  IF v_got IS DISTINCT FROM 'private.dating_exit_internal(uuid, boolean):; private.dating_next_step(uuid):; public.create_dating_photo_upload_intent(text):; public.dating_photos_queue_media_before_delete():; public.dating_profile_complete(uuid):; public.delete_dating_profile_photo(uuid):authenticated; public.get_dating_operational_health():service_role; public.get_dating_profile_preview():authenticated; public.insert_dating_profile_photo(uuid, smallint):; public.list_dating_profile_photos():authenticated; public.prepare_account_deletion(uuid):service_role' THEN
+  -- Spec 2 W3c: the v2 photo RPCs (the app's), the owner-read storage
+  -- predicate (the app's: it runs inside the storage policy) and the CSAM
+  -- recorder and the orphan sweep (the service role's, I-14). None returns
+  -- a photo to anyone else.
+  -- Spec 2 W3c (M-11): has_data reads only whether the person's own
+  -- photo or upload intent exists (the database's own; get_dating_home).
+  -- Spec 2 W3 final: the bucket-limit helper (M-3, the database's own),
+  -- the strip check (M-5) and the job recovery (I-2: it re-queues a photo
+  -- dead-lettered unscanned), the service role's. None returns a photo.
+  IF v_got IS DISTINCT FROM 'private.dating_exit_internal(uuid, boolean):; private.dating_has_data(uuid):; private.dating_next_step(uuid):; private.dating_photo_bucket_limits():; public.check_dating_photo_strip(uuid, text, text):service_role; public.claim_dating_orphan_uploads(integer):service_role; public.create_dating_photo_upload_intent(text):authenticated; public.dating_photos_queue_media_before_delete():; public.dating_profile_complete(uuid):; public.dating_storage_owns(text):authenticated; public.delete_dating_profile_photo(uuid):authenticated; public.get_dating_operational_health():service_role; public.get_dating_profile_preview():authenticated; public.insert_dating_profile_photo(uuid, smallint):authenticated; public.list_dating_profile_photos():authenticated; public.prepare_account_deletion(uuid):service_role; public.record_dating_orphan_scan(uuid, text):service_role; public.record_dating_photo_csam(uuid, text):service_role; public.recover_stale_dating_photo_jobs():service_role; public.reorder_dating_photos(text, uuid[]):authenticated; public.set_dating_photo_caption(uuid, text):authenticated' THEN
     RAISE EXCEPTION 'CONTRACT VIOLATED: the functions reading Dating photos changed (review photos after mutual interest): %', v_got;
   END IF;
 END $$;
@@ -2656,4 +2670,1455 @@ BEGIN
 END $$;
 
 DO $$ BEGIN RAISE NOTICE 'dating_v2_setup_contracts: all held'; END $$;
+-- =====================================================================
+-- M. (W3b, §2.2, R-19) The reviewed faith lists, as the W3b migration
+--    published them (this file's own fixture republished GH's list for its
+--    D8 rows, so the migration's version is found by its publisher).
+-- =====================================================================
+DO $m$
+DECLARE
+  v_gh jsonb;
+  v_gb jsonb;
+BEGIN
+  SELECT c.faith_list INTO v_gh FROM public.country_safety_config AS c
+   WHERE c.country_code = 'GH' AND c.published_by = 'migration:dating_v2_setup_lists';
+  SELECT c.faith_list INTO v_gb FROM public.country_safety_config AS c
+   WHERE c.country_code = 'GB' AND c.published_by = 'migration:dating_v2_setup_lists';
+  IF (SELECT array_agg(f ->> 'code' ORDER BY ord) FROM jsonb_array_elements(v_gh) WITH ORDINALITY AS x(f, ord))
+       IS DISTINCT FROM ARRAY['christian', 'muslim', 'traditional', 'other', 'none', 'prefer_not_to_say']
+     OR (SELECT array_agg(d ->> 'code' ORDER BY ord) FROM jsonb_array_elements(v_gh -> 0 -> 'denominations') WITH ORDINALITY AS x(d, ord))
+       IS DISTINCT FROM ARRAY['catholic', 'anglican', 'methodist', 'presbyterian', 'pentecostal_charismatic', 'seventh_day_adventist', 'other_christian'] THEN
+    RAISE EXCEPTION 'CONTRACT VIOLATED: the Ghana faith list is not the reviewed one: %', v_gh;
+  END IF;
+  IF (SELECT array_agg(f ->> 'code' ORDER BY ord) FROM jsonb_array_elements(v_gb) WITH ORDINALITY AS x(f, ord))
+       IS DISTINCT FROM ARRAY['christian', 'muslim', 'hindu', 'sikh', 'jewish', 'buddhist', 'other', 'none', 'prefer_not_to_say']
+     OR (SELECT array_agg(d ->> 'code' ORDER BY ord) FROM jsonb_array_elements(v_gb -> 0 -> 'denominations') WITH ORDINALITY AS x(d, ord))
+       IS DISTINCT FROM ARRAY['catholic', 'church_of_england_anglican', 'orthodox', 'pentecostal_charismatic', 'other_christian'] THEN
+    RAISE EXCEPTION 'CONTRACT VIOLATED: the UK faith list is not the reviewed one: %', v_gb;
+  END IF;
+  IF EXISTS (SELECT 1 FROM jsonb_array_elements(v_gh || v_gb) AS f
+              WHERE f ->> 'name_key' IS DISTINCT FROM 'dating_faith_' || (f ->> 'code')
+                 OR EXISTS (SELECT 1 FROM jsonb_array_elements(coalesce(f -> 'denominations', '[]'::jsonb)) AS d
+                             WHERE d ->> 'name_key' IS DISTINCT FROM 'dating_denomination_' || (d ->> 'code'))) THEN
+    RAISE EXCEPTION 'CONTRACT VIOLATED: a faith name_key breaks the dating_faith_/dating_denomination_ convention';
+  END IF;
+  -- Publishing a list never opened or closed a country.
+  IF EXISTS (SELECT 1 FROM public.country_safety_config AS c
+              WHERE c.published_by = 'migration:dating_v2_setup_lists'
+                AND c.dating_enabled IS DISTINCT FROM (SELECT p.dating_enabled FROM public.country_safety_config AS p
+                                                        WHERE p.country_code = c.country_code AND p.version = c.version - 1)) THEN
+    RAISE EXCEPTION 'CONTRACT VIOLATED: the faith-list publish changed a country''s dating_enabled';
+  END IF;
+END $m$;
+
+-- =====================================================================
+-- N. (W3b, R-17, R-18) get_dating_setup_lists: signed in; the device
+--    check; every open country's regions (open or not, with sides), faith
+--    list and same-gender switch; the person's own phone country, the
+--    country note's country (Tier 1/2 phone countries only) and default ages.
+-- =====================================================================
+DO $n$
+DECLARE
+  v_us constant uuid := pg_temp.ready('a0', 'GB', 'TLI', 'woman', ARRAY['man']);
+  v_gh constant uuid := pg_temp.id('a1');
+  v_young constant uuid := pg_temp.id('a2');
+  v jsonb;
+  v_msg text;
+  v_country jsonb;
+  v_got jsonb := '[]'::jsonb; -- T5 fix round 1 (I-1)
+BEGIN
+  BEGIN
+    PERFORM public.get_dating_setup_lists();
+    RAISE EXCEPTION 'CONTRACT VIOLATED: the lists answered a signed-out caller';
+  EXCEPTION WHEN insufficient_privilege THEN
+    GET STACKED DIAGNOSTICS v_msg = MESSAGE_TEXT;
+    IF v_msg IS DISTINCT FROM 'not_authenticated' THEN
+      RAISE EXCEPTION 'CONTRACT VIOLATED: signed out raised %', v_msg;
+    END IF;
+  END;
+  -- A UK phone (Tier 3): its country is read, and Tier 3 gets no note. (The
+  -- fixture's own +1 555 phone has no country, so no note either way.)
+  -- T5 fix round 1 (M-2): public.users carries a Ghana number, so a
+  -- reader of that tamperable copy reads GH and a note.
+  UPDATE auth.users SET phone = '447700900' || '190' WHERE id = v_us;
+  UPDATE public.users SET phone = '233558703' || '99' WHERE id = v_us;
+  UPDATE public.feature_flags SET enabled = true WHERE key = 'dating_same_gender_matching';
+  v := pg_temp.call(v_us, 'SELECT public.get_dating_setup_lists()');
+  IF (v ->> 'ok')::boolean IS NOT TRUE
+     -- (Earlier sections of this file open other countries: only GB and GH
+     -- are this section's.)
+     OR (SELECT array_agg(c ->> 'code' ORDER BY c ->> 'code') FROM jsonb_array_elements(v -> 'countries') AS c
+          WHERE c ->> 'code' IN ('GB', 'GH')) IS DISTINCT FROM ARRAY['GB', 'GH'] THEN
+    RAISE EXCEPTION 'CONTRACT VIOLATED: the lists are not GB and GH: %', v;
+  END IF;
+  SELECT c INTO v_country FROM jsonb_array_elements(v -> 'countries') AS c WHERE c ->> 'code' = 'GH';
+  IF v_country ->> 'same_gender' IS DISTINCT FROM 'false'
+     OR jsonb_array_length(v_country -> 'regions') <> 16
+     OR (SELECT r ->> 'open' FROM jsonb_array_elements(v_country -> 'regions') AS r WHERE r ->> 'code' = 'AA') IS DISTINCT FROM 'true'
+     OR (SELECT r ->> 'open' FROM jsonb_array_elements(v_country -> 'regions') AS r WHERE r ->> 'code' = 'TV') IS DISTINCT FROM 'false'
+     OR (SELECT jsonb_array_length(r -> 'sides') FROM jsonb_array_elements(v_country -> 'regions') AS r WHERE r ->> 'code' = 'AA') <> 2
+     OR v_country -> 'faiths' IS DISTINCT FROM (public.dating_country_config('GH')).faith_list THEN
+    RAISE EXCEPTION 'CONTRACT VIOLATED: Ghana''s lists read %', v_country;
+  END IF;
+  SELECT c INTO v_country FROM jsonb_array_elements(v -> 'countries') AS c WHERE c ->> 'code' = 'GB';
+  IF v_country ->> 'same_gender' IS DISTINCT FROM 'true' OR jsonb_array_length(v_country -> 'regions') <> 12 THEN
+    RAISE EXCEPTION 'CONTRACT VIOLATED: the UK''s lists read %', v_country;
+  END IF;
+  IF v -> 'note_country' IS DISTINCT FROM 'null'::jsonb OR v ->> 'phone_country' IS DISTINCT FROM 'GB'
+     OR v -> 'default_ages' IS DISTINCT FROM '[25, 35]'::jsonb THEN
+    RAISE EXCEPTION 'CONTRACT VIOLATED: a 30-year-old with a Tier 3 phone reads note % ages %', v -> 'note_country', v -> 'default_ages';
+  END IF;
+  -- A Ghana phone (Tier 1): the note names Ghana. A 19-year-old: 18 to 26.
+  INSERT INTO auth.users (id, phone, phone_confirmed_at, created_at) VALUES
+    (v_gh, '233558703' || '91', now(), now() - interval '40 days'),
+    (v_young, '15558709' || '92', now(), now() - interval '40 days');
+  INSERT INTO public.users (id, phone, display_name, path, created_at, eula_accepted_at, eula_version) VALUES
+    -- T5 fix round 1 (M-2): a UK copy in public.users; auth.users says Ghana.
+    (v_gh, '447700900' || '191', 'Lists a1', 'dating', now() - interval '40 days', now(), '2'),
+    (v_young, '15558709' || '92', 'Lists a2', 'dating', now() - interval '40 days', now(), '2');
+  INSERT INTO public.account_birthdates (user_id, birth_date) VALUES
+    (v_gh, current_date - interval '30 years'), (v_young, current_date - interval '19 years 10 days');
+  IF pg_temp.call(v_gh, 'SELECT public.get_dating_setup_lists()') ->> 'note_country' IS DISTINCT FROM 'GH'
+     OR pg_temp.call(v_gh, 'SELECT public.get_dating_setup_lists()') ->> 'phone_country' IS DISTINCT FROM 'GH'
+     OR pg_temp.call(v_young, 'SELECT public.get_dating_setup_lists()') -> 'default_ages' IS DISTINCT FROM '[18, 26]'::jsonb THEN
+    RAISE EXCEPTION 'CONTRACT VIOLATED: the note or the 18-20 default ages are wrong: % / %',
+      pg_temp.call(v_gh, 'SELECT public.get_dating_setup_lists()'), pg_temp.call(v_young, 'SELECT public.get_dating_setup_lists()');
+  END IF;
+  -- A closed country is not offered; the global switch off makes every same_gender false.
+  PERFORM public.publish_country_config('GB', '{"dating_enabled": false}');
+  UPDATE public.feature_flags SET enabled = false WHERE key = 'dating_same_gender_matching';
+  v := pg_temp.call(v_us, 'SELECT public.get_dating_setup_lists()');
+  IF (SELECT array_agg(c ->> 'code') FROM jsonb_array_elements(v -> 'countries') AS c
+       WHERE c ->> 'code' IN ('GB', 'GH')) IS DISTINCT FROM ARRAY['GH']
+     OR EXISTS (SELECT 1 FROM jsonb_array_elements(v -> 'countries') AS c WHERE c ->> 'same_gender' = 'true') THEN
+    RAISE EXCEPTION 'CONTRACT VIOLATED: a closed country or a switched-off same-gender rule is still offered: %', v;
+  END IF;
+  PERFORM public.publish_country_config('GB', '{"dating_enabled": true}');
+  -- No person's data but the caller's own (no gender, no seeking, no other person).
+  IF position('woman' IN v::text) > 0 OR position(v_us::text IN v::text) > 0 THEN
+    RAISE EXCEPTION 'CONTRACT VIOLATED: the lists carry a person''s data: %', v;
+  END IF;
+  -- T5 fix round 1 (I-1): an untrusted device, or one the check can't
+  -- answer for (NULL), reads reverify_device and nothing else (stubs
+  -- rolled back, as section I's guard probe).
+  BEGIN
+    CREATE OR REPLACE FUNCTION public.dating_require_trusted_device() RETURNS boolean
+      LANGUAGE sql STABLE SECURITY DEFINER SET search_path = '' AS $stub$ SELECT false $stub$;
+    v_got := v_got || jsonb_build_array(pg_temp.call(v_us, 'SELECT public.get_dating_setup_lists()'));
+    CREATE OR REPLACE FUNCTION public.dating_require_trusted_device() RETURNS boolean
+      LANGUAGE sql STABLE SECURITY DEFINER SET search_path = '' AS $stub$ SELECT NULL::boolean $stub$;
+    v_got := v_got || jsonb_build_array(pg_temp.call(v_us, 'SELECT public.get_dating_setup_lists()'));
+    RAISE SQLSTATE 'W1C99';
+  EXCEPTION WHEN SQLSTATE 'W1C99' THEN
+    NULL;
+  END;
+  IF v_got IS DISTINCT FROM '[{"ok": false, "reason": "reverify_device"}, {"ok": false, "reason": "reverify_device"}]'::jsonb THEN
+    RAISE EXCEPTION 'CONTRACT VIOLATED: the lists answered on an untrusted device: %', v_got;
+  END IF;
+  IF public.dating_require_trusted_device() IS NOT TRUE THEN
+    RAISE EXCEPTION 'fixture: the device stub was not rolled back';
+  END IF;
+END $n$;
+
+-- =====================================================================
+-- O. (§7.1 "notify requests aggregate only") No API role reads the
+--    request table; the only client-callable functions naming it are the
+--    request and the cancel; its counter carries no country.
+-- =====================================================================
+DO $o$
+DECLARE
+  v_got text;
+BEGIN
+  IF has_table_privilege('authenticated', 'public.dating_notify_requests', 'SELECT')
+     OR has_table_privilege('anon', 'public.dating_notify_requests', 'SELECT') THEN
+    RAISE EXCEPTION 'CONTRACT VIOLATED: a client can read dating_notify_requests';
+  END IF;
+  SELECT string_agg(p.oid::regprocedure::text, ', ' ORDER BY p.oid::regprocedure::text) INTO v_got
+    FROM pg_proc AS p
+   WHERE p.prosrc ~ 'dating_notify_requests' AND has_function_privilege('authenticated', p.oid, 'EXECUTE');
+  IF v_got IS DISTINCT FROM 'cancel_dating_country_notice(), request_dating_country_notice(text,text)' THEN
+    RAISE EXCEPTION 'CONTRACT VIOLATED: client-callable readers of the notice table: %', v_got;
+  END IF;
+  IF EXISTS (SELECT 1 FROM public.metric_counters AS c WHERE c.key LIKE 'dating.notify.%' AND c.key ~ '\.[A-Z]{2}$') THEN
+    RAISE EXCEPTION 'CONTRACT VIOLATED: a notice counter names a country';
+  END IF;
+END $o$;
+
+-- Section T's role switches (this file defines pg_temp.call only; I-5).
+CREATE FUNCTION pg_temp.as_person(p uuid) RETURNS void LANGUAGE plpgsql AS $$
+BEGIN
+  EXECUTE 'SET LOCAL ROLE authenticated';
+  PERFORM set_config('request.jwt.claim.sub', p::text, true);
+  PERFORM set_config('request.jwt.claims', json_build_object('sub', p, 'role', 'authenticated')::text, true);
+END $$;
+CREATE FUNCTION pg_temp.as_db() RETURNS void LANGUAGE plpgsql AS $$
+BEGIN
+  RESET ROLE;
+  PERFORM set_config('request.jwt.claim.sub', '', true);
+  PERFORM set_config('request.jwt.claims', '', true);
+END $$;
+
+-- =====================================================================
+-- P. (W3c, §4.3, R-24) The photo table: positions 1-6; captions to 100;
+--    csam_state; the five slot reasons; an approval needs a clear scan;
+--    the child-label thresholds.
+-- =====================================================================
+DO $p$
+DECLARE
+  v_u constant uuid := pg_temp.ready('b0', 'GB', 'TLI', 'woman', ARRAY['man']);
+  v_msg text;
+BEGIN
+  -- (This file's older fixtures default csam_state to 'clear'; a real
+  -- upload is 'pending' until the scan, as insert_dating_profile_photo
+  -- sets it: section Q.)
+  INSERT INTO public.dating_profile_photos (user_id, storage_key, position, csam_state)
+  VALUES (v_u, 'dating-photos/' || md5('p6') || '.jpg', 6, 'pending');
+  BEGIN
+    INSERT INTO public.dating_profile_photos (user_id, storage_key, position) VALUES (v_u, 'dating-photos/' || md5('p7') || '.jpg', 7);
+    RAISE EXCEPTION 'CONTRACT VIOLATED: position 7 was stored';
+  EXCEPTION WHEN check_violation THEN NULL;
+  END;
+  BEGIN
+    UPDATE public.dating_profile_photos SET moderation_state = 'approved' WHERE user_id = v_u AND position = 6;
+    RAISE EXCEPTION 'CONTRACT VIOLATED: a photo with no clear scan was approved';
+  EXCEPTION WHEN check_violation THEN
+    GET STACKED DIAGNOSTICS v_msg = CONSTRAINT_NAME;
+    IF v_msg IS DISTINCT FROM 'dating_profile_photos_approved_clear_check' THEN
+      RAISE EXCEPTION 'CONTRACT VIOLATED: the approval was refused by % instead', v_msg;
+    END IF;
+  END;
+  BEGIN
+    UPDATE public.dating_profile_photos SET rejection_reason = 'face_blurred' WHERE user_id = v_u AND position = 6;
+    RAISE EXCEPTION 'CONTRACT VIOLATED: a v1 rejection reason was stored';
+  EXCEPTION WHEN check_violation THEN NULL;
+  END;
+  IF (SELECT child_label_reject::text || '/' || child_label_review::text FROM public.dating_photo_moderation_config) IS DISTINCT FROM '0.7/0.5' THEN
+    RAISE EXCEPTION 'CONTRACT VIOLATED: the child-label thresholds are not 0.7 / 0.5';
+  END IF;
+  -- Fix round 1 (I-3): one photo row per object (the storage predicate
+  -- and the before-delete queue assume it; the predicate reads by key),
+  -- and the orphan sweep reads by an index.
+  BEGIN
+    INSERT INTO public.dating_profile_photos (user_id, storage_key, position) VALUES (v_u, 'dating-photos/' || md5('p6') || '.jpg', 5);
+    RAISE EXCEPTION 'CONTRACT VIOLATED: two photo rows share one object';
+  EXCEPTION WHEN unique_violation THEN
+    GET STACKED DIAGNOSTICS v_msg = CONSTRAINT_NAME;
+    IF v_msg IS DISTINCT FROM 'dating_profile_photos_storage_key_key' THEN
+      RAISE EXCEPTION 'CONTRACT VIOLATED: the shared object was refused by % instead', v_msg;
+    END IF;
+  END;
+  IF to_regclass('public.dating_photo_upload_intents_orphan_idx') IS NULL THEN
+    RAISE EXCEPTION 'CONTRACT VIOLATED: the orphan sweep has no index';
+  END IF;
+END $p$;
+
+-- =====================================================================
+-- Q. (W3c, §4.4 Photos) The upload: an intent (setup guard; mime; six
+--    photos at most by position, W3 final I-4; counted), the object, the insert; a slot replaced deletes its old
+--    photo; the owner's list; the hit is never named.
+-- =====================================================================
+DO $q$
+DECLARE
+  v_u constant uuid := pg_temp.ready('b1', 'GB', 'TLI', 'woman', ARRAY['man']);
+  v_other constant uuid := pg_temp.ready('b2', 'GB', 'TLI', 'man', ARRAY['woman']);
+  v jsonb;
+  v2 jsonb;
+  v_intent uuid;
+  v_key text;
+  v_first uuid;
+  v_n int;
+BEGIN
+  IF pg_temp.call(v_u, $s$SELECT public.create_dating_photo_upload_intent('image/gif')$s$)
+       IS DISTINCT FROM '{"ok": false, "reason": "invalid", "field": "mime"}'::jsonb THEN
+    RAISE EXCEPTION 'CONTRACT VIOLATED: a gif intent was not refused as invalid';
+  END IF;
+  v := pg_temp.call(v_u, $s$SELECT public.create_dating_photo_upload_intent('image/jpeg')$s$);
+  v_intent := (v ->> 'intent_id')::uuid;
+  v_key := v ->> 'storage_key';
+  IF (v ->> 'ok')::boolean IS NOT TRUE OR v ->> 'bucket' IS DISTINCT FROM 'dating-profile-photos' OR v_key !~ '^dating-photos/[0-9a-f]{32}\.jpg$' THEN
+    RAISE EXCEPTION 'CONTRACT VIOLATED: the intent reads %', v;
+  END IF;
+  IF pg_temp.call(v_u, format($s$SELECT public.insert_dating_profile_photo(%L, 1::smallint)$s$, v_intent))
+       IS DISTINCT FROM '{"ok": false, "reason": "object_missing"}'::jsonb
+     OR pg_temp.call(v_u, format($s$SELECT public.insert_dating_profile_photo(%L, 9::smallint)$s$, v_intent))
+       IS DISTINCT FROM '{"ok": false, "reason": "invalid", "field": "position"}'::jsonb
+     OR pg_temp.call(v_other, format($s$SELECT public.insert_dating_profile_photo(%L, 1::smallint)$s$, v_intent))
+       IS DISTINCT FROM '{"ok": false, "reason": "intent_unavailable"}'::jsonb THEN
+    RAISE EXCEPTION 'CONTRACT VIOLATED: an insert without the object, at position 9, or with another''s intent was not refused';
+  END IF;
+  INSERT INTO storage.objects (bucket_id, name, owner) VALUES ('dating-profile-photos', v_key, v_u);
+  v := pg_temp.call(v_u, format($s$SELECT public.insert_dating_profile_photo(%L, 1::smallint)$s$, v_intent));
+  v_first := (v ->> 'photo_id')::uuid;
+  IF (v ->> 'ok')::boolean IS NOT TRUE
+     OR (SELECT csam_state FROM public.dating_profile_photos WHERE id = v_first) IS DISTINCT FROM 'pending'
+     OR NOT EXISTS (SELECT 1 FROM public.dating_photo_moderation_outbox WHERE photo_id = v_first AND state = 'pending')
+     OR (SELECT used_at FROM public.dating_photo_upload_intents WHERE id = v_intent) IS NULL THEN
+    RAISE EXCEPTION 'CONTRACT VIOLATED: the insert reads % (queued? used?)', v;
+  END IF;
+  -- The same slot again: the old photo goes.
+  v := pg_temp.call(v_u, $s$SELECT public.create_dating_photo_upload_intent('image/jpeg')$s$);
+  INSERT INTO storage.objects (bucket_id, name, owner) VALUES ('dating-profile-photos', v ->> 'storage_key', v_u);
+  v := pg_temp.call(v_u, format($s$SELECT public.insert_dating_profile_photo(%L, 1::smallint)$s$, v ->> 'intent_id'));
+  IF EXISTS (SELECT 1 FROM public.dating_profile_photos WHERE id = v_first)
+     OR (SELECT count(*) FROM public.dating_profile_photos WHERE user_id = v_u) <> 1 THEN
+    RAISE EXCEPTION 'CONTRACT VIOLATED: replacing slot 1 kept the old photo';
+  END IF;
+  -- Six at most.
+  FOR v_n IN 2..6 LOOP
+    v := pg_temp.call(v_u, $s$SELECT public.create_dating_photo_upload_intent('image/png')$s$);
+    INSERT INTO storage.objects (bucket_id, name, owner) VALUES ('dating-profile-photos', v ->> 'storage_key', v_u);
+    PERFORM pg_temp.call(v_u, format($s$SELECT public.insert_dating_profile_photo(%L, %s::smallint)$s$, v ->> 'intent_id', v_n));
+  END LOOP;
+  -- W3 final (I-4): with six an intent is still given (Replace and Crop);
+  -- W3 final the insert's positions 1-6 keep it to six (section AB).
+  IF (pg_temp.call(v_u, $s$SELECT public.create_dating_photo_upload_intent('image/jpeg')$s$) ->> 'ok')::boolean IS NOT TRUE THEN
+    RAISE EXCEPTION 'CONTRACT VIOLATED: with six photos no intent was given (Replace and Crop fail)';
+  END IF;
+  -- The list: own photos only, no csam_state, the day-30 date.
+  v := pg_temp.call(v_u, 'SELECT public.list_dating_profile_photos()');
+  IF jsonb_array_length(v -> 'photos') <> 6 OR v::text ~ 'csam' OR v -> 'after_mutual_from' IS NULL
+     OR pg_temp.call(v_other, 'SELECT public.list_dating_profile_photos()') -> 'photos' IS DISTINCT FROM '[]'::jsonb THEN
+    RAISE EXCEPTION 'CONTRACT VIOLATED: the photo list reads %', v;
+  END IF;
+  -- The guard: Dating off refuses an intent (not_eligible).
+  UPDATE public.feature_flags SET enabled = false WHERE key = 'dating_mode_enabled';
+  IF pg_temp.call(v_other, $s$SELECT public.create_dating_photo_upload_intent('image/jpeg')$s$) ->> 'reason' IS DISTINCT FROM 'not_eligible' THEN
+    RAISE EXCEPTION 'CONTRACT VIOLATED: an intent was given with Dating off';
+  END IF;
+  -- ... and deleting is never gated, and idempotent. (Each call is its own
+  -- statement: a read in the same IF would not see the call's write, I-1.)
+  v := pg_temp.call(v_u, format($s$SELECT public.delete_dating_profile_photo(%L)$s$, (SELECT id FROM public.dating_profile_photos WHERE user_id = v_u AND position = 6)));
+  v2 := pg_temp.call(v_u, format($s$SELECT public.delete_dating_profile_photo(%L)$s$, gen_random_uuid()));
+  IF v IS DISTINCT FROM '{"ok": true}'::jsonb OR v2 IS DISTINCT FROM '{"ok": true}'::jsonb
+     OR (SELECT count(*) FROM public.dating_profile_photos WHERE user_id = v_u) <> 5 THEN
+    RAISE EXCEPTION 'CONTRACT VIOLATED: a delete was gated or not idempotent';
+  END IF;
+  UPDATE public.feature_flags SET enabled = true WHERE key = 'dating_mode_enabled';
+END $q$;
+
+-- =====================================================================
+-- R. (W3c) Reorder: a permutation of one's own photos only; positions 1..n;
+--    a replay changes nothing. Captions: own photos, 100 at most, no
+--    invisible characters; blank clears.
+-- =====================================================================
+DO $r$
+DECLARE
+  v_u constant uuid := pg_temp.ready('b3', 'GB', 'TLI', 'woman', ARRAY['man']);
+  v_a uuid;
+  v_b uuid;
+  v_c uuid;
+  v_key text := pg_temp.key('ro');
+  v jsonb;
+  v2 jsonb;
+  v3 jsonb;
+  v4 jsonb;
+BEGIN
+  INSERT INTO public.dating_profile_photos (user_id, storage_key, position) VALUES
+    (v_u, 'dating-photos/' || md5('r1') || '.jpg', 1) RETURNING id INTO v_a;
+  INSERT INTO public.dating_profile_photos (user_id, storage_key, position) VALUES
+    (v_u, 'dating-photos/' || md5('r2') || '.jpg', 2) RETURNING id INTO v_b;
+  INSERT INTO public.dating_profile_photos (user_id, storage_key, position) VALUES
+    (v_u, 'dating-photos/' || md5('r3') || '.jpg', 4) RETURNING id INTO v_c;
+  IF pg_temp.call(v_u, format($s$SELECT public.reorder_dating_photos(%L, ARRAY[%L, %L]::uuid[])$s$, pg_temp.key('x'), v_a, v_b))
+       IS DISTINCT FROM '{"ok": false, "reason": "invalid", "field": "order"}'::jsonb
+     OR pg_temp.call(v_u, format($s$SELECT public.reorder_dating_photos(%L, ARRAY[%L, %L, %L]::uuid[])$s$, pg_temp.key('x'), v_a, v_a, v_b))
+       IS DISTINCT FROM '{"ok": false, "reason": "invalid", "field": "order"}'::jsonb THEN
+    RAISE EXCEPTION 'CONTRACT VIOLATED: a reorder that is not a permutation was taken';
+  END IF;
+  v := pg_temp.call(v_u, format($s$SELECT public.reorder_dating_photos(%L, ARRAY[%L, %L, %L]::uuid[])$s$, v_key, v_c, v_a, v_b));
+  IF v IS DISTINCT FROM '{"ok": true}'::jsonb
+     OR (SELECT string_agg(position::text, ',' ORDER BY id = v_c DESC, id = v_a DESC) FROM public.dating_profile_photos WHERE user_id = v_u) IS DISTINCT FROM '1,2,3' THEN
+    RAISE EXCEPTION 'CONTRACT VIOLATED: the reorder did not number the photos 1..3 in order';
+  END IF;
+  v := pg_temp.call(v_u, format($s$SELECT public.set_dating_photo_caption(%L, 'Me at the beach')$s$, v_a));
+  v2 := pg_temp.call(v_u, format($s$SELECT public.set_dating_photo_caption(%L, %L)$s$, v_a, repeat('x', 101)));
+  v3 := pg_temp.call(v_u, format($s$SELECT public.set_dating_photo_caption(%L, %L)$s$, v_a, E'hi​there'));
+  v4 := pg_temp.call(pg_temp.ready('b4', 'GB', 'TLI', 'man', ARRAY['woman']), format($s$SELECT public.set_dating_photo_caption(%L, 'mine now')$s$, v_a));
+  IF v IS DISTINCT FROM '{"ok": true}'::jsonb
+     OR v2 IS DISTINCT FROM '{"ok": false, "reason": "invalid", "field": "caption"}'::jsonb
+     OR v3 IS DISTINCT FROM '{"ok": false, "reason": "invalid", "field": "caption"}'::jsonb
+     OR v4 IS DISTINCT FROM '{"ok": false, "reason": "invalid", "field": "photo"}'::jsonb
+     OR (SELECT caption FROM public.dating_profile_photos WHERE id = v_a) IS DISTINCT FROM 'Me at the beach' THEN
+    RAISE EXCEPTION 'CONTRACT VIOLATED: captions are not the owner''s, bounded and clean';
+  END IF;
+  v := pg_temp.call(v_u, format($s$SELECT public.set_dating_photo_caption(%L, '   ')$s$, v_a));
+  IF v IS DISTINCT FROM '{"ok": true}'::jsonb
+     OR (SELECT caption FROM public.dating_profile_photos WHERE id = v_a) IS NOT NULL THEN
+    RAISE EXCEPTION 'CONTRACT VIOLATED: a blank caption did not clear';
+  END IF;
+END $r$;
+
+-- =====================================================================
+-- S. (W3c, I-10, R-25) The CSAM outcome is the service's to record: a hit
+--    rejects as "unsafe", holds the Dating account once, and is final; an
+--    error leaves the photo unapproved; clear lets Vision's verdict stand.
+-- =====================================================================
+DO $s$
+DECLARE
+  v_u constant uuid := pg_temp.ready('b5', 'GB', 'TLI', 'woman', ARRAY['man']);
+  v_a uuid;
+  v_b uuid;
+  v jsonb; -- fix round 1
+  v_cs text; -- fix round 1
+  v_ms text; -- fix round 1
+  v_out text; -- fix round 1
+  v_msg text; -- fix round 1
+BEGIN
+  IF has_function_privilege('authenticated', 'public.record_dating_photo_csam(uuid,text)', 'EXECUTE')
+     OR NOT has_function_privilege('service_role', 'public.record_dating_photo_csam(uuid,text)', 'EXECUTE') THEN
+    RAISE EXCEPTION 'CONTRACT VIOLATED: the CSAM recorder is not the service role''s alone';
+  END IF;
+  INSERT INTO public.dating_profile_photos (user_id, storage_key, position) VALUES
+    (v_u, 'dating-photos/' || md5('s1') || '.jpg', 1) RETURNING id INTO v_a;
+  INSERT INTO public.dating_profile_photos (user_id, storage_key, position) VALUES
+    (v_u, 'dating-photos/' || md5('s2') || '.jpg', 2) RETURNING id INTO v_b;
+  PERFORM public.record_dating_photo_csam(v_a, 'hit');
+  PERFORM public.record_dating_photo_csam(v_b, 'hit');
+  PERFORM public.record_dating_photo_csam(v_a, 'clear');
+  IF (SELECT csam_state || '/' || moderation_state || '/' || rejection_reason FROM public.dating_profile_photos WHERE id = v_a)
+       IS DISTINCT FROM 'hit/rejected/unsafe'
+     OR (SELECT count(*) FROM public.dating_account_restrictions WHERE user_id = v_u AND restriction_type = 'moderation_hold' AND lifted_at IS NULL) <> 1 THEN
+    RAISE EXCEPTION 'CONTRACT VIOLATED: a hit is not rejected/unsafe, final, with one hold';
+  END IF;
+  DELETE FROM public.dating_account_restrictions WHERE user_id = v_u;
+  INSERT INTO public.dating_profile_photos (user_id, storage_key, position, csam_state) VALUES -- fix round 1 (I-2): an unscanned upload
+    (v_u, 'dating-photos/' || md5('s3') || '.jpg', 3, 'pending') RETURNING id INTO v_a;
+  PERFORM public.record_dating_photo_csam(v_a, 'error');
+  IF (SELECT csam_state || '/' || moderation_state FROM public.dating_profile_photos WHERE id = v_a) IS DISTINCT FROM 'error/pending' THEN
+    RAISE EXCEPTION 'CONTRACT VIOLATED: a matcher error does not leave the photo pending';
+  END IF;
+  PERFORM public.record_dating_photo_csam(v_a, 'clear');
+  UPDATE public.dating_profile_photos SET moderation_state = 'approved' WHERE id = v_a;
+  IF public.record_dating_photo_csam(v_a, 'maybe') IS DISTINCT FROM '{"ok": false, "reason": "invalid", "field": "outcome"}'::jsonb THEN
+    RAISE EXCEPTION 'CONTRACT VIOLATED: an unknown outcome was taken';
+  END IF;
+  -- Fix round 1 (I-2): a later matcher error (a redelivered job) never
+  -- undoes a clear scan of the same bytes, and never raises the raw
+  -- check violation that would echo the row (the caption) to the worker.
+  v := public.record_dating_photo_csam(v_a, 'error');
+  IF v IS DISTINCT FROM '{"ok": true}'::jsonb
+     OR (SELECT csam_state || '/' || moderation_state FROM public.dating_profile_photos WHERE id = v_a) IS DISTINCT FROM 'clear/approved' THEN
+    RAISE EXCEPTION 'CONTRACT VIOLATED: a matcher error after a clear scan reads % (clear/approved kept)', v;
+  END IF;
+  -- ... and no outcome on any stored state raises.
+  FOREACH v_cs IN ARRAY ARRAY['pending', 'clear', 'hit', 'error'] LOOP
+    FOREACH v_ms IN ARRAY ARRAY['pending', 'approved', 'rejected', 'needs_review'] LOOP
+      CONTINUE WHEN v_ms = 'approved' AND v_cs <> 'clear';
+      FOREACH v_out IN ARRAY ARRAY['clear', 'hit', 'error'] LOOP
+        DELETE FROM public.dating_profile_photos WHERE user_id = v_u AND position = 5;
+        INSERT INTO public.dating_profile_photos (user_id, storage_key, position, csam_state, moderation_state)
+        VALUES (v_u, 'dating-photos/' || md5('s-' || v_cs || v_ms || v_out) || '.jpg', 5, v_cs, v_ms) RETURNING id INTO v_b;
+        BEGIN
+          v := public.record_dating_photo_csam(v_b, v_out);
+        EXCEPTION WHEN OTHERS THEN
+          RAISE EXCEPTION 'CONTRACT VIOLATED: the CSAM outcome % on %/% raised %', v_out, v_cs, v_ms, SQLSTATE;
+        END;
+        IF v IS DISTINCT FROM '{"ok": true}'::jsonb THEN
+          RAISE EXCEPTION 'CONTRACT VIOLATED: the CSAM outcome % on %/% read %', v_out, v_cs, v_ms, v;
+        END IF;
+      END LOOP;
+    END LOOP;
+  END LOOP;
+  -- Fix round 1 (M-7): a hit is final outside the recorder too: no direct
+  -- write un-hits it, the database's or the service role's.
+  SELECT id INTO v_b FROM public.dating_profile_photos WHERE user_id = v_u AND csam_state = 'hit' ORDER BY position LIMIT 1;
+  FOREACH v_out IN ARRAY ARRAY['db', 'service_role'] LOOP
+    BEGIN
+      IF v_out = 'service_role' THEN
+        SET LOCAL ROLE service_role;
+      END IF;
+      UPDATE public.dating_profile_photos SET csam_state = 'clear', moderation_state = 'approved', rejection_reason = NULL WHERE id = v_b;
+      RAISE EXCEPTION 'CONTRACT VIOLATED: a direct write as % un-hit a CSAM match', v_out;
+    EXCEPTION WHEN OTHERS THEN
+      GET STACKED DIAGNOSTICS v_msg = MESSAGE_TEXT;
+      IF v_msg IS DISTINCT FROM 'dating:csam_final' THEN
+        RAISE EXCEPTION 'CONTRACT VIOLATED: un-hitting a match as % read: %', v_out, v_msg;
+      END IF;
+    END;
+  END LOOP;
+  IF (SELECT csam_state FROM public.dating_profile_photos WHERE id = v_b) IS DISTINCT FROM 'hit' THEN
+    RAISE EXCEPTION 'CONTRACT VIOLATED: a CSAM match is no longer a hit';
+  END IF;
+END $s$;
+
+-- =====================================================================
+-- T. (R11, R-2) No client reads the photo or intent tables; the owner still
+--    uploads by intent and reads her own object through the storage
+--    policies' definer predicates; nobody else does.
+-- =====================================================================
+DO $t$
+DECLARE
+  v_u constant uuid := pg_temp.ready('b6', 'GB', 'TLI', 'woman', ARRAY['man']);
+  v_x constant uuid := pg_temp.ready('b7', 'GB', 'TLI', 'man', ARRAY['woman']);
+  v jsonb;
+  v_key text;
+  v_n bigint;
+  v_photo uuid; -- fix round 1
+  v_key2 constant text := 'dating-photos/' || md5('t-quarantined') || '.jpg'; -- fix round 1
+BEGIN
+  IF has_table_privilege('authenticated', 'public.dating_profile_photos', 'SELECT')
+     OR has_table_privilege('authenticated', 'public.dating_photo_upload_intents', 'SELECT')
+     OR has_any_column_privilege('authenticated', 'public.dating_profile_photos', 'SELECT')
+     OR EXISTS (SELECT 1 FROM pg_policies WHERE policyname IN ('dating_profile_photos_select_own', 'dating_photo_upload_intents_select_own')) THEN
+    RAISE EXCEPTION 'CONTRACT VIOLATED: a client can still read the photo or intent table';
+  END IF;
+  v := pg_temp.call(v_u, $s$SELECT public.create_dating_photo_upload_intent('image/jpeg')$s$);
+  v_key := v ->> 'storage_key';
+  ALTER TABLE storage.objects ENABLE ROW LEVEL SECURITY;
+  GRANT SELECT, INSERT ON storage.objects TO authenticated;
+  PERFORM pg_temp.as_person(v_u);
+  INSERT INTO storage.objects (bucket_id, name, owner) VALUES ('dating-profile-photos', v_key, v_u);
+  PERFORM pg_temp.as_db();
+  PERFORM pg_temp.as_person(v_x);
+  BEGIN
+    INSERT INTO storage.objects (bucket_id, name, owner) VALUES ('dating-profile-photos', 'dating-photos/' || md5('t-x') || '.jpg', v_x);
+    RAISE EXCEPTION 'CONTRACT VIOLATED: an upload without an intent was let in';
+  EXCEPTION WHEN insufficient_privilege THEN NULL;
+  END;
+  v_n := (SELECT count(*) FROM storage.objects WHERE name = v_key);
+  PERFORM pg_temp.as_db();
+  IF v_n <> 0 THEN
+    RAISE EXCEPTION 'CONTRACT VIOLATED: a stranger reads another''s upload';
+  END IF;
+  v_photo := (pg_temp.call(v_u, format($s$SELECT public.insert_dating_profile_photo(%L, 1::smallint)$s$, v ->> 'intent_id')) ->> 'photo_id')::uuid; -- fix round 1
+  PERFORM pg_temp.as_person(v_u);
+  v_n := (SELECT count(*) FROM storage.objects WHERE name = v_key);
+  PERFORM pg_temp.as_db();
+  IF v_n <> 1 THEN
+    RAISE EXCEPTION 'CONTRACT VIOLATED: the owner cannot read her own photo object';
+  END IF;
+  -- Fix round 1 (M-1): once the photo row exists, a stranger still reads nothing.
+  PERFORM pg_temp.as_person(v_x);
+  v_n := (SELECT count(*) FROM storage.objects WHERE name = v_key);
+  PERFORM pg_temp.as_db();
+  IF v_n <> 0 THEN
+    RAISE EXCEPTION 'CONTRACT VIOLATED: a stranger reads another''s attached photo object';
+  END IF;
+  -- Fix round 1 (M-8): a CSAM match is never served, the owner included ...
+  PERFORM public.record_dating_photo_csam(v_photo, 'hit');
+  PERFORM pg_temp.as_person(v_u);
+  v_n := (SELECT count(*) FROM storage.objects WHERE name = v_key);
+  PERFORM pg_temp.as_db();
+  IF v_n <> 0 THEN
+    RAISE EXCEPTION 'CONTRACT VIOLATED: the owner reads a photo object that matched the CSAM list';
+  END IF;
+  -- ... nor an object Spec 1 recorded as a match (quarantined), whatever the photo row says.
+  INSERT INTO public.dating_profile_photos (user_id, storage_key, position) VALUES (v_u, v_key2, 2);
+  INSERT INTO storage.objects (bucket_id, name, owner) VALUES ('dating-profile-photos', v_key2, v_u);
+  PERFORM pg_temp.as_person(v_u);
+  v_n := (SELECT count(*) FROM storage.objects WHERE name = v_key2);
+  PERFORM pg_temp.as_db();
+  IF v_n <> 1 THEN
+    RAISE EXCEPTION 'fixture: the owner cannot read her unscanned photo object';
+  END IF;
+  INSERT INTO private.media_scan_queue (bucket, object_name, owner_user_id, source, status, scanned_at)
+  VALUES ('dating-profile-photos', v_key2, v_u, 'inline', 'match', now());
+  PERFORM pg_temp.as_person(v_u);
+  v_n := (SELECT count(*) FROM storage.objects WHERE name = v_key2);
+  PERFORM pg_temp.as_db();
+  IF v_n <> 0 THEN
+    RAISE EXCEPTION 'CONTRACT VIOLATED: the owner reads an object Spec 1 recorded as a CSAM match';
+  END IF;
+END $t$;
+
+-- =====================================================================
+-- U. (I-14) Orphan uploads: an object uploaded under an intent that expired
+--    unused is claimed for a scan, and only a recorded scan deletes it
+--    (nothing is deleted unscanned); an error releases it for a retry; the
+--    sweep is the service role's only.
+-- =====================================================================
+DO $u$
+DECLARE
+  v_u constant uuid := pg_temp.ready('b8', 'GB', 'TLI', 'woman', ARRAY['man']);
+  v_orphan uuid;
+  v_hit uuid;
+  v_stale uuid;
+  v_key text := 'dating-photos/' || md5('u-orphan') || '.jpg';
+  v_hit_key text := 'dating-photos/' || md5('u-hit') || '.jpg';
+  v_stale_key text := 'dating-photos/' || md5('u-stale') || '.jpg';
+  v_got uuid[];
+  v jsonb;
+  v_swept bigint := pg_temp.metric('dating.photo.orphan_swept');
+  v_stuck uuid; -- fix round 1
+  v_stuck_key constant text := 'dating-photos/' || md5('u-stuck') || '.jpg'; -- fix round 1
+  v_stuck_n bigint := pg_temp.metric('dating.photo.orphan_scan_stuck'); -- fix round 1
+  v_try int; -- fix round 1
+  v_errors bigint := pg_temp.metric('dating.photo.orphan_scan_error');
+BEGIN
+  IF has_function_privilege('authenticated', 'public.claim_dating_orphan_uploads(integer)', 'EXECUTE')
+     OR has_function_privilege('authenticated', 'public.record_dating_orphan_scan(uuid,text)', 'EXECUTE')
+     OR NOT has_function_privilege('service_role', 'public.claim_dating_orphan_uploads(integer)', 'EXECUTE') THEN
+    RAISE EXCEPTION 'CONTRACT VIOLATED: the orphan sweep is not the service role''s alone';
+  END IF;
+  -- One orphan, and five that are not: not yet expired, expired just now,
+  -- expired with no object, used (a photo), and an unused stamp whose key
+  -- is a live photo anyway (a live photo is never swept).
+  INSERT INTO public.dating_photo_upload_intents (user_id, storage_key, mime_type, expires_at, created_at)
+  VALUES (v_u, v_key, 'image/jpeg', now() - interval '1 hour', now() - interval '2 hours') RETURNING id INTO v_orphan;
+  INSERT INTO public.dating_photo_upload_intents (user_id, storage_key, mime_type, expires_at, used_at, created_at) VALUES
+    (v_u, 'dating-photos/' || md5('u-fresh') || '.jpg', 'image/jpeg', now() + interval '10 minutes', NULL, now()),
+    (v_u, 'dating-photos/' || md5('u-recent') || '.jpg', 'image/jpeg', now() - interval '5 minutes', NULL, now() - interval '20 minutes'),
+    (v_u, 'dating-photos/' || md5('u-noobj') || '.jpg', 'image/jpeg', now() - interval '1 hour', NULL, now() - interval '2 hours'),
+    (v_u, 'dating-photos/' || md5('u-used') || '.jpg', 'image/jpeg', now() - interval '1 hour', now() - interval '90 minutes', now() - interval '2 hours'),
+    (v_u, 'dating-photos/' || md5('u-live') || '.jpg', 'image/jpeg', now() - interval '1 hour', NULL, now() - interval '2 hours');
+  INSERT INTO storage.objects (bucket_id, name, owner) VALUES
+    ('dating-profile-photos', v_key, v_u),
+    ('dating-profile-photos', 'dating-photos/' || md5('u-fresh') || '.jpg', v_u),
+    ('dating-profile-photos', 'dating-photos/' || md5('u-recent') || '.jpg', v_u),
+    ('dating-profile-photos', 'dating-photos/' || md5('u-used') || '.jpg', v_u),
+    ('dating-profile-photos', 'dating-photos/' || md5('u-live') || '.jpg', v_u);
+  INSERT INTO public.dating_profile_photos (user_id, storage_key, position) VALUES
+    (v_u, 'dating-photos/' || md5('u-used') || '.jpg', 1), (v_u, 'dating-photos/' || md5('u-live') || '.jpg', 2);
+  SELECT array_agg(c.intent_id) INTO v_got FROM public.claim_dating_orphan_uploads(50) AS c WHERE c.user_id = v_u;
+  IF v_got IS DISTINCT FROM ARRAY[v_orphan] THEN
+    RAISE EXCEPTION 'CONTRACT VIOLATED: the sweep claimed % (only the expired, unused, uploaded intent expected)', v_got;
+  END IF;
+  -- A claim deletes nothing (the bytes are not scanned yet), and is not
+  -- claimed twice.
+  IF EXISTS (SELECT 1 FROM public.media_deletion_queue WHERE bucket_id = 'dating-profile-photos' AND object_name = v_key) THEN
+    RAISE EXCEPTION 'CONTRACT VIOLATED: an orphan was queued for deletion before its scan';
+  END IF;
+  SELECT array_agg(c.intent_id) INTO v_got FROM public.claim_dating_orphan_uploads(50) AS c WHERE c.user_id = v_u;
+  IF v_got IS NOT NULL THEN
+    RAISE EXCEPTION 'CONTRACT VIOLATED: a claimed orphan was claimed again: %', v_got;
+  END IF;
+  -- The matcher couldn't answer: kept, released, counted; claimed again.
+  v := public.record_dating_orphan_scan(v_orphan, 'error');
+  IF v IS DISTINCT FROM '{"ok": true}'::jsonb
+     OR EXISTS (SELECT 1 FROM public.media_deletion_queue WHERE object_name = v_key)
+     OR (SELECT orphan_claimed_at FROM public.dating_photo_upload_intents WHERE id = v_orphan) IS NOT NULL
+     OR pg_temp.metric('dating.photo.orphan_scan_error') <> v_errors + 1 THEN
+    RAISE EXCEPTION 'CONTRACT VIOLATED: a failed scan reads % (kept, released, counted)', v;
+  END IF;
+  SELECT array_agg(c.intent_id) INTO v_got FROM public.claim_dating_orphan_uploads(50) AS c WHERE c.user_id = v_u;
+  IF v_got IS DISTINCT FROM ARRAY[v_orphan] THEN
+    RAISE EXCEPTION 'CONTRACT VIOLATED: a released orphan was not claimed again: %', v_got;
+  END IF;
+  -- Scanned clear: deleted, once.
+  v := public.record_dating_orphan_scan(v_orphan, 'clear');
+  IF v IS DISTINCT FROM '{"ok": true}'::jsonb
+     OR NOT EXISTS (SELECT 1 FROM public.media_deletion_queue WHERE bucket_id = 'dating-profile-photos' AND object_name = v_key)
+     OR (SELECT orphan_state FROM public.dating_photo_upload_intents WHERE id = v_orphan) IS DISTINCT FROM 'swept'
+     OR pg_temp.metric('dating.photo.orphan_swept') <> v_swept + 1 THEN
+    RAISE EXCEPTION 'CONTRACT VIOLATED: a clear scan reads % (deleted, swept, counted)', v;
+  END IF;
+  IF public.record_dating_orphan_scan(v_orphan, 'clear') IS DISTINCT FROM '{"ok": false, "reason": "not_claimed"}'::jsonb
+     OR public.record_dating_orphan_scan(v_orphan, 'maybe') IS DISTINCT FROM '{"ok": false, "reason": "invalid", "field": "outcome"}'::jsonb THEN
+    RAISE EXCEPTION 'CONTRACT VIOLATED: a swept orphan or an unknown outcome was recorded';
+  END IF;
+  -- A hit: recorded, and not deleted here (Spec 1's inline record owns the
+  -- object: it keeps it when the quarantine copy failed); a claim a dead
+  -- worker left 11 minutes ago is claimed again.
+  INSERT INTO public.dating_photo_upload_intents (user_id, storage_key, mime_type, expires_at, created_at, orphan_claimed_at) VALUES
+    (v_u, v_hit_key, 'image/jpeg', now() - interval '1 hour', now() - interval '2 hours', NULL),
+    (v_u, v_stale_key, 'image/jpeg', now() - interval '1 hour', now() - interval '2 hours', now() - interval '11 minutes');
+  INSERT INTO storage.objects (bucket_id, name, owner) VALUES
+    ('dating-profile-photos', v_hit_key, v_u), ('dating-profile-photos', v_stale_key, v_u);
+  SELECT id INTO v_hit FROM public.dating_photo_upload_intents WHERE storage_key = v_hit_key;
+  SELECT id INTO v_stale FROM public.dating_photo_upload_intents WHERE storage_key = v_stale_key;
+  SELECT array_agg(c.intent_id ORDER BY c.storage_key = v_hit_key DESC) INTO v_got
+    FROM public.claim_dating_orphan_uploads(50) AS c WHERE c.user_id = v_u;
+  IF v_got IS DISTINCT FROM ARRAY[v_hit, v_stale] THEN
+    RAISE EXCEPTION 'CONTRACT VIOLATED: the hit and the stale claim were not claimed: %', v_got;
+  END IF;
+  v := public.record_dating_orphan_scan(v_hit, 'hit');
+  IF v IS DISTINCT FROM '{"ok": true}'::jsonb
+     OR EXISTS (SELECT 1 FROM public.media_deletion_queue WHERE object_name = v_hit_key)
+     OR (SELECT orphan_state FROM public.dating_photo_upload_intents WHERE id = v_hit) IS DISTINCT FROM 'csam' THEN
+    RAISE EXCEPTION 'CONTRACT VIOLATED: a hit orphan reads %', v;
+  END IF;
+  -- Fix round 1 (I-1): an orphan match holds the Dating account like a
+  -- photo match (R-25: one live moderation_hold, stamped by phone, so it
+  -- survives deleting the account); a second match adds none.
+  IF (SELECT count(*) FROM public.dating_account_restrictions
+       WHERE user_id = v_u AND restriction_type = 'moderation_hold' AND lifted_at IS NULL) <> 1 THEN
+    RAISE EXCEPTION 'CONTRACT VIOLATED: an orphan CSAM match placed no Dating hold';
+  END IF;
+  PERFORM public.record_dating_orphan_scan(v_stale, 'hit');
+  IF (SELECT count(*) FROM public.dating_account_restrictions
+       WHERE user_id = v_u AND restriction_type = 'moderation_hold' AND lifted_at IS NULL) <> 1 THEN
+    RAISE EXCEPTION 'CONTRACT VIOLATED: a second orphan match placed a second hold';
+  END IF;
+  -- Fix round 1 (M-10): a scan that fails five times is capped: kept
+  -- (never deleted unscanned), flagged stuck, never claimed again, and
+  -- counted for an operator. Four failures are retried as before.
+  INSERT INTO public.dating_photo_upload_intents (user_id, storage_key, mime_type, expires_at, created_at)
+  VALUES (v_u, v_stuck_key, 'image/jpeg', now() - interval '1 hour', now() - interval '2 hours') RETURNING id INTO v_stuck;
+  INSERT INTO storage.objects (bucket_id, name, owner) VALUES ('dating-profile-photos', v_stuck_key, v_u);
+  FOR v_try IN 1..5 LOOP
+    SELECT array_agg(c.intent_id) INTO v_got FROM public.claim_dating_orphan_uploads(50) AS c WHERE c.user_id = v_u;
+    IF v_got IS DISTINCT FROM ARRAY[v_stuck] THEN
+      RAISE EXCEPTION 'CONTRACT VIOLATED: failed scan % left the orphan unclaimable: %', v_try - 1, v_got;
+    END IF;
+    v := public.record_dating_orphan_scan(v_stuck, 'error');
+    IF v IS DISTINCT FROM '{"ok": true}'::jsonb THEN
+      RAISE EXCEPTION 'CONTRACT VIOLATED: failed scan % read %', v_try, v;
+    END IF;
+    IF v_try < 5 AND (SELECT orphan_state FROM public.dating_photo_upload_intents WHERE id = v_stuck) IS NOT NULL THEN
+      RAISE EXCEPTION 'CONTRACT VIOLATED: the orphan was flagged after % failed scans', v_try;
+    END IF;
+  END LOOP;
+  SELECT array_agg(c.intent_id) INTO v_got FROM public.claim_dating_orphan_uploads(50) AS c WHERE c.user_id = v_u;
+  IF (SELECT orphan_state FROM public.dating_photo_upload_intents WHERE id = v_stuck) IS DISTINCT FROM 'stuck'
+     OR v_got IS NOT NULL
+     OR EXISTS (SELECT 1 FROM public.media_deletion_queue WHERE object_name = v_stuck_key)
+     OR pg_temp.metric('dating.photo.orphan_scan_stuck') <> v_stuck_n + 1
+     OR public.record_dating_orphan_scan(v_stuck, 'clear') IS DISTINCT FROM '{"ok": false, "reason": "not_claimed"}'::jsonb THEN
+    RAISE EXCEPTION 'CONTRACT VIOLATED: an orphan that failed five scans is not kept, flagged stuck, unclaimed and counted (claimed: %)', v_got;
+  END IF;
+END $u$;
+
+-- =====================================================================
+-- V. (W3c; Task 3 review M-11; R-43) has_data stays true for anyone who
+--    holds a Dating photo or an upload intent, with or without a profile,
+--    so Leave (which deletes both) stays reachable; leaving clears them.
+-- =====================================================================
+DO $v$
+DECLARE
+  v_photo constant uuid := pg_temp.person('b9');
+  v_intent constant uuid := pg_temp.person('ba');
+  v_home_photo text;
+  v_home_intent text;
+BEGIN
+  IF private.dating_has_data(v_photo) IS NOT FALSE OR private.dating_has_data(v_intent) IS NOT FALSE THEN
+    RAISE EXCEPTION 'fixture: a person with no Dating rows already has Dating data';
+  END IF;
+  INSERT INTO public.dating_profile_photos (user_id, storage_key, position)
+  VALUES (v_photo, 'dating-photos/' || md5('v-photo') || '.jpg', 1);
+  INSERT INTO public.dating_photo_upload_intents (user_id, storage_key, mime_type, expires_at)
+  VALUES (v_intent, 'dating-photos/' || md5('v-intent') || '.jpg', 'image/jpeg', now() + interval '15 minutes');
+  v_home_photo := pg_temp.call(v_photo, 'SELECT public.get_dating_home()') ->> 'has_data';
+  v_home_intent := pg_temp.call(v_intent, 'SELECT public.get_dating_home()') ->> 'has_data';
+  IF private.dating_has_data(v_photo) IS NOT TRUE OR private.dating_has_data(v_intent) IS NOT TRUE
+     OR v_home_photo IS DISTINCT FROM 'true' OR v_home_intent IS DISTINCT FROM 'true' THEN
+    RAISE EXCEPTION 'CONTRACT VIOLATED: a person holding only a Dating photo (%) or upload intent (%) has no Dating data (Leave hidden)',
+      v_home_photo, v_home_intent;
+  END IF;
+  PERFORM private.dating_exit_internal(v_photo, false);
+  PERFORM private.dating_exit_internal(v_intent, false);
+  IF private.dating_has_data(v_photo) IS NOT FALSE OR private.dating_has_data(v_intent) IS NOT FALSE THEN
+    RAISE EXCEPTION 'CONTRACT VIOLATED: leaving kept a Dating photo or upload intent';
+  END IF;
+END $v$;
+
+-- =====================================================================
+-- W. (W3c; R-47, M-9; the shared lock rule) Every photo writer that adds
+--    takes the person's setup lock (then the country's) through a bounded
+--    retry: a lock timeout or a deadlock is retried (3), then dating:busy
+--    with the SQLSTATE, never the raw error. The CSAM recorder takes the
+--    setup lock before the photo row, as exit does (a hit's hold suspends
+--    the enrolment); a caption's row wait is retried the same way. One
+--    connection can't make a real lock wait, so the lock step (and a
+--    photo-row trigger) fail their first N calls, inside this transaction
+--    only. Last section: the ROLLBACK puts the real functions back.
+-- =====================================================================
+CREATE TEMP SEQUENCE t8_lock_calls;
+SELECT set_config('t8.fail_n', '0', true), set_config('t8.fail_code', '55P03', true);
+CREATE OR REPLACE FUNCTION private.dating_lock_setup(p_user uuid)
+RETURNS void LANGUAGE plpgsql SECURITY DEFINER SET search_path = '' AS $fault$
+BEGIN
+  IF nextval('pg_temp.t8_lock_calls') <= current_setting('t8.fail_n')::integer THEN
+    RAISE EXCEPTION 'injected lock wait' USING ERRCODE = current_setting('t8.fail_code');
+  END IF;
+  PERFORM private.dating_lock_setup(p_user, NULL::text[]);
+END $fault$;
+CREATE FUNCTION public.t8_photo_row_fault() RETURNS trigger
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = '' AS $fault$
+BEGIN
+  IF nextval('pg_temp.t8_lock_calls') <= current_setting('t8.fail_n')::integer THEN
+    RAISE EXCEPTION 'injected lock wait' USING ERRCODE = current_setting('t8.fail_code');
+  END IF;
+  RETURN NEW;
+END $fault$;
+CREATE TRIGGER zz_t8_fault BEFORE UPDATE ON public.dating_profile_photos
+  FOR EACH ROW EXECUTE FUNCTION public.t8_photo_row_fault();
+-- [p_sql] as [p_user] (NULL: as the database) with the first [p_n] lock
+-- steps failing as [p_code]: its answer, or SQLSTATE:message.
+CREATE FUNCTION pg_temp.faulted(p_user uuid, p_sql text, p_code text, p_n int) RETURNS text LANGUAGE plpgsql AS $$
+DECLARE
+  v jsonb;
+BEGIN
+  PERFORM setval('pg_temp.t8_lock_calls', 1, false);
+  PERFORM set_config('t8.fail_code', p_code, true);
+  PERFORM set_config('t8.fail_n', p_n::text, true);
+  BEGIN
+    IF p_user IS NULL THEN
+      EXECUTE p_sql INTO v;
+    ELSE
+      v := pg_temp.call(p_user, p_sql);
+    END IF;
+  EXCEPTION WHEN OTHERS THEN
+    PERFORM set_config('t8.fail_n', '0', true);
+    RETURN SQLSTATE || ':' || SQLERRM;
+  END;
+  PERFORM set_config('t8.fail_n', '0', true);
+  RETURN v::text;
+END $$;
+
+DO $w$
+DECLARE
+  v_u constant uuid := pg_temp.ready('bb', 'GB', 'TLI', 'woman', ARRAY['man']);
+  v_s constant uuid := pg_temp.person('bc');
+  v_o constant uuid := pg_temp.person('bd'); -- fix round 1
+  v_oi uuid; -- fix round 1
+  v jsonb;
+  v_a uuid;
+  v_b uuid;
+  v_sp uuid;
+  v_got text;
+  v_intent text;
+  v_insert text;
+  v_reorder text;
+  v_csam text;
+  v_caption text;
+BEGIN
+  INSERT INTO public.dating_profile_photos (user_id, storage_key, position) VALUES
+    (v_u, 'dating-photos/' || md5('w1') || '.jpg', 1) RETURNING id INTO v_a;
+  INSERT INTO public.dating_profile_photos (user_id, storage_key, position) VALUES
+    (v_u, 'dating-photos/' || md5('w2') || '.jpg', 2) RETURNING id INTO v_b;
+  -- Two lock waits: retried, the intent is given.
+  v_got := pg_temp.faulted(v_u, $s$SELECT public.create_dating_photo_upload_intent('image/jpeg')$s$, '55P03', 2);
+  IF v_got !~ '^\{' THEN
+    RAISE EXCEPTION 'CONTRACT VIOLATED: two lock waits on the upload intent were not retried: %', v_got;
+  END IF;
+  IF (v_got::jsonb ->> 'ok')::boolean IS NOT TRUE THEN
+    RAISE EXCEPTION 'CONTRACT VIOLATED: two lock waits on the upload intent were not retried: %', v_got;
+  END IF;
+  -- Three: dating:busy with the SQLSTATE, for each writer that adds.
+  v_intent := pg_temp.faulted(v_u, $s$SELECT public.create_dating_photo_upload_intent('image/png')$s$, '55P03', 3);
+  v_insert := pg_temp.faulted(v_u, format($s$SELECT public.insert_dating_profile_photo(%L, 3::smallint)$s$, v_got::jsonb ->> 'intent_id'), '40P01', 3);
+  v_reorder := pg_temp.faulted(v_u, format($s$SELECT public.reorder_dating_photos(%L, ARRAY[%L, %L]::uuid[])$s$, pg_temp.key('w'), v_b, v_a), '55P03', 3);
+  IF v_intent IS DISTINCT FROM '55P03:dating:busy' OR v_insert IS DISTINCT FROM '40P01:dating:busy'
+     OR v_reorder IS DISTINCT FROM '55P03:dating:busy' THEN
+    RAISE EXCEPTION 'CONTRACT VIOLATED: under three lock waits intent / insert / reorder read % / % / % (dating:busy expected)',
+      v_intent, v_insert, v_reorder;
+  END IF;
+  IF (SELECT string_agg(position::text, ',' ORDER BY id = v_a DESC) FROM public.dating_profile_photos WHERE user_id = v_u) IS DISTINCT FROM '1,2'
+     OR (SELECT count(*) FROM public.dating_photo_upload_intents WHERE user_id = v_u AND used_at IS NULL) <> 1 THEN
+    RAISE EXCEPTION 'CONTRACT VIOLATED: a busy photo writer changed a row';
+  END IF;
+  -- The CSAM recorder: the person's setup lock first (none held before it).
+  INSERT INTO public.dating_profile_photos (user_id, storage_key, position, csam_state) VALUES -- fix round 1 (I-2): an unscanned upload
+    (v_s, 'dating-photos/' || md5('w-s') || '.jpg', 1, 'pending') RETURNING id INTO v_sp;
+  IF pg_temp.holds('dating_setup', v_s::text, 'ExclusiveLock') THEN
+    RAISE EXCEPTION 'fixture: the setup lock is held before the CSAM outcome';
+  END IF;
+  v_csam := pg_temp.faulted(NULL, format($s$SELECT public.record_dating_photo_csam(%L, 'error')$s$, v_sp), '55P03', 2);
+  IF v_csam IS DISTINCT FROM '{"ok": true}' OR NOT pg_temp.holds('dating_setup', v_s::text, 'ExclusiveLock') THEN
+    RAISE EXCEPTION 'CONTRACT VIOLATED: the CSAM outcome read % without the person''s setup lock (retried)', v_csam;
+  END IF;
+  v_csam := pg_temp.faulted(NULL, format($s$SELECT public.record_dating_photo_csam(%L, 'hit')$s$, v_sp), '40P01', 3);
+  IF v_csam IS DISTINCT FROM '40P01:dating:busy'
+     OR (SELECT csam_state FROM public.dating_profile_photos WHERE id = v_sp) IS DISTINCT FROM 'error' THEN
+    RAISE EXCEPTION 'CONTRACT VIOLATED: the CSAM outcome under three lock waits read % (dating:busy, nothing written)', v_csam;
+  END IF;
+  -- A caption's row wait: two retried, three dating:busy.
+  v_caption := pg_temp.faulted(v_u, format($s$SELECT public.set_dating_photo_caption(%L, 'Hello')$s$, v_a), '55P03', 2);
+  IF v_caption IS DISTINCT FROM '{"ok": true}'
+     OR (SELECT caption FROM public.dating_profile_photos WHERE id = v_a) IS DISTINCT FROM 'Hello' THEN
+    RAISE EXCEPTION 'CONTRACT VIOLATED: two row waits on a caption were not retried: %', v_caption;
+  END IF;
+  v_caption := pg_temp.faulted(v_u, format($s$SELECT public.set_dating_photo_caption(%L, 'Again')$s$, v_a), '55P03', 3);
+  IF v_caption IS DISTINCT FROM '55P03:dating:busy'
+     OR (SELECT caption FROM public.dating_profile_photos WHERE id = v_a) IS DISTINCT FROM 'Hello' THEN
+    RAISE EXCEPTION 'CONTRACT VIOLATED: a caption under three row waits read % (dating:busy expected)', v_caption;
+  END IF;
+  -- Fix round 1 (I-1): an orphan match takes the person's setup lock (its
+  -- hold suspends the enrolment, which exit locks first) with the same
+  -- bounded retry; under three waits nothing is recorded.
+  INSERT INTO public.dating_photo_upload_intents (user_id, storage_key, mime_type, expires_at, created_at, orphan_claimed_at)
+  VALUES (v_o, 'dating-photos/' || md5('w-orphan') || '.jpg', 'image/jpeg', now() - interval '1 hour', now() - interval '2 hours', now())
+  RETURNING id INTO v_oi;
+  v_csam := pg_temp.faulted(NULL, format($s$SELECT public.record_dating_orphan_scan(%L, 'hit')$s$, v_oi), '40P01', 3);
+  IF v_csam IS DISTINCT FROM '40P01:dating:busy'
+     OR (SELECT orphan_state FROM public.dating_photo_upload_intents WHERE id = v_oi) IS NOT NULL
+     OR pg_temp.holds('dating_setup', v_o::text, 'ExclusiveLock') THEN
+    RAISE EXCEPTION 'CONTRACT VIOLATED: an orphan match under three lock waits read % (dating:busy, nothing written)', v_csam;
+  END IF;
+  v_csam := pg_temp.faulted(NULL, format($s$SELECT public.record_dating_orphan_scan(%L, 'hit')$s$, v_oi), '55P03', 2);
+  IF v_csam IS DISTINCT FROM '{"ok": true}' OR NOT pg_temp.holds('dating_setup', v_o::text, 'ExclusiveLock')
+     OR (SELECT count(*) FROM public.dating_account_restrictions
+          WHERE user_id = v_o AND restriction_type = 'moderation_hold' AND lifted_at IS NULL) <> 1 THEN
+    RAISE EXCEPTION 'CONTRACT VIOLATED: an orphan match read % without the person''s setup lock and one hold (retried)', v_csam;
+  END IF;
+END $w$;
+
+-- =====================================================================
+-- X. (W3c; Task 9 carry B; R-25) A CSAM hit whose photo row is gone
+--    (deleted mid-scan): record_dating_photo_csam answers gone and holds
+--    nothing, so process-dating-photo places the same Dating hold through
+--    record_dating_csam_hold (the service role's alone): one live
+--    moderation_hold, the person's setup lock first (as exit does), a
+--    bounded retry then dating:busy with nothing written; an account that
+--    is itself gone answers gone, never a raw error. After W: it reuses
+--    W's fault injection (rolled back with the file).
+-- =====================================================================
+DO $x$
+DECLARE
+  v_u constant uuid := pg_temp.person('be');
+  v_p uuid;
+  v jsonb;
+  v_got text;
+BEGIN
+  IF has_function_privilege('authenticated', 'public.record_dating_csam_hold(uuid)', 'EXECUTE')
+     OR has_function_privilege('anon', 'public.record_dating_csam_hold(uuid)', 'EXECUTE')
+     OR NOT has_function_privilege('service_role', 'public.record_dating_csam_hold(uuid)', 'EXECUTE') THEN
+    RAISE EXCEPTION 'CONTRACT VIOLATED: the gone-hit hold is not the service role''s alone';
+  END IF;
+  -- The premise: a hit on a deleted photo row answers gone and holds nothing.
+  INSERT INTO public.dating_profile_photos (user_id, storage_key, position, csam_state) VALUES
+    (v_u, 'dating-photos/' || md5('x1') || '.jpg', 1, 'pending') RETURNING id INTO v_p;
+  DELETE FROM public.dating_profile_photos WHERE id = v_p;
+  v := public.record_dating_photo_csam(v_p, 'hit');
+  IF v IS DISTINCT FROM '{"ok": false, "reason": "gone"}'::jsonb
+     OR EXISTS (SELECT 1 FROM public.dating_account_restrictions WHERE user_id = v_u) THEN
+    RAISE EXCEPTION 'fixture: a hit on a deleted photo read % (gone, no hold, expected)', v;
+  END IF;
+  -- Three lock waits: dating:busy with the SQLSTATE; nothing written, no lock kept.
+  v_got := pg_temp.faulted(NULL, format($s$SELECT public.record_dating_csam_hold(%L)$s$, v_u), '55P03', 3);
+  IF v_got IS DISTINCT FROM '55P03:dating:busy'
+     OR EXISTS (SELECT 1 FROM public.dating_account_restrictions WHERE user_id = v_u)
+     OR pg_temp.holds('dating_setup', v_u::text, 'ExclusiveLock') THEN
+    RAISE EXCEPTION 'CONTRACT VIOLATED: the gone-hit hold under three lock waits read % (dating:busy, nothing written)', v_got;
+  END IF;
+  -- Two: retried; the person's setup lock taken; one live hold.
+  v_got := pg_temp.faulted(NULL, format($s$SELECT public.record_dating_csam_hold(%L)$s$, v_u), '40P01', 2);
+  IF v_got IS DISTINCT FROM '{"ok": true}' OR NOT pg_temp.holds('dating_setup', v_u::text, 'ExclusiveLock')
+     OR (SELECT count(*) FROM public.dating_account_restrictions
+          WHERE user_id = v_u AND restriction_type = 'moderation_hold' AND lifted_at IS NULL) <> 1 THEN
+    RAISE EXCEPTION 'CONTRACT VIOLATED: the gone-hit hold read % without the person''s setup lock and one hold (retried)', v_got;
+  END IF;
+  -- Again (a redelivered job): still one hold.
+  v := public.record_dating_csam_hold(v_u);
+  IF v IS DISTINCT FROM '{"ok": true}'::jsonb
+     OR (SELECT count(*) FROM public.dating_account_restrictions
+          WHERE user_id = v_u AND restriction_type = 'moderation_hold' AND lifted_at IS NULL) <> 1 THEN
+    RAISE EXCEPTION 'CONTRACT VIOLATED: a second gone-hit hold read % (one live hold expected)', v;
+  END IF;
+  -- No user, or one whose account is gone: answered, never raised.
+  BEGIN
+    IF public.record_dating_csam_hold(NULL) IS DISTINCT FROM '{"ok": false, "reason": "invalid", "field": "user"}'::jsonb
+       OR public.record_dating_csam_hold(gen_random_uuid()) IS DISTINCT FROM '{"ok": false, "reason": "gone"}'::jsonb THEN
+      RAISE EXCEPTION 'CONTRACT VIOLATED: the gone-hit hold took no user or a deleted account';
+    END IF;
+  EXCEPTION WHEN raise_exception THEN
+    RAISE;
+  WHEN OTHERS THEN
+    RAISE EXCEPTION 'CONTRACT VIOLATED: the gone-hit hold raised % for no user or a deleted account', SQLSTATE;
+  END;
+END $x$;
+
+-- =====================================================================
+-- Y. (W3c; Task 9 fix round 1, I-1, M-5) A CSAM hit's object is never
+--    queued for deletion by a Dating path: the person's own delete, exit
+--    (its upload intents carry the same key) and account deletion all
+--    delete the rows (deletion is never blocked) but leave the object to
+--    Spec 1's record, which queues it when a copy is in safety-quarantine
+--    and holds it otherwise. A clean photo's object is still queued. A
+--    hit and a gone hit's hold are each counted once, not per redelivery.
+-- =====================================================================
+CREATE FUNCTION pg_temp.escalations(p_key text) RETURNS text LANGUAGE sql AS $$ -- fix round 2 (I-4)
+  SELECT coalesce(string_agg(e.status || '/' || coalesce(e.vendor, '-') || '/' || e.quarantined::text, ',' ORDER BY e.id), '')
+    FROM public.safety_escalations AS e
+   WHERE e.kind = 'csam_match' AND e.bucket = 'dating-profile-photos' AND e.object_name = p_key;
+$$;
+CREATE FUNCTION pg_temp.queued(p_key text) RETURNS boolean LANGUAGE sql AS $$
+  SELECT EXISTS (SELECT 1 FROM public.media_deletion_queue AS q
+                  WHERE q.bucket_id = 'dating-profile-photos' AND q.object_name = p_key);
+$$;
+-- A photo for [p_user] at [p_pos] under [p_key], with the used upload
+-- intent an attached photo has; [p_hit]: recorded as a CSAM hit.
+CREATE FUNCTION pg_temp.photo_at(p_user uuid, p_pos int, p_key text, p_hit boolean) RETURNS uuid LANGUAGE plpgsql AS $$
+DECLARE
+  v uuid;
+BEGIN
+  INSERT INTO public.dating_photo_upload_intents (user_id, storage_key, mime_type, expires_at, used_at)
+  VALUES (p_user, p_key, 'image/jpeg', now() + interval '10 minutes', now());
+  INSERT INTO public.dating_profile_photos (user_id, storage_key, position, csam_state)
+  VALUES (p_user, p_key, p_pos, 'pending') RETURNING id INTO v;
+  IF p_hit THEN
+    PERFORM public.record_dating_photo_csam(v, 'hit');
+  END IF;
+  RETURN v;
+END $$;
+
+DO $y$
+DECLARE
+  v_u constant uuid := pg_temp.ready('bf', 'GB', 'TLI', 'woman', ARRAY['man']);
+  v_d constant uuid := pg_temp.person('c0');
+  v_h constant uuid := pg_temp.person('c1');
+  k_hit constant text := 'dating-photos/' || md5('y-hit') || '.jpg';
+  k_ok constant text := 'dating-photos/' || md5('y-ok') || '.jpg';
+  k_xhit constant text := 'dating-photos/' || md5('y-exit-hit') || '.jpg';
+  k_xok constant text := 'dating-photos/' || md5('y-exit-ok') || '.jpg';
+  k_dhit constant text := 'dating-photos/' || md5('y-del-hit') || '.jpg';
+  k_dok constant text := 'dating-photos/' || md5('y-del-ok') || '.jpg';
+  v_hit uuid;
+  v_ok uuid;
+  v_m bigint;
+  v jsonb;
+BEGIN
+  -- M-5: a redelivered hit is counted once.
+  v_m := pg_temp.metric('dating.photo.csam_hit');
+  v_hit := pg_temp.photo_at(v_u, 1, k_hit, true);
+  PERFORM public.record_dating_photo_csam(v_hit, 'hit');
+  IF pg_temp.metric('dating.photo.csam_hit') IS DISTINCT FROM v_m + 1 THEN
+    RAISE EXCEPTION 'CONTRACT VIOLATED: a hit and its redelivery counted % (once expected)', pg_temp.metric('dating.photo.csam_hit') - v_m;
+  END IF;
+  -- ... and so is a gone hit's hold, placed once.
+  v_m := pg_temp.metric('dating.photo.csam_hit');
+  PERFORM public.record_dating_csam_hold(v_h);
+  PERFORM public.record_dating_csam_hold(v_h);
+  IF pg_temp.metric('dating.photo.csam_hit') IS DISTINCT FROM v_m + 1 THEN
+    RAISE EXCEPTION 'CONTRACT VIOLATED: a gone hit''s hold and its repeat counted % (once expected)', pg_temp.metric('dating.photo.csam_hit') - v_m;
+  END IF;
+  -- The person's own delete: both rows go; only the clean object is queued.
+  v_ok := pg_temp.photo_at(v_u, 2, k_ok, false);
+  v := pg_temp.call(v_u, format('SELECT public.delete_dating_profile_photo(%L)', v_hit));
+  IF v IS DISTINCT FROM '{"ok": true}'::jsonb THEN
+    RAISE EXCEPTION 'CONTRACT VIOLATED: deleting a hit photo read % (never blocked)', v;
+  END IF;
+  PERFORM pg_temp.call(v_u, format('SELECT public.delete_dating_profile_photo(%L)', v_ok));
+  IF EXISTS (SELECT 1 FROM public.dating_profile_photos WHERE id IN (v_hit, v_ok))
+     OR pg_temp.queued(k_hit) OR NOT pg_temp.queued(k_ok) THEN
+    RAISE EXCEPTION 'CONTRACT VIOLATED: the own delete left a row or queued the hit''s object (hit %, clean %)',
+      pg_temp.queued(k_hit), pg_temp.queued(k_ok);
+  END IF;
+  -- Fix round 2 (I-4): Spec 1 never recorded it, so the delete did.
+  IF pg_temp.escalations(k_hit) IS DISTINCT FROM 'open/dating_unrecorded/false' OR pg_temp.escalations(k_ok) <> '' THEN
+    RAISE EXCEPTION 'CONTRACT VIOLATED: the own delete of an unrecorded hit left escalations "%" (clean "%")',
+      pg_temp.escalations(k_hit), pg_temp.escalations(k_ok);
+  END IF;
+  -- Exit: the photos and their intents go; the hit's object is not queued.
+  PERFORM pg_temp.photo_at(v_u, 1, k_xhit, true);
+  PERFORM pg_temp.photo_at(v_u, 2, k_xok, false);
+  PERFORM pg_temp.call(v_u, format('SELECT to_jsonb(public.exit_dating_mode(%L))', pg_temp.key('y-exit')));
+  IF EXISTS (SELECT 1 FROM public.dating_profile_photos WHERE user_id = v_u)
+     OR EXISTS (SELECT 1 FROM public.dating_photo_upload_intents WHERE user_id = v_u) THEN
+    RAISE EXCEPTION 'fixture: exit left a photo or an upload';
+  END IF;
+  IF pg_temp.queued(k_xhit) OR NOT pg_temp.queued(k_xok) THEN
+    RAISE EXCEPTION 'CONTRACT VIOLATED: exit queued the hit''s object (hit %, clean %)', pg_temp.queued(k_xhit), pg_temp.queued(k_xok);
+  END IF;
+  IF pg_temp.escalations(k_xhit) IS DISTINCT FROM 'open/dating_unrecorded/false' THEN -- fix round 2 (I-4)
+    RAISE EXCEPTION 'CONTRACT VIOLATED: exit left an unrecorded hit with escalations "%"', pg_temp.escalations(k_xhit);
+  END IF;
+  -- Account deletion: its own queue lines and the cascade alike.
+  PERFORM pg_temp.photo_at(v_d, 1, k_dhit, true);
+  PERFORM pg_temp.photo_at(v_d, 2, k_dok, false);
+  PERFORM public.prepare_account_deletion(v_d);
+  IF pg_temp.queued(k_dhit) OR NOT pg_temp.queued(k_dok) THEN
+    RAISE EXCEPTION 'CONTRACT VIOLATED: account deletion queued the hit''s object (hit %, clean %)', pg_temp.queued(k_dhit), pg_temp.queued(k_dok);
+  END IF;
+  DELETE FROM auth.users WHERE id = v_d; -- fix round 2 (I-4): the real cascade
+  IF EXISTS (SELECT 1 FROM public.dating_profile_photos WHERE user_id = v_d) THEN
+    RAISE EXCEPTION 'fixture: the account''s photos outlived it';
+  END IF;
+  IF pg_temp.queued(k_dhit) THEN
+    RAISE EXCEPTION 'CONTRACT VIOLATED: the photo rows'' deletion queued the hit''s object';
+  END IF;
+  IF pg_temp.escalations(k_dhit) IS DISTINCT FROM 'open/dating_unrecorded/false' THEN -- fix round 2 (I-4)
+    RAISE EXCEPTION 'CONTRACT VIOLATED: account deletion left an unrecorded hit with escalations "%"', pg_temp.escalations(k_dhit);
+  END IF;
+END $y$;
+
+-- =====================================================================
+-- AA. (W3 final, I-1, I-2) A photo job never stalls. A job left in
+--     processing past its 10-minute lease (a worker that died) goes back
+--     to pending whatever its attempts (a recovered job may have seen a
+--     match): never dead-lettered, never deleted. A photo dead-lettered
+--     unscanned (needs_review with csam_state pending or error: no person
+--     can approve it) is re-queued; one a person can review (a clear scan)
+--     and a hit are not. The recovery runs every 5 minutes (pg_cron), and
+--     a job's attempts never overflow the claim.
+-- =====================================================================
+CREATE FUNCTION pg_temp.job(p_user uuid, p_pos int, p_tag text, p_csam text, p_mod text, p_state text,
+                            p_attempts int, p_started interval) RETURNS uuid LANGUAGE plpgsql AS $$
+DECLARE
+  v uuid;
+BEGIN
+  INSERT INTO public.dating_profile_photos (user_id, storage_key, position, csam_state, moderation_state, rejection_reason)
+  VALUES (p_user, 'dating-photos/' || md5('aa-' || p_tag) || '.jpg', p_pos, p_csam, p_mod,
+          CASE WHEN p_mod = 'needs_review' THEN 'needs_review' WHEN p_mod = 'rejected' THEN 'unsafe' END)
+  RETURNING id INTO v;
+  INSERT INTO public.dating_photo_moderation_outbox (photo_id, user_id, state, attempts, processing_started_at, completed_at)
+  VALUES (v, p_user, p_state, p_attempts, CASE WHEN p_state = 'processing' THEN now() - p_started END,
+          CASE WHEN p_state IN ('done', 'dead_letter') THEN now() END);
+  RETURN v;
+END $$;
+CREATE FUNCTION pg_temp.job_state(p uuid) RETURNS text LANGUAGE sql AS $$
+  SELECT o.state || '/' || o.attempts || '/' || f.moderation_state || '/' || f.csam_state
+    FROM public.dating_photo_moderation_outbox AS o JOIN public.dating_profile_photos AS f ON f.id = o.photo_id
+   WHERE o.photo_id = p;
+$$;
+
+DO $aa$
+DECLARE
+  v_u constant uuid := pg_temp.person('d0');
+  v_w constant uuid := pg_temp.person('d1');
+  v_stale uuid;
+  v_last uuid;
+  v_fresh uuid;
+  v_err uuid;
+  v_pend uuid;
+  v_review uuid;
+  v_hit uuid;
+  v_max uuid;
+  v_photos bigint;
+  v_cfg text[];
+  v_job record;
+BEGIN
+  v_stale := pg_temp.job(v_u, 1, 'stale', 'pending', 'pending', 'processing', 2, interval '11 minutes');
+  v_last := pg_temp.job(v_u, 2, 'last', 'pending', 'pending', 'processing', 5, interval '11 minutes');
+  v_fresh := pg_temp.job(v_u, 3, 'fresh', 'pending', 'pending', 'processing', 1, interval '6 minutes');
+  v_err := pg_temp.job(v_u, 4, 'err', 'error', 'needs_review', 'dead_letter', 5, NULL);
+  v_pend := pg_temp.job(v_u, 5, 'pend', 'pending', 'needs_review', 'dead_letter', 5, NULL);
+  v_review := pg_temp.job(v_u, 6, 'review', 'clear', 'needs_review', 'dead_letter', 5, NULL);
+  v_hit := pg_temp.job(v_w, 1, 'hit', 'pending', 'pending', 'pending', 1, NULL);
+  PERFORM public.record_dating_photo_csam(v_hit, 'hit');
+  UPDATE public.dating_photo_moderation_outbox SET state = 'dead_letter', attempts = 5 WHERE photo_id = v_hit;
+  v_photos := (SELECT count(*) FROM public.dating_profile_photos WHERE user_id IN (v_u, v_w));
+  PERFORM public.recover_stale_dating_photo_jobs();
+  IF pg_temp.job_state(v_stale) IS DISTINCT FROM 'pending/2/pending/pending'
+     OR pg_temp.job_state(v_last) IS DISTINCT FROM 'pending/5/pending/pending' THEN
+    RAISE EXCEPTION 'CONTRACT VIOLATED: a job stuck in processing past its lease reads % / % (pending, never dead-lettered)',
+      pg_temp.job_state(v_stale), pg_temp.job_state(v_last);
+  END IF;
+  IF (SELECT processing_started_at FROM public.dating_photo_moderation_outbox WHERE photo_id = v_last) IS NOT NULL THEN
+    RAISE EXCEPTION 'CONTRACT VIOLATED: a recovered job kept its lease';
+  END IF;
+  IF pg_temp.job_state(v_fresh) IS DISTINCT FROM 'processing/1/pending/pending' THEN
+    RAISE EXCEPTION 'CONTRACT VIOLATED: a job 6 minutes into its 10-minute lease was taken back: %', pg_temp.job_state(v_fresh);
+  END IF;
+  IF pg_temp.job_state(v_err) IS DISTINCT FROM 'pending/0/pending/error'
+     OR pg_temp.job_state(v_pend) IS DISTINCT FROM 'pending/0/pending/pending'
+     OR (SELECT rejection_reason FROM public.dating_profile_photos WHERE id = v_err) IS NOT NULL THEN
+    RAISE EXCEPTION 'CONTRACT VIOLATED: a photo dead-lettered unscanned was not re-queued: % / %',
+      pg_temp.job_state(v_err), pg_temp.job_state(v_pend);
+  END IF;
+  IF pg_temp.job_state(v_review) IS DISTINCT FROM 'dead_letter/5/needs_review/clear'
+     OR pg_temp.job_state(v_hit) IS DISTINCT FROM 'dead_letter/5/rejected/hit' THEN
+    RAISE EXCEPTION 'CONTRACT VIOLATED: a scanned photo for a person (%) or a hit (%) was re-queued',
+      pg_temp.job_state(v_review), pg_temp.job_state(v_hit);
+  END IF;
+  IF (SELECT count(*) FROM public.dating_profile_photos WHERE user_id IN (v_u, v_w)) IS DISTINCT FROM v_photos THEN
+    RAISE EXCEPTION 'CONTRACT VIOLATED: the recovery deleted a photo';
+  END IF;
+  -- Its schedule, and its definer settings.
+  IF (SELECT j.schedule || '|' || j.command FROM cron.job AS j WHERE j.jobname = 'recover-stale-dating-photo-jobs')
+       IS DISTINCT FROM '*/5 * * * *|SELECT public.recover_stale_dating_photo_jobs()' THEN
+    RAISE EXCEPTION 'CONTRACT VIOLATED: recover-stale-dating-photo-jobs is not scheduled every 5 minutes: %',
+      (SELECT j.schedule || '|' || j.command FROM cron.job AS j WHERE j.jobname = 'recover-stale-dating-photo-jobs');
+  END IF;
+  SELECT p.proconfig INTO v_cfg FROM pg_proc AS p WHERE p.oid = 'public.recover_stale_dating_photo_jobs()'::regprocedure;
+  IF NOT (SELECT p.prosecdef FROM pg_proc AS p WHERE p.oid = 'public.recover_stale_dating_photo_jobs()'::regprocedure)
+     OR v_cfg IS DISTINCT FROM ARRAY['search_path=""'] THEN
+    RAISE EXCEPTION 'CONTRACT VIOLATED: the recovery is not SECURITY DEFINER with an empty search_path: %', v_cfg;
+  END IF;
+  -- A job requeued forever (I-2: never dead-lettered unscanned) never overflows the claim.
+  v_max := pg_temp.job(v_w, 2, 'max', 'pending', 'pending', 'pending', 32767, NULL);
+  BEGIN
+    SELECT * INTO v_job FROM public.claim_dating_photo_jobs(1, v_max);
+  EXCEPTION WHEN OTHERS THEN
+    RAISE EXCEPTION 'CONTRACT VIOLATED: claiming a job at 32767 attempts raised %', SQLSTATE;
+  END;
+  IF v_job.photo_id IS DISTINCT FROM v_max OR v_job.attempts IS DISTINCT FROM 32767::smallint OR v_job.state IS DISTINCT FROM 'processing' THEN
+    RAISE EXCEPTION 'CONTRACT VIOLATED: the claim at the cap reads % / % / %', v_job.photo_id, v_job.attempts, v_job.state;
+  END IF;
+END $aa$;
+
+-- =====================================================================
+-- AB. (W3 final, I-4) Replace and Crop with six photos: an intent is given
+--     (the slot being replaced is not counted); an insert at a taken
+--     position replaces that photo (still six); a seventh is refused.
+-- =====================================================================
+DO $ab$
+DECLARE
+  v_u constant uuid := pg_temp.ready('d2', 'GB', 'TLI', 'woman', ARRAY['man']);
+  v jsonb;
+  v_n int;
+  v_third uuid;
+BEGIN
+  FOR v_n IN 1..6 LOOP
+    v := pg_temp.call(v_u, $s$SELECT public.create_dating_photo_upload_intent('image/jpeg')$s$);
+    INSERT INTO storage.objects (bucket_id, name, owner) VALUES ('dating-profile-photos', v ->> 'storage_key', v_u);
+    v := pg_temp.call(v_u, format($s$SELECT public.insert_dating_profile_photo(%L, %s::smallint)$s$, v ->> 'intent_id', v_n));
+    IF (v ->> 'ok')::boolean IS NOT TRUE THEN RAISE EXCEPTION 'fixture: photo % reads %', v_n, v; END IF;
+  END LOOP;
+  v_third := (SELECT id FROM public.dating_profile_photos WHERE user_id = v_u AND position = 3);
+  v := pg_temp.call(v_u, $s$SELECT public.create_dating_photo_upload_intent('image/jpeg')$s$);
+  IF (v ->> 'ok')::boolean IS NOT TRUE THEN
+    RAISE EXCEPTION 'CONTRACT VIOLATED: with six photos an intent (Replace, Crop) reads %', v;
+  END IF;
+  INSERT INTO storage.objects (bucket_id, name, owner) VALUES ('dating-profile-photos', v ->> 'storage_key', v_u);
+  IF pg_temp.call(v_u, format($s$SELECT public.insert_dating_profile_photo(%L, 7::smallint)$s$, v ->> 'intent_id'))
+       IS DISTINCT FROM '{"ok": false, "reason": "invalid", "field": "position"}'::jsonb
+     OR (SELECT count(*) FROM public.dating_profile_photos WHERE user_id = v_u) <> 6 THEN
+    RAISE EXCEPTION 'CONTRACT VIOLATED: a seventh photo was not refused';
+  END IF;
+  v := pg_temp.call(v_u, format($s$SELECT public.insert_dating_profile_photo(%L, 3::smallint)$s$, v ->> 'intent_id'));
+  IF (v ->> 'ok')::boolean IS NOT TRUE
+     OR EXISTS (SELECT 1 FROM public.dating_profile_photos WHERE id = v_third)
+     OR (SELECT id FROM public.dating_profile_photos WHERE user_id = v_u AND position = 3) IS DISTINCT FROM (v ->> 'photo_id')::uuid
+     OR (SELECT count(*) FROM public.dating_profile_photos WHERE user_id = v_u) <> 6 THEN
+    RAISE EXCEPTION 'CONTRACT VIOLATED: replacing photo 3 of six reads % (the old one gone, still six)', v;
+  END IF;
+END $ab$;
+
+-- =====================================================================
+-- AC. (W3 final, M-7) No photo before Dating's terms: an intent and an
+--     insert need the standing D4 consents (as activation) and a profile;
+--     otherwise not_eligible. Deleting stays ungated.
+-- =====================================================================
+DO $ac$
+DECLARE
+  v_bare constant uuid := pg_temp.id('d3');
+  v_noprof constant uuid := pg_temp.person('d4');
+  v_u constant uuid := pg_temp.ready('d5', 'GB', 'TLI', 'woman', ARRAY['man']);
+  v jsonb;
+  v_intent jsonb;
+  p text;
+BEGIN
+  -- An adult on the Dating path with nothing agreed and no profile.
+  INSERT INTO auth.users (id, phone, phone_confirmed_at, created_at) VALUES (v_bare, '15558703d3', now(), now() - interval '40 days');
+  INSERT INTO public.users (id, phone, display_name, path, created_at, eula_accepted_at, eula_version)
+  VALUES (v_bare, '15558703d3', 'Bare d3', 'dating', now() - interval '40 days', now(), '2');
+  INSERT INTO public.account_birthdates (user_id, birth_date) VALUES (v_bare, current_date - interval '30 years');
+  IF pg_temp.call(v_bare, $s$SELECT public.create_dating_photo_upload_intent('image/jpeg')$s$) IS DISTINCT FROM '{"ok": false, "reason": "not_eligible"}'::jsonb
+     OR pg_temp.call(v_noprof, $s$SELECT public.create_dating_photo_upload_intent('image/jpeg')$s$) IS DISTINCT FROM '{"ok": false, "reason": "not_eligible"}'::jsonb THEN
+    RAISE EXCEPTION 'CONTRACT VIOLATED: an intent was given with no consent (%) or no profile (%)',
+      pg_temp.call(v_bare, $s$SELECT public.create_dating_photo_upload_intent('image/jpeg')$s$),
+      pg_temp.call(v_noprof, $s$SELECT public.create_dating_photo_upload_intent('image/jpeg')$s$);
+  END IF;
+  -- Each activation consent withdrawn in turn: no intent, no insert.
+  v_intent := pg_temp.call(v_u, $s$SELECT public.create_dating_photo_upload_intent('image/jpeg')$s$);
+  IF (v_intent ->> 'ok')::boolean IS NOT TRUE THEN RAISE EXCEPTION 'fixture: the intent reads %', v_intent; END IF;
+  INSERT INTO storage.objects (bucket_id, name, owner) VALUES ('dating-profile-photos', v_intent ->> 'storage_key', v_u);
+  FOREACH p IN ARRAY ARRAY['dating_terms', 'dating_opt_in', 'special_category_profile'] LOOP
+    INSERT INTO public.dating_consent_events (user_id, idempotency_key, purpose, action, policy_version, occurred_at)
+    VALUES (v_u, 'ac-w-' || p, p, 'withdrawn', 'dating-2.0', clock_timestamp());
+    IF pg_temp.call(v_u, $s$SELECT public.create_dating_photo_upload_intent('image/jpeg')$s$) IS DISTINCT FROM '{"ok": false, "reason": "not_eligible"}'::jsonb
+       OR pg_temp.call(v_u, format($s$SELECT public.insert_dating_profile_photo(%L, 1::smallint)$s$, v_intent ->> 'intent_id'))
+            IS DISTINCT FROM '{"ok": false, "reason": "not_eligible"}'::jsonb THEN
+      RAISE EXCEPTION 'CONTRACT VIOLATED: with % withdrawn a photo was taken', p;
+    END IF;
+    INSERT INTO public.dating_consent_events (user_id, idempotency_key, purpose, action, policy_version, occurred_at)
+    VALUES (v_u, 'ac-g-' || p, p, 'granted', 'dating-2.0', clock_timestamp());
+  END LOOP;
+  v := pg_temp.call(v_u, format($s$SELECT public.insert_dating_profile_photo(%L, 1::smallint)$s$, v_intent ->> 'intent_id'));
+  IF (v ->> 'ok')::boolean IS NOT TRUE THEN
+    RAISE EXCEPTION 'CONTRACT VIOLATED: with every consent standing the insert reads %', v;
+  END IF;
+  -- Deleting never needs a consent.
+  INSERT INTO public.dating_consent_events (user_id, idempotency_key, purpose, action, policy_version, occurred_at)
+  VALUES (v_u, 'ac-w2-terms', 'dating_terms', 'withdrawn', 'dating-2.0', clock_timestamp());
+  v := pg_temp.call(v_u, format($s$SELECT public.delete_dating_profile_photo(%L)$s$, (v ->> 'photo_id')));
+  IF v IS DISTINCT FROM '{"ok": true}'::jsonb OR EXISTS (SELECT 1 FROM public.dating_profile_photos WHERE user_id = v_u) THEN
+    RAISE EXCEPTION 'CONTRACT VIOLATED: a delete with a consent withdrawn reads %', v;
+  END IF;
+END $ac$;
+
+-- =====================================================================
+-- AD. (W3 final, M-3) The bucket takes only what the preparer sends: at
+--     most 2 MB, JPEG, PNG or WebP (as the other media buckets, where the
+--     storage schema has the columns).
+-- =====================================================================
+DO $ad$
+BEGIN
+  ALTER TABLE storage.buckets ADD COLUMN IF NOT EXISTS file_size_limit bigint;
+  ALTER TABLE storage.buckets ADD COLUMN IF NOT EXISTS allowed_mime_types text[];
+  PERFORM private.dating_photo_bucket_limits();
+  IF (SELECT b.file_size_limit::text || '|' || array_to_string(b.allowed_mime_types, ',')
+        FROM storage.buckets AS b WHERE b.id = 'dating-profile-photos')
+       IS DISTINCT FROM '2097152|image/jpeg,image/png,image/webp' THEN
+    RAISE EXCEPTION 'CONTRACT VIOLATED: the photo bucket''s limits read %',
+      (SELECT b.file_size_limit::text || '|' || array_to_string(b.allowed_mime_types, ',') FROM storage.buckets AS b WHERE b.id = 'dating-profile-photos');
+  END IF;
+END $ad$;
+
+-- =====================================================================
+-- AE. (W3 final, M-4) After leaving, Leave is offered only while something
+--     is left to delete: a kept 'exited' enrolment alone is not Dating
+--     data; a never-introduce list kept by choice is (a second Leave can
+--     delete it), and so is a suspended enrolment (it stays).
+-- =====================================================================
+DO $ae$
+DECLARE
+  v_gone constant uuid := pg_temp.ready('d6', 'GB', 'TLI', 'woman', ARRAY['man']);
+  v_kept constant uuid := pg_temp.ready('d7', 'GB', 'TLI', 'woman', ARRAY['man']);
+  v_susp constant uuid := pg_temp.ready('d8', 'GB', 'TLI', 'woman', ARRAY['man']);
+  v jsonb;
+BEGIN
+  INSERT INTO public.dating_enrollments (user_id) VALUES (v_gone), (v_kept), (v_susp) ON CONFLICT (user_id) DO NOTHING;
+  INSERT INTO public.dating_never_introduce (owner_user_id, phone_hmac, last_two) VALUES (v_kept, repeat('ab', 32), '12');
+  PERFORM pg_temp.call(v_gone, format('SELECT to_jsonb(public.exit_dating_mode(%L, false))', pg_temp.key('ae-gone')));
+  PERFORM pg_temp.call(v_kept, format('SELECT to_jsonb(public.exit_dating_mode(%L, true))', pg_temp.key('ae-kept')));
+  UPDATE public.dating_enrollments SET state = 'suspended' WHERE user_id = v_susp;
+  PERFORM private.dating_exit_internal(v_susp, false);
+  IF (SELECT state FROM public.dating_enrollments WHERE user_id = v_gone) IS DISTINCT FROM 'exited'
+     OR NOT EXISTS (SELECT 1 FROM public.dating_never_introduce WHERE owner_user_id = v_kept)
+     OR (SELECT state FROM public.dating_enrollments WHERE user_id = v_susp) IS DISTINCT FROM 'suspended' THEN
+    RAISE EXCEPTION 'fixture: the exits did not land';
+  END IF;
+  v := pg_temp.call(v_gone, 'SELECT public.get_dating_home()');
+  IF private.dating_has_data(v_gone) IS NOT FALSE OR v ->> 'has_data' IS DISTINCT FROM 'false' THEN
+    RAISE EXCEPTION 'CONTRACT VIOLATED: after leaving with nothing kept the home still offers Leave: %', v;
+  END IF;
+  IF private.dating_has_data(v_kept) IS NOT TRUE OR private.dating_has_data(v_susp) IS NOT TRUE THEN
+    RAISE EXCEPTION 'CONTRACT VIOLATED: a kept never-introduce list (%) or a suspended enrolment (%) is not Dating data',
+      private.dating_has_data(v_kept), private.dating_has_data(v_susp);
+  END IF;
+  -- The second Leave deletes the kept list; then nothing is left.
+  PERFORM pg_temp.call(v_kept, format('SELECT to_jsonb(public.exit_dating_mode(%L, false))', pg_temp.key('ae-kept2')));
+  IF private.dating_has_data(v_kept) IS NOT FALSE THEN
+    RAISE EXCEPTION 'CONTRACT VIOLATED: after the second Leave the person still has Dating data';
+  END IF;
+END $ae$;
+
+-- =====================================================================
+-- AF. (W3 final, M-5) The metadata strip never brings a deleted photo
+--     back. Before the re-upload the worker checks, under the photo row's
+--     lock, that the row is there with its key and a clear scan; after it,
+--     that the row is still there. A row gone after the upload re-arms the
+--     object's deletion (the drain may already have run), unless a CSAM
+--     match names the object (Spec 1's evidence is kept). Service role only.
+-- =====================================================================
+DO $af$
+DECLARE
+  v_u constant uuid := pg_temp.person('d9');
+  k_live text := 'dating-photos/' || md5('af-live') || '.jpg';
+  k_gone constant text := 'dating-photos/' || md5('af-gone') || '.jpg';
+  k_hit constant text := 'dating-photos/' || md5('af-hit') || '.jpg';
+  v_live uuid;
+  v_gone uuid;
+  v_hit uuid;
+  v_m bigint;
+  v jsonb;
+BEGIN
+  IF has_function_privilege('authenticated', 'public.check_dating_photo_strip(uuid,text,text)', 'EXECUTE')
+     OR has_function_privilege('anon', 'public.check_dating_photo_strip(uuid,text,text)', 'EXECUTE')
+     OR NOT has_function_privilege('service_role', 'public.check_dating_photo_strip(uuid,text,text)', 'EXECUTE') THEN
+    RAISE EXCEPTION 'CONTRACT VIOLATED: the strip check is not the service role''s alone';
+  END IF;
+  INSERT INTO public.dating_profile_photos (user_id, storage_key, position, csam_state) VALUES (v_u, k_live, 1, 'clear') RETURNING id INTO v_live;
+  INSERT INTO public.dating_profile_photos (user_id, storage_key, position, csam_state) VALUES (v_u, k_gone, 2, 'clear') RETURNING id INTO v_gone;
+  INSERT INTO public.dating_profile_photos (user_id, storage_key, position, csam_state) VALUES (v_u, k_hit, 3, 'clear') RETURNING id INTO v_hit;
+  IF public.check_dating_photo_strip(v_live, k_live, 'before') IS DISTINCT FROM '{"ok": true}'::jsonb
+     OR public.check_dating_photo_strip(v_live, k_live, 'after') IS DISTINCT FROM '{"ok": true}'::jsonb THEN
+    RAISE EXCEPTION 'CONTRACT VIOLATED: a live photo''s strip check refused';
+  END IF;
+  IF public.check_dating_photo_strip(v_live, k_gone, 'before') IS DISTINCT FROM '{"ok": false, "reason": "gone"}'::jsonb
+     OR public.check_dating_photo_strip(v_live, k_live, 'during') IS DISTINCT FROM '{"ok": false, "reason": "invalid", "field": "phase"}'::jsonb
+     OR public.check_dating_photo_strip(NULL, k_live, 'before') IS DISTINCT FROM '{"ok": false, "reason": "gone"}'::jsonb THEN
+    RAISE EXCEPTION 'CONTRACT VIOLATED: a mismatched key, a bad phase or no photo was not refused';
+  END IF;
+  UPDATE public.dating_profile_photos SET csam_state = 'error' WHERE id = v_live;
+  IF public.check_dating_photo_strip(v_live, k_live, 'before') IS DISTINCT FROM '{"ok": false, "reason": "gone"}'::jsonb THEN
+    RAISE EXCEPTION 'CONTRACT VIOLATED: a photo with no clear scan may be re-uploaded';
+  END IF;
+  -- Deleted, and the drain ran, before the re-upload landed: re-armed.
+  DELETE FROM public.dating_profile_photos WHERE id = v_gone;
+  UPDATE public.media_deletion_queue SET deleted_at = now() - interval '1 minute', not_before = now() - interval '20 minutes'
+   WHERE bucket_id = 'dating-profile-photos' AND object_name = k_gone;
+  IF public.check_dating_photo_strip(v_gone, k_gone, 'before') IS DISTINCT FROM '{"ok": false, "reason": "gone"}'::jsonb THEN
+    RAISE EXCEPTION 'CONTRACT VIOLATED: a deleted photo may be re-uploaded';
+  END IF;
+  v_m := pg_temp.metric('dating.photo.strip_after_delete');
+  -- (Each call is its own statement: a read in the same IF would not see its write.)
+  v := public.check_dating_photo_strip(v_gone, k_gone, 'after');
+  IF v IS DISTINCT FROM '{"ok": false, "reason": "gone"}'::jsonb
+     OR NOT EXISTS (SELECT 1 FROM public.media_deletion_queue AS q
+                     WHERE q.bucket_id = 'dating-profile-photos' AND q.object_name = k_gone
+                       AND q.deleted_at IS NULL AND q.not_before <= now())
+     OR pg_temp.metric('dating.photo.strip_after_delete') IS DISTINCT FROM v_m + 1 THEN
+    RAISE EXCEPTION 'CONTRACT VIOLATED: a re-upload after the delete was not queued for deletion again: %',
+      (SELECT to_jsonb(q) FROM public.media_deletion_queue AS q WHERE q.object_name = k_gone);
+  END IF;
+  -- A CSAM match names the object: kept (never queued by a Dating path).
+  DELETE FROM public.dating_profile_photos WHERE id = v_hit;
+  DELETE FROM public.media_deletion_queue WHERE bucket_id = 'dating-profile-photos' AND object_name = k_hit;
+  PERFORM public.record_inline_csam_match('dating-profile-photos', k_hit, v_u, 'photodna', 'ref-af', false, NULL);
+  DELETE FROM public.media_deletion_queue WHERE bucket_id = 'dating-profile-photos' AND object_name = k_hit;
+  v := public.check_dating_photo_strip(v_hit, k_hit, 'after');
+  IF v IS DISTINCT FROM '{"ok": false, "reason": "gone"}'::jsonb
+     OR EXISTS (SELECT 1 FROM public.media_deletion_queue AS q WHERE q.bucket_id = 'dating-profile-photos' AND q.object_name = k_hit) THEN
+    RAISE EXCEPTION 'CONTRACT VIOLATED: a re-upload of a matched object was queued for deletion';
+  END IF;
+  -- Either record keeps it: an open escalation alone, or Spec 1's scan
+  -- queue's match alone (its escalation closed).
+  FOREACH k_live IN ARRAY ARRAY['dating-photos/' || md5('af-esc') || '.jpg', 'dating-photos/' || md5('af-msq') || '.jpg'] LOOP
+    PERFORM public.record_inline_csam_match('dating-profile-photos', k_live, v_u, 'photodna', 'ref-' || k_live, false, NULL);
+    IF k_live LIKE '%' || md5('af-esc') || '%' THEN
+      DELETE FROM private.media_scan_queue WHERE bucket = 'dating-profile-photos' AND object_name = k_live;
+    ELSE
+      UPDATE public.safety_escalations SET status = 'closed' WHERE bucket = 'dating-profile-photos' AND object_name = k_live;
+    END IF;
+    DELETE FROM public.media_deletion_queue WHERE bucket_id = 'dating-profile-photos' AND object_name = k_live;
+    v := public.check_dating_photo_strip(gen_random_uuid(), k_live, 'after');
+    IF v IS DISTINCT FROM '{"ok": false, "reason": "gone"}'::jsonb
+       OR EXISTS (SELECT 1 FROM public.media_deletion_queue AS q WHERE q.bucket_id = 'dating-profile-photos' AND q.object_name = k_live) THEN
+      RAISE EXCEPTION 'CONTRACT VIOLATED: a re-upload of an object one CSAM record names (%) was queued for deletion', k_live;
+    END IF;
+  END LOOP;
+END $af$;
+
+-- =====================================================================
+-- Z. (W3c; Task 9 fix round 2, I-4) A hit whose Spec 1 record never
+--    landed: when its row is deleted, the delete trigger records it
+--    through Spec 1's record_inline_csam_match, unquarantined (vendor
+--    'dating_unrecorded'), so a person is told and the original stays held
+--    as the evidence. An object an open escalation already names gets no
+--    second one; a closed one does not count. A record that fails never
+--    blocks the delete: the row goes and dating.photo.csam_unrecorded is
+--    counted. Last section: it replaces record_inline_csam_match inside
+--    this transaction (the ROLLBACK puts it back).
+-- =====================================================================
+DO $z$
+DECLARE
+  v_u constant uuid := pg_temp.person('c2');
+  k_open constant text := 'dating-photos/' || md5('z-open') || '.jpg';
+  k_closed constant text := 'dating-photos/' || md5('z-closed') || '.jpg';
+  k_fail constant text := 'dating-photos/' || md5('z-fail') || '.jpg';
+  v uuid;
+  v_m bigint;
+BEGIN
+  -- Spec 1 already recorded it (an open escalation): no second one.
+  v := pg_temp.photo_at(v_u, 1, k_open, true);
+  PERFORM public.record_inline_csam_match('dating-profile-photos', k_open, v_u, 'photodna', 'ref-z', true, 'q/z');
+  DELETE FROM public.dating_profile_photos WHERE id = v;
+  IF pg_temp.escalations(k_open) IS DISTINCT FROM 'open/photodna/true' THEN
+    RAISE EXCEPTION 'CONTRACT VIOLATED: an already escalated hit''s delete made %', pg_temp.escalations(k_open);
+  END IF;
+  -- Only a closed escalation names it: a new, open one.
+  v := pg_temp.photo_at(v_u, 2, k_closed, true);
+  PERFORM public.record_inline_csam_match('dating-profile-photos', k_closed, v_u, 'photodna', 'ref-c', true, 'q/c');
+  UPDATE public.safety_escalations SET status = 'closed' WHERE object_name = k_closed;
+  DELETE FROM public.dating_profile_photos WHERE id = v;
+  IF pg_temp.escalations(k_closed) IS DISTINCT FROM 'closed/photodna/true,open/dating_unrecorded/false' THEN
+    RAISE EXCEPTION 'CONTRACT VIOLATED: a hit named only by a closed escalation left %', pg_temp.escalations(k_closed);
+  END IF;
+  -- Spec 1's record fails: the row still goes, the gap is counted.
+  CREATE OR REPLACE FUNCTION public.record_inline_csam_match(p_bucket text, p_object_name text, p_owner uuid, p_vendor text,
+                                                             p_vendor_ref text, p_quarantined boolean DEFAULT true,
+                                                             p_quarantine_path text DEFAULT NULL)
+  RETURNS bigint LANGUAGE plpgsql AS $f$
+  BEGIN
+    RAISE EXCEPTION 'injected record failure';
+  END $f$;
+  v := pg_temp.photo_at(v_u, 3, k_fail, true);
+  v_m := pg_temp.metric('dating.photo.csam_unrecorded');
+  BEGIN
+    DELETE FROM public.dating_profile_photos WHERE id = v;
+  EXCEPTION WHEN OTHERS THEN
+    RAISE EXCEPTION 'CONTRACT VIOLATED: a failing record blocked the delete: %', SQLERRM;
+  END;
+  IF EXISTS (SELECT 1 FROM public.dating_profile_photos WHERE id = v)
+     OR pg_temp.metric('dating.photo.csam_unrecorded') IS DISTINCT FROM v_m + 1
+     OR pg_temp.queued(k_fail) THEN
+    RAISE EXCEPTION 'CONTRACT VIOLATED: a failing record left the row (%), counted % or queued the object (%)',
+      EXISTS (SELECT 1 FROM public.dating_profile_photos WHERE id = v),
+      pg_temp.metric('dating.photo.csam_unrecorded') - v_m, pg_temp.queued(k_fail);
+  END IF;
+END $z$;
+
 ROLLBACK;

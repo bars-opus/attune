@@ -1,6 +1,9 @@
 // lib/app/documentations/user_manual/data/dating_mode_docs.dart
 //
-// Documents Dating Mode. Sourced from lib/architecture/DATING_MODE_SPEC.md.
+// Dating (Spec 2, docs/superpowers/specs/2026-10-24-dating-mode-design.md).
+// Listed only while flow_signin_v2, flow_paths_v2 and dating_mode_enabled
+// are on (DocumentationRegistry). Healing never decides when someone can
+// date (§2.1); nothing here says otherwise.
 
 import 'package:flutter/material.dart';
 import 'package:attune/app/documentations/user_manual/models/documentation_model.dart'
@@ -11,14 +14,14 @@ import 'package:attune/app/documentations/user_manual/models/manual_section.dart
 
 class DatingModeDocs implements DocumentationModule {
   @override
-  String getTitle(BuildContext context) => 'Dating Mode';
+  String getTitle(BuildContext context) => 'Dating';
 
   @override
   String get id => 'datingMode';
 
   @override
   String getSubtitle(BuildContext context) =>
-      'A small number of thoughtful introductions, never a swipe deck';
+      'Up to 3 introductions a day, never a swipe deck';
 
   @override
   IconData get icon => Icons.favorite_border;
@@ -30,156 +33,174 @@ class DatingModeDocs implements DocumentationModule {
   List<ManualSection> getSections(BuildContext context) => [
     ManualSection(
       id: 'dating_what_it_is',
-      title: 'What Dating Mode is',
-      subtitle: 'Psychology-first, not a browsing pool',
+      title: 'What Dating is',
+      subtitle: 'A few introductions, chosen with care',
       icon: Icons.favorite_border,
-      category: 'Dating Mode',
+      category: 'Dating',
       order: 1,
       contents: [
         ManualContent(
           id: 'dating_intro',
-          title: 'A small set of curated introductions',
+          title: 'Up to 3 introductions a day',
           numberPrefix: '1',
           content:
-              'Dating Mode offers a small number of thoughtful candidate introductions, drawn from your own eligible data — never an endless swipeable feed. There\'s no browsing pool, no match counters, and no streaks or scarcity timers pushing you to act.',
+              'Dating introduces you to up to 3 people a day, at a time you choose. Each introduction says why you two were introduced: what you could do together and what you both say you value. There is no swipe deck, no browsing, no counters and no streaks.',
           type: ManualContentType.text,
         ),
         ManualContent(
           id: 'dating_not_prediction',
           title: '',
           content:
-              'Dating Mode is not a clinical assessment. It doesn\'t predict chemistry, safety, or whether a relationship will work — it offers a starting point, grounded in real data, and nothing more.',
+              'Attune can\'t predict chemistry; meeting is how you find out.',
           type: ManualContentType.important,
         ),
         ManualContent(
           id: 'dating_who',
-          title: 'Who can access it',
-          content:
-              'Dating Mode is for adults whose account is in good standing and who aren\'t in a relationship. Healing never decides when you can date. If your relationship ended on Attune, Dating opens for you when your shared space closes, 30 days after it ended, or sooner if you both close it. You still opt in, separately, before anything activates.',
+          title: 'Who can use it',
           numberPrefix: '2',
+          content:
+              'Dating is for adults whose account is in good standing, who aren\'t married or in a relationship, in a country where Attune has opened Dating. Healing never decides when you can date. If your relationship ended on Attune, Dating opens for you when your shared space closes, 30 days after it ended, or sooner if you both close it.',
           type: ManualContentType.text,
+        ),
+        ManualContent(
+          id: 'dating_inputs',
+          title: '',
+          content:
+              'Nothing from your journal, quizzes or Healing is used to introduce you. Your answers are never used for ads, never sold, and never read by AI.',
+          type: ManualContentType.tip,
         ),
       ],
     ),
     ManualSection(
-      id: 'dating_alignment_preview',
-      title: 'The Alignment preview',
-      subtitle: 'Bands, not a fake percentage',
-      icon: Icons.insights_outlined,
-      category: 'Dating Mode',
+      id: 'dating_setup',
+      title: 'Setting up',
+      subtitle: 'One question per screen',
+      icon: Icons.checklist_outlined,
+      category: 'Dating',
       order: 2,
       contents: [
         ManualContent(
-          id: 'dating_alignment_what',
-          title: 'What it shows',
-          content:
-              'Before a photo, each introduction shows an Alignment preview — plain-language observations like "you both described preferring direct communication," always sourced to your own data, never invented.',
+          id: 'dating_setup_steps',
+          title: 'Twelve short steps',
           numberPrefix: '1',
+          content:
+              'You choose what you\'re looking for, where you are, how you describe yourself, who you\'d like to meet, children and, if you like, faith. Then you add 2 to 6 photos and answer 2 short prompts. You can stop at any step and carry on later.',
           type: ManualContentType.text,
         ),
         ManualContent(
-          id: 'dating_no_percentage',
-          title: '',
+          id: 'dating_setup_private',
+          title: 'What stays private',
+          numberPrefix: '2',
           content:
-              'You won\'t see a made-up compatibility percentage like "84% match." Instead, alignment is shown in honest bands — such as "promising shared ground" — because a precise-looking number would imply more certainty than the data can actually support.',
-          type: ManualContentType.important,
+              'Nobody ever sees who you\'d like to meet, your exact location or your date of birth. Your gender, faith and marriage history appear on your profile only if you choose.',
+          type: ManualContentType.text,
         ),
         ManualContent(
-          id: 'dating_love_language_excluded',
-          title: '',
+          id: 'dating_setup_photos',
+          title: 'Your photos',
+          numberPrefix: '3',
           content:
-              'Love language results are never used to judge compatibility here — they might personalize your own first-date guide, but they\'re never treated as evidence that two people fit.',
-          type: ManualContentType.tip,
+              'Every photo is checked before anyone sees it. Photos with children can\'t be used. From your account\'s 30th day you can choose to show your photos only after you\'re both interested.',
+          type: ManualContentType.text,
+        ),
+        ManualContent(
+          id: 'dating_setup_verify',
+          title: 'Checking it\'s you',
+          numberPrefix: '4',
+          content:
+              'Before your first introduction, a short video selfie checks your age and that your photos are you. The video is deleted straight away.',
+          type: ManualContentType.text,
         ),
       ],
     ),
     ManualSection(
       id: 'dating_interest',
-      title: 'Expressing interest',
-      subtitle: 'Double-blind, so rejection is never public',
+      title: 'Interest and matches',
+      subtitle: 'Both of you, or nothing',
       icon: Icons.thumb_up_alt_outlined,
-      category: 'Dating Mode',
+      category: 'Dating',
       order: 3,
       contents: [
         ManualContent(
-          id: 'dating_double_blind',
-          title: 'No one sees a rejection',
-          content:
-              'When you mark someone as "Interested" or "Not for me," that response is private. Neither of you can see whether the other person has responded, and there are no "they liked you" teasers or admirer queues to unlock. A match only ever appears once both people have independently expressed interest.',
+          id: 'dating_double_opt_in',
+          title: 'A match needs both of you',
           numberPrefix: '1',
+          content:
+              'You answer each introduction with "Interested" or "Not for me". Nobody is told you passed. A match appears only when you\'re both interested.',
           type: ManualContentType.text,
         ),
         ManualContent(
           id: 'dating_former_partner',
-          title: 'Former partners are excluded',
-          content:
-              'A former Attune partner is never shown to you as a dating introduction — this exclusion is designed to hold even if they later delete and recreate their account.',
+          title: 'Former partners are never introduced',
           numberPrefix: '2',
-          type: ManualContentType.text,
-        ),
-      ],
-    ),
-    ManualSection(
-      id: 'dating_after_match',
-      title: 'After a mutual match',
-      subtitle: 'A guide, real safety reminders, and your own pace',
-      icon: Icons.handshake_outlined,
-      category: 'Dating Mode',
-      order: 4,
-      contents: [
-        ManualContent(
-          id: 'dating_match_reveal',
-          title: 'When it happens',
           content:
-              'Once you\'ve both expressed interest, you\'re notified simultaneously and can open a dedicated conversation — separate from your regular Attune chat, with its own block, report, and unmatch controls always available.',
-          numberPrefix: '1',
+              'A former Attune partner is never introduced to you, even if either of you later makes a new account.',
           type: ManualContentType.text,
         ),
         ManualContent(
-          id: 'dating_first_date_guide',
-          title: 'A guide for your first conversation',
-          content:
-              'After matching, you can open a private guide with neutral conversation starters and one gentle area worth approaching with curiosity — never labeled as "something to avoid" or hinting at anything private about the other person.',
-          numberPrefix: '2',
-          type: ManualContentType.text,
-        ),
-        ManualContent(
-          id: 'dating_safety_reminders',
+          id: 'dating_money',
           title: '',
           content:
-              'The guide also includes real safety reminders: meeting in public first, keeping your own transport, letting someone you trust know your plans — and a direct warning to never send money or account details to someone you haven\'t met in person, no matter the story. Romance scams are a real risk, and Attune takes it seriously.',
+              'Never send money, account details or mobile money to someone you haven\'t met in person, whatever the story. Report it from the conversation.',
           type: ManualContentType.warning,
         ),
       ],
     ),
     ManualSection(
+      id: 'dating_privacy_on_phone',
+      title: 'On your phone',
+      subtitle: 'Discreet by design',
+      icon: Icons.lock_outline,
+      category: 'Dating',
+      order: 4,
+      contents: [
+        ManualContent(
+          id: 'dating_notifications',
+          title: 'Plain notifications',
+          numberPrefix: '1',
+          content:
+              'Dating notifications never mention Dating. They show only "Attune" and a short line: "You have something new in Attune." or, for something you asked to be told about, "Something you asked about is ready in Attune." Tapping one opens Me.',
+          type: ManualContentType.text,
+        ),
+        ManualContent(
+          id: 'dating_lock',
+          title: 'The Dating lock',
+          numberPrefix: '2',
+          content:
+              'If someone else uses your phone, you can lock Dating with your Safety PIN in Dating settings, and ask for the PIN every time Attune opens.',
+          type: ManualContentType.text,
+        ),
+      ],
+    ),
+    ManualSection(
       id: 'dating_control',
-      title: 'You\'re always in control',
-      subtitle: 'Pause, block, or leave whenever you want',
+      title: 'Pausing and leaving',
+      subtitle: 'Whenever you want',
       icon: Icons.pause_circle_outline,
-      category: 'Dating Mode',
+      category: 'Dating',
       order: 5,
       contents: [
         ManualContent(
           id: 'dating_pause',
-          title: 'Pausing or leaving',
-          content:
-              'You can pause Dating Mode at any time — this immediately stops you from being shown as a new introduction to anyone. Leaving entirely removes friction-free; there\'s no retention step designed to talk you out of it.',
+          title: 'Pause Dating',
           numberPrefix: '1',
+          content:
+              'Pausing means nobody new sees you, and your conversations stay open. Nobody is told.',
           type: ManualContentType.text,
         ),
         ManualContent(
-          id: 'dating_blocking',
-          title: '',
+          id: 'dating_leave',
+          title: 'Leave Dating and delete my data',
+          numberPrefix: '2',
           content:
-              'Blocking someone is immediate and quiet — the other person is never told they\'ve been blocked, and it prevents any future pairing between you.',
-          type: ManualContentType.tip,
+              'Leaving deletes your Dating profile, photos, prompts, who you\'d like to meet, your gender and faith answers, your settings and your private notes straight away. Your conversations are kept for 30 days so either of you can still report a problem, then deleted. Only if your account is restricted or you\'ve blocked someone, a code made from your phone number, never the number itself, is kept for safety for up to 2 years. A record of when you agreed to Dating\'s terms and when you left is kept. Your "Never introduce me" list is kept only if you tick the box to keep it in case you come back; it holds codes, not numbers.',
+          type: ManualContentType.text,
         ),
         ManualContent(
           id: 'dating_not_auto_relationship',
           title: '',
           content:
-              'A mutual match on its own never creates an official Attune relationship — moving from Dating Mode into Couples Mode is always a separate, mutual, deliberate step.',
+              'A match never creates an Attune relationship on its own. Becoming a couple on Attune is a separate step you both choose.',
           type: ManualContentType.important,
         ),
       ],
@@ -191,67 +212,59 @@ class DatingModeDocs implements DocumentationModule {
     return [
       FAQModel(
         id: 'faq_dating_when_available',
-        question: 'When can I access Dating Mode?',
+        question: 'When can I use Dating?',
         answer:
-            'When you choose, as an adult whose account is in good standing and who isn\'t in a relationship. Healing never decides it. If your relationship ended on Attune, Dating opens for you when your shared space closes, 30 days after it ended, or sooner if you both close it; you can set up Dating in the meantime. You still need to opt in explicitly.',
-        category: 'Dating Mode',
+            'When you choose, as an adult whose account is in good standing, who isn\'t married or in a relationship, in a country where Dating is open. Healing never decides it. If your relationship ended on Attune, Dating opens for you when your shared space closes, 30 days after it ended, or sooner if you both close it; you can set up Dating in the meantime.',
+        category: 'Dating',
         order: 1,
       ),
       FAQModel(
         id: 'faq_dating_swipe',
-        question: 'Is Dating Mode a swiping app?',
+        question: 'Is Dating a swiping app?',
         answer:
-            'No. There\'s no swipe deck, no browsable pool, and no match counters or streaks. You receive a small number of curated introductions instead.',
-        category: 'Dating Mode',
+            'No. There is no swipe deck, no browsing and no counters. You get up to 3 introductions a day, each with the reasons you two were introduced.',
+        category: 'Dating',
         order: 2,
       ),
       FAQModel(
-        id: 'faq_dating_percentage',
-        question: 'Why don\'t I see a compatibility percentage?',
+        id: 'faq_dating_not_open',
+        question: 'Why isn\'t Dating open where I live?',
         answer:
-            'A precise number like "84% match" would claim more certainty than the underlying data can actually support. Instead, alignment is shown in honest bands, like "promising shared ground."',
-        category: 'Dating Mode',
+            'Attune opens Dating one country at a time, so it can keep it safe and well looked after. You can ask to be told when it opens where you are.',
+        category: 'Dating',
         order: 3,
       ),
       FAQModel(
         id: 'faq_dating_rejection_visible',
-        question: 'Will someone know if I passed on their introduction?',
+        question: 'Will someone know if I said "Not for me"?',
         answer:
-            'No — interest is double-blind. Neither person can see whether the other responded, and there\'s no rejection notification. A match only appears when you\'ve both independently expressed interest.',
-        category: 'Dating Mode',
+            'No. Nobody is told you passed. A match appears only when you\'re both interested.',
+        category: 'Dating',
         order: 4,
       ),
       FAQModel(
-        id: 'faq_dating_ex_shown',
-        question: 'Could I be introduced to a former Attune partner?',
+        id: 'faq_dating_who_sees',
+        question: 'Who sees my answers?',
         answer:
-            'No — former partners are specifically excluded from your introductions, by design, even accounting for the case where they leave and rejoin Attune later.',
-        category: 'Dating Mode',
+            'Nobody sees who you\'d like to meet, your exact location or your date of birth. Your gender, faith and marriage history show on your profile only if you turn them on.',
+        category: 'Dating',
         order: 5,
       ),
       FAQModel(
-        id: 'faq_dating_love_language',
-        question: 'Does my love language affect who I\'m matched with?',
+        id: 'faq_dating_money_request',
+        question: 'A match is asking me for money. Is that normal?',
         answer:
-            'No. Love language results are never used as evidence of compatibility — they may personalize your own guidance, but they never factor into who you\'re introduced to.',
-        category: 'Dating Mode',
+            'No. Never send money, account details or mobile money to someone you haven\'t met in person, whatever the reason. Report it from the conversation.',
+        category: 'Dating',
         order: 6,
       ),
       FAQModel(
-        id: 'faq_dating_money_request',
-        question: 'A match is asking me to send money — is that normal?',
+        id: 'faq_dating_leave',
+        question: 'What happens to my data if I leave?',
         answer:
-            'No — never send money, account details, or mobile-money transfers to someone you haven\'t met in person, regardless of the reason given. Please report it immediately using the report option in your conversation.',
-        category: 'Dating Mode',
+            'Your Dating profile, photos and answers are deleted straight away. Conversations are kept for 30 days so either of you can report a problem, then deleted. Only if your account is restricted or you\'ve blocked someone, a code made from your phone number, never the number itself, is kept for safety for up to 2 years. A record of when you agreed to Dating\'s terms and when you left is kept. Your "Never introduce me" list is kept only if you choose to keep it when you leave.',
+        category: 'Dating',
         order: 7,
-      ),
-      FAQModel(
-        id: 'faq_dating_auto_relationship',
-        question: 'Does matching automatically start an Attune relationship?',
-        answer:
-            'No. A mutual match only opens a dating conversation. Moving into an official Couples relationship on Attune always requires a separate, deliberate step from both of you.',
-        category: 'Dating Mode',
-        order: 8,
       ),
     ];
   }

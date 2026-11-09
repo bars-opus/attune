@@ -5695,12 +5695,6 @@ abstract class AppLocalizations {
   /// **'Your entries are saved and stay private to you.'**
   String get journal_supportPatternsAwayBody;
 
-  /// Under the v1 Dating dashboard's heading when the eligibility answer has no message of its own (Spec 2 W2 batch 4 fix round 1, I-1). Never names Healing: Healing never decides when someone can date (§2.1). W3 replaces this screen.
-  ///
-  /// In en, this message translates to:
-  /// **'You always opt in separately, and nothing starts until you do.'**
-  String get dating_dashboardFallbackReason;
-
   /// Spec 2 D0 (the gentle wait): the title. Clinician-reviewed copy (W2 gate).
   ///
   /// In en, this message translates to:
@@ -5838,6 +5832,2082 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Your relationship on Attune ended on {endDate}. Dating opens for you on {openDate}.'**
   String dating_gentleWaitBodyNoShortcut(String endDate, String openDate);
+
+  /// The Dating lock's PIN screen: asks for the Safety PIN again after the sheet was dismissed (Spec 2 W3a, R-8).
+  ///
+  /// In en, this message translates to:
+  /// **'Enter my PIN'**
+  String get dating_unlockButton;
+
+  /// Spec 2 §3.1 state reverify_device, and D0 when the phone isn't trusted (W2 carry M-3).
+  ///
+  /// In en, this message translates to:
+  /// **'Confirm it\'s you on this phone to see Dating.'**
+  String get dating_sectionReverify;
+
+  /// D0, after Save, when the server answers not_eligible (Spec 2 W3a, W2 carry M-3). For the DV reviewer.
+  ///
+  /// In en, this message translates to:
+  /// **'Dating isn\'t available on this account right now, so your answers weren\'t saved.'**
+  String get dating_gentleWaitNotEligible;
+
+  /// The UK inside a Dating sentence (Spec 2 §3.10 copy names it in full).
+  ///
+  /// In en, this message translates to:
+  /// **'the United Kingdom'**
+  String get dating_countryUk;
+
+  /// An open country with its open regions, e.g. Ghana (Greater Accra and Ashanti) (Spec 2 §3.2 D1 line 7, §3.10).
+  ///
+  /// In en, this message translates to:
+  /// **'{country} ({regions})'**
+  String dating_countryWithRegions(String country, String regions);
+
+  /// Spec 2 §3.1 states feature_unavailable and country_closed.
+  ///
+  /// In en, this message translates to:
+  /// **'Dating isn\'t open in {country} yet.'**
+  String dating_sectionNotOpen(String country);
+
+  /// Spec 2 §3.1 state region_closed.
+  ///
+  /// In en, this message translates to:
+  /// **'Dating is open in {regions} for now.'**
+  String dating_sectionRegionOpenOnly(String regions);
+
+  /// Spec 2 §3.1, §3.10 primary.
+  ///
+  /// In en, this message translates to:
+  /// **'Tell me when it\'s here'**
+  String get dating_tellMe;
+
+  /// Spec 2 §3.1, §3.10 region variant.
+  ///
+  /// In en, this message translates to:
+  /// **'Tell me when it\'s open in {region}'**
+  String dating_tellMeRegion(String region);
+
+  /// Spec 2 §3.10, after Tell me when it's here. Settings = Dating settings.
+  ///
+  /// In en, this message translates to:
+  /// **'We\'ll let you know. You can turn this off in Settings.'**
+  String get dating_tellMeDone;
+
+  /// Cancels Tell me when it's here (Spec 2 W3a). For the DV reviewer.
+  ///
+  /// In en, this message translates to:
+  /// **'Turn this off'**
+  String get dating_tellMeOff;
+
+  /// Spec 2 §3.10 title.
+  ///
+  /// In en, this message translates to:
+  /// **'Dating isn\'t open in {country} yet'**
+  String dating_notOpenTitle(String country);
+
+  /// Spec 2 §3.10 body; {countries} is built from get_dating_availability (R-36).
+  ///
+  /// In en, this message translates to:
+  /// **'Attune opens Dating one country at a time, so we can keep it safe and well looked after. It\'s open in {countries} now.'**
+  String dating_notOpenBody(String countries);
+
+  /// Spec 2 §3.10 region variant title.
+  ///
+  /// In en, this message translates to:
+  /// **'Dating is open in {regions} for now'**
+  String dating_notOpenRegionTitle(String regions);
+
+  /// Spec 2 §3.10 region variant body.
+  ///
+  /// In en, this message translates to:
+  /// **'We\'re opening other regions as soon as we can look after them well.'**
+  String get dating_notOpenRegionBody;
+
+  /// Spec 2 §3.10 secondary (Dating path only).
+  ///
+  /// In en, this message translates to:
+  /// **'Use Attune just for me'**
+  String get dating_justForMe;
+
+  /// Spec 2 §3.1 state not_started.
+  ///
+  /// In en, this message translates to:
+  /// **'Meet a few people a day. Only when it\'s mutual.'**
+  String get dating_sectionNotStarted;
+
+  /// Spec 2 §3.1 state setup_in_progress.
+  ///
+  /// In en, this message translates to:
+  /// **'Finish setting up Dating'**
+  String get dating_sectionFinish;
+
+  /// Spec 2 §3.1 cool_off/ready, §3.2 D13.
+  ///
+  /// In en, this message translates to:
+  /// **'Your first introductions arrive {date} at {time}.'**
+  String dating_sectionFirstDrop(String date, String time);
+
+  /// Spec 2 §3.1 active until W5b's Today (plan R-30). For the DV reviewer.
+  ///
+  /// In en, this message translates to:
+  /// **'Dating is on. Your introductions will show here.'**
+  String get dating_sectionActive;
+
+  /// Spec 2 §3.1 state paused.
+  ///
+  /// In en, this message translates to:
+  /// **'Dating is paused. Nobody new sees you.'**
+  String get dating_sectionPaused;
+
+  /// Spec 2 §3.1 paused.
+  ///
+  /// In en, this message translates to:
+  /// **'Resume'**
+  String get dating_resume;
+
+  /// Paused by the relationship guard; resume isn't offered (plan, carry 9). For the DV reviewer.
+  ///
+  /// In en, this message translates to:
+  /// **'Dating is paused while you have a shared space on Attune.'**
+  String get dating_sectionPausedRelationship;
+
+  /// Spec 2 §2.4 kill-switch note (then Why?). For the LGBTQ+ reviewer.
+  ///
+  /// In en, this message translates to:
+  /// **'Introductions between people of the same gender aren\'t available in {country} now. We\'ve removed that choice from your profile.'**
+  String dating_sectionSameGenderNote(String country);
+
+  /// Spec 2 §2.4, §3.2 D5/D6 link to the static sheet.
+  ///
+  /// In en, this message translates to:
+  /// **'Why?'**
+  String get dating_why;
+
+  /// Spec 2 §3.2 D5 Why? sheet (static; opening it calls nothing). For the LGBTQ+ reviewer.
+  ///
+  /// In en, this message translates to:
+  /// **'In {country}, relationships between people of the same gender can carry legal risk, and people have been targeted through dating apps, including by people they know. Until we can protect people properly here, Attune only introduces men and women to each other. Nothing you choose here is stored unless you continue. We\'ll look at this again after legal advice and talking with local groups.'**
+  String dating_whyBody(String country);
+
+  /// Closes a Dating sheet.
+  ///
+  /// In en, this message translates to:
+  /// **'Close'**
+  String get dating_close;
+
+  /// After the same-gender kill switch: back to D5 (plan). For the LGBTQ+ reviewer.
+  ///
+  /// In en, this message translates to:
+  /// **'Choose again'**
+  String get dating_chooseAgain;
+
+  /// Spec 2 §3.1 away.
+  ///
+  /// In en, this message translates to:
+  /// **'Dating is hidden while you\'re away.'**
+  String get dating_sectionAway;
+
+  /// Spec 2 §3.1 restricted, before W7a's category and date (plan R-29). For the DV reviewer.
+  ///
+  /// In en, this message translates to:
+  /// **'Your Dating account is restricted. The rest of Attune works as usual.'**
+  String get dating_sectionRestricted;
+
+  /// Spec 2 §3.1 hold, before W7a (plan R-29). For the DV reviewer.
+  ///
+  /// In en, this message translates to:
+  /// **'Your Dating profile is paused while we look into something. This isn\'t a decision yet.'**
+  String get dating_sectionHold;
+
+  /// Spec 2 §3.7 age check copy.
+  ///
+  /// In en, this message translates to:
+  /// **'We need to confirm your age before you can use Dating.'**
+  String get dating_sectionAgeReview;
+
+  /// Spec 2 home state unavailable (W2 owner decision 1).
+  ///
+  /// In en, this message translates to:
+  /// **'Dating isn\'t available on this account right now.'**
+  String get dating_sectionUnavailable;
+
+  /// Spec 2 §3.15: the locked section's semantic label.
+  ///
+  /// In en, this message translates to:
+  /// **'Dating, locked'**
+  String get dating_sectionLockedLabel;
+
+  /// Spec 2 §3.12.
+  ///
+  /// In en, this message translates to:
+  /// **'Dating settings'**
+  String get dating_settingsTitle;
+
+  /// Dating settings row while a Tell me request exists (plan). For the DV reviewer.
+  ///
+  /// In en, this message translates to:
+  /// **'Tell me when Dating opens'**
+  String get dating_settingsNotice;
+
+  /// Dating settings: the gentle-wait reflection's clear, reachable in any state (W2 carry 5). For the DV reviewer.
+  ///
+  /// In en, this message translates to:
+  /// **'Clear my answers to the three questions'**
+  String get dating_settingsClearReflection;
+
+  /// A resume or activation refused with path_not_dating (W2 carry 1).
+  ///
+  /// In en, this message translates to:
+  /// **'Choose Dating in How you use Attune to carry on.'**
+  String get dating_errorPathNotDating;
+
+  /// Link to Spec 1's How you use Attune.
+  ///
+  /// In en, this message translates to:
+  /// **'How you use Attune'**
+  String get dating_openHowYouUse;
+
+  /// Resume refused (resume_gates_not_met).
+  ///
+  /// In en, this message translates to:
+  /// **'Dating can\'t resume on this account right now.'**
+  String get dating_errorResumeGates;
+
+  /// A lifecycle call refused for consent (back to D4).
+  ///
+  /// In en, this message translates to:
+  /// **'Agree to Dating\'s terms again to carry on.'**
+  String get dating_errorConsent;
+
+  /// A lifecycle call refused: profile incomplete.
+  ///
+  /// In en, this message translates to:
+  /// **'Finish setting up Dating first.'**
+  String get dating_errorIncomplete;
+
+  /// Spec 2 §3.0 rate limit.
+  ///
+  /// In en, this message translates to:
+  /// **'You\'ve done this a lot today. Try again tomorrow.'**
+  String get dating_errorRateLimited;
+
+  /// No description provided for @dating_region_gh_af.
+  ///
+  /// In en, this message translates to:
+  /// **'Ahafo'**
+  String get dating_region_gh_af;
+
+  /// No description provided for @dating_region_gh_ah.
+  ///
+  /// In en, this message translates to:
+  /// **'Ashanti'**
+  String get dating_region_gh_ah;
+
+  /// No description provided for @dating_region_gh_bo.
+  ///
+  /// In en, this message translates to:
+  /// **'Bono'**
+  String get dating_region_gh_bo;
+
+  /// No description provided for @dating_region_gh_be.
+  ///
+  /// In en, this message translates to:
+  /// **'Bono East'**
+  String get dating_region_gh_be;
+
+  /// No description provided for @dating_region_gh_cp.
+  ///
+  /// In en, this message translates to:
+  /// **'Central'**
+  String get dating_region_gh_cp;
+
+  /// No description provided for @dating_region_gh_ep.
+  ///
+  /// In en, this message translates to:
+  /// **'Eastern'**
+  String get dating_region_gh_ep;
+
+  /// No description provided for @dating_region_gh_aa.
+  ///
+  /// In en, this message translates to:
+  /// **'Greater Accra'**
+  String get dating_region_gh_aa;
+
+  /// No description provided for @dating_region_gh_ne.
+  ///
+  /// In en, this message translates to:
+  /// **'North East'**
+  String get dating_region_gh_ne;
+
+  /// No description provided for @dating_region_gh_np.
+  ///
+  /// In en, this message translates to:
+  /// **'Northern'**
+  String get dating_region_gh_np;
+
+  /// No description provided for @dating_region_gh_ot.
+  ///
+  /// In en, this message translates to:
+  /// **'Oti'**
+  String get dating_region_gh_ot;
+
+  /// No description provided for @dating_region_gh_sv.
+  ///
+  /// In en, this message translates to:
+  /// **'Savannah'**
+  String get dating_region_gh_sv;
+
+  /// No description provided for @dating_region_gh_ue.
+  ///
+  /// In en, this message translates to:
+  /// **'Upper East'**
+  String get dating_region_gh_ue;
+
+  /// No description provided for @dating_region_gh_uw.
+  ///
+  /// In en, this message translates to:
+  /// **'Upper West'**
+  String get dating_region_gh_uw;
+
+  /// No description provided for @dating_region_gh_tv.
+  ///
+  /// In en, this message translates to:
+  /// **'Volta'**
+  String get dating_region_gh_tv;
+
+  /// No description provided for @dating_region_gh_wp.
+  ///
+  /// In en, this message translates to:
+  /// **'Western'**
+  String get dating_region_gh_wp;
+
+  /// No description provided for @dating_region_gh_wn.
+  ///
+  /// In en, this message translates to:
+  /// **'Western North'**
+  String get dating_region_gh_wn;
+
+  /// No description provided for @dating_side_gh_accra.
+  ///
+  /// In en, this message translates to:
+  /// **'Accra'**
+  String get dating_side_gh_accra;
+
+  /// No description provided for @dating_side_gh_tema.
+  ///
+  /// In en, this message translates to:
+  /// **'Tema and Ashaiman'**
+  String get dating_side_gh_tema;
+
+  /// No description provided for @dating_side_gh_kumasi.
+  ///
+  /// In en, this message translates to:
+  /// **'Kumasi'**
+  String get dating_side_gh_kumasi;
+
+  /// No description provided for @dating_side_gh_outside_kumasi.
+  ///
+  /// In en, this message translates to:
+  /// **'Outside Kumasi'**
+  String get dating_side_gh_outside_kumasi;
+
+  /// No description provided for @dating_region_gb_tlc.
+  ///
+  /// In en, this message translates to:
+  /// **'North East'**
+  String get dating_region_gb_tlc;
+
+  /// No description provided for @dating_region_gb_tld.
+  ///
+  /// In en, this message translates to:
+  /// **'North West'**
+  String get dating_region_gb_tld;
+
+  /// No description provided for @dating_region_gb_tle.
+  ///
+  /// In en, this message translates to:
+  /// **'Yorkshire and the Humber'**
+  String get dating_region_gb_tle;
+
+  /// No description provided for @dating_region_gb_tlf.
+  ///
+  /// In en, this message translates to:
+  /// **'East Midlands'**
+  String get dating_region_gb_tlf;
+
+  /// No description provided for @dating_region_gb_tlg.
+  ///
+  /// In en, this message translates to:
+  /// **'West Midlands'**
+  String get dating_region_gb_tlg;
+
+  /// No description provided for @dating_region_gb_tlh.
+  ///
+  /// In en, this message translates to:
+  /// **'East of England'**
+  String get dating_region_gb_tlh;
+
+  /// No description provided for @dating_region_gb_tli.
+  ///
+  /// In en, this message translates to:
+  /// **'London'**
+  String get dating_region_gb_tli;
+
+  /// No description provided for @dating_region_gb_tlj.
+  ///
+  /// In en, this message translates to:
+  /// **'South East'**
+  String get dating_region_gb_tlj;
+
+  /// No description provided for @dating_region_gb_tlk.
+  ///
+  /// In en, this message translates to:
+  /// **'South West'**
+  String get dating_region_gb_tlk;
+
+  /// No description provided for @dating_region_gb_tll.
+  ///
+  /// In en, this message translates to:
+  /// **'Wales'**
+  String get dating_region_gb_tll;
+
+  /// No description provided for @dating_region_gb_tlm.
+  ///
+  /// In en, this message translates to:
+  /// **'Scotland'**
+  String get dating_region_gb_tlm;
+
+  /// No description provided for @dating_region_gb_tln.
+  ///
+  /// In en, this message translates to:
+  /// **'Northern Ireland'**
+  String get dating_region_gb_tln;
+
+  /// Tell me when it's here refused by the adult check (not_eligible, T3 M-5; carry B). Calm, never names the feature or blames the person. For the DV reviewer.
+  ///
+  /// In en, this message translates to:
+  /// **'We can\'t set this up on this account.'**
+  String get dating_noticeNotEligible;
+
+  /// No description provided for @dating_faith_christian.
+  ///
+  /// In en, this message translates to:
+  /// **'Christian'**
+  String get dating_faith_christian;
+
+  /// No description provided for @dating_faith_muslim.
+  ///
+  /// In en, this message translates to:
+  /// **'Muslim'**
+  String get dating_faith_muslim;
+
+  /// No description provided for @dating_faith_traditional.
+  ///
+  /// In en, this message translates to:
+  /// **'Traditional'**
+  String get dating_faith_traditional;
+
+  /// No description provided for @dating_faith_hindu.
+  ///
+  /// In en, this message translates to:
+  /// **'Hindu'**
+  String get dating_faith_hindu;
+
+  /// No description provided for @dating_faith_sikh.
+  ///
+  /// In en, this message translates to:
+  /// **'Sikh'**
+  String get dating_faith_sikh;
+
+  /// No description provided for @dating_faith_jewish.
+  ///
+  /// In en, this message translates to:
+  /// **'Jewish'**
+  String get dating_faith_jewish;
+
+  /// No description provided for @dating_faith_buddhist.
+  ///
+  /// In en, this message translates to:
+  /// **'Buddhist'**
+  String get dating_faith_buddhist;
+
+  /// No description provided for @dating_faith_other.
+  ///
+  /// In en, this message translates to:
+  /// **'Other'**
+  String get dating_faith_other;
+
+  /// No description provided for @dating_faith_none.
+  ///
+  /// In en, this message translates to:
+  /// **'None'**
+  String get dating_faith_none;
+
+  /// No description provided for @dating_faith_prefer_not_to_say.
+  ///
+  /// In en, this message translates to:
+  /// **'Prefer not to say'**
+  String get dating_faith_prefer_not_to_say;
+
+  /// No description provided for @dating_denomination_catholic.
+  ///
+  /// In en, this message translates to:
+  /// **'Catholic'**
+  String get dating_denomination_catholic;
+
+  /// No description provided for @dating_denomination_anglican.
+  ///
+  /// In en, this message translates to:
+  /// **'Anglican'**
+  String get dating_denomination_anglican;
+
+  /// No description provided for @dating_denomination_methodist.
+  ///
+  /// In en, this message translates to:
+  /// **'Methodist'**
+  String get dating_denomination_methodist;
+
+  /// No description provided for @dating_denomination_presbyterian.
+  ///
+  /// In en, this message translates to:
+  /// **'Presbyterian'**
+  String get dating_denomination_presbyterian;
+
+  /// No description provided for @dating_denomination_pentecostal_charismatic.
+  ///
+  /// In en, this message translates to:
+  /// **'Pentecostal or Charismatic'**
+  String get dating_denomination_pentecostal_charismatic;
+
+  /// No description provided for @dating_denomination_seventh_day_adventist.
+  ///
+  /// In en, this message translates to:
+  /// **'Seventh-day Adventist'**
+  String get dating_denomination_seventh_day_adventist;
+
+  /// No description provided for @dating_denomination_other_christian.
+  ///
+  /// In en, this message translates to:
+  /// **'Other Christian'**
+  String get dating_denomination_other_christian;
+
+  /// No description provided for @dating_denomination_church_of_england_anglican.
+  ///
+  /// In en, this message translates to:
+  /// **'Church of England or Anglican'**
+  String get dating_denomination_church_of_england_anglican;
+
+  /// No description provided for @dating_denomination_orthodox.
+  ///
+  /// In en, this message translates to:
+  /// **'Orthodox'**
+  String get dating_denomination_orthodox;
+
+  /// Spec 2 §3.0 progress.
+  ///
+  /// In en, this message translates to:
+  /// **'Step {n} of {total}'**
+  String dating_stepOf(int n, int total);
+
+  /// Spec 2 §3.0: bottom-left where allowed.
+  ///
+  /// In en, this message translates to:
+  /// **'Skip'**
+  String get dating_skip;
+
+  /// A setup step's primary.
+  ///
+  /// In en, this message translates to:
+  /// **'Continue'**
+  String get dating_continue;
+
+  /// Spec 2 §3.15 D5: a modified-client refusal.
+  ///
+  /// In en, this message translates to:
+  /// **'This choice isn\'t available here.'**
+  String get dating_notAvailableHere;
+
+  /// Spec 2 §3.2 D10 contact filter (also D5's own words).
+  ///
+  /// In en, this message translates to:
+  /// **'Contact details can\'t go on your profile. You can swap them in a chat when you\'re both ready.'**
+  String get dating_contactFilter;
+
+  /// Spec 2 §3.2 D10 kindness filter.
+  ///
+  /// In en, this message translates to:
+  /// **'Please rephrase this so it\'s kind to everyone.'**
+  String get dating_kindnessFilter;
+
+  /// D3 refused: country_change_limited (plan; §3.2 D3 rule).
+  ///
+  /// In en, this message translates to:
+  /// **'You can change your Dating country once every 30 days.'**
+  String get dating_countryChangeLimited;
+
+  /// Spec 2 §3.2 D1.
+  ///
+  /// In en, this message translates to:
+  /// **'How Dating works'**
+  String get dating_howTitle;
+
+  /// D1 item 1.
+  ///
+  /// In en, this message translates to:
+  /// **'Up to 3 introductions a day, at a time you choose.'**
+  String get dating_how1;
+
+  /// D1 item 2.
+  ///
+  /// In en, this message translates to:
+  /// **'Saying \'Interested\' is private. You only match when you\'re both interested.'**
+  String get dating_how2;
+
+  /// D1 item 3.
+  ///
+  /// In en, this message translates to:
+  /// **'Dating chats are separate from the rest of Attune. Phone numbers stay hidden until you both choose to swap.'**
+  String get dating_how3;
+
+  /// D1 item 4 (also D11's shell until W4a).
+  ///
+  /// In en, this message translates to:
+  /// **'Before your first introduction, a short video selfie checks your age and that your photos are you. The video is deleted straight away.'**
+  String get dating_how4;
+
+  /// D1 item 5.
+  ///
+  /// In en, this message translates to:
+  /// **'You\'ll add at least 2 photos and answer 2 short questions.'**
+  String get dating_how5;
+
+  /// D1 item 6; {date} in full words.
+  ///
+  /// In en, this message translates to:
+  /// **'Your first introductions can arrive from {date}.'**
+  String dating_how6(String date);
+
+  /// D1 item 7, built from get_dating_availability.
+  ///
+  /// In en, this message translates to:
+  /// **'Dating is open in {countries}.'**
+  String dating_how7(String countries);
+
+  /// D1 item 8 (measured on the W10 device matrix).
+  ///
+  /// In en, this message translates to:
+  /// **'Setting up uses about 15 MB of data, mostly for the video check.'**
+  String get dating_how8;
+
+  /// D1 tertiary.
+  ///
+  /// In en, this message translates to:
+  /// **'Set up later'**
+  String get dating_setUpLater;
+
+  /// D1 snackbar after Not ready? (with Undo).
+  ///
+  /// In en, this message translates to:
+  /// **'You\'re on \'Just for me\'.'**
+  String get dating_justMeDone;
+
+  /// Undo.
+  ///
+  /// In en, this message translates to:
+  /// **'Undo'**
+  String get dating_undo;
+
+  /// Spec 2 §3.2 D2.
+  ///
+  /// In en, this message translates to:
+  /// **'What are you looking for?'**
+  String get dating_lookingTitle;
+
+  /// No description provided for @dating_intentMarriage.
+  ///
+  /// In en, this message translates to:
+  /// **'Marriage'**
+  String get dating_intentMarriage;
+
+  /// No description provided for @dating_intentCommitted.
+  ///
+  /// In en, this message translates to:
+  /// **'A committed relationship'**
+  String get dating_intentCommitted;
+
+  /// No description provided for @dating_intentCompanionship.
+  ///
+  /// In en, this message translates to:
+  /// **'Companionship, at my own pace'**
+  String get dating_intentCompanionship;
+
+  /// No description provided for @dating_intentNotSure.
+  ///
+  /// In en, this message translates to:
+  /// **'Not sure yet'**
+  String get dating_intentNotSure;
+
+  /// No description provided for @dating_timelineQ.
+  ///
+  /// In en, this message translates to:
+  /// **'When would you like to marry?'**
+  String get dating_timelineQ;
+
+  /// No description provided for @dating_timelineSoon.
+  ///
+  /// In en, this message translates to:
+  /// **'In the next year or two'**
+  String get dating_timelineSoon;
+
+  /// No description provided for @dating_timelineFew.
+  ///
+  /// In en, this message translates to:
+  /// **'In a few years'**
+  String get dating_timelineFew;
+
+  /// No description provided for @dating_timelineNone.
+  ///
+  /// In en, this message translates to:
+  /// **'No set time'**
+  String get dating_timelineNone;
+
+  /// No description provided for @dating_timelineShow.
+  ///
+  /// In en, this message translates to:
+  /// **'Show this on my profile'**
+  String get dating_timelineShow;
+
+  /// D2 attestation (cultural reviewer, W3 gate).
+  ///
+  /// In en, this message translates to:
+  /// **'I\'m not married in any form (customary, religious or civil), I\'m not separated from a spouse, and I\'m not in a relationship.'**
+  String get dating_attestation;
+
+  /// No description provided for @dating_attestationHelper.
+  ///
+  /// In en, this message translates to:
+  /// **'Dating on Attune is for people who are free to start a relationship.'**
+  String get dating_attestationHelper;
+
+  /// No description provided for @dating_attestationError.
+  ///
+  /// In en, this message translates to:
+  /// **'Please confirm you\'re free to start a relationship.'**
+  String get dating_attestationError;
+
+  /// No description provided for @dating_separatedLink.
+  ///
+  /// In en, this message translates to:
+  /// **'I\'m separated but not divorced'**
+  String get dating_separatedLink;
+
+  /// No description provided for @dating_separatedSheet.
+  ///
+  /// In en, this message translates to:
+  /// **'Dating isn\'t open to you yet. Once your divorce is final, you\'re welcome here. Attune just for me is open to you now.'**
+  String get dating_separatedSheet;
+
+  /// No description provided for @dating_marriedBefore.
+  ///
+  /// In en, this message translates to:
+  /// **'Married before? (optional)'**
+  String get dating_marriedBefore;
+
+  /// No description provided for @dating_maritalNever.
+  ///
+  /// In en, this message translates to:
+  /// **'Never'**
+  String get dating_maritalNever;
+
+  /// No description provided for @dating_maritalDivorced.
+  ///
+  /// In en, this message translates to:
+  /// **'Divorced'**
+  String get dating_maritalDivorced;
+
+  /// No description provided for @dating_maritalWidowed.
+  ///
+  /// In en, this message translates to:
+  /// **'Widowed'**
+  String get dating_maritalWidowed;
+
+  /// No description provided for @dating_maritalShow.
+  ///
+  /// In en, this message translates to:
+  /// **'Show on my profile'**
+  String get dating_maritalShow;
+
+  /// Spec 2 §3.2 D3.
+  ///
+  /// In en, this message translates to:
+  /// **'Where are you?'**
+  String get dating_whereTitle;
+
+  /// No description provided for @dating_countryLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Country'**
+  String get dating_countryLabel;
+
+  /// No description provided for @dating_regionLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Region'**
+  String get dating_regionLabel;
+
+  /// No description provided for @dating_countryNotListed.
+  ///
+  /// In en, this message translates to:
+  /// **'My country isn\'t listed'**
+  String get dating_countryNotListed;
+
+  /// D3 closed region, inline.
+  ///
+  /// In en, this message translates to:
+  /// **'Dating is open in {regions} for now. We\'re opening other regions as soon as we can look after them well.'**
+  String dating_regionClosed(String regions);
+
+  /// D3 side.
+  ///
+  /// In en, this message translates to:
+  /// **'Which side of {region}? (optional)'**
+  String dating_sideLabel(String region);
+
+  /// D3: no side chosen (plan).
+  ///
+  /// In en, this message translates to:
+  /// **'Either side'**
+  String get dating_sideEither;
+
+  /// No description provided for @dating_scopeQ.
+  ///
+  /// In en, this message translates to:
+  /// **'How far would you like to meet people?'**
+  String get dating_scopeQ;
+
+  /// No description provided for @dating_scopeSide.
+  ///
+  /// In en, this message translates to:
+  /// **'My side'**
+  String get dating_scopeSide;
+
+  /// No description provided for @dating_scopeRegion.
+  ///
+  /// In en, this message translates to:
+  /// **'My region'**
+  String get dating_scopeRegion;
+
+  /// D3 scope.
+  ///
+  /// In en, this message translates to:
+  /// **'Anywhere in {country}'**
+  String dating_scopeCountry(String country);
+
+  /// No description provided for @dating_abroadRow.
+  ///
+  /// In en, this message translates to:
+  /// **'Also open to people in other countries'**
+  String get dating_abroadRow;
+
+  /// No description provided for @dating_abroadDisabled.
+  ///
+  /// In en, this message translates to:
+  /// **'Available once you\'re verified and your account is 14 days old.'**
+  String get dating_abroadDisabled;
+
+  /// No description provided for @dating_whereHelper.
+  ///
+  /// In en, this message translates to:
+  /// **'We never use your exact location. Others see your region only.'**
+  String get dating_whereHelper;
+
+  /// A searchable picker's field (plan).
+  ///
+  /// In en, this message translates to:
+  /// **'Search'**
+  String get dating_search;
+
+  /// A picker row with nothing chosen yet (plan).
+  ///
+  /// In en, this message translates to:
+  /// **'Choose'**
+  String get dating_choose;
+
+  /// Spec 2 §3.2 D4.
+  ///
+  /// In en, this message translates to:
+  /// **'Your answers stay private'**
+  String get dating_privacyTitle;
+
+  /// No description provided for @dating_privacyWhyHead.
+  ///
+  /// In en, this message translates to:
+  /// **'Why we ask'**
+  String get dating_privacyWhyHead;
+
+  /// No description provided for @dating_privacyWhoHead.
+  ///
+  /// In en, this message translates to:
+  /// **'Who sees what'**
+  String get dating_privacyWhoHead;
+
+  /// No description provided for @dating_privacyNeverHead.
+  ///
+  /// In en, this message translates to:
+  /// **'What we never do'**
+  String get dating_privacyNeverHead;
+
+  /// No description provided for @dating_privacyProtectedHead.
+  ///
+  /// In en, this message translates to:
+  /// **'How it\'s protected'**
+  String get dating_privacyProtectedHead;
+
+  /// No description provided for @dating_privacyLeavingHead.
+  ///
+  /// In en, this message translates to:
+  /// **'Leaving'**
+  String get dating_privacyLeavingHead;
+
+  /// No description provided for @dating_privacyWhy.
+  ///
+  /// In en, this message translates to:
+  /// **'The next questions are about you and who you\'d like to meet. We use your answers only to introduce you to people who\'d like to meet you too.'**
+  String get dating_privacyWhy;
+
+  /// No description provided for @dating_privacyWho.
+  ///
+  /// In en, this message translates to:
+  /// **'Nobody ever sees who you\'d like to meet. Your gender, faith and marriage history appear on your profile only if you choose. We never collect your exact location.'**
+  String get dating_privacyWho;
+
+  /// No description provided for @dating_privacyNever.
+  ///
+  /// In en, this message translates to:
+  /// **'Nothing from your journal, quizzes or Healing is used to introduce you. Your answers are never used for ads, never sold, and never read by AI.'**
+  String get dating_privacyNever;
+
+  /// No description provided for @dating_privacyProtected.
+  ///
+  /// In en, this message translates to:
+  /// **'These answers are stored encrypted. The people who review reports can\'t see them.'**
+  String get dating_privacyProtected;
+
+  /// No description provided for @dating_privacyLeaving.
+  ///
+  /// In en, this message translates to:
+  /// **'You can leave Dating at any time, and these answers are deleted.'**
+  String get dating_privacyLeaving;
+
+  /// No description provided for @dating_privacyConsent.
+  ///
+  /// In en, this message translates to:
+  /// **'I agree that Attune can use my answers about my gender and who I\'d like to meet to introduce me.'**
+  String get dating_privacyConsent;
+
+  /// No description provided for @dating_datingTerms.
+  ///
+  /// In en, this message translates to:
+  /// **'Dating terms'**
+  String get dating_datingTerms;
+
+  /// No description provided for @dating_privacyNotice.
+  ///
+  /// In en, this message translates to:
+  /// **'Privacy notice'**
+  String get dating_privacyNotice;
+
+  /// No description provided for @dating_agreeContinue.
+  ///
+  /// In en, this message translates to:
+  /// **'Agree and continue'**
+  String get dating_agreeContinue;
+
+  /// Spec 2 §3.2 D5 (LGBTQ+ reviewer, W3 gate).
+  ///
+  /// In en, this message translates to:
+  /// **'Which best describes you?'**
+  String get dating_youTitle;
+
+  /// No description provided for @dating_identityWoman.
+  ///
+  /// In en, this message translates to:
+  /// **'Woman'**
+  String get dating_identityWoman;
+
+  /// No description provided for @dating_identityMan.
+  ///
+  /// In en, this message translates to:
+  /// **'Man'**
+  String get dating_identityMan;
+
+  /// No description provided for @dating_identityNonBinary.
+  ///
+  /// In en, this message translates to:
+  /// **'Non-binary'**
+  String get dating_identityNonBinary;
+
+  /// No description provided for @dating_moreSpecific.
+  ///
+  /// In en, this message translates to:
+  /// **'Add something more specific'**
+  String get dating_moreSpecific;
+
+  /// No description provided for @dating_specificTransWoman.
+  ///
+  /// In en, this message translates to:
+  /// **'Trans woman'**
+  String get dating_specificTransWoman;
+
+  /// No description provided for @dating_specificTransMan.
+  ///
+  /// In en, this message translates to:
+  /// **'Trans man'**
+  String get dating_specificTransMan;
+
+  /// No description provided for @dating_specificGenderfluid.
+  ///
+  /// In en, this message translates to:
+  /// **'Genderfluid'**
+  String get dating_specificGenderfluid;
+
+  /// No description provided for @dating_specificGenderqueer.
+  ///
+  /// In en, this message translates to:
+  /// **'Genderqueer'**
+  String get dating_specificGenderqueer;
+
+  /// No description provided for @dating_specificAgender.
+  ///
+  /// In en, this message translates to:
+  /// **'Agender'**
+  String get dating_specificAgender;
+
+  /// No description provided for @dating_specificIntersex.
+  ///
+  /// In en, this message translates to:
+  /// **'Intersex'**
+  String get dating_specificIntersex;
+
+  /// No description provided for @dating_specificOwnWords.
+  ///
+  /// In en, this message translates to:
+  /// **'In my own words'**
+  String get dating_specificOwnWords;
+
+  /// D5 own words, refused (plan).
+  ///
+  /// In en, this message translates to:
+  /// **'Use letters, spaces and hyphens only, up to 30.'**
+  String get dating_specificInvalid;
+
+  /// No description provided for @dating_nbPoolsQ.
+  ///
+  /// In en, this message translates to:
+  /// **'Should we also introduce you to people looking for:'**
+  String get dating_nbPoolsQ;
+
+  /// No description provided for @dating_poolWomen.
+  ///
+  /// In en, this message translates to:
+  /// **'Women'**
+  String get dating_poolWomen;
+
+  /// No description provided for @dating_poolMen.
+  ///
+  /// In en, this message translates to:
+  /// **'Men'**
+  String get dating_poolMen;
+
+  /// No description provided for @dating_nbPoolsHelper.
+  ///
+  /// In en, this message translates to:
+  /// **'People open to everyone can always be introduced to you.'**
+  String get dating_nbPoolsHelper;
+
+  /// No description provided for @dating_pronouns.
+  ///
+  /// In en, this message translates to:
+  /// **'Pronouns (optional)'**
+  String get dating_pronouns;
+
+  /// No description provided for @dating_genderShow.
+  ///
+  /// In en, this message translates to:
+  /// **'Show my gender on my profile'**
+  String get dating_genderShow;
+
+  /// No description provided for @dating_youHelper.
+  ///
+  /// In en, this message translates to:
+  /// **'We use this only to introduce you to people who want to meet someone like you.'**
+  String get dating_youHelper;
+
+  /// D5 off-country, read before the options (LGBTQ+ reviewer).
+  ///
+  /// In en, this message translates to:
+  /// **'In {country}, Dating introduces men and women to each other for now. If neither of these fits you, Dating can\'t introduce you safely here yet.'**
+  String dating_offCountryLine(String country);
+
+  /// D5 off-country link to support_resources (lgbtq_legal, crisis).
+  ///
+  /// In en, this message translates to:
+  /// **'Support for you'**
+  String get dating_supportForYou;
+
+  /// Spec 2 §3.2 D6.
+  ///
+  /// In en, this message translates to:
+  /// **'Who would you like to meet?'**
+  String get dating_meetTitle;
+
+  /// No description provided for @dating_seekMen.
+  ///
+  /// In en, this message translates to:
+  /// **'Men'**
+  String get dating_seekMen;
+
+  /// No description provided for @dating_seekWomen.
+  ///
+  /// In en, this message translates to:
+  /// **'Women'**
+  String get dating_seekWomen;
+
+  /// No description provided for @dating_seekEveryone.
+  ///
+  /// In en, this message translates to:
+  /// **'Everyone'**
+  String get dating_seekEveryone;
+
+  /// No description provided for @dating_meetPrivate.
+  ///
+  /// In en, this message translates to:
+  /// **'Only you can see this. It\'s never on your profile.'**
+  String get dating_meetPrivate;
+
+  /// No description provided for @dating_offMeetMen.
+  ///
+  /// In en, this message translates to:
+  /// **'You\'ll be introduced to men.'**
+  String get dating_offMeetMen;
+
+  /// No description provided for @dating_offMeetWomen.
+  ///
+  /// In en, this message translates to:
+  /// **'You\'ll be introduced to women.'**
+  String get dating_offMeetWomen;
+
+  /// D6 off-country (LGBTQ+ reviewer).
+  ///
+  /// In en, this message translates to:
+  /// **'In {country}, Attune introduces men and women to each other for now.'**
+  String dating_offMeetLine(String country);
+
+  /// D6.
+  ///
+  /// In en, this message translates to:
+  /// **'Ages {min} to {max}'**
+  String dating_ages(int min, int max);
+
+  /// D6 slider semantics.
+  ///
+  /// In en, this message translates to:
+  /// **'Youngest {age}'**
+  String dating_agesYoungest(int age);
+
+  /// D6 slider semantics.
+  ///
+  /// In en, this message translates to:
+  /// **'Oldest {age}'**
+  String dating_agesOldest(int age);
+
+  /// D6 country note (LGBTQ+ reviewer).
+  ///
+  /// In en, this message translates to:
+  /// **'Before you save this'**
+  String get dating_noteTitle;
+
+  /// D6 note, phone variant (R-18).
+  ///
+  /// In en, this message translates to:
+  /// **'Your phone number is from {country}, where relationships between people of the same gender can carry legal risk, and people have been targeted through dating apps, including by people they know.'**
+  String dating_notePhone(String country);
+
+  /// No description provided for @dating_noteThen.
+  ///
+  /// In en, this message translates to:
+  /// **'Attune never shows who you\'d like to meet, never shows distance, and keeps Dating out of your notifications. You can also set a PIN, use a plain app icon, and leave Dating at any time to delete these answers.'**
+  String get dating_noteThen;
+
+  /// No description provided for @dating_noteSave.
+  ///
+  /// In en, this message translates to:
+  /// **'Save'**
+  String get dating_noteSave;
+
+  /// No description provided for @dating_noteSetPin.
+  ///
+  /// In en, this message translates to:
+  /// **'Set a PIN first'**
+  String get dating_noteSetPin;
+
+  /// No description provided for @dating_noteBack.
+  ///
+  /// In en, this message translates to:
+  /// **'Go back'**
+  String get dating_noteBack;
+
+  /// Spec 2 §3.2 D7.
+  ///
+  /// In en, this message translates to:
+  /// **'Children'**
+  String get dating_childrenTitle;
+
+  /// No description provided for @dating_childrenHaveQ.
+  ///
+  /// In en, this message translates to:
+  /// **'Do you have children?'**
+  String get dating_childrenHaveQ;
+
+  /// No description provided for @dating_yes.
+  ///
+  /// In en, this message translates to:
+  /// **'Yes'**
+  String get dating_yes;
+
+  /// No description provided for @dating_no.
+  ///
+  /// In en, this message translates to:
+  /// **'No'**
+  String get dating_no;
+
+  /// No description provided for @dating_childrenWantQ.
+  ///
+  /// In en, this message translates to:
+  /// **'Do you want children (or more children)?'**
+  String get dating_childrenWantQ;
+
+  /// No description provided for @dating_openToIt.
+  ///
+  /// In en, this message translates to:
+  /// **'Open to it'**
+  String get dating_openToIt;
+
+  /// No description provided for @dating_childrenMustMatch.
+  ///
+  /// In en, this message translates to:
+  /// **'Only introduce me to people whose answer fits mine'**
+  String get dating_childrenMustMatch;
+
+  /// No description provided for @dating_childrenExcludeParents.
+  ///
+  /// In en, this message translates to:
+  /// **'I\'d rather not meet people who have children'**
+  String get dating_childrenExcludeParents;
+
+  /// No description provided for @dating_childrenHelper.
+  ///
+  /// In en, this message translates to:
+  /// **'We never ask for your children\'s names or ages, and photos with children can\'t be used.'**
+  String get dating_childrenHelper;
+
+  /// Spec 2 §3.2 D8 (cultural reviewer for the lists).
+  ///
+  /// In en, this message translates to:
+  /// **'Faith'**
+  String get dating_faithTitle;
+
+  /// No description provided for @dating_optional.
+  ///
+  /// In en, this message translates to:
+  /// **'Optional'**
+  String get dating_optional;
+
+  /// No description provided for @dating_denomination.
+  ///
+  /// In en, this message translates to:
+  /// **'Denomination (optional)'**
+  String get dating_denomination;
+
+  /// No description provided for @dating_importanceQ.
+  ///
+  /// In en, this message translates to:
+  /// **'How much does sharing a faith matter to you?'**
+  String get dating_importanceQ;
+
+  /// No description provided for @dating_importanceNo.
+  ///
+  /// In en, this message translates to:
+  /// **'It doesn\'t matter'**
+  String get dating_importanceNo;
+
+  /// No description provided for @dating_importanceNice.
+  ///
+  /// In en, this message translates to:
+  /// **'Nice if we share'**
+  String get dating_importanceNice;
+
+  /// No description provided for @dating_importanceMust.
+  ///
+  /// In en, this message translates to:
+  /// **'We must share it'**
+  String get dating_importanceMust;
+
+  /// No description provided for @dating_faithShow.
+  ///
+  /// In en, this message translates to:
+  /// **'Show my faith on my profile'**
+  String get dating_faithShow;
+
+  /// No description provided for @dating_faithConsent.
+  ///
+  /// In en, this message translates to:
+  /// **'Faith is sensitive information. I agree that Attune can use it to introduce me.'**
+  String get dating_faithConsent;
+
+  /// D8: Continue with a faith but no consent (plan).
+  ///
+  /// In en, this message translates to:
+  /// **'Please agree, or choose Skip.'**
+  String get dating_faithConsentError;
+
+  /// D6 slider semantics label; the age is its value (plan, T7 fix 1 M-2).
+  ///
+  /// In en, this message translates to:
+  /// **'Youngest'**
+  String get dating_agesYoungestLabel;
+
+  /// D6 slider semantics label; the age is its value (plan, T7 fix 1 M-2).
+  ///
+  /// In en, this message translates to:
+  /// **'Oldest'**
+  String get dating_agesOldestLabel;
+
+  /// Spec 2 §3.2 D9.
+  ///
+  /// In en, this message translates to:
+  /// **'Add your photos'**
+  String get dating_photosTitle;
+
+  /// No description provided for @dating_photosBody.
+  ///
+  /// In en, this message translates to:
+  /// **'Add 2 to 6 photos. Clear, recent photos of just you work best.'**
+  String get dating_photosBody;
+
+  /// No description provided for @dating_photoAdd.
+  ///
+  /// In en, this message translates to:
+  /// **'Add photo'**
+  String get dating_photoAdd;
+
+  /// D9 progress in words (R-22).
+  ///
+  /// In en, this message translates to:
+  /// **'Preparing photo {n}…'**
+  String dating_photoPreparing(int n);
+
+  /// D9 progress in words (R-22).
+  ///
+  /// In en, this message translates to:
+  /// **'Uploading photo {n}…'**
+  String dating_photoUploading(int n);
+
+  /// No description provided for @dating_photoChecking.
+  ///
+  /// In en, this message translates to:
+  /// **'Checking…'**
+  String get dating_photoChecking;
+
+  /// No description provided for @dating_photoReady.
+  ///
+  /// In en, this message translates to:
+  /// **'Ready'**
+  String get dating_photoReady;
+
+  /// No description provided for @dating_photoReview.
+  ///
+  /// In en, this message translates to:
+  /// **'Needs a person to check it. That usually takes less than a day.'**
+  String get dating_photoReview;
+
+  /// D9 rejection.
+  ///
+  /// In en, this message translates to:
+  /// **'Photo {n}: we couldn\'t see your face clearly.'**
+  String dating_photoFaceUnclear(int n);
+
+  /// D9 rejection.
+  ///
+  /// In en, this message translates to:
+  /// **'Photo {n} is too small.'**
+  String dating_photoTooSmall(int n);
+
+  /// D9 rejection (then Crop).
+  ///
+  /// In en, this message translates to:
+  /// **'Photo {n}: photos with children can\'t be used on Dating. Crop to just you?'**
+  String dating_photoChild(int n);
+
+  /// No description provided for @dating_photoCrop.
+  ///
+  /// In en, this message translates to:
+  /// **'Crop'**
+  String get dating_photoCrop;
+
+  /// D9 rejection (unsafe, and a CSAM hit, never named).
+  ///
+  /// In en, this message translates to:
+  /// **'Photo {n} can\'t be used.'**
+  String dating_photoCantUse(int n);
+
+  /// D9: the upload failed (plan).
+  ///
+  /// In en, this message translates to:
+  /// **'Photo {n} didn\'t upload. Try again.'**
+  String dating_photoFailed(int n);
+
+  /// D9 slot semantics.
+  ///
+  /// In en, this message translates to:
+  /// **'Photo {n} of 6, {state}'**
+  String dating_photoSlot(int n, String state);
+
+  /// No description provided for @dating_photoMoveEarlier.
+  ///
+  /// In en, this message translates to:
+  /// **'Move earlier'**
+  String get dating_photoMoveEarlier;
+
+  /// No description provided for @dating_photoMoveLater.
+  ///
+  /// In en, this message translates to:
+  /// **'Move later'**
+  String get dating_photoMoveLater;
+
+  /// No description provided for @dating_photoRemove.
+  ///
+  /// In en, this message translates to:
+  /// **'Remove'**
+  String get dating_photoRemove;
+
+  /// D9 slot action (plan).
+  ///
+  /// In en, this message translates to:
+  /// **'Replace'**
+  String get dating_photoReplace;
+
+  /// D9 caption action (plan; 09 P12).
+  ///
+  /// In en, this message translates to:
+  /// **'Add a caption (only you see it)'**
+  String get dating_photoCaption;
+
+  /// D9 caption field (plan).
+  ///
+  /// In en, this message translates to:
+  /// **'Caption'**
+  String get dating_photoCaptionLabel;
+
+  /// D9 caption sheet (plan).
+  ///
+  /// In en, this message translates to:
+  /// **'Save'**
+  String get dating_photoSave;
+
+  /// No description provided for @dating_photosAfterMutual.
+  ///
+  /// In en, this message translates to:
+  /// **'Show my photos only after we\'re both interested'**
+  String get dating_photosAfterMutual;
+
+  /// D9 toggle before account day 30.
+  ///
+  /// In en, this message translates to:
+  /// **'Available from {date}. New accounts show their photos for the first 30 days, which helps stop fake profiles.'**
+  String dating_photosAfterMutualFrom(String date);
+
+  /// No description provided for @dating_photosData.
+  ///
+  /// In en, this message translates to:
+  /// **'Each photo uses about 300 KB.'**
+  String get dating_photosData;
+
+  /// No description provided for @dating_photosOffline.
+  ///
+  /// In en, this message translates to:
+  /// **'You\'re offline. Add photos when you\'re connected.'**
+  String get dating_photosOffline;
+
+  /// Spec 2 §3.2 D10.
+  ///
+  /// In en, this message translates to:
+  /// **'A little about you'**
+  String get dating_promptsTitle;
+
+  /// No description provided for @dating_promptsBody.
+  ///
+  /// In en, this message translates to:
+  /// **'Answer 2 of these. Short is fine.'**
+  String get dating_promptsBody;
+
+  /// No description provided for @dating_prompt_perfect_sunday.
+  ///
+  /// In en, this message translates to:
+  /// **'A perfect Sunday for me looks like…'**
+  String get dating_prompt_perfect_sunday;
+
+  /// No description provided for @dating_prompt_feel_at_home.
+  ///
+  /// In en, this message translates to:
+  /// **'I feel most at home when…'**
+  String get dating_prompt_feel_at_home;
+
+  /// No description provided for @dating_prompt_friends_say.
+  ///
+  /// In en, this message translates to:
+  /// **'My friends would say I\'m…'**
+  String get dating_prompt_friends_say;
+
+  /// No description provided for @dating_prompt_looking_for.
+  ///
+  /// In en, this message translates to:
+  /// **'I\'m looking for someone who…'**
+  String get dating_prompt_looking_for;
+
+  /// No description provided for @dating_prompt_small_thing.
+  ///
+  /// In en, this message translates to:
+  /// **'A small thing that makes my day…'**
+  String get dating_prompt_small_thing;
+
+  /// No description provided for @dating_prompt_win_me_over.
+  ///
+  /// In en, this message translates to:
+  /// **'The way to win me over is…'**
+  String get dating_prompt_win_me_over;
+
+  /// No description provided for @dating_prompt_learning_to.
+  ///
+  /// In en, this message translates to:
+  /// **'I\'m learning to…'**
+  String get dating_prompt_learning_to;
+
+  /// No description provided for @dating_prompt_family_describe.
+  ///
+  /// In en, this message translates to:
+  /// **'My family would describe me as…'**
+  String get dating_prompt_family_describe;
+
+  /// No description provided for @dating_prompt_place_love.
+  ///
+  /// In en, this message translates to:
+  /// **'A kind of place I love spending time…'**
+  String get dating_prompt_place_love;
+
+  /// No description provided for @dating_prompt_ask_me_about.
+  ///
+  /// In en, this message translates to:
+  /// **'Ask me about…'**
+  String get dating_prompt_ask_me_about;
+
+  /// D10 length (plan).
+  ///
+  /// In en, this message translates to:
+  /// **'At least 10 characters.'**
+  String get dating_promptTooShort;
+
+  /// D9: the system picker refused or failed (plan, T10 fix 1 I-3).
+  ///
+  /// In en, this message translates to:
+  /// **'Photo {n}: your photos couldn\'t be opened. Check that Attune can use them in Settings, then try again.'**
+  String dating_photoPickFailed(int n);
+
+  /// D9: the cropper failed (plan, T10 fix 1 I-3).
+  ///
+  /// In en, this message translates to:
+  /// **'Photo {n} couldn\'t be cropped. Try again.'**
+  String dating_photoCropFailed(int n);
+
+  /// D9 caption / D10 answer: a character the server refuses, e.g. a joined emoji (plan, T10 fix 1 I-2).
+  ///
+  /// In en, this message translates to:
+  /// **'Some emoji and symbols can\'t be used here. Try taking them out.'**
+  String get dating_textInvisible;
+
+  /// D10: an answer with no letter or number (plan, T10 fix 1 I-2).
+  ///
+  /// In en, this message translates to:
+  /// **'Add a few words, not just emoji or symbols.'**
+  String get dating_promptNeedsWords;
+
+  /// Spec 2 §3.2 D11 / §3.3.2 (the shell until W4a, R-26).
+  ///
+  /// In en, this message translates to:
+  /// **'Verify it\'s you'**
+  String get dating_verifyTitle;
+
+  /// No description provided for @dating_verifyBody.
+  ///
+  /// In en, this message translates to:
+  /// **'A short video selfie checks that you\'re a real person, that your photos are you, and that you\'re over 18. The video is deleted at once. We keep only whether it passed.'**
+  String get dating_verifyBody;
+
+  /// D11 shell line until W4a (plan, R-26).
+  ///
+  /// In en, this message translates to:
+  /// **'You\'ll do this check before your first introduction.'**
+  String get dating_verifyLater;
+
+  /// Spec 2 §3.2 D12.
+  ///
+  /// In en, this message translates to:
+  /// **'This is what others see'**
+  String get dating_previewTitle;
+
+  /// No description provided for @dating_previewNever.
+  ///
+  /// In en, this message translates to:
+  /// **'Never shown: who you\'d like to meet, your exact location, your date of birth.'**
+  String get dating_previewNever;
+
+  /// D12: the preview read failed (plan).
+  ///
+  /// In en, this message translates to:
+  /// **'Your preview can\'t be shown right now.'**
+  String get dating_previewUnavailable;
+
+  /// Retry (plan).
+  ///
+  /// In en, this message translates to:
+  /// **'Try again'**
+  String get dating_tryAgain;
+
+  /// No description provided for @dating_nameLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'First name'**
+  String get dating_nameLabel;
+
+  /// No description provided for @dating_nameHelper.
+  ///
+  /// In en, this message translates to:
+  /// **'Use your first name or what friends call you.'**
+  String get dating_nameHelper;
+
+  /// D12 first-name length (plan).
+  ///
+  /// In en, this message translates to:
+  /// **'Use 1 to 30 characters.'**
+  String get dating_nameInvalid;
+
+  /// Save (plan).
+  ///
+  /// In en, this message translates to:
+  /// **'Save'**
+  String get dating_save;
+
+  /// D12 per-section edit links (plan; §3.2 D12 'Edit links: per section').
+  ///
+  /// In en, this message translates to:
+  /// **'Edit first name'**
+  String get dating_editName;
+
+  /// No description provided for @dating_editLooking.
+  ///
+  /// In en, this message translates to:
+  /// **'Edit what you\'re looking for'**
+  String get dating_editLooking;
+
+  /// No description provided for @dating_editWhere.
+  ///
+  /// In en, this message translates to:
+  /// **'Edit where you are'**
+  String get dating_editWhere;
+
+  /// No description provided for @dating_editPrompts.
+  ///
+  /// In en, this message translates to:
+  /// **'Edit your answers'**
+  String get dating_editPrompts;
+
+  /// No description provided for @dating_editChildren.
+  ///
+  /// In en, this message translates to:
+  /// **'Edit children'**
+  String get dating_editChildren;
+
+  /// No description provided for @dating_editAbout.
+  ///
+  /// In en, this message translates to:
+  /// **'Edit what you show about yourself'**
+  String get dating_editAbout;
+
+  /// No description provided for @dating_editPhotos.
+  ///
+  /// In en, this message translates to:
+  /// **'Edit photos'**
+  String get dating_editPhotos;
+
+  /// No description provided for @dating_pushDigest.
+  ///
+  /// In en, this message translates to:
+  /// **'Tell me about new introductions and matches, at most once a day.'**
+  String get dating_pushDigest;
+
+  /// No description provided for @dating_pushTurnOn.
+  ///
+  /// In en, this message translates to:
+  /// **'Turn on'**
+  String get dating_pushTurnOn;
+
+  /// D12 after Turn on (plan).
+  ///
+  /// In en, this message translates to:
+  /// **'We\'ll tell you about new introductions and matches, at most once a day.'**
+  String get dating_pushDigestOn;
+
+  /// No description provided for @dating_pushMessages.
+  ///
+  /// In en, this message translates to:
+  /// **'Tell me when someone messages me'**
+  String get dating_pushMessages;
+
+  /// §3.4 card heading.
+  ///
+  /// In en, this message translates to:
+  /// **'{name}, {age}'**
+  String dating_cardHeading(String name, int age);
+
+  /// §3.4 intention, timeline hidden (plan).
+  ///
+  /// In en, this message translates to:
+  /// **'Looking for marriage'**
+  String get dating_cardMarriage;
+
+  /// No description provided for @dating_cardMarriageSoon.
+  ///
+  /// In en, this message translates to:
+  /// **'Looking for marriage, in the next year or two'**
+  String get dating_cardMarriageSoon;
+
+  /// §3.4 intention with D2's 'In a few years' (plan; cultural reviewer).
+  ///
+  /// In en, this message translates to:
+  /// **'Looking for marriage, in a few years'**
+  String get dating_cardMarriageFew;
+
+  /// §3.4 intention with D2's 'No set time' (plan; cultural reviewer).
+  ///
+  /// In en, this message translates to:
+  /// **'Looking for marriage, with no set time'**
+  String get dating_cardMarriageNone;
+
+  /// No description provided for @dating_cardCommitted.
+  ///
+  /// In en, this message translates to:
+  /// **'Looking for a committed relationship'**
+  String get dating_cardCommitted;
+
+  /// No description provided for @dating_cardCompanionship.
+  ///
+  /// In en, this message translates to:
+  /// **'Looking for companionship, at a comfortable pace'**
+  String get dating_cardCompanionship;
+
+  /// No description provided for @dating_cardNotSure.
+  ///
+  /// In en, this message translates to:
+  /// **'Not sure yet'**
+  String get dating_cardNotSure;
+
+  /// No description provided for @dating_cardHasChildren.
+  ///
+  /// In en, this message translates to:
+  /// **'Has children'**
+  String get dating_cardHasChildren;
+
+  /// No description provided for @dating_cardNoChildren.
+  ///
+  /// In en, this message translates to:
+  /// **'No children'**
+  String get dating_cardNoChildren;
+
+  /// No description provided for @dating_cardWantsChildren.
+  ///
+  /// In en, this message translates to:
+  /// **'Wants children'**
+  String get dating_cardWantsChildren;
+
+  /// No description provided for @dating_cardNoWantChildren.
+  ///
+  /// In en, this message translates to:
+  /// **'Doesn\'t want children'**
+  String get dating_cardNoWantChildren;
+
+  /// No description provided for @dating_cardOpenChildren.
+  ///
+  /// In en, this message translates to:
+  /// **'Open to children'**
+  String get dating_cardOpenChildren;
+
+  /// No description provided for @dating_cardPhotosLater.
+  ///
+  /// In en, this message translates to:
+  /// **'Photos appear after you\'re both interested.'**
+  String get dating_cardPhotosLater;
+
+  /// No description provided for @dating_cardShowPhotos.
+  ///
+  /// In en, this message translates to:
+  /// **'Show photos (about 1 MB)'**
+  String get dating_cardShowPhotos;
+
+  /// §3.4 carousel semantics (plan).
+  ///
+  /// In en, this message translates to:
+  /// **'Photo {n} of {count}'**
+  String dating_cardPhoto(int n, int count);
+
+  /// Spec 2 §3.2 D13.
+  ///
+  /// In en, this message translates to:
+  /// **'You\'re all set'**
+  String get dating_readyTitle;
+
+  /// D13.
+  ///
+  /// In en, this message translates to:
+  /// **'Your first introductions arrive {date} at {time}.'**
+  String dating_readyFirst(String date, String time);
+
+  /// No description provided for @dating_readyChangeTime.
+  ///
+  /// In en, this message translates to:
+  /// **'Change time'**
+  String get dating_readyChangeTime;
+
+  /// No description provided for @dating_readyTimeTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Pick a time when you have a few quiet minutes.'**
+  String get dating_readyTimeTitle;
+
+  /// D13 heading (plan).
+  ///
+  /// In en, this message translates to:
+  /// **'While you wait'**
+  String get dating_readyWhile;
+
+  /// No description provided for @dating_readyJournal.
+  ///
+  /// In en, this message translates to:
+  /// **'Write in your journal'**
+  String get dating_readyJournal;
+
+  /// No description provided for @dating_readySharedQ.
+  ///
+  /// In en, this message translates to:
+  /// **'Does anyone else use this phone?'**
+  String get dating_readySharedQ;
+
+  /// No description provided for @dating_readyLock.
+  ///
+  /// In en, this message translates to:
+  /// **'Lock Dating with your PIN'**
+  String get dating_readyLock;
+
+  /// No description provided for @dating_readyEveryOpen.
+  ///
+  /// In en, this message translates to:
+  /// **'Ask for my PIN every time Attune opens'**
+  String get dating_readyEveryOpen;
+
+  /// No description provided for @dating_done.
+  ///
+  /// In en, this message translates to:
+  /// **'Done'**
+  String get dating_done;
+
+  /// D13 activation before W4a (plan, R-26).
+  ///
+  /// In en, this message translates to:
+  /// **'We still need to check it\'s you before introductions start.'**
+  String get dating_readyGates;
+
+  /// D12 edit link beside the faith line (T11 fix 1, I-2; plan copy).
+  ///
+  /// In en, this message translates to:
+  /// **'Edit faith'**
+  String get dating_editFaith;
+
+  /// D12 edit link beside Widowed / Divorced, opens D2 (T11 fix 1, I-2; plan copy).
+  ///
+  /// In en, this message translates to:
+  /// **'Edit marital status'**
+  String get dating_editMarital;
+
+  /// §3.4: the card's photos announced as one group (T11 fix 1, M-6).
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =1{1 photo} other{{count} photos}}'**
+  String dating_cardPhotos(int count);
+
+  /// Spec 2 §3.12 row.
+  ///
+  /// In en, this message translates to:
+  /// **'Introduction time'**
+  String get dating_settingsTime;
+
+  /// No description provided for @dating_settingsWho.
+  ///
+  /// In en, this message translates to:
+  /// **'Who I\'d like to meet'**
+  String get dating_settingsWho;
+
+  /// No description provided for @dating_settingsAges.
+  ///
+  /// In en, this message translates to:
+  /// **'Ages'**
+  String get dating_settingsAges;
+
+  /// §3.12 Ages row value (plan).
+  ///
+  /// In en, this message translates to:
+  /// **'{min} to {max}'**
+  String dating_settingsAgesValue(int min, int max);
+
+  /// No description provided for @dating_settingsHowFar.
+  ///
+  /// In en, this message translates to:
+  /// **'How far'**
+  String get dating_settingsHowFar;
+
+  /// No description provided for @dating_settingsPhotosAfter.
+  ///
+  /// In en, this message translates to:
+  /// **'Photos after mutual interest'**
+  String get dating_settingsPhotosAfter;
+
+  /// No description provided for @dating_settingsDataSaver.
+  ///
+  /// In en, this message translates to:
+  /// **'Data saver'**
+  String get dating_settingsDataSaver;
+
+  /// No description provided for @dating_settingsDataSaverSub.
+  ///
+  /// In en, this message translates to:
+  /// **'Show photos only when I tap'**
+  String get dating_settingsDataSaverSub;
+
+  /// No description provided for @dating_settingsNotifications.
+  ///
+  /// In en, this message translates to:
+  /// **'Notifications'**
+  String get dating_settingsNotifications;
+
+  /// No description provided for @dating_settingsPause.
+  ///
+  /// In en, this message translates to:
+  /// **'Pause Dating'**
+  String get dating_settingsPause;
+
+  /// §3.8 Pause.
+  ///
+  /// In en, this message translates to:
+  /// **'Dating is paused. Nobody new sees you, and your conversations stay open.'**
+  String get dating_pausedLine;
+
+  /// No description provided for @dating_settingsResume.
+  ///
+  /// In en, this message translates to:
+  /// **'Resume Dating'**
+  String get dating_settingsResume;
+
+  /// No description provided for @dating_settingsLeave.
+  ///
+  /// In en, this message translates to:
+  /// **'Leave Dating and delete my data'**
+  String get dating_settingsLeave;
+
+  /// Spec 2 §3.8 Leave.
+  ///
+  /// In en, this message translates to:
+  /// **'Leave Dating?'**
+  String get dating_leaveTitle;
+
+  /// No description provided for @dating_leaveNow.
+  ///
+  /// In en, this message translates to:
+  /// **'Deleted now: your Dating profile, photos, prompts, who you\'d like to meet, your gender and faith answers, your settings and your private notes.'**
+  String get dating_leaveNow;
+
+  /// No description provided for @dating_leave30.
+  ///
+  /// In en, this message translates to:
+  /// **'Kept for 30 days, then deleted: your conversations, so either of you can still report a problem.'**
+  String get dating_leave30;
+
+  /// No description provided for @dating_leaveSafety.
+  ///
+  /// In en, this message translates to:
+  /// **'Kept for safety, for up to 2 years, only if your account is restricted or you\'ve blocked someone: a code made from your phone number, never the number itself.'**
+  String get dating_leaveSafety;
+
+  /// No description provided for @dating_leaveRecord.
+  ///
+  /// In en, this message translates to:
+  /// **'Kept as a record: when you agreed to Dating\'s terms and when you left.'**
+  String get dating_leaveRecord;
+
+  /// No description provided for @dating_leaveKeepList.
+  ///
+  /// In en, this message translates to:
+  /// **'Keep my \'Never introduce me\' list in case I come back. It holds codes, not numbers.'**
+  String get dating_leaveKeepList;
+
+  /// No description provided for @dating_leaveConfirm.
+  ///
+  /// In en, this message translates to:
+  /// **'Leave and delete'**
+  String get dating_leaveConfirm;
+
+  /// No description provided for @dating_leavePause.
+  ///
+  /// In en, this message translates to:
+  /// **'Pause instead'**
+  String get dating_leavePause;
+
+  /// No description provided for @dating_leftDone.
+  ///
+  /// In en, this message translates to:
+  /// **'You\'ve left Dating. You can set it up again any time.'**
+  String get dating_leftDone;
+
+  /// §3.8 Done when exit answers suspended (carry 13; plan: no 'set it up again').
+  ///
+  /// In en, this message translates to:
+  /// **'You\'ve left Dating.'**
+  String get dating_leftSuspended;
+
+  /// Spec 2 W3 final fix (M-16): D9's confirm before a photo is deleted (the delete is at once, so no undo).
+  ///
+  /// In en, this message translates to:
+  /// **'Remove photo {n}?'**
+  String dating_photoRemoveQ(int n);
+
+  /// Spec 2 W3 final fix (M-16): D9's remove confirm.
+  ///
+  /// In en, this message translates to:
+  /// **'It\'s deleted at once. A photo you add later is checked again before anyone sees it.'**
+  String get dating_photoRemoveBody;
+
+  /// Spec 2 W3 final fix (M-16): D9's remove confirm, the safe choice.
+  ///
+  /// In en, this message translates to:
+  /// **'Keep it'**
+  String get dating_photoKeep;
 }
 
 class _AppLocalizationsDelegate extends LocalizationsDelegate<AppLocalizations> {

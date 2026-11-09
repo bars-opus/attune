@@ -1,5 +1,7 @@
 // The manual only lists a topic while the features it explains are switched
 // on, and the registry is built once.
+import 'dart:io';
+
 import 'package:attune/app/documentations/user_manual/data/manual_documentation_registry.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -68,8 +70,30 @@ void main() {
           'support_resources_v2',
           // Spec 1 W9b: Opinions safety.
           'opinions_safety_v1',
+          // Spec 2 W3c: Dating (R-35).
+          'dating_mode_enabled',
         }),
       );
     }
+  });
+
+  // Spec 2 W3c (§4.10, R-35): the Dating topic needs all three flags, and
+  // the manual reads dating_mode_enabled through get_dating_home.
+  test('Dating is listed only with sign-in v2, paths v2 and Dating on', () {
+    bool listed(Set<String> on) =>
+        DocumentationRegistry.visibleModules(on).any((m) => m.id == 'datingMode');
+    expect(listed(const {'flow_signin_v2', 'flow_paths_v2'}), isFalse);
+    expect(listed(const {'flow_signin_v2', 'flow_paths_v2', 'dating_mode_enabled'}), isTrue);
+    final source = File('lib/app/documentations/user_manual/data/documentation_flags.dart').readAsStringSync();
+    // dating_mode_enabled itself is answered by get_dating_home (R-35),
+    // on Dating's own client, never the global one (T12 carry E).
+    expect(
+      source,
+      matches(RegExp(
+        r'flag == DatingFeatureFlags\.datingModeEnabled\s*\?\s*'
+        r'await DatingFeatureFlags\.isDatingModeAvailable\(\s*'
+        r'ref\.read\(datingSupabaseClientProvider\),?\s*\)',
+      )),
+    );
   });
 }

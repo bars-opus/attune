@@ -1,7 +1,7 @@
 import 'dart:io';
+import 'dart:isolate';
 import 'dart:typed_data';
 
-import 'package:flutter_image_compress/flutter_image_compress.dart';
 import 'package:image/image.dart' as img;
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
@@ -29,6 +29,43 @@ class DatingImageRejected implements Exception {
   String toString() => 'DatingImageRejected($code)';
 }
 
+/// Spec 2 W3c (R-23): one deterministic path: upright, at most 1600 px on
+/// the long side, EXIF (GPS included) cleared, JPEG at quality 80, stepping
+/// down only to fit maxBytes. Runs in a worker isolate (Isolate.run; fix
+/// round 1, I-3): no platform channels, no `this`. The header is read first,
+/// so an excessive image is refused before its pixels are decoded. Answers
+/// the JPEG, or the rejection code.
+({Uint8List? jpeg, String? error}) _encodeDatingJpeg(Uint8List bytes) {
+  try {
+    final info = img.findDecoderForData(bytes)?.startDecode(bytes);
+    if (info != null &&
+        info.width * info.height > DatingImagePreparer.maxDecodePixels) {
+      return (jpeg: null, error: 'media_dimensions_excessive');
+    }
+    final decoded = img.decodeImage(bytes);
+    if (decoded == null) return (jpeg: null, error: 'media_decode_failed');
+    if (decoded.width * decoded.height > DatingImagePreparer.maxDecodePixels) {
+      return (jpeg: null, error: 'media_dimensions_excessive');
+    }
+    final upright = img.bakeOrientation(decoded);
+    final resized = const DatingImagePreparer()._resizeLongestEdge(
+      upright,
+      DatingImagePreparer.maxDimension,
+    );
+    resized.exif = img.ExifData();
+    for (final q in const [DatingImagePreparer.quality, 70, 60, 50]) {
+      final jpeg = img.encodeJpg(resized, quality: q);
+      if (jpeg.lengthInBytes <= DatingImagePreparer.maxBytes) {
+        return (jpeg: jpeg, error: null);
+      }
+    }
+    return (jpeg: null, error: 'media_compress_failed');
+  } catch (_) {
+    // package:image throws (RangeError) on a damaged file.
+    return (jpeg: null, error: 'media_decode_failed');
+  }
+}
+
 /// Enforces the private-image upload contract on the client, before any
 /// upload intent is requested — mirrors ChatImagePreparer
 /// (lib/features/chat/domain/services/chat_image_preparer.dart) with a
@@ -40,7 +77,8 @@ class DatingImagePreparer {
 
   static const int maxBytes = 1536 * 1024; // 1.5 MB
   static const int maxSourceBytes = 25 * 1024 * 1024;
-  static const int maxDimension = 2000;
+  static const int maxDimension = 1600;
+  static const int quality = 80;
   static const int maxDecodePixels = 60 * 1000 * 1000;
 
   static const _approvedInputMimes = {
@@ -66,57 +104,52 @@ class DatingImagePreparer {
       throw const DatingImageRejected('media_type_unsupported');
     }
 
-    final decoded = img.decodeImage(bytes);
-    if (decoded == null) throw const DatingImageRejected('media_decode_failed');
-    if (decoded.width * decoded.height > maxDecodePixels) {
-      throw const DatingImageRejected('media_dimensions_excessive');
-    }
+    // Spec 2 W3c Task 9 fix round 1 (I-3): the decode, resize and encode
+    // run in a worker isolate (Isolate.run), as ChatImagePreparer's; the
+    // temp name and the file write stay here.
+    final encoded = await Isolate.run(() => _encodeDatingJpeg(bytes));
+    final jpeg = encoded.jpeg;
+    if (jpeg == null) throw DatingImageRejected(encoded.error!);
 
     final targetPath = await _tempTargetPath();
+    final outFile = File(targetPath);
+    await outFile.writeAsBytes(jpeg, flush: true);
+    return PreparedDatingImage(
+      file: outFile,
+      mimeType: 'image/jpeg',
+      byteSize: jpeg.lengthInBytes,
+    );
+  }
 
+  /// Spec 2 W3 final fix (M-13): a crash between the write and the
+  /// delete can leave a prepared photo (`p_<micros>.jpg`, a neutral name)
+  /// in the temp folder until the OS clears it. D9 sweeps them when it
+  /// opens: only that name, and only from before [before] (now), so a
+  /// photo being prepared right now is never touched. Never throws; a
+  /// folder that can't be read sweeps nothing.
+  Future<int> sweepLeftovers({Directory? dir, DateTime? before}) async {
+    final cutoff = (before ?? DateTime.now()).microsecondsSinceEpoch;
+    var swept = 0;
     try {
-      for (final quality in const [85, 75, 65, 50, 35]) {
-        final out = await FlutterImageCompress.compressAndGetFile(
-          localPath,
-          targetPath,
-          quality: quality,
-          minWidth: 1,
-          minHeight: 1,
-          keepExif: false,
-          format: CompressFormat.jpeg,
-        );
-        if (out == null) continue;
-        final outFile = File(out.path);
-        final outSize = await outFile.length();
-        if (outSize > 0 && outSize <= maxBytes) {
-          return PreparedDatingImage(
-            file: outFile,
-            mimeType: 'image/jpeg',
-            byteSize: outSize,
-          );
+      final folder = dir ?? await getTemporaryDirectory();
+      await for (final entry in folder.list(followLinks: false)) {
+        final m = _leftoverName.firstMatch(p.basename(entry.path));
+        if (entry is! File || m == null) continue;
+        if ((int.tryParse(m.group(1)!) ?? cutoff) >= cutoff) continue;
+        try {
+          await entry.delete();
+          swept++;
+        } catch (_) {
+          // Gone already, or not ours to delete: nothing to sweep.
         }
       }
     } catch (_) {
-      // Fall through to the Dart-only path.
+      // No temp folder here (or unreadable): nothing to sweep.
     }
-
-    final resized = _resizeLongestEdge(decoded, maxDimension);
-    // The native path drops EXIF (keepExif:false); the pure-Dart encoder
-    // would copy it — including GPS — so it's cleared here too.
-    resized.exif = img.ExifData();
-    final jpeg = img.encodeJpg(resized, quality: 65);
-    if (jpeg.lengthInBytes <= maxBytes) {
-      final outFile = File(targetPath);
-      await outFile.writeAsBytes(jpeg, flush: true);
-      return PreparedDatingImage(
-        file: outFile,
-        mimeType: 'image/jpeg',
-        byteSize: jpeg.lengthInBytes,
-      );
-    }
-
-    throw const DatingImageRejected('media_compress_failed');
+    return swept;
   }
+
+  static final _leftoverName = RegExp(r'^p_(\d+)\.jpg$');
 
   img.Image _resizeLongestEdge(img.Image src, int longest) {
     final longestSide = src.width >= src.height ? src.width : src.height;
@@ -134,7 +167,7 @@ class DatingImagePreparer {
     } catch (_) {
       dir = Directory.systemTemp;
     }
-    final name = 'dating_photo_${DateTime.now().microsecondsSinceEpoch}.jpg';
+    final name = 'p_${DateTime.now().microsecondsSinceEpoch}.jpg';
     return p.join(dir.path, name);
   }
 

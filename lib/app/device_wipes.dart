@@ -1,6 +1,7 @@
 import 'package:attune/core/device/device_wipe_registry.dart';
 import 'package:attune/core/platform/install_referrer_keys.dart';
 import 'package:attune/features/couple_profile/data/about_us_outbox.dart';
+import 'package:attune/features/dating/dating_device_wipes.dart';
 import 'package:attune/features/healing/presentation/providers/healing_support_providers.dart'
     show HealingSupportMemory;
 import 'package:attune/features/onboarding/data/ask2_progress_store.dart';
@@ -18,6 +19,7 @@ void registerDeviceWipes([DeviceWipeRegistry? registry]) {
   for (final entry in spec1DeviceWipes()) {
     target.register(entry);
   }
+  registerDatingDeviceWipes(target);
 }
 
 /// Removes every prefs key [matches] accepts (all accounts on the phone:

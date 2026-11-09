@@ -46,4 +46,20 @@ void main() {
     expect(photo.needsReview, isTrue);
     expect(photo.isApproved, isFalse);
   });
+
+  // Spec 2 W3c (§4.10): the v2 list's keys, and the caption.
+  test('DatingProfilePhoto.fromJson reads the v2 list', () {
+    final p = DatingProfilePhoto.fromJson({
+      'id': 'photo-6',
+      'position': 6,
+      'state': 'approved',
+      'reason': null,
+      'caption': 'At the beach',
+      'storage_key': 'dating-photos/x.jpg',
+      'created_at': '2026-11-07T10:00:00Z',
+    });
+    expect(p.position, 6);
+    expect(p.isApproved, isTrue);
+    expect(p.caption, 'At the beach');
+  });
 }
