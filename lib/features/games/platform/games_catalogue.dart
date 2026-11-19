@@ -6,6 +6,7 @@ import 'package:attune/features/games/platform/game_theme.dart';
 import 'package:attune/features/games/platform/legacy/legacy_game_controller.dart';
 import 'package:attune/features/games/presentation/providers/games_hub_providers.dart';
 import 'package:attune/features/games/presentation/widgets/game_icon.dart';
+import 'package:attune/features/games/this_or_that/this_or_that_game.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -17,13 +18,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 /// for all of them. The two prototypes are not games Attune offers and are
 /// not listed.
 final List<GameDefinition> gameCatalogue = [
-  _launch(
-    'this_or_that',
-    colour: GameColors.thisOrThat,
-    collectionLabel: 'Quick play',
-    tagline: 'Quick choices, shared reveals',
-    heroWord: 'THIS',
-  ),
+  thisOrThatGame,
   _launch(
     'truth_or_dare',
     colour: GameColors.truthOrDare,
