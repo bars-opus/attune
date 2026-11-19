@@ -59,6 +59,10 @@ abstract final class GameColors {
   static const Color wordHunt = Color(0xFF1FA463);
   static const Color snakesAndLadders = Color(0xFF4C7CF0);
 
+  /// Every game not yet playable. Grey, so a listed game never borrows a
+  /// launch game's colour; not in [all], which holds the launch colours.
+  static const Color comingSoon = Color(0xFF3A3A40);
+
   static const List<Color> all = [
     thisOrThat,
     truthOrDare,
