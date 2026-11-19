@@ -21,8 +21,10 @@ import 'support/route_recorder.dart';
 final _reReads = StateProvider<int>((ref) => 0);
 
 /// A game's controller that records what the page asks of it. Its
-/// [onPrimary] runs until the test calls [finishPrimary], the way a real one
-/// runs until the game screen it pushed is closed.
+/// [onPrimary] stays pending until the test calls [finishPrimary], so a test
+/// can hold a start in flight -- a consent dialog, the call that creates the
+/// game -- and see what the page does meanwhile. A real one completes once
+/// navigation has begun.
 class _FakeController extends GameController {
   _FakeController(this.state, {this.rows = const []});
 
@@ -205,6 +207,7 @@ void main() {
     expect(controller.primaryState?.sessionId, 's-1');
     controller.finishPrimary();
     await tester.pump();
+    await tester.pump();
 
     await tester.tap(find.text('2. Spicy'));
     await tester.pump();
@@ -231,6 +234,7 @@ void main() {
     await tester.pump();
     expect(controller.primaryCalls, 1);
     controller.finishPrimary();
+    await tester.pump();
     await tester.pump();
     expect(_button(tester).busy, isFalse);
     await tester.tap(find.byType(GamePrimaryButton));
@@ -282,6 +286,7 @@ void main() {
 
     running.complete();
     await tester.pump();
+    await tester.pump();
     expect(_button(tester).busy, isFalse);
     await tester.tap(find.text('2. Spicy'));
     await tester.pump();
@@ -312,6 +317,7 @@ void main() {
     expect(controller.primaryCalls, 1);
 
     controller.finishPrimary();
+    await tester.pump();
     await tester.pump();
     await tester.tap(find.byType(GamePrimaryButton));
     await tester.pump();
@@ -355,6 +361,7 @@ void main() {
 
     running.complete();
     await tester.pump();
+    await tester.pump();
     await tester.tap(find.text('2. Spicy'));
     await tester.pump();
     expect(
@@ -364,6 +371,128 @@ void main() {
     );
     running.complete();
     await tester.pump();
+  });
+
+  group('a start that opens the game at once', () {
+    // A start keeping the contract completes as soon as it has asked for
+    // the push; the pushed route only reaches the tree on the next frame.
+    // Until then the page is still in front and must still be busy.
+    late int screensOpened;
+    late _FakeController controller;
+    late int rowCalls;
+
+    Future<void> pumpOpeningAtOnce(WidgetTester tester) async {
+      screensOpened = 0;
+      rowCalls = 0;
+      void open(BuildContext context) {
+        screensOpened++;
+        unawaited(context.pushNamed('gamesHub'));
+      }
+
+      controller = _FakeController(
+        const GameLandingState(status: GameLandingStatus.fresh),
+        rows: [
+          GameEntry(
+            title: 'Gentle',
+            onTap: (context) {
+              rowCalls++;
+              open(context);
+            },
+          ),
+        ],
+      );
+      controller.primaryBody = (context) async {
+        open(context);
+        controller.finishPrimary();
+      };
+      await _pumpPage(
+        tester,
+        gameType: 'demo',
+        games: [demoGame(controller: controller)],
+      );
+    }
+
+    testWidgets('two taps in the same frame open one game screen', (
+      tester,
+    ) async {
+      await pumpOpeningAtOnce(tester);
+
+      await tester.tap(find.byType(GamePrimaryButton));
+      await tester.tap(find.byType(GamePrimaryButton));
+      await _settleRoute(tester);
+
+      expect(controller.primaryCalls, 1);
+      expect(screensOpened, 1);
+      expect(
+        find.text('opened:gamesHub:', skipOffstage: false),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('the button and a row in the same frame open one game '
+        'screen', (tester) async {
+      await pumpOpeningAtOnce(tester);
+
+      await tester.tap(find.byType(GamePrimaryButton));
+      await tester.tap(find.text('1. Gentle'));
+      await _settleRoute(tester);
+
+      expect(controller.primaryCalls + rowCalls, 1);
+      expect(screensOpened, 1);
+      expect(
+        find.text('opened:gamesHub:', skipOffstage: false),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('a tap one frame later lands on the game screen, not the '
+        'page', (tester) async {
+      // The control for the two above: once the push has landed, the
+      // pushed screen takes the tap.
+      await pumpOpeningAtOnce(tester);
+
+      await tester.tap(find.byType(GamePrimaryButton));
+      await tester.pump();
+      await tester.tap(find.byType(GamePrimaryButton), warnIfMissed: false);
+      await _settleRoute(tester);
+
+      expect(controller.primaryCalls, 1);
+      expect(find.text('opened:gamesHub:'), findsOneWidget);
+    });
+  });
+
+  testWidgets('a start that ends without opening anything frees the button '
+      'a frame later', (tester) async {
+    // Holding busy to the end of the frame must not strand the button when
+    // nothing was pushed: a start that failed, or one that had nowhere to go.
+    final controller = _FakeController(
+      const GameLandingState(status: GameLandingStatus.fresh),
+    )..primaryError = StateError('no connection');
+    await _pumpPage(
+      tester,
+      gameType: 'demo',
+      games: [demoGame(controller: controller)],
+    );
+
+    await tester.tap(find.byType(GamePrimaryButton));
+    // The frame the start ended in, then the one that redraws the button.
+    await tester.pump();
+    await tester.pump();
+    expect(tester.takeException(), isA<StateError>());
+    expect(_button(tester).busy, isFalse);
+
+    controller.primaryError = null;
+    controller.primaryBody = (context) async => controller.finishPrimary();
+    await tester.tap(find.byType(GamePrimaryButton));
+    await tester.pump();
+    await tester.pump();
+    expect(controller.primaryCalls, 2);
+    expect(_button(tester).busy, isFalse);
+
+    await tester.tap(find.byType(GamePrimaryButton));
+    await tester.pump();
+    await tester.pump();
+    expect(controller.primaryCalls, 3);
   });
 
   testWidgets('a start that fails is reported and the button can be pressed '
@@ -378,6 +507,7 @@ void main() {
     );
 
     await tester.tap(find.byType(GamePrimaryButton));
+    await tester.pump();
     await tester.pump();
 
     // Reported to FlutterError, not lost and not escaping as an uncaught
@@ -489,10 +619,15 @@ void main() {
       expect(rowCalls, 0);
       expect(_button(tester).busy, isTrue);
 
-      // The control: the start's own end frees it.
+      // The control: the start's own end frees it, and the row that was
+      // ignored above now answers.
       controller.finishPrimary();
       await tester.pump();
+      await tester.pump();
       expect(_button(tester).busy, isFalse);
+      await tester.tap(find.text('1. Gentle'));
+      await tester.pump();
+      expect(rowCalls, 1);
     });
 
     testWidgets('coming back tells the game to re-read', (tester) async {

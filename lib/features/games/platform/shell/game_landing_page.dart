@@ -30,10 +30,12 @@ class _GameLandingPageState extends ConsumerState<GameLandingPage> {
   /// dialog, the call that creates the game, the push. A second tap
   /// meanwhile would start a second game.
   ///
-  /// Cleared only when the start itself ends. A start completes once
-  /// navigation has begun (see [GameController.onPrimary]), so it is never
-  /// held while the game is played; and the page coming back into view is
-  /// not the start ending -- a dialog the start showed may have just closed.
+  /// Cleared only when the start itself ends, and only after the frame it
+  /// ended in, by which time a game screen it pushed is in front. A start
+  /// completes once navigation has begun (see [GameController.onPrimary]),
+  /// so it is never held while the game is played; and the page coming back
+  /// into view is not the start ending -- a dialog the start showed may have
+  /// just closed.
   bool _busy = false;
 
   /// Whether this page's route was in front at the last look. Null before
@@ -85,6 +87,10 @@ class _GameLandingPageState extends ConsumerState<GameLandingPage> {
         ),
       );
     } finally {
+      // Held through the frame the start ended in: a push it asked for
+      // reaches the tree only then, and until it does the page is still in
+      // front, so a tap in the same frame would start a second game.
+      await WidgetsBinding.instance.endOfFrame;
       if (mounted) setState(() => _busy = false);
     }
   }
