@@ -86,6 +86,7 @@ mechanical. Cost: the new shell ships English-only, like the games it wraps.
 | Displayed dates use `MyDateFormat`. | Owner memory |
 | Say the couple's chosen name (`coupleNameProvider`) or a partner's name, not "both of you". | Owner memory |
 | Wide screens: content sits in `AppContentWidth`; ScreenUtil scale is capped at 1.25×. | iPad layout work |
+| Inside `platform/`, sizes are plain logical pixels with flexible layout — no ScreenUtil `.w/.h/.r/.sp`. Mixing the two is how screens end up distorted, and the extensions throw in tests that have not initialised ScreenUtil. | Phase 1 build ruling |
 | Large text must not break layouts; error red is `#C62828`. | Accessibility wave W10 |
 | Every animation degrades under the OS reduce-motion setting. | `lib/core/ui/motion/reduce_motion.dart` |
 | Performance on low-end Android is a launch gate. | `ATTUNE_THESIS.md` §6.10 |
@@ -112,7 +113,7 @@ The games surface is always dark-based, whatever the app theme, as it is today.
 
 | Game | Colour (provisional) | `game_type` |
 |---|---|---|
-| This or That | Orange `#EE8A3A` | `this_or_that` |
+| This or That | Orange `#E0701A` (darkened from `#EE8A3A` so white on it reaches 3:1) | `this_or_that` |
 | Truth or Dare | Red `#E5484D` | `truth_or_dare` |
 | 36 Questions | Purple `#A56FD6` | `36_questions` |
 | Word Hunt | Green `#1FA463` | `word_hunt` |
@@ -217,9 +218,9 @@ test blocks the deletion.
 | Piece | What it is |
 |---|---|
 | `GameTile` | The white tile: radius, hard offset shadow, press-down. Used for letters, options, board cells, hero art and the primary button. |
-| Motion tokens | Named springs and durations. No raw numbers at call sites. |
+| Motion tokens | Named durations and curves; an overshoot curve stands in for a spring. No raw numbers at call sites. |
 | `BurstPainter` | The short spark burst when something is placed or matched. Fires once and stops. |
-| `GameFeedback` | `GameFeedback.fire(event)` maps a named event (tap, place, match, reveal, complete, turn) to a sound and a haptic, and respects the settings sheet and reduce-motion. Games name events; they never pick sound files. |
+| `GameFeedback` | `GameFeedback.fire(event)` maps a named event (tap, place, match, reveal, complete, turn) to a sound and a haptic, and respects the two switches in the settings sheet. Reduce-motion governs what moves (bursts, entrances), not sound or vibration. Games name events; they never pick sound files. |
 
 Sounds remain the current synthesized placeholders. Because games only name
 events, a licensed pack later means replacing files, not editing games.
@@ -305,7 +306,17 @@ phase 2 is reworked; phases 3–5 do not start.
   430 wide and one in a tablet-width `AppContentWidth`. The default 800×600
   test surface distorted Paint Ball's goldens by nearly 3× and is never used
   for judging shape.
-- **Goldens are opened and looked at** before they are committed.
+- **Goldens are opened and looked at** before they are committed. The first
+  set did exactly this job: every test passed while the landing page's title
+  was dark ink on a dark ground.
+- **Goldens are compared where they are made** (macOS). Text rasterises
+  differently on the Linux CI machine, so there they are skipped; anything a
+  machine can check — ink colour on the ground, layout, overflow — has its own
+  test that runs everywhere.
+- **A tap that lands on nothing fails the test.** By default it only warns,
+  and a test that then asserts something is absent passes having done nothing.
+- **Screen readers:** every hand-built control has a test that activates it
+  through the semantics tree, not with a simulated finger.
 - **Large text:** each shell screen has a test at the largest text scale
   asserting no overflow.
 - **Reduce motion:** each animated piece has a test asserting it reaches its
