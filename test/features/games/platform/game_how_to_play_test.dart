@@ -38,6 +38,23 @@ void main() {
     await tester.pumpAndSettle();
   }
 
+  testWidgets('opened from above the game, in a light app, it is dark', (
+    tester,
+  ) async {
+    // `open` calls it from a plain Scaffold: no GameBackdrop above.
+    await open(tester);
+
+    expect(
+      Theme.of(tester.element(find.text('open'))).brightness,
+      Brightness.light,
+      reason: 'the control: the app is light where the sheet was opened',
+    );
+    expect(
+      Theme.of(tester.element(find.byType(GameHowToPlaySheet))).brightness,
+      Brightness.dark,
+    );
+  });
+
   testWidgets('lists the rules in order, numbered', (tester) async {
     await open(tester);
 

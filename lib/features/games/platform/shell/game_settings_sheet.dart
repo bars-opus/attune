@@ -4,6 +4,7 @@ import 'package:attune/features/games/platform/game_prefs.dart';
 import 'package:attune/features/games/platform/game_strings.dart';
 import 'package:attune/features/games/platform/game_theme.dart';
 import 'package:attune/features/games/platform/shell/game_buttons.dart';
+import 'package:attune/features/games/platform/shell/game_material_theme.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -15,6 +16,9 @@ Future<void> showGameSettingsSheet(
   VoidCallback? onReportProblem,
   VoidCallback? onLeaveGame,
 }) {
+  // Built once, from where it is opened: the builder below runs again on
+  // every rebuild of the sheet, by which time that context may be gone.
+  final gameTheme = gameMaterialTheme(context, definition.theme);
   return showModalBottomSheet<void>(
     context: context,
     isScrollControlled: true,
@@ -22,12 +26,17 @@ Future<void> showGameSettingsSheet(
     shape: const RoundedRectangleBorder(
       borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
     ),
+    // The game's dark theme is applied here rather than inherited: a screen
+    // opens this from its own context, which sits above its GameBackdrop.
     builder:
-        (_) => GameSettingsSheet(
-          definition: definition,
-          onHowToPlay: onHowToPlay,
-          onReportProblem: onReportProblem,
-          onLeaveGame: onLeaveGame,
+        (_) => Theme(
+          data: gameTheme,
+          child: GameSettingsSheet(
+            definition: definition,
+            onHowToPlay: onHowToPlay,
+            onReportProblem: onReportProblem,
+            onLeaveGame: onLeaveGame,
+          ),
         ),
   );
 }

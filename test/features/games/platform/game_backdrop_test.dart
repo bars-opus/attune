@@ -43,12 +43,45 @@ void main() {
       contrast(inside.colorScheme.onSurface, GameTheme.ground),
       greaterThanOrEqualTo(4.5),
     );
-    expect(inside.textTheme.bodyMedium!.fontFamily, 'Roboto');
-    expect(
-      inside.textTheme.bodyMedium!.fontFamily,
-      outside.textTheme.bodyMedium!.fontFamily,
-      reason: 'the app font is kept',
+  });
+
+  testWidgets('inside a game, the app\'s own font is kept', (tester) async {
+    // Not Roboto: Roboto is also what the test platform's dark typography
+    // falls back to, so an app font of Roboto would be "kept" by a game
+    // theme that threw the app's text theme away.
+    const appFont = 'AttuneTestSerif';
+    useSurface(tester, phone);
+    late ThemeData outside;
+    late ThemeData inside;
+    await tester.pumpWidget(
+      gameHost(
+        Theme(
+          data: ThemeData(fontFamily: appFont),
+          child: Builder(
+            builder: (context) {
+              outside = Theme.of(context);
+              return Scaffold(
+                body: GameBackdrop(
+                  theme: theme,
+                  child: Builder(
+                    builder: (context) {
+                      inside = Theme.of(context);
+                      return const SizedBox.expand();
+                    },
+                  ),
+                ),
+              );
+            },
+          ),
+        ),
+        prefs: await testPrefs(),
+      ),
     );
+
+    expect(outside.textTheme.bodyMedium!.fontFamily, appFont);
+    expect(inside.brightness, Brightness.dark, reason: 'the game theme');
+    expect(inside.textTheme.bodyMedium!.fontFamily, appFont);
+    expect(inside.textTheme.titleLarge!.fontFamily, appFont);
   });
 
   testWidgets('a dialog opened from inside a game is dark too', (tester) async {

@@ -94,8 +94,17 @@ void main() {
     final handle = tester.ensureSemantics();
     var taps = 0;
 
-    // The control: the same button, not busy, counts a tap.
-    await pump(tester, GamePrimaryButton(label: 'Play', onTap: () => taps++));
+    // The control: the same button, not busy, shows its icon and counts a
+    // tap.
+    await pump(
+      tester,
+      GamePrimaryButton(
+        label: 'Play',
+        icon: Icons.play_arrow_rounded,
+        onTap: () => taps++,
+      ),
+    );
+    expect(find.byIcon(Icons.play_arrow_rounded), findsOneWidget);
     expect(find.byType(CircularProgressIndicator), findsNothing);
     await tester.tap(find.text('Play'));
     expect(taps, 1);

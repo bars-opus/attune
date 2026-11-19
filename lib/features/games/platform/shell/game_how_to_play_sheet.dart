@@ -2,6 +2,7 @@ import 'package:attune/features/games/platform/game_definition.dart';
 import 'package:attune/features/games/platform/game_strings.dart';
 import 'package:attune/features/games/platform/game_theme.dart';
 import 'package:attune/features/games/platform/shell/game_buttons.dart';
+import 'package:attune/features/games/platform/shell/game_material_theme.dart';
 import 'package:flutter/material.dart';
 
 /// Shows a game's rules, a numbered sentence each.
@@ -9,6 +10,9 @@ Future<void> showGameHowToPlay(
   BuildContext context, {
   required GameDefinition definition,
 }) {
+  // Built once, from where it is opened: the builder below runs again on
+  // every rebuild of the sheet, by which time that context may be gone.
+  final gameTheme = gameMaterialTheme(context, definition.theme);
   return showModalBottomSheet<void>(
     context: context,
     isScrollControlled: true,
@@ -16,7 +20,13 @@ Future<void> showGameHowToPlay(
     shape: const RoundedRectangleBorder(
       borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
     ),
-    builder: (_) => GameHowToPlaySheet(definition: definition),
+    // The game's dark theme is applied here rather than inherited: a screen
+    // opens this from its own context, which sits above its GameBackdrop.
+    builder:
+        (_) => Theme(
+          data: gameTheme,
+          child: GameHowToPlaySheet(definition: definition),
+        ),
   );
 }
 

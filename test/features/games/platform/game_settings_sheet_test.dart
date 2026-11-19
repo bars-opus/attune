@@ -51,6 +51,24 @@ void main() {
     tester.element(find.byType(GameSettingsSheet)),
   ).read(gamePrefsProvider);
 
+  testWidgets('opened from above the game, in a light app, it is dark', (
+    tester,
+  ) async {
+    // `open` calls it from a plain Scaffold, as a screen does from its own
+    // build context in GameScaffold(onSettings: ...): no GameBackdrop above.
+    await open(tester);
+
+    expect(
+      Theme.of(tester.element(find.text('open'))).brightness,
+      Brightness.light,
+      reason: 'the control: the app is light where the sheet was opened',
+    );
+    expect(
+      Theme.of(tester.element(find.byType(GameSettingsSheet))).brightness,
+      Brightness.dark,
+    );
+  });
+
   testWidgets('opens on General, with sound and vibration', (tester) async {
     await open(tester);
 
