@@ -25,7 +25,10 @@ class GameEntry {
 
   /// May return a future, such as one that starts a game: the landing page
   /// takes no other tap until it completes, so two quick taps start one
-  /// game, not two.
+  /// game, not two. It completes when the game is open or the attempt has
+  /// failed; it must not await the pushed screen being closed -- the
+  /// landing page learns the player is back through
+  /// [GameController.onResume].
   final FutureOr<void> Function(BuildContext context)? onTap;
 }
 
@@ -42,6 +45,11 @@ abstract class GameController {
   GameLandingState watchLanding(WidgetRef ref);
 
   /// Play, Join, Your turn or Play again, according to [state].
+  ///
+  /// Completes when the game is open or the attempt has failed; must not
+  /// await the pushed screen being closed -- the landing page learns the
+  /// player is back through [onResume]. The page takes no other tap until
+  /// it completes.
   Future<void> onPrimary(
     BuildContext context,
     WidgetRef ref,
@@ -67,6 +75,10 @@ abstract class GameController {
   ) => const [];
 
   /// Opens one session directly: from a chat card or the hub.
+  ///
+  /// Completes when the game is open or the attempt has failed; must not
+  /// await the pushed screen being closed -- the landing page learns the
+  /// player is back through [onResume].
   Future<void> openSession(
     BuildContext context,
     WidgetRef ref, {

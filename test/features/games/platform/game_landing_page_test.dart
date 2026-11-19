@@ -17,6 +17,9 @@ import 'support/game_test_support.dart';
 import 'support/ink_on_ground.dart';
 import 'support/route_recorder.dart';
 
+/// How many times a game re-read its state on coming back.
+final _reReads = StateProvider<int>((ref) => 0);
+
 /// A game's controller that records what the page asks of it. Its
 /// [onPrimary] runs until the test calls [finishPrimary], the way a real one
 /// runs until the game screen it pushed is closed.
@@ -64,8 +67,14 @@ class _FakeController extends GameController {
     return run.future;
   }
 
+  /// When set, [onResume] also does this, as a real re-read would.
+  void Function(WidgetRef ref)? resumeBody;
+
   @override
-  void onResume(WidgetRef ref) => resumeCalls++;
+  void onResume(WidgetRef ref) {
+    resumeCalls++;
+    resumeBody?.call(ref);
+  }
 
   @override
   Future<void> onRemind(
@@ -385,19 +394,18 @@ void main() {
   });
 
   group('coming back to the page', () {
-    testWidgets('coming back after the game replaced its own screen frees '
-        'the button', (tester) async {
-      // A pushed screen that replaces itself (Play again, a next round)
-      // never completes the push it came from, so the start's future never
-      // finishes. The page frees itself when it is in front again.
+    testWidgets('coming back after the game replaced its own screen leaves '
+        'the button free', (tester) async {
+      // A start completes once navigation has begun; it never waits for the
+      // player to come back. So a game screen that replaces itself (Play
+      // again) leaves nothing on the page waiting.
       var rowCalls = 0;
       final controller = _FakeController(
         const GameLandingState(status: GameLandingStatus.fresh),
         rows: [GameEntry(title: 'Gentle', onTap: (_) => rowCalls++)],
       );
       controller.primaryBody = (context) async {
-        await context.pushNamed('testGame');
-        // Never reached once the game screen replaced itself.
+        unawaited(context.pushNamed('testGame'));
         controller.finishPrimary();
       };
       await _pumpPage(
@@ -434,22 +442,67 @@ void main() {
       await tester.tap(find.text('Play again'));
       await _settleRoute(tester);
       expect(find.text('the next game'), findsOneWidget);
+      expect(controller.resumeCalls, 0, reason: 'covered, not back yet');
       await tester.tap(find.byType(BackButton));
       await _settleRoute(tester);
 
       expect(find.text('Tile Tutorial'), findsOneWidget);
-      expect(controller.runs.single.isCompleted, isFalse);
       expect(_button(tester).busy, isFalse);
+      expect(controller.resumeCalls, 1);
       await tester.tap(find.text('1. Gentle'));
       await tester.pump();
       expect(rowCalls, 1);
+    });
+
+    testWidgets('closing a sheet during a start does not free the button', (
+      tester,
+    ) async {
+      // A start can show a dialog of its own and then go on working (a
+      // network call that creates the game): the page uncovering is not
+      // the start ending.
+      var rowCalls = 0;
+      final controller = _FakeController(
+        const GameLandingState(status: GameLandingStatus.fresh),
+        rows: [GameEntry(title: 'Gentle', onTap: (_) => rowCalls++)],
+      );
+      await _pumpPage(
+        tester,
+        gameType: 'demo',
+        games: [demoGame(controller: controller)],
+      );
+
+      await tester.tap(find.byType(GamePrimaryButton));
+      await tester.pump();
+      expect(_button(tester).busy, isTrue);
+
+      await tester.tap(find.bySemanticsLabel('How to play'));
+      await _settleRoute(tester);
+      expect(find.text('1. Tap a tile to pick it.'), findsOneWidget);
+      await tester.tap(find.text('Got it'));
+      await _settleRoute(tester);
+      expect(find.text('1. Tap a tile to pick it.'), findsNothing);
+
+      await tester.tap(find.byType(GamePrimaryButton), warnIfMissed: false);
+      await tester.tap(find.text('1. Gentle'), warnIfMissed: false);
+      await tester.pump();
+      expect(controller.primaryCalls, 1);
+      expect(rowCalls, 0);
+      expect(_button(tester).busy, isTrue);
+
+      // The control: the start's own end frees it.
+      controller.finishPrimary();
+      await tester.pump();
+      expect(_button(tester).busy, isFalse);
     });
 
     testWidgets('coming back tells the game to re-read', (tester) async {
       final controller = _FakeController(
         const GameLandingState(status: GameLandingStatus.fresh),
       );
-      controller.primaryBody = (context) => context.pushNamed('gamesHub');
+      controller.primaryBody = (context) async {
+        unawaited(context.pushNamed('gamesHub'));
+        controller.finishPrimary();
+      };
       await _pumpPage(
         tester,
         gameType: 'demo',
@@ -466,52 +519,43 @@ void main() {
       await _settleRoute(tester);
       expect(controller.resumeCalls, 1);
 
-      // A sheet over the page counts as covering it too; closing it must
-      // not throw.
+      // A sheet over the page counts as covering it too.
       await tester.tap(find.bySemanticsLabel('How to play'));
       await tester.pumpAndSettle();
-      expect(find.text('1. Tap a tile to pick it.'), findsOneWidget);
       await tester.tap(find.text('Got it'));
       await tester.pumpAndSettle();
-      expect(tester.takeException(), isNull);
-      expect(find.text('1. Tap a tile to pick it.'), findsNothing);
       expect(controller.resumeCalls, 2);
     });
 
-    testWidgets('a first start finishing late does not free a second start', (
+    testWidgets('re-reading happens after the frame, not while building', (
       tester,
     ) async {
+      // A real re-read writes to or invalidates a provider, which throws
+      // if done while the tree is building.
       final controller = _FakeController(
         const GameLandingState(status: GameLandingStatus.fresh),
       );
-      controller.primaryBody = (context) => context.pushNamed('gamesHub');
+      controller.primaryBody = (context) async {
+        unawaited(context.pushNamed('gamesHub'));
+        controller.finishPrimary();
+      };
+      controller.resumeBody = (ref) => ref.read(_reReads.notifier).state++;
       await _pumpPage(
         tester,
         gameType: 'demo',
         games: [demoGame(controller: controller)],
       );
 
-      // Start A, which covers the page; come back, which frees it.
       await tester.tap(find.byType(GamePrimaryButton));
       await _settleRoute(tester);
       await tester.tap(find.byType(BackButton));
       await _settleRoute(tester);
-      expect(_button(tester).busy, isFalse);
 
-      // Start B, which stays on the page.
-      controller.primaryBody = null;
-      await tester.tap(find.byType(GamePrimaryButton));
-      await tester.pump();
-      expect(controller.runs, hasLength(2));
-      expect(_button(tester).busy, isTrue);
-
-      controller.runs.first.complete();
-      await tester.pump();
-      expect(_button(tester).busy, isTrue, reason: 'A ending is not B ending');
-
-      controller.runs.last.complete();
-      await tester.pump();
-      expect(_button(tester).busy, isFalse);
+      expect(tester.takeException(), isNull);
+      final container = ProviderScope.containerOf(
+        tester.element(find.byType(GameLandingPage)),
+      );
+      expect(container.read(_reReads), 1);
     });
   });
 
