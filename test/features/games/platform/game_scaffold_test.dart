@@ -242,6 +242,52 @@ void main() {
     );
   });
 
+  testWidgets('the bottom slot sits under the body and above the actions', (
+    tester,
+  ) async {
+    useSurface(tester, phone);
+    await tester.pumpWidget(
+      gameHost(
+        GameScaffold(
+          theme: theme,
+          title: 'Play',
+          body: const Center(child: Text('board')),
+          // As wide as it is allowed, so the tablet check below measures
+          // the column, not the words.
+          bottom: const SizedBox(
+            key: ValueKey('bottom'),
+            width: double.infinity,
+            height: 56,
+            child: Center(child: Text('lock in')),
+          ),
+          actions: [
+            GameRoundButton(
+              icon: Icons.lightbulb_outline_rounded,
+              semanticLabel: 'Hint',
+              caption: 'Hint',
+              onTap: () {},
+            ),
+          ],
+        ),
+        prefs: await testPrefs(),
+      ),
+    );
+
+    expect(find.text('lock in'), findsOneWidget);
+    final board = tester.getCenter(find.text('board')).dy;
+    final lockIn = tester.getTopLeft(find.text('lock in')).dy;
+    final hint = tester.getTopLeft(find.text('Hint')).dy;
+    expect(board, lessThan(lockIn));
+    expect(lockIn, lessThan(hint));
+
+    tester.view.physicalSize = tablet;
+    await tester.pump();
+
+    final slot = tester.getRect(find.byKey(const ValueKey('bottom')));
+    expect(slot.width, lessThan(tablet.width));
+    expect(slot.center.dx, closeTo(tablet.width / 2, 0.5));
+  });
+
   testWidgets('the largest text size does not break the header', (
     tester,
   ) async {

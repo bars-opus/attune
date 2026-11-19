@@ -20,6 +20,7 @@ class GameScaffold extends StatelessWidget {
     this.subtitle,
     this.onBack,
     this.onSettings,
+    this.bottom,
     this.actions = const [],
     this.maxContentWidth = ContentWidth.form,
   });
@@ -32,6 +33,10 @@ class GameScaffold extends StatelessWidget {
 
   /// Null hides the gear.
   final VoidCallback? onSettings;
+
+  /// Pinned under the body, in the same column, above [actions]: a game's
+  /// lock-in button, say, which must not scroll away with the board.
+  final Widget? bottom;
 
   /// Round buttons under the body, such as Hint and Undo.
   final List<Widget> actions;
@@ -110,6 +115,8 @@ class GameScaffold extends StatelessWidget {
               Expanded(
                 child: GameContentWidth(maxWidth: maxContentWidth, child: body),
               ),
+              if (bottom != null)
+                GameContentWidth(maxWidth: maxContentWidth, child: bottom!),
               if (actions.isNotEmpty)
                 Padding(
                   padding: const EdgeInsets.fromLTRB(20, 8, 20, 12),

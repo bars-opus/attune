@@ -137,6 +137,7 @@ class GameCoach extends ConsumerStatefulWidget {
     required this.steps,
     required this.child,
     this.force = false,
+    this.replay = 0,
     this.onDone,
   });
 
@@ -144,6 +145,12 @@ class GameCoach extends ConsumerStatefulWidget {
   final List<GameCoachStep> steps;
   final Widget child;
   final bool force;
+
+  /// Raise it to show the tutorial again from step one, seen or not -- for
+  /// a "show me how to play" in a settings sheet. The stored flag is
+  /// neither read nor cleared; finishing the replay leaves it set.
+  final int replay;
+
   final VoidCallback? onDone;
 
   @override
@@ -167,6 +174,24 @@ class _GameCoachState extends ConsumerState<GameCoach> {
     }
   }
 
+  @override
+  void didUpdateWidget(GameCoach oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.replay > oldWidget.replay && widget.steps.isNotEmpty) {
+      _index = 0;
+      _targetRect = null;
+      _watchTarget();
+    }
+  }
+
+  /// The step showing, kept inside the list: a rebuild can hand over fewer
+  /// steps than there were.
+  int? get _step {
+    final index = _index;
+    if (index == null || widget.steps.isEmpty) return null;
+    return index < widget.steps.length ? index : widget.steps.length - 1;
+  }
+
   bool _watching = false;
 
   /// Re-measures the target after every frame for as long as the tutorial
@@ -182,14 +207,14 @@ class _GameCoachState extends ConsumerState<GameCoach> {
     _watching = true;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _watching = false;
-      if (!mounted || _index == null) return;
+      if (!mounted || _step == null) return;
       _measure();
       _watchTarget();
     });
   }
 
   void _advance() {
-    final index = _index;
+    final index = _step;
     if (index == null) return;
     if (index >= widget.steps.length - 1) {
       _finish();
@@ -216,7 +241,7 @@ class _GameCoachState extends ConsumerState<GameCoach> {
   /// then. It only rebuilds when the answer changed, so measuring after
   /// every frame cannot loop.
   void _measure() {
-    final index = _index;
+    final index = _step;
     if (!mounted || index == null) return;
 
     final target =
@@ -239,7 +264,7 @@ class _GameCoachState extends ConsumerState<GameCoach> {
 
   @override
   Widget build(BuildContext context) {
-    final index = _index;
+    final index = _step;
     final rect = _targetRect;
     final isLast = index != null && index >= widget.steps.length - 1;
 

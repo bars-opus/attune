@@ -1,3 +1,4 @@
+import 'package:attune/core/ui/motion/reduce_motion.dart';
 import 'package:attune/features/games/platform/feel/game_motion.dart';
 import 'package:attune/features/games/platform/game_theme.dart';
 import 'package:flutter/material.dart';
@@ -69,17 +70,23 @@ class GameRoundButton extends StatelessWidget {
 ///
 /// Disabled, it dims and stops answering, and says so to a screen reader --
 /// "Waiting for Ama" is information, not an action.
+///
+/// [busy] is for the wait after a tap, while the thing it asked for is
+/// being made: a progress ring takes the icon's place and the button is
+/// disabled until it clears, so a second tap cannot ask twice.
 class GamePrimaryButton extends StatefulWidget {
   const GamePrimaryButton({
     super.key,
     required this.label,
     this.icon,
     this.onTap,
+    this.busy = false,
   });
 
   final String label;
   final IconData? icon;
   final VoidCallback? onTap;
+  final bool busy;
 
   @override
   State<GamePrimaryButton> createState() => _GamePrimaryButtonState();
@@ -89,13 +96,17 @@ class _GamePrimaryButtonState extends State<GamePrimaryButton> {
   bool _pressed = false;
 
   void _setPressed(bool value) {
-    if (widget.onTap == null || _pressed == value) return;
+    if (_pressed == value) return;
+    // Letting go always counts, so a button that went busy under a finger
+    // is not left pressed in.
+    if (value && (widget.onTap == null || widget.busy)) return;
     setState(() => _pressed = value);
   }
 
   @override
   Widget build(BuildContext context) {
-    final enabled = widget.onTap != null;
+    final onTap = widget.busy ? null : widget.onTap;
+    final enabled = onTap != null;
 
     return Semantics(
       button: true,
@@ -103,15 +114,15 @@ class _GamePrimaryButtonState extends State<GamePrimaryButton> {
       label: widget.label,
       container: true,
       excludeSemantics: true,
-      onTap: widget.onTap,
+      onTap: onTap,
       child: GestureDetector(
         behavior: HitTestBehavior.opaque,
         onTapDown: (_) => _setPressed(true),
         onTapUp: (_) => _setPressed(false),
         onTapCancel: () => _setPressed(false),
-        onTap: widget.onTap,
+        onTap: onTap,
         child: AnimatedScale(
-          scale: _pressed ? 0.97 : 1,
+          scale: _pressed && enabled ? 0.97 : 1,
           duration: GameMotion.of(context, GameMotion.press),
           child: Container(
             constraints: const BoxConstraints(minHeight: 56),
@@ -128,7 +139,21 @@ class _GamePrimaryButtonState extends State<GamePrimaryButton> {
             child: Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                if (widget.icon != null) ...[
+                if (widget.busy) ...[
+                  SizedBox.square(
+                    dimension: 20,
+                    // Under reduced motion it holds still, as a ring with a
+                    // gap: every other moving thing in the games stops there
+                    // too, and the dimmed pill already says "wait".
+                    child: CircularProgressIndicator(
+                      value: reduceMotionOf(context) ? 0.75 : null,
+                      strokeWidth: 2.5,
+                      color: GameTheme.tileInk,
+                      backgroundColor: Colors.transparent,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                ] else if (widget.icon != null) ...[
                   Icon(widget.icon, color: GameTheme.tileInk, size: 26),
                   const SizedBox(width: 8),
                 ],

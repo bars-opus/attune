@@ -142,6 +142,71 @@ void main() {
     expect(find.text('Welcome to the game.'), findsOneWidget);
   });
 
+  testWidgets('asking again replays it from the first step', (tester) async {
+    useSurface(tester, phone);
+    final prefs = await testPrefs({GameCoachStore.key('demo'): true});
+    Widget host(int replay) => gameHost(
+      Scaffold(
+        body: GameCoach(
+          gameType: 'demo',
+          steps: steps(),
+          replay: replay,
+          child: const SizedBox.expand(),
+        ),
+      ),
+      prefs: prefs,
+    );
+
+    await tester.pumpWidget(host(0));
+    await tester.pump();
+    expect(find.byType(GameCoachBubble), findsNothing, reason: 'seen');
+
+    await tester.pumpWidget(host(1));
+    await tester.pump();
+    expect(find.text('Welcome to the game.'), findsOneWidget);
+
+    // Replay neither needs nor clears the flag: skipping leaves it set.
+    expect(seen(tester), isTrue);
+    await tester.tap(find.text('Skip'));
+    await tester.pump();
+    expect(find.byType(GameCoachBubble), findsNothing);
+    expect(seen(tester), isTrue);
+  });
+
+  testWidgets('fewer steps on a rebuild does not throw', (tester) async {
+    useSurface(tester, phone);
+    final prefs = await testPrefs();
+    Widget host(List<GameCoachStep> withSteps) => gameHost(
+      Scaffold(
+        body: GameCoach(
+          gameType: 'demo',
+          steps: withSteps,
+          child: Align(
+            alignment: const Alignment(0, 0.8),
+            child: SizedBox(key: target, width: 64, height: 64),
+          ),
+        ),
+      ),
+      prefs: prefs,
+    );
+
+    await tester.pumpWidget(host(steps()));
+    await tester.pump();
+    await tester.tap(find.text('Next'));
+    await tester.pump();
+    await tester.tap(find.text('Next'));
+    await tester.pump();
+    expect(find.text('That is all there is to it.'), findsOneWidget);
+
+    await tester.pumpWidget(
+      host(const [GameCoachStep(text: 'Just the one step.')]),
+    );
+    await tester.pump();
+
+    expect(tester.takeException(), isNull);
+    expect(find.text('Just the one step.'), findsOneWidget);
+  });
+
   testWidgets('a game with no steps shows nothing', (tester) async {
     await pump(tester, withSteps: const []);
 
