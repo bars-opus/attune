@@ -13,6 +13,7 @@ import 'package:attune/features/games/platform/shell/game_buttons.dart';
 import 'package:attune/features/games/platform/shell/game_content_width.dart';
 import 'package:attune/features/games/platform/shell/game_hub_card.dart';
 import 'package:attune/features/games/platform/shell/game_route_resume.dart';
+import 'package:attune/features/games/platform/shell/game_tap_guard.dart';
 import 'package:attune/features/games/presentation/providers/game_partner_name_provider.dart';
 import 'package:attune/features/games/presentation/providers/games_hub_providers.dart';
 import 'package:attune/features/games/presentation/widgets/game_icon.dart';
@@ -33,42 +34,14 @@ class GamesHubScreen extends ConsumerStatefulWidget {
 }
 
 class _GamesHubScreenState extends ConsumerState<GamesHubScreen>
-    with GameRouteResume<GamesHubScreen> {
-  /// A tap is opening something. go_router puts a pushed screen in the tree
-  /// only on the next frame, and until then the hub is still in front: a
-  /// second tap in the same frame would open a second screen.
-  bool _navigating = false;
-
+    with GameRouteResume<GamesHubScreen>, GameTapGuard<GamesHubScreen> {
   /// The hub is in front again after a game or a landing page: a game may
   /// have started or ended there without an event the list heard.
   @override
   void onRouteResumed() => ref.invalidate(activeGamesProvider);
 
-  Future<void> _openOnce(String what, FutureOr<void> Function() open) async {
-    if (_navigating) return;
-    _navigating = true;
-    try {
-      await open();
-    } catch (error, stack) {
-      // Reported, not rethrown: nothing awaits a tap.
-      FlutterError.reportError(
-        FlutterErrorDetails(
-          exception: error,
-          stack: stack,
-          library: 'games',
-          context: ErrorDescription('while opening $what'),
-        ),
-      );
-    } finally {
-      // Held through the frame the open ended in, by which time a screen it
-      // pushed is in front and takes the taps.
-      await WidgetsBinding.instance.endOfFrame;
-      _navigating = false;
-    }
-  }
-
   void _openLanding(GameDefinition definition) {
-    _openOnce(definition.gameType, () {
+    runOnce(definition.gameType, () {
       // Not awaited: the push lasts until the landing page is closed.
       unawaited(
         context.pushNamed(
@@ -80,7 +53,7 @@ class _GamesHubScreenState extends ConsumerState<GamesHubScreen>
   }
 
   void _openSession(String gameType, String sessionId) {
-    _openOnce(gameType, () {
+    runOnce(gameType, () {
       final controller =
           ref.read(gameRegistryProvider).byType(gameType)?.controller;
       if (controller != null) {
@@ -150,17 +123,19 @@ class _GamesHubScreenState extends ConsumerState<GamesHubScreen>
                     ),
                   ),
                 ),
-                const SizedBox(height: 4),
-                Text(
-                  name == null || name.isEmpty
-                      ? GameStrings.playTogether
-                      : GameStrings.playWith(name),
-                  style: const TextStyle(
-                    color: GameTheme.mutedOnGround,
-                    fontSize: 17,
-                    fontWeight: FontWeight.w600,
+                // Nothing while the name is unknown: "Play together" would
+                // repeat the section heading a few lines below.
+                if (name != null && name.isNotEmpty) ...[
+                  const SizedBox(height: 4),
+                  Text(
+                    GameStrings.playWith(name),
+                    style: const TextStyle(
+                      color: GameTheme.mutedOnGround,
+                      fontSize: 17,
+                      fontWeight: FontWeight.w600,
+                    ),
                   ),
-                ),
+                ],
                 if (sessions.isNotEmpty) ...[
                   const _SectionTitle(GameStrings.inPlay),
                   for (final row in sessions)

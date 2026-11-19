@@ -1,7 +1,11 @@
 import 'dart:async';
 
 import 'package:attune/features/games/platform/feel/game_tile.dart';
+import 'package:attune/features/games/platform/game_definition.dart';
+import 'package:attune/features/games/platform/game_landing_state.dart';
+import 'package:attune/features/games/platform/game_registry.dart';
 import 'package:attune/features/games/platform/game_theme.dart';
+import 'package:attune/features/games/platform/games_catalogue.dart';
 import 'package:attune/features/games/platform/legacy/legacy_game_opener.dart';
 import 'package:attune/features/games/platform/shell/game_hub_card.dart';
 import 'package:attune/features/games/platform/shell/games_hub_screen.dart';
@@ -13,6 +17,7 @@ import 'package:flutter/rendering.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'support/demo_game.dart';
 import 'support/game_test_support.dart';
 import 'support/ink_on_ground.dart';
 import 'support/route_recorder.dart';
@@ -63,6 +68,31 @@ class _OutsideReader extends ConsumerWidget {
   }
 }
 
+/// A redrawn game's controller: records the sessions it is asked to open.
+class _RecordingController extends GameController {
+  final List<String> openedSessions = [];
+
+  @override
+  GameLandingState watchLanding(WidgetRef ref) =>
+      const GameLandingState(status: GameLandingStatus.fresh);
+
+  @override
+  Future<void> onPrimary(
+    BuildContext context,
+    WidgetRef ref,
+    GameLandingState state,
+  ) async {}
+
+  @override
+  Future<void> openSession(
+    BuildContext context,
+    WidgetRef ref, {
+    required String sessionId,
+  }) async {
+    openedSessions.add(sessionId);
+  }
+}
+
 void main() {
   // Real letters: whether two cards fit side by side is measured from the
   // names, and the test font's square glyphs are far wider than Roboto's.
@@ -91,10 +121,14 @@ void main() {
     Size surface = phone,
     double textScale = 1,
     bool recordOpens = true,
+    String? partnerName = 'Ama',
+    List<Override> overrides = const [],
   }) async {
     useSurface(tester, surface);
     events = StreamController<void>();
-    addTearDown(events.close);
+    // Not awaited: after a failure the hub may still be listening, and
+    // waiting on close would hang the file instead of reporting it.
+    addTearDown(() => unawaited(events.close()));
     await tester.pumpWidget(
       gameRouterHost(
         home: home,
@@ -111,7 +145,7 @@ void main() {
           ),
           gameSessionEventsProvider.overrideWith((ref) => events.stream),
           currentUserIdProvider.overrideWithValue('me'),
-          gamePartnerNameProvider.overrideWith((ref) async => 'Ama'),
+          gamePartnerNameProvider.overrideWith((ref) async => partnerName),
           if (recordOpens)
             legacyGameOpenerProvider.overrideWithValue((
               context,
@@ -120,6 +154,7 @@ void main() {
             }) async {
               opened.add((gameType, sessionId));
             }),
+          ...overrides,
         ],
       ),
     );
@@ -285,6 +320,59 @@ void main() {
     expect(find.byType(GamesHubScreen), findsOneWidget);
   });
 
+  testWidgets('a game in progress opens through its own controller', (
+    tester,
+  ) async {
+    // A redrawn game opens its session itself; the chat's old routing is
+    // only for games that have no controller.
+    final controller = _RecordingController();
+    activeRows = [_row('s1', 'demo')];
+    cards['s1'] = _card(status: 'active', turn: 'me');
+    await pumpHub(
+      tester,
+      overrides: [
+        gameRegistryProvider.overrideWithValue(
+          GameRegistry([demoGame(controller: controller), ...gameCatalogue]),
+        ),
+      ],
+    );
+
+    await tester.tap(sessionRow('s1'));
+    await tester.pump();
+
+    expect(controller.openedSessions, ['s1']);
+    expect(opened, isEmpty);
+  });
+
+  testWidgets('a game this build does not know opens through the chat\'s '
+      'routing', (tester) async {
+    // The control for the test above: with no definition, the legacy
+    // opener is asked, and it decides whether there is anywhere to go.
+    activeRows = [_row('s3', 'brand_new_game')];
+    await pumpHub(tester);
+
+    await tester.tap(sessionRow('s3'));
+    await tester.pump();
+
+    expect(opened, [('brand_new_game', 's3')]);
+  });
+
+  testWidgets('says nothing under Games while the name is unknown', (
+    tester,
+  ) async {
+    await pumpHub(tester, partnerName: null);
+    // Only the section heading: no subtitle repeating it a few lines above.
+    // The control is "says who to play with".
+    expect(find.text('Play together'), findsOneWidget);
+    expect(find.textContaining('Play with'), findsNothing);
+  });
+
+  testWidgets('says who to play with', (tester) async {
+    await pumpHub(tester);
+    expect(find.text('Play with Ama'), findsOneWidget);
+    expect(find.text('Play together'), findsOneWidget);
+  });
+
   testWidgets('In play is not shown when nothing is in progress', (
     tester,
   ) async {
@@ -306,7 +394,7 @@ void main() {
   testWidgets('says whose turn it is, live', (tester) async {
     // Review Focus 2.
     final live = StreamController<GameCardState?>();
-    addTearDown(live.close);
+    addTearDown(() => unawaited(live.close()));
     activeRows = [_row('s1', 'truth_or_dare')];
     cardStreams['s1'] = live.stream;
     await pumpHub(tester);
@@ -329,7 +417,7 @@ void main() {
     // landingAction would say "Play" for loading, on a game already under
     // way.
     final live = StreamController<GameCardState?>();
-    addTearDown(live.close);
+    addTearDown(() => unawaited(live.close()));
     activeRows = [_row('s1', 'truth_or_dare')];
     cardStreams['s1'] = live.stream;
     await pumpHub(tester);

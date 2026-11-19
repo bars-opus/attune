@@ -9,6 +9,7 @@ import 'package:attune/features/games/platform/shell/game_how_to_play_sheet.dart
 import 'package:attune/features/games/platform/shell/game_landing_screen.dart';
 import 'package:attune/features/games/platform/shell/game_route_resume.dart';
 import 'package:attune/features/games/platform/shell/game_scaffold.dart';
+import 'package:attune/features/games/platform/shell/game_tap_guard.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -27,18 +28,12 @@ class GameLandingPage extends ConsumerStatefulWidget {
 }
 
 class _GameLandingPageState extends ConsumerState<GameLandingPage>
-    with GameRouteResume<GameLandingPage> {
-  /// A start asked for by the button or a row is still running: a consent
-  /// dialog, the call that creates the game, the push. A second tap
-  /// meanwhile would start a second game.
-  ///
-  /// Cleared only when the start itself ends, and only after the frame it
-  /// ended in, by which time a game screen it pushed is in front. A start
-  /// completes once navigation has begun (see [GameController.onPrimary]),
-  /// so it is never held while the game is played; and the page coming back
-  /// into view is not the start ending -- a dialog the start showed may have
-  /// just closed.
-  bool _busy = false;
+    with GameRouteResume<GameLandingPage>, GameTapGuard<GameLandingPage> {
+  /// A start asked for by the button or a row is still running (a consent
+  /// dialog, the call that creates the game, the push) is drawn busy: a
+  /// second tap meanwhile would start a second game.
+  @override
+  void onTapHeldChanged() => setState(() {});
 
   /// The page is in front again after a game, a sheet or anything else
   /// covered it: the game re-reads its state.
@@ -51,33 +46,8 @@ class _GameLandingPageState extends ConsumerState<GameLandingPage>
         ?.onResume(ref);
   }
 
-  Future<void> _runOnce(FutureOr<void> Function() action) async {
-    // The only guard against two taps in one frame: the button is not
-    // rebuilt as busy until the next one.
-    if (_busy) return;
-    setState(() => _busy = true);
-    try {
-      await action();
-    } catch (error, stack) {
-      // Reported, not rethrown: nothing awaits a tap, so a rethrow would
-      // surface as an uncaught zone error with no screen context. And not
-      // swallowed: FlutterError.onError is where the app's failures go.
-      FlutterError.reportError(
-        FlutterErrorDetails(
-          exception: error,
-          stack: stack,
-          library: 'games',
-          context: ErrorDescription('while opening ${widget.gameType}'),
-        ),
-      );
-    } finally {
-      // Held through the frame the start ended in: a push it asked for
-      // reaches the tree only then, and until it does the page is still in
-      // front, so a tap in the same frame would start a second game.
-      await WidgetsBinding.instance.endOfFrame;
-      if (mounted) setState(() => _busy = false);
-    }
-  }
+  Future<void> _runOnce(FutureOr<void> Function() action) =>
+      runOnce(widget.gameType, action);
 
   @override
   Widget build(BuildContext context) {
@@ -113,7 +83,7 @@ class _GameLandingPageState extends ConsumerState<GameLandingPage>
       definition: definition,
       state: live,
       entries: entries,
-      busy: _busy,
+      busy: tapHeld,
       onPrimary: () => _runOnce(() => controller.onPrimary(context, ref, live)),
       onRemind:
           live.canRemind
