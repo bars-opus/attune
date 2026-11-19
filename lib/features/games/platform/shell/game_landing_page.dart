@@ -30,10 +30,53 @@ class _GameLandingPageState extends ConsumerState<GameLandingPage> {
   /// controller's start usually lasts until the game screen it opened is
   /// closed, so this is held for that long: a second tap meanwhile would
   /// start a second game.
+  ///
+  /// But not past the player coming back: a screen that replaces itself
+  /// (Play again) never completes the push it came from, so the page, not
+  /// the future, decides when the start is over -- see [_resumed].
   bool _busy = false;
 
+  /// Which start [_busy] belongs to. Coming back moves it on, so a start
+  /// that ends late cannot free a newer one.
+  int _run = 0;
+
+  /// Whether this page's route was in front at the last look. Null before
+  /// the first.
+  bool? _wasCurrent;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // Depends on the route's isCurrent alone, so this runs again exactly
+    // when something covers the page or stops covering it.
+    final current = ModalRoute.isCurrentOf(context) ?? true;
+    if (current && _wasCurrent == false) _resumed();
+    _wasCurrent = current;
+  }
+
+  /// The page is in front again after a game, a sheet or anything else
+  /// covered it.
+  void _resumed() {
+    // Called while the page is about to rebuild, so no setState.
+    _busy = false;
+    _run++;
+    // Not now: re-reading may invalidate a provider, which throws during
+    // build.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      ref
+          .read(gameRegistryProvider)
+          .byType(widget.gameType)
+          ?.controller
+          ?.onResume(ref);
+    });
+  }
+
   Future<void> _runOnce(FutureOr<void> Function() action) async {
+    // The only guard against two taps in one frame: the button is not
+    // rebuilt as busy until the next one.
     if (_busy) return;
+    final run = ++_run;
     setState(() => _busy = true);
     try {
       await action();
@@ -50,7 +93,7 @@ class _GameLandingPageState extends ConsumerState<GameLandingPage> {
         ),
       );
     } finally {
-      if (mounted) setState(() => _busy = false);
+      if (mounted && run == _run) setState(() => _busy = false);
     }
   }
 

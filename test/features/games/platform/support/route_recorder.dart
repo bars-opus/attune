@@ -25,12 +25,16 @@ const List<String> standInRouteNames = [
 /// What `gameHost` provides -- local preferences, a silent sound service and
 /// haptics, a light app, a text scale -- but routed, so a page that pushes by
 /// name can be followed to where it went. Each stand-in can be popped.
+///
+/// [routes] are added beside the stand-ins, for a test that needs a screen
+/// to behave in a way a stand-in does not, such as replacing itself.
 Widget gameRouterHost({
   required Widget home,
   required SharedPreferences prefs,
   List<Override> overrides = const [],
   Brightness brightness = Brightness.light,
   double textScale = 1,
+  List<RouteBase> routes = const [],
 }) {
   GoRoute standIn(String name, String path) => GoRoute(
     path: path,
@@ -48,6 +52,7 @@ Widget gameRouterHost({
       standIn('thisOrThatCustomList', '/stand-in/custom-list'),
       standIn('thisOrThatSessionHistory', '/stand-in/session-history'),
       standIn('communityFeed', '/stand-in/community-feed'),
+      ...routes,
     ],
   );
 

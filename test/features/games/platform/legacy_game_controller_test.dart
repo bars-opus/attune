@@ -244,4 +244,24 @@ void main() {
     expect(seen['truth_or_dare']!.status, GameLandingStatus.invited);
     expect(seen['truth_or_dare']!.sessionId, 's1');
   });
+
+  testWidgets('coming back to the page re-reads the list', (tester) async {
+    await pumpProbes(tester);
+    expect(seen['truth_or_dare']!.status, GameLandingStatus.fresh);
+
+    // A game was started from a screen this page opened, and no event
+    // reached the list.
+    activeRows = [row('s1', 'truth_or_dare')];
+    cards = {'s1': card('active', turn: 'me')};
+    await tester.pumpAndSettle();
+    // The control: without being told, the list is not fetched again.
+    expect(seen['truth_or_dare']!.status, GameLandingStatus.fresh);
+
+    const LegacyGameController('truth_or_dare').onResume(probeRef);
+    // The refetched list, then the new session's card.
+    await tester.pumpAndSettle();
+
+    expect(seen['truth_or_dare']!.status, GameLandingStatus.yourTurn);
+    expect(seen['truth_or_dare']!.sessionId, 's1');
+  });
 }

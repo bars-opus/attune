@@ -10,6 +10,7 @@ import 'package:attune/features/games/platform/shell/game_landing_page.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:go_router/go_router.dart';
 
 import 'support/demo_game.dart';
 import 'support/game_test_support.dart';
@@ -29,12 +30,19 @@ class _FakeController extends GameController {
   int remindCalls = 0;
   GameLandingState? primaryState;
 
+  int resumeCalls = 0;
+
   /// When set, [onPrimary] fails with it instead of running.
   Object? primaryError;
 
-  Completer<void> _primary = Completer<void>();
+  /// When set, [onPrimary] also does this as it starts, such as pushing the
+  /// game's screen. Its own future is not what [onPrimary] returns.
+  Future<void> Function(BuildContext context)? primaryBody;
 
-  void finishPrimary() => _primary.complete();
+  /// Each start's future, oldest first.
+  final List<Completer<void>> runs = [];
+
+  void finishPrimary() => runs.last.complete();
 
   @override
   GameLandingState watchLanding(WidgetRef ref) => state;
@@ -49,9 +57,15 @@ class _FakeController extends GameController {
     primaryState = state;
     final error = primaryError;
     if (error != null) return Future.error(error);
-    _primary = Completer<void>();
-    return _primary.future;
+    final run = Completer<void>();
+    runs.add(run);
+    final body = primaryBody;
+    if (body != null) unawaited(body(context));
+    return run.future;
   }
+
+  @override
+  void onResume(WidgetRef ref) => resumeCalls++;
 
   @override
   Future<void> onRemind(
@@ -98,6 +112,7 @@ Future<void> _pumpPage(
   required String gameType,
   required List<GameDefinition> games,
   Size surface = phone,
+  List<RouteBase> routes = const [],
 }) async {
   useSurface(tester, surface);
   await tester.pumpWidget(
@@ -105,9 +120,18 @@ Future<void> _pumpPage(
       home: GameLandingPage(gameType: gameType),
       prefs: await testPrefs(),
       overrides: [gameRegistryProvider.overrideWithValue(GameRegistry(games))],
+      routes: routes,
     ),
   );
   await tester.pump();
+}
+
+/// Lets a push or pop finish. Not pumpAndSettle: a busy button's ring
+/// spins for as long as it is busy, and a test of whether it stopped must
+/// fail on the assertion, not time out.
+Future<void> _settleRoute(WidgetTester tester) async {
+  await tester.pump();
+  await tester.pump(const Duration(milliseconds: 600));
 }
 
 GamePrimaryButton _button(WidgetTester tester) =>
@@ -261,6 +285,78 @@ void main() {
     await tester.pump();
   });
 
+  testWidgets('two taps in the same frame start one game', (tester) async {
+    // Review Focus 1, at its sharpest: no frame between the taps, so the
+    // button has not been rebuilt as busy and still answers the second.
+    final controller = _FakeController(
+      const GameLandingState(status: GameLandingStatus.fresh),
+    );
+    await _pumpPage(
+      tester,
+      gameType: 'demo',
+      games: [demoGame(controller: controller)],
+    );
+
+    await tester.tap(find.byType(GamePrimaryButton));
+    await tester.tap(find.byType(GamePrimaryButton));
+    await tester.pump();
+    expect(controller.primaryCalls, 1);
+
+    controller.finishPrimary();
+    await tester.pump();
+    await tester.tap(find.byType(GamePrimaryButton));
+    await tester.pump();
+    expect(
+      controller.primaryCalls,
+      2,
+      reason: 'the control: the same tap starts one once the first finished',
+    );
+    controller.finishPrimary();
+    await tester.pump();
+  });
+
+  testWidgets('two taps on rows in the same frame start one game', (
+    tester,
+  ) async {
+    var rowCalls = 0;
+    var running = Completer<void>();
+    Future<void> startTone(BuildContext _) {
+      rowCalls++;
+      running = Completer<void>();
+      return running.future;
+    }
+
+    final controller = _FakeController(
+      const GameLandingState(status: GameLandingStatus.fresh),
+      rows: [
+        GameEntry(title: 'Gentle', onTap: startTone),
+        GameEntry(title: 'Spicy', onTap: startTone),
+      ],
+    );
+    await _pumpPage(
+      tester,
+      gameType: 'demo',
+      games: [demoGame(controller: controller)],
+    );
+
+    await tester.tap(find.text('1. Gentle'));
+    await tester.tap(find.text('2. Spicy'));
+    await tester.pump();
+    expect(rowCalls, 1);
+
+    running.complete();
+    await tester.pump();
+    await tester.tap(find.text('2. Spicy'));
+    await tester.pump();
+    expect(
+      rowCalls,
+      2,
+      reason: 'the control: the same tap starts one once the first finished',
+    );
+    running.complete();
+    await tester.pump();
+  });
+
   testWidgets('a start that fails is reported and the button can be pressed '
       'again', (tester) async {
     final controller = _FakeController(
@@ -286,6 +382,137 @@ void main() {
     expect(controller.primaryCalls, 2);
     controller.finishPrimary();
     await tester.pump();
+  });
+
+  group('coming back to the page', () {
+    testWidgets('coming back after the game replaced its own screen frees '
+        'the button', (tester) async {
+      // A pushed screen that replaces itself (Play again, a next round)
+      // never completes the push it came from, so the start's future never
+      // finishes. The page frees itself when it is in front again.
+      var rowCalls = 0;
+      final controller = _FakeController(
+        const GameLandingState(status: GameLandingStatus.fresh),
+        rows: [GameEntry(title: 'Gentle', onTap: (_) => rowCalls++)],
+      );
+      controller.primaryBody = (context) async {
+        await context.pushNamed('testGame');
+        // Never reached once the game screen replaced itself.
+        controller.finishPrimary();
+      };
+      await _pumpPage(
+        tester,
+        gameType: 'demo',
+        games: [demoGame(controller: controller)],
+        routes: [
+          GoRoute(
+            path: '/test/game',
+            name: 'testGame',
+            builder:
+                (context, state) => Scaffold(
+                  appBar: AppBar(),
+                  body: TextButton(
+                    onPressed: () => context.pushReplacementNamed('testNext'),
+                    child: const Text('Play again'),
+                  ),
+                ),
+          ),
+          GoRoute(
+            path: '/test/next',
+            name: 'testNext',
+            builder:
+                (context, state) => Scaffold(
+                  appBar: AppBar(),
+                  body: const Text('the next game'),
+                ),
+          ),
+        ],
+      );
+
+      await tester.tap(find.byType(GamePrimaryButton));
+      await _settleRoute(tester);
+      await tester.tap(find.text('Play again'));
+      await _settleRoute(tester);
+      expect(find.text('the next game'), findsOneWidget);
+      await tester.tap(find.byType(BackButton));
+      await _settleRoute(tester);
+
+      expect(find.text('Tile Tutorial'), findsOneWidget);
+      expect(controller.runs.single.isCompleted, isFalse);
+      expect(_button(tester).busy, isFalse);
+      await tester.tap(find.text('1. Gentle'));
+      await tester.pump();
+      expect(rowCalls, 1);
+    });
+
+    testWidgets('coming back tells the game to re-read', (tester) async {
+      final controller = _FakeController(
+        const GameLandingState(status: GameLandingStatus.fresh),
+      );
+      controller.primaryBody = (context) => context.pushNamed('gamesHub');
+      await _pumpPage(
+        tester,
+        gameType: 'demo',
+        games: [demoGame(controller: controller)],
+      );
+      // The control: nothing has covered the page yet.
+      expect(controller.resumeCalls, 0);
+
+      await tester.tap(find.byType(GamePrimaryButton));
+      await _settleRoute(tester);
+      expect(find.text('opened:gamesHub:'), findsOneWidget);
+      expect(controller.resumeCalls, 0, reason: 'covered, not back yet');
+      await tester.tap(find.byType(BackButton));
+      await _settleRoute(tester);
+      expect(controller.resumeCalls, 1);
+
+      // A sheet over the page counts as covering it too; closing it must
+      // not throw.
+      await tester.tap(find.bySemanticsLabel('How to play'));
+      await tester.pumpAndSettle();
+      expect(find.text('1. Tap a tile to pick it.'), findsOneWidget);
+      await tester.tap(find.text('Got it'));
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+      expect(find.text('1. Tap a tile to pick it.'), findsNothing);
+      expect(controller.resumeCalls, 2);
+    });
+
+    testWidgets('a first start finishing late does not free a second start', (
+      tester,
+    ) async {
+      final controller = _FakeController(
+        const GameLandingState(status: GameLandingStatus.fresh),
+      );
+      controller.primaryBody = (context) => context.pushNamed('gamesHub');
+      await _pumpPage(
+        tester,
+        gameType: 'demo',
+        games: [demoGame(controller: controller)],
+      );
+
+      // Start A, which covers the page; come back, which frees it.
+      await tester.tap(find.byType(GamePrimaryButton));
+      await _settleRoute(tester);
+      await tester.tap(find.byType(BackButton));
+      await _settleRoute(tester);
+      expect(_button(tester).busy, isFalse);
+
+      // Start B, which stays on the page.
+      controller.primaryBody = null;
+      await tester.tap(find.byType(GamePrimaryButton));
+      await tester.pump();
+      expect(controller.runs, hasLength(2));
+      expect(_button(tester).busy, isTrue);
+
+      controller.runs.first.complete();
+      await tester.pump();
+      expect(_button(tester).busy, isTrue, reason: 'A ending is not B ending');
+
+      controller.runs.last.complete();
+      await tester.pump();
+      expect(_button(tester).busy, isFalse);
+    });
   });
 
   testWidgets('a game the app does not know gets a readable page, not a '

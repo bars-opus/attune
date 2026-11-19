@@ -51,6 +51,13 @@ class LegacyGameController extends GameController {
   }
 
   @override
+  void onResume(WidgetRef ref) {
+    // A game started or finished from the screens this page opened may not
+    // have sent an event the list heard: fetch it again.
+    ref.invalidate(activeGamesProvider);
+  }
+
+  @override
   Future<void> onPrimary(
     BuildContext context,
     WidgetRef ref,

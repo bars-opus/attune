@@ -55,6 +55,10 @@ abstract class GameController {
     GameLandingState state,
   ) async {}
 
+  /// Called when the landing page is in front again after something covered
+  /// it (a game, a sheet); re-read whatever the landing state depends on.
+  void onResume(WidgetRef ref) {}
+
   /// The rows under the button.
   List<GameEntry> entries(
     BuildContext context,
