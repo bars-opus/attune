@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:attune/features/games/platform/game_landing_state.dart';
 import 'package:attune/features/games/platform/game_theme.dart';
 import 'package:flutter/widgets.dart';
@@ -20,7 +22,11 @@ class GameEntry {
 
   final String title;
   final String? subtitle;
-  final void Function(BuildContext context)? onTap;
+
+  /// May return a future, such as one that starts a game: the landing page
+  /// takes no other tap until it completes, so two quick taps start one
+  /// game, not two.
+  final FutureOr<void> Function(BuildContext context)? onTap;
 }
 
 typedef GameHeroBuilder =

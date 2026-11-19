@@ -15,6 +15,8 @@ abstract final class GameStrings {
   static const String remind = 'Send a reminder';
   static String entryNumber(int number, String title) => '$number. $title';
   static String roundOf(int round, int total) => 'Round $round of $total';
+  static const String games = 'Games';
+  static const String notAvailable = 'This game is not available.';
 
   // Header
   static const String back = 'Back';

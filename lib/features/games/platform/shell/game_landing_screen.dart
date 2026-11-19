@@ -23,6 +23,7 @@ class GameLandingScreen extends StatelessWidget {
     this.onRemind,
     this.onBack,
     this.onHowToPlay,
+    this.busy = false,
   });
 
   final GameDefinition definition;
@@ -38,6 +39,10 @@ class GameLandingScreen extends StatelessWidget {
   final VoidCallback? onRemind;
   final VoidCallback? onBack;
   final VoidCallback? onHowToPlay;
+
+  /// Something the button or a row asked for is still running: the button
+  /// shows it is busy, and it, the rows and the reminder take no taps.
+  final bool busy;
 
   @override
   Widget build(BuildContext context) {
@@ -114,6 +119,7 @@ class GameLandingScreen extends StatelessWidget {
                   label: action.label,
                   icon: action.icon,
                   onTap: action.enabled ? onPrimary : null,
+                  busy: busy,
                 ),
                 if (state.caption != null) ...[
                   const SizedBox(height: 10),
@@ -132,14 +138,18 @@ class GameLandingScreen extends StatelessWidget {
                   const SizedBox(height: 12),
                   GameSecondaryButton(
                     label: GameStrings.remind,
-                    onTap: onRemind,
+                    onTap: busy ? null : onRemind,
                   ),
                 ],
                 if (entries.isNotEmpty) ...[
                   const SizedBox(height: 20),
                   const Divider(height: 1, color: GameTheme.hairline),
                   for (var i = 0; i < entries.length; i++)
-                    _EntryRow(number: i + 1, entry: entries[i]),
+                    _EntryRow(
+                      number: i + 1,
+                      entry: entries[i],
+                      enabled: !busy,
+                    ),
                 ],
               ],
             ),
@@ -151,14 +161,19 @@ class GameLandingScreen extends StatelessWidget {
 }
 
 class _EntryRow extends StatelessWidget {
-  const _EntryRow({required this.number, required this.entry});
+  const _EntryRow({
+    required this.number,
+    required this.entry,
+    required this.enabled,
+  });
 
   final int number;
   final GameEntry entry;
+  final bool enabled;
 
   @override
   Widget build(BuildContext context) {
-    final onTap = entry.onTap;
+    final onTap = enabled ? entry.onTap : null;
 
     return Column(
       children: [
