@@ -255,7 +255,8 @@ void main() {
         DatingPauseReason.gates ||
         DatingPauseReason.pathChange ||
         DatingPauseReason.unknown => true,
-        DatingPauseReason.relationship => canResume == true,
+        DatingPauseReason.relationship ||
+        DatingPauseReason.verification => canResume == true, // Spec 2 W4a
         _ => false,
       };
     }

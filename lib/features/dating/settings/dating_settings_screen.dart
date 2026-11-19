@@ -9,6 +9,7 @@ import 'package:attune/core/widgets/info_row_widget.dart';
 import 'package:attune/features/auth/sign_up/presentation/widgets/flow_text_field.dart'
     show FlowErrorLine;
 import 'package:attune/features/dating/data/dating_home_repository.dart';
+import 'package:attune/features/dating/data/dating_never_introduce.dart';
 import 'package:attune/features/dating/data/dating_providers.dart';
 import 'package:attune/features/dating/gentle_wait/gentle_wait_providers.dart';
 import 'package:attune/features/dating/gentle_wait/gentle_wait_repository.dart';
@@ -30,6 +31,7 @@ import 'package:attune/features/dating/setup/dating_step_frame.dart'
     show DatingLoadError;
 import 'package:attune/features/dating/setup/ready_step.dart'
     show datingDropTimeLabel, datingDropTimeOf, pickDatingDropTime;
+import 'package:attune/features/dating/verify/dating_reverify_line.dart';
 import 'package:go_router/go_router.dart';
 import 'package:attune/i10n/generated/app_localizations.dart';
 import 'package:flutter/material.dart';
@@ -239,6 +241,14 @@ class _DatingSettingsScreenState extends ConsumerState<DatingSettingsScreen> {
     final from = photos?.afterMutualFrom;
     final afterOpen = from != null && !DateTime.now().toUtc().isBefore(from);
     final time = datingDropTimeOf(profile);
+    // Spec 2 W4b (Task 5 C-1 ruling): how many 'Never introduce me'
+    // entries are kept from before (never which); read on a phone Dating
+    // trusts only.
+    final keptRead =
+        home != null && home.state != DatingHomeState.reverifyDevice
+            ? ref.watch(datingNeverIntroduceProvider(account)).valueOrNull
+            : null;
+    final kept = keptRead?.keptCount ?? 0;
     final granted = ref.watch(pushAskerProvider).permissionGranted;
     // Fix 1 (M-5): an icon, so the titles line up with the rows'.
     Widget toggle(
@@ -294,7 +304,8 @@ class _DatingSettingsScreenState extends ConsumerState<DatingSettingsScreen> {
                 if (!online) calm(loc.dating_offline),
                 if (profileFailed)
                   DatingLoadError(
-                    busy: profileRead!.isLoading,
+                    errors: [profileRead!.error],
+                    busy: profileRead.isLoading,
                     onRetry:
                         () => ref.invalidate(datingMyProfileProvider(account)),
                   ),
@@ -375,6 +386,11 @@ class _DatingSettingsScreenState extends ConsumerState<DatingSettingsScreen> {
                   // Never silent: busy is calm, anything else says so.
                   if (_saveFailed?.reason == 'busy')
                     DatingCalmLine(loc.dating_busy)
+                  // Spec 2 W4b (carry 9, W2 M-3): their own words.
+                  else if (_saveFailed?.reason == 'reverify_device')
+                    const DatingReverifyLine()
+                  else if (_saveFailed?.reason == 'not_eligible')
+                    DatingCalmLine(loc.dating_sectionUnavailable)
                   else if (_saveFailed != null)
                     FlowErrorLine(
                       text: loc.dating_errorGeneric,
@@ -460,6 +476,10 @@ class _DatingSettingsScreenState extends ConsumerState<DatingSettingsScreen> {
                 // all (not started, nothing saved) there is nothing to leave.
                 // Carry C: an unreadable home (offline, busy) still offers
                 // it, and it is never gated offline.
+                // Spec 2 W4b (Task 5 C-1 ruling): kept entries are never
+                // shown or removed one by one; only Leave removes them.
+                if (kept > 0)
+                  DatingCalmLine(loc.dating_neverIntroduceKept(kept)),
                 if ((homeRead.hasError && home == null) ||
                     (home != null &&
                         (home.hasData ||

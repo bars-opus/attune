@@ -163,7 +163,11 @@ class _DatingPromptsStepState extends ConsumerState<DatingPromptsStep>
           Text(loc.dating_promptsBody, style: theme.textTheme.bodyLarge),
           const SizedBox(height: Spacing.md),
           if (profileFailed)
-            DatingLoadError(busy: profileRetrying, onRetry: retryProfile),
+            DatingLoadError(
+              busy: profileRetrying,
+              onRetry: retryProfile,
+              errors: [profileError],
+            ),
           for (final id in datingPromptIds) ...[
             CheckboxListTile(
               contentPadding: EdgeInsets.zero,

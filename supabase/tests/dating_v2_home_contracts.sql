@@ -43,6 +43,7 @@ BEGIN
   EXECUTE 'SET LOCAL ROLE authenticated';
   PERFORM set_config('request.jwt.claim.sub', p::text, true);
   PERFORM set_config('request.jwt.claims', json_build_object('sub', p, 'role', 'authenticated')::text, true);
+  PERFORM set_config('request.headers', '{"x-attune-device": "0123456789abcdef0123456789abcdef"}', true); -- Spec 2 W4b (T5 fix round 1, I-3): the app names its phone
 END $$;
 CREATE FUNCTION pg_temp.as_db() RETURNS void LANGUAGE plpgsql AS $$
 BEGIN
@@ -254,7 +255,7 @@ BEGIN
   v := pg_temp.probe(ARRAY[
     $s$CREATE OR REPLACE FUNCTION public.dating_require_trusted_device() RETURNS boolean LANGUAGE sql STABLE AS $f$ SELECT NULL::boolean $f$$s$],
     format('SELECT pg_temp.home(%L)::text', v_new));
-  IF v IS DISTINCT FROM '{"state": "reverify_device"}' THEN
+  IF v IS DISTINCT FROM '{"state": "reverify_device", "variant": "setup_restart"}' THEN -- Spec 2 W4b (§3.3.4)
     RAISE EXCEPTION 'CONTRACT VIOLATED: an untrusted device (NULL) saw %', v;
   END IF;
   v := pg_temp.probe(ARRAY[
@@ -337,8 +338,8 @@ BEGIN
   UPDATE public.dating_profiles SET verification_state = 'verified' WHERE user_id = v;
   v_step := pg_temp.home(v) ->> 'next_step';
   IF v_step IS DISTINCT FROM 'verify' THEN RAISE EXCEPTION 'CONTRACT VIOLATED: verified without the age check resumes at %', v_step; END IF;
-  INSERT INTO public.dating_age_verifications (user_id, birth_date, verification_method, verified_at)
-  VALUES (v, current_date - interval '30 years', 'test', now());
+  INSERT INTO public.dating_age_verifications (user_id, age_method, age_result, age_vendor, age_decided_at, identity_method, identity_result, identity_vendor, identity_decided_at) -- Spec 2 W4a (R-2)
+  VALUES (v, 'id', 'pass', 'contract', now(), 'liveness_compare', 'pass', 'contract', now());
   v_step := pg_temp.home(v) ->> 'next_step';
   IF v_step IS DISTINCT FROM 'preview' THEN RAISE EXCEPTION 'CONTRACT VIOLATED: after D11 setup resumes at %', v_step; END IF;
   -- Each helper is the database's own.

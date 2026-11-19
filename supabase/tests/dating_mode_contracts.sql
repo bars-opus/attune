@@ -152,12 +152,12 @@ BEGIN
     FROM (VALUES (a), (b), (d)) AS x(u), generate_series(1, 2) AS n;
 
   -- Age gate: A/B/D adults, verified, not revoked/expired.
-  INSERT INTO public.dating_age_verifications(user_id, birth_date, verification_method, verified_at)
+  INSERT INTO public.dating_age_verifications (user_id, age_method, age_result, age_vendor, age_decided_at, identity_method, identity_result, identity_vendor, identity_decided_at) -- Spec 2 W4a (R-2)
   VALUES
-    (a, current_date - interval '30 years', 'test', now()),
-    (b, current_date - interval '31 years', 'test', now()),
-    (d, current_date - interval '32 years', 'test', now())
-  ON CONFLICT (user_id) DO UPDATE SET birth_date=EXCLUDED.birth_date;
+    (a, 'id', 'pass', 'contract', now(), 'liveness_compare', 'pass', 'contract', now()),
+    (b, 'id', 'pass', 'contract', now(), 'liveness_compare', 'pass', 'contract', now()),
+    (d, 'id', 'pass', 'contract', now(), 'liveness_compare', 'pass', 'contract', now())
+  ON CONFLICT (user_id) DO UPDATE SET age_result = EXCLUDED.age_result; -- Spec 2 W4a
 
   -- Healing gates: one completed journey + a passing readiness attempt each.
   INSERT INTO public.healing_journeys(
@@ -461,15 +461,15 @@ END $$;
 SELECT public.test_set_dating_auth('00000000-0000-0000-0000-00000000da01');
 DO $$ DECLARE v_raised boolean := false; BEGIN
   BEGIN
-    INSERT INTO public.dating_age_verifications(user_id, birth_date, verification_method, verified_at)
-    VALUES ('00000000-0000-0000-0000-00000000da01', current_date - interval '30 years', 'self', now());
+    INSERT INTO public.dating_age_verifications (user_id, age_method, age_result, age_vendor, age_decided_at) -- Spec 2 W4a
+    VALUES ('00000000-0000-0000-0000-00000000da01', 'id', 'pass', 'self', now()); -- Spec 2 W4a
   EXCEPTION WHEN OTHERS THEN v_raised := true;  -- RLS/REVOKE denial (42501) or RLS 0-row
   END;
   -- Either a hard permission error, or RLS silently blocked the write: assert no
   -- self-attested row leaked in for this user via the authenticated path.
   IF NOT v_raised
      AND EXISTS(SELECT 1 FROM public.dating_age_verifications
-                WHERE user_id='00000000-0000-0000-0000-00000000da01' AND verification_method='self') THEN
+                WHERE user_id='00000000-0000-0000-0000-00000000da01' AND age_vendor='self') THEN -- Spec 2 W4a
     RAISE EXCEPTION 'authenticated inserted a self-attested age-verification row';
   END IF;
 END $$;
@@ -504,13 +504,13 @@ BEGIN
   END IF;
   -- DATING-C2: age verification is backend-only. authenticated must be able to
   -- execute neither the writer nor the revoker, and service_role must.
-  IF has_function_privilege('authenticated','public.verify_dating_age(uuid,date,text,uuid,timestamptz)','EXECUTE') THEN
+  IF has_function_privilege('authenticated','public.record_dating_age_assurance(uuid,text,text,smallint,text)','EXECUTE') THEN -- Spec 2 W4a
     RAISE EXCEPTION 'authenticated can execute the age-verification writer';
   END IF;
-  IF has_function_privilege('authenticated','public.revoke_dating_age_verification(uuid)','EXECUTE') THEN
+  IF has_function_privilege('authenticated','public.revoke_dating_age_verification(uuid,text)','EXECUTE') THEN -- Spec 2 W4a
     RAISE EXCEPTION 'authenticated can execute the age-verification revoker';
   END IF;
-  IF NOT has_function_privilege('service_role','public.verify_dating_age(uuid,date,text,uuid,timestamptz)','EXECUTE') THEN
+  IF NOT has_function_privilege('service_role','public.record_dating_age_assurance(uuid,text,text,smallint,text)','EXECUTE') THEN -- Spec 2 W4a
     RAISE EXCEPTION 'service_role cannot execute the age-verification writer';
   END IF;
   -- DATING-C4: former-partner exclusion writer/HMAC are backend-only.

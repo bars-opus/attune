@@ -13,6 +13,7 @@ import 'package:attune/features/auth/sign_up/presentation/widgets/flow_text_fiel
     show FlowErrorLine;
 import 'package:attune/features/dating/gentle_wait/gentle_wait_providers.dart';
 import 'package:attune/features/dating/gentle_wait/gentle_wait_repository.dart';
+import 'package:attune/features/dating/verify/dating_reverify_line.dart';
 import 'package:attune/i10n/generated/app_localizations.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -234,7 +235,8 @@ class _GentleWaitScreenState extends ConsumerState<GentleWaitScreen> {
   Widget _unavailable(AppLocalizations loc) => Column(
     crossAxisAlignment: CrossAxisAlignment.stretch,
     children: [
-      _CalmLine(text: loc.dating_sectionReverify),
+      // Spec 2 W4b (carry 9): the re-check on this phone.
+      const DatingReverifyLine(),
       const SizedBox(height: Spacing.md),
       FlowSecondaryButton(
         label: loc.dating_gentleWaitClear,
@@ -415,7 +417,8 @@ class _GentleWaitScreenState extends ConsumerState<GentleWaitScreen> {
         ],
         if (_status == _Status.reverify) ...[
           const SizedBox(height: Spacing.sm),
-          _CalmLine(text: loc.dating_sectionReverify),
+          // Spec 2 W4b (carry 9): the re-check on this phone.
+          const DatingReverifyLine(),
         ],
         const SizedBox(height: Spacing.lg),
         _HealingCard(

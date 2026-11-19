@@ -8,7 +8,7 @@ void main() {
       expect(DatingHome.fromJson({'state': s.wire}).state, s);
     }
     expect(
-      DatingHome.fromJson({'state': 'verifying'}).state,
+      DatingHome.fromJson({'state': 'you_are_in'}).state, // Spec 2 W4a
       DatingHomeState.unavailable,
     );
     expect(DatingHome.fromJson({}).state, DatingHomeState.unavailable);
@@ -95,6 +95,7 @@ void main() {
   test('M-8: hasProfile is true only in the states with a profile', () {
     const withProfile = {
       DatingHomeState.setupInProgress,
+      DatingHomeState.verifying, // Spec 2 W4a
       DatingHomeState.gentleWait,
       DatingHomeState.coolOff,
       DatingHomeState.active,

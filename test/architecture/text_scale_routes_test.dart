@@ -71,6 +71,8 @@ const _audited = {
   'datingSettings',
   'datingNotOpen',
   'datingLeave',
+  // Spec 2 W4b (§3.3.4): the re-check on a new phone.
+  'datingVerify',
   'aboutUs',
   'addEditReminder',
   'ageStop',

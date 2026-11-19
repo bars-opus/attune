@@ -9,24 +9,15 @@ import 'package:attune/features/auth/sign_up/presentation/widgets/flow_text_fiel
     show FlowErrorLine;
 import 'package:attune/features/dating/data/dating_rpc.dart';
 import 'package:attune/features/dating/routes/dating_routes.dart';
+import 'package:attune/features/dating/section/dating_calm_line.dart';
+import 'package:attune/features/dating/verify/dating_reverify_line.dart';
 import 'package:attune/i10n/generated/app_localizations.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
-class DatingCalmLine extends StatelessWidget {
-  const DatingCalmLine(this.text, {super.key});
-
-  final String text;
-
-  @override
-  Widget build(BuildContext context) => Semantics(
-    liveRegion: true,
-    child: Padding(
-      padding: const EdgeInsets.symmetric(vertical: 8),
-      child: Text(text, style: Theme.of(context).textTheme.bodyMedium),
-    ),
-  );
-}
+// Spec 2 W4b fix round 1 (M-7): the calm line lives in a leaf file (the
+// re-check line uses it too); importers of this file still get it.
+export 'package:attune/features/dating/section/dating_calm_line.dart';
 
 List<Widget> datingLifecycleErrorRows(
   BuildContext context,
@@ -75,9 +66,8 @@ List<Widget> datingLifecycleErrorRows(
     DatingLifecycleError.notEligible => [
       DatingCalmLine(loc.dating_sectionUnavailable),
     ],
-    DatingLifecycleError.reverifyDevice => [
-      DatingCalmLine(loc.dating_sectionReverify),
-    ],
+    // Spec 2 W4b (carry 9): the re-check on this phone.
+    DatingLifecycleError.reverifyDevice => [const DatingReverifyLine()],
     DatingLifecycleError.busy => [DatingCalmLine(loc.dating_busy)],
     DatingLifecycleError.rateLimited => [
       FlowErrorLine(text: loc.dating_errorRateLimited, liveRegion: true),

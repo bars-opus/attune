@@ -89,6 +89,7 @@ BEGIN
   EXECUTE 'SET LOCAL ROLE authenticated';
   PERFORM set_config('request.jwt.claim.sub', p_user::text, true);
   PERFORM set_config('request.jwt.claims', json_build_object('sub', p_user, 'role', 'authenticated')::text, true);
+  PERFORM set_config('request.headers', '{"x-attune-device": "0123456789abcdef0123456789abcdef"}', true); -- Spec 2 W4b (T5 fix round 1, I-3): the app names its phone
   EXECUTE p_sql INTO v;
   RESET ROLE;
   PERFORM set_config('request.jwt.claim.sub', '', true);
@@ -167,8 +168,8 @@ BEGIN
   v := pg_temp.call(v_u, format('SELECT public.save_dating_who_to_meet(%L, %L::text[], 25, 40)', pg_temp.key('d6'), p_seeking));
   IF (v ->> 'ok')::boolean IS NOT TRUE THEN RAISE EXCEPTION 'fixture: D6 failed %', v; END IF;
   UPDATE public.dating_profiles SET verification_state = 'verified' WHERE user_id = v_u;
-  INSERT INTO public.dating_age_verifications (user_id, birth_date, verification_method, verified_at)
-  VALUES (v_u, current_date - interval '30 years', 'contract', now());
+  INSERT INTO public.dating_age_verifications (user_id, age_method, age_result, age_vendor, age_decided_at, identity_method, identity_result, identity_vendor, identity_decided_at) -- Spec 2 W4a (R-2)
+  VALUES (v_u, 'id', 'pass', 'contract', now(), 'liveness_compare', 'pass', 'contract', now());
   RETURN v_u;
 END $$;
 
@@ -1081,8 +1082,8 @@ BEGIN
     RAISE EXCEPTION 'CONTRACT VIOLATED: other countries were allowed before verification, or for one''s own or a closed country';
   END IF;
   UPDATE public.dating_profiles SET verification_state = 'verified' WHERE user_id = v_u;
-  INSERT INTO public.dating_age_verifications (user_id, birth_date, verification_method, verified_at)
-  VALUES (v_u, current_date - interval '30 years', 'contract', now());
+  INSERT INTO public.dating_age_verifications (user_id, age_method, age_result, age_vendor, age_decided_at, identity_method, identity_result, identity_vendor, identity_decided_at) -- Spec 2 W4a (R-2)
+  VALUES (v_u, 'id', 'pass', 'contract', now(), 'liveness_compare', 'pass', 'contract', now());
   -- (B8 I-2: a plain profile, woman meeting men; the UK is same-gender off
   -- here, with the global flag off.)
   PERFORM pg_temp.call(v_u, format('SELECT public.save_dating_identity(%L, ''woman'', NULL, NULL, NULL, false)', pg_temp.key('d5')));
@@ -1185,8 +1186,8 @@ BEGIN
   -- Other countries: verified (and the age gate), 14+ days; malformed
   -- codes, NULLs, more than ten and NULL itself are invalid.
   UPDATE public.dating_profiles SET verification_state = 'verified' WHERE user_id IN (v_u, v_young);
-  INSERT INTO public.dating_age_verifications (user_id, birth_date, verification_method, verified_at)
-  VALUES (v_young, current_date - interval '30 years', 'contract', now());
+  INSERT INTO public.dating_age_verifications (user_id, age_method, age_result, age_vendor, age_decided_at, identity_method, identity_result, identity_vendor, identity_decided_at) -- Spec 2 W4a (R-2)
+  VALUES (v_young, 'id', 'pass', 'contract', now(), 'liveness_compare', 'pass', 'contract', now());
   -- (B8 I-2: a plain profile, so the UK, same-gender off here, may see it.)
   PERFORM pg_temp.call(v_young, format('SELECT public.save_dating_identity(%L, ''man'', NULL, NULL, NULL, false)', pg_temp.key('d5')));
   PERFORM pg_temp.call(v_young, format('SELECT public.save_dating_who_to_meet(%L, ARRAY[''woman''], 25, 35)', pg_temp.key('d6')));
@@ -1319,8 +1320,8 @@ BEGIN
   INSERT INTO public.dating_enrollments (user_id, state) VALUES (v_noprefs, 'profile_draft');
   INSERT INTO public.dating_profiles (user_id, display_name, moderation_state, country_code, region_code, verification_state)
   VALUES (v_noprefs, 'Ama Person 66', 'approved', 'GH', 'AA', 'verified');
-  INSERT INTO public.dating_age_verifications (user_id, birth_date, verification_method, verified_at)
-  VALUES (v_noprefs, current_date - interval '30 years', 'contract', now());
+  INSERT INTO public.dating_age_verifications (user_id, age_method, age_result, age_vendor, age_decided_at, identity_method, identity_result, identity_vendor, identity_decided_at) -- Spec 2 W4a (R-2)
+  VALUES (v_noprefs, 'id', 'pass', 'contract', now(), 'liveness_compare', 'pass', 'contract', now());
   IF pg_temp.call(v_noprefs, format('SELECT public.set_dating_open_abroad(%L, ARRAY[''GB'']::char(2)[])', pg_temp.key('np')))
        IS DISTINCT FROM '{"ok": false, "reason": "invalid", "field": "countries"}'::jsonb
      OR EXISTS (SELECT 1 FROM public.dating_rpc_idempotency WHERE user_id = v_noprefs) THEN
@@ -1461,7 +1462,13 @@ BEGIN
   -- Spec 2 W3 final: the bucket-limit helper (M-3, the database's own),
   -- the strip check (M-5) and the job recovery (I-2: it re-queues a photo
   -- dead-lettered unscanned), the service role's. None returns a photo.
-  IF v_got IS DISTINCT FROM 'private.dating_exit_internal(uuid, boolean):; private.dating_has_data(uuid):; private.dating_next_step(uuid):; private.dating_photo_bucket_limits():; public.check_dating_photo_strip(uuid, text, text):service_role; public.claim_dating_orphan_uploads(integer):service_role; public.create_dating_photo_upload_intent(text):authenticated; public.dating_photos_queue_media_before_delete():; public.dating_profile_complete(uuid):; public.dating_storage_owns(text):authenticated; public.delete_dating_profile_photo(uuid):authenticated; public.get_dating_operational_health():service_role; public.get_dating_profile_preview():authenticated; public.insert_dating_profile_photo(uuid, smallint):authenticated; public.list_dating_profile_photos():authenticated; public.prepare_account_deletion(uuid):service_role; public.record_dating_orphan_scan(uuid, text):service_role; public.record_dating_photo_csam(uuid, text):service_role; public.recover_stale_dating_photo_jobs():service_role; public.reorder_dating_photos(text, uuid[]):authenticated; public.set_dating_photo_caption(uuid, text):authenticated' THEN
+  -- Spec 2 W4a: the verification session's start (two approved photos) and
+  -- Spec 2 W4a the compare list (the person's own keys, the service role's:
+  -- Spec 2 W4a dating-verification), and the person's own status read (a
+  -- Spec 2 W4a count). None returns a photo to anyone else.
+  -- Spec 2 W4 final (I-1b): whether every approved photo is newer than the
+  -- Spec 2 W4 final age pass (a boolean, the database's own).
+  IF v_got IS DISTINCT FROM 'private.dating_age_recheck_due(uuid):; private.dating_exit_internal(uuid, boolean):; private.dating_has_data(uuid):; private.dating_next_step(uuid):; private.dating_photo_bucket_limits():; public.begin_dating_verification(uuid, text, text, text, text, text):service_role; public.check_dating_photo_strip(uuid, text, text):service_role; public.claim_dating_orphan_uploads(integer):service_role; public.create_dating_photo_upload_intent(text):authenticated; public.dating_photos_queue_media_before_delete():; public.dating_profile_complete(uuid):; public.dating_storage_owns(text):authenticated; public.delete_dating_profile_photo(uuid):authenticated; public.get_dating_operational_health():service_role; public.get_dating_profile_preview():authenticated; public.get_dating_verification_photos(uuid):service_role; public.get_my_dating_verification():authenticated; public.insert_dating_profile_photo(uuid, smallint):authenticated; public.list_dating_profile_photos():authenticated; public.prepare_account_deletion(uuid):service_role; public.record_dating_orphan_scan(uuid, text):service_role; public.record_dating_photo_csam(uuid, text):service_role; public.recover_stale_dating_photo_jobs():service_role; public.reorder_dating_photos(text, uuid[]):authenticated; public.set_dating_photo_caption(uuid, text):authenticated' THEN
     RAISE EXCEPTION 'CONTRACT VIOLATED: the functions reading Dating photos changed (review photos after mutual interest): %', v_got;
   END IF;
 END $$;
@@ -1632,8 +1639,8 @@ BEGIN
   v_trans := pg_temp.ready('79', 'GB', 'TLD', 'woman', ARRAY['man'], NULL, 'trans_woman');
   v_none := pg_temp.located('80', 'GB', 'TLD');
   UPDATE public.dating_profiles SET verification_state = 'verified' WHERE user_id = v_none;
-  INSERT INTO public.dating_age_verifications (user_id, birth_date, verification_method, verified_at)
-  VALUES (v_none, current_date - interval '30 years', 'contract', now());
+  INSERT INTO public.dating_age_verifications (user_id, age_method, age_result, age_vendor, age_decided_at, identity_method, identity_result, identity_vendor, identity_decided_at) -- Spec 2 W4a (R-2)
+  VALUES (v_none, 'id', 'pass', 'contract', now(), 'liveness_compare', 'pass', 'contract', now());
   v_plain := pg_temp.ready('81', 'GB', 'TLD', 'woman', ARRAY['man']);
   v_bad := pg_temp.ready('82', 'GB', 'TLD', 'woman', ARRAY['man']);
   v_lk := pg_temp.ready('85', 'GB', 'TLD', 'woman', ARRAY['man']);
@@ -1889,7 +1896,7 @@ BEGIN
                               {"ok": false, "reason": "reverify_device"}, {"ok": false, "reason": "reverify_device"}]'::jsonb THEN
     RAISE EXCEPTION 'CONTRACT VIOLATED: a reader answered on an untrusted device: %', v_got;
   END IF;
-  IF public.dating_require_trusted_device() IS NOT TRUE THEN
+  IF (SELECT p.prosrc FROM pg_proc AS p WHERE p.oid = 'public.dating_require_trusted_device()'::regprocedure) !~ 'dating_device_state' THEN -- Spec 2 W4b: the real check is back
     RAISE EXCEPTION 'fixture: the device stub was not rolled back';
   END IF;
 END $$;
@@ -2152,7 +2159,7 @@ BEGIN
      OR (SELECT children_have FROM public.dating_profiles WHERE user_id = v_u) IS NOT NULL THEN
     RAISE EXCEPTION 'CONTRACT VIOLATED: a guarded-out setup step wrote a row';
   END IF;
-  IF public.dating_require_trusted_device() IS NOT TRUE OR public.dating_eligibility(v_u, 'setup') IS DISTINCT FROM 'eligible' THEN
+  IF (SELECT p.prosrc FROM pg_proc AS p WHERE p.oid = 'public.dating_require_trusted_device()'::regprocedure) !~ 'dating_device_state' OR public.dating_eligibility(v_u, 'setup') IS DISTINCT FROM 'eligible' THEN -- Spec 2 W4b
     RAISE EXCEPTION 'fixture: the guard stubs were not rolled back';
   END IF;
 END $$;
@@ -2815,7 +2822,7 @@ BEGIN
   IF v_got IS DISTINCT FROM '[{"ok": false, "reason": "reverify_device"}, {"ok": false, "reason": "reverify_device"}]'::jsonb THEN
     RAISE EXCEPTION 'CONTRACT VIOLATED: the lists answered on an untrusted device: %', v_got;
   END IF;
-  IF public.dating_require_trusted_device() IS NOT TRUE THEN
+  IF (SELECT p.prosrc FROM pg_proc AS p WHERE p.oid = 'public.dating_require_trusted_device()'::regprocedure) !~ 'dating_device_state' THEN -- Spec 2 W4b: the real check is back
     RAISE EXCEPTION 'fixture: the device stub was not rolled back';
   END IF;
 END $n$;
@@ -2850,6 +2857,7 @@ BEGIN
   EXECUTE 'SET LOCAL ROLE authenticated';
   PERFORM set_config('request.jwt.claim.sub', p::text, true);
   PERFORM set_config('request.jwt.claims', json_build_object('sub', p, 'role', 'authenticated')::text, true);
+  PERFORM set_config('request.headers', '{"x-attune-device": "0123456789abcdef0123456789abcdef"}', true); -- Spec 2 W4b (T5 fix round 1, I-3): the app names its phone
 END $$;
 CREATE FUNCTION pg_temp.as_db() RETURNS void LANGUAGE plpgsql AS $$
 BEGIN

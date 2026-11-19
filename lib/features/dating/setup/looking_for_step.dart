@@ -148,7 +148,11 @@ class _DatingLookingForStepState extends ConsumerState<DatingLookingForStep>
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           if (profileFailed)
-            DatingLoadError(busy: profileRetrying, onRetry: retryProfile),
+            DatingLoadError(
+              busy: profileRetrying,
+              onRetry: retryProfile,
+              errors: [profileError],
+            ),
           DatingChoiceGroup<String>(
             label: loc.dating_lookingTitle,
             // I-2: the screen title already asks it.

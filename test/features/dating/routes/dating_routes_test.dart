@@ -359,7 +359,18 @@ void main() {
         RegExp(r':(\w+)'),
         (m) => m[1] == 'step' ? 'wait' : 'x',
       );
-      final s = await pumpDatingShell(t, initial: location, pinSet: true);
+      final s = await pumpDatingShell(
+        t,
+        initial: location,
+        pinSet: true,
+        // Spec 2 W4b fix round 1 (M-1): the re-check opens on its own home.
+        home:
+            path == DatingPaths.verify
+                ? FakeDatingHomeGateway(
+                  home: const DatingHome(state: DatingHomeState.reverifyDevice),
+                )
+                : null,
+      );
       expect(s.location, location, reason: path);
       s.lock.on = true;
       s.container.invalidate(datingLockProvider);

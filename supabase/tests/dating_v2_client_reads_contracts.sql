@@ -43,6 +43,7 @@ BEGIN
   EXECUTE 'SET LOCAL ROLE authenticated';
   PERFORM set_config('request.jwt.claim.sub', p::text, true);
   PERFORM set_config('request.jwt.claims', json_build_object('sub', p, 'role', 'authenticated')::text, true);
+  PERFORM set_config('request.headers', '{"x-attune-device": "0123456789abcdef0123456789abcdef"}', true); -- Spec 2 W4b (T5 fix round 1, I-3): the app names its phone
 END $$;
 CREATE FUNCTION pg_temp.as_db() RETURNS void LANGUAGE plpgsql AS $$
 BEGIN

@@ -147,7 +147,7 @@ BEGIN
     RAISE EXCEPTION 'CONTRACT VIOLATED: P lost the dating exclusion of D';
   END IF;
   IF EXISTS (SELECT 1 FROM public.couple_events WHERE owner_id = pg_temp.d())
-     OR EXISTS (SELECT 1 FROM public.dating_age_verifications WHERE verified_by = pg_temp.d())
+     OR EXISTS (SELECT 1 FROM public.dating_age_verifications WHERE decided_by = pg_temp.d()) -- Spec 2 W4a
      OR EXISTS (SELECT 1 FROM public.couple_events WHERE owner_proposed_to = pg_temp.d()) THEN
     RAISE EXCEPTION 'CONTRACT VIOLATED: a column without an FK still names D';
   END IF;

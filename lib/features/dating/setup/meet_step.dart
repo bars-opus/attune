@@ -149,6 +149,7 @@ class _DatingMeetStepState extends ConsumerState<DatingMeetStep>
         children: [
           if (listsRead.hasError || profileFailed)
             DatingLoadError(
+              errors: [listsRead.error, profileError],
               busy: listsRead.isLoading || profileRetrying,
               onRetry: () {
                 if (listsRead.hasError) {

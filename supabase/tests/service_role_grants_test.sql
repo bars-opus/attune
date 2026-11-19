@@ -44,7 +44,13 @@ BEGIN
                           'dating_never_introduce',
                           -- Spec 2 W2: the gentle-wait reflections are the author's alone,
                           -- read and written through two definer RPCs.
-                          'dating_gentle_wait_reflections')
+                          'dating_gentle_wait_reflections',
+                          -- Spec 2 W4a: verification sessions hold vendor references;
+                          -- dating-verification reaches them through service functions.
+                          'dating_verification_sessions',
+                          -- Spec 2 W4b: device hashes; the device check and the
+                          -- trust writer reach them.
+                          'dating_trusted_devices')
     AND NOT has_table_privilege('service_role', c.oid, 'SELECT');
 
   IF v_count > 0 THEN
@@ -77,7 +83,13 @@ BEGIN
                           'dating_never_introduce',
                           -- Spec 2 W2: the gentle-wait reflections are the author's alone,
                           -- read and written through two definer RPCs.
-                          'dating_gentle_wait_reflections')
+                          'dating_gentle_wait_reflections',
+                          -- Spec 2 W4a: verification sessions hold vendor references;
+                          -- dating-verification reaches them through service functions.
+                          'dating_verification_sessions',
+                          -- Spec 2 W4b: device hashes; the device check and the
+                          -- trust writer reach them.
+                          'dating_trusted_devices')
     -- Spec 2 W1b (batch-4 fix round 1, C-1): the service role only reads
     -- country_safety_config (no worker claims rows there); publish_country_config,
     -- a definer, is its one writer, and dating_rls_canary.sql pins SELECT only.

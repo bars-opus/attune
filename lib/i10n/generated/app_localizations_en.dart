@@ -3999,9 +3999,6 @@ class AppLocalizationsEn extends AppLocalizations {
   String get dating_verifyBody => 'A short video selfie checks that you\'re a real person, that your photos are you, and that you\'re over 18. The video is deleted at once. We keep only whether it passed.';
 
   @override
-  String get dating_verifyLater => 'You\'ll do this check before your first introduction.';
-
-  @override
   String get dating_previewTitle => 'This is what others see';
 
   @override
@@ -4243,4 +4240,237 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get dating_photoKeep => 'Keep it';
+
+  @override
+  String get dating_verifyStatusLink => 'See where it is';
+
+  @override
+  String get dating_sectionPausedVerification => 'Dating is paused until you verify it\'s you again.';
+
+  @override
+  String get dating_capturePromptCloser => 'Move the phone a little closer';
+
+  @override
+  String get dating_capturePromptHold => 'Hold still';
+
+  @override
+  String get dating_capturePromptDone => 'Done';
+
+  @override
+  String get dating_capturePracticeTitle => 'Practice check';
+
+  @override
+  String get dating_capturePracticeBody => 'This is a practice check for testing. Nothing is recorded. Pick what the check should answer.';
+
+  @override
+  String get dating_captureCancel => 'Cancel';
+
+  @override
+  String get dating_verifyTip1 => 'Face a window or a lamp, not away from it.';
+
+  @override
+  String get dating_verifyTip2 => 'Take off sunglasses. Glasses are fine without glare.';
+
+  @override
+  String get dating_verifyTip3 => 'Hold the phone at eye level.';
+
+  @override
+  String get dating_verifyLightWarning => 'This check flashes colours on your screen. If flashing lights affect you, choose \'Check another way\'.';
+
+  @override
+  String get dating_verifyConsent => 'I agree that Attune and its verification partner can use my face to check my age and match my photos. Nothing is kept after the check.';
+
+  @override
+  String get dating_verifyStart => 'Start video check';
+
+  @override
+  String get dating_verifyAnotherWay => 'Check another way';
+
+  @override
+  String get dating_verifyAnotherBody => 'You can check with your ID. Or a person can look at two quick photos to check it\'s you (this doesn\'t confirm your age).';
+
+  @override
+  String get dating_verifyUseId => 'Check with my ID';
+
+  @override
+  String get dating_verifyAskPerson => 'Ask a person to review it';
+
+  @override
+  String get dating_verifyResume => 'Let\'s pick up where you left off.';
+
+  @override
+  String get dating_verifyVerified => 'You\'re verified.';
+
+  @override
+  String get dating_verifyRetry => 'That didn\'t work. Let\'s try again.';
+
+  @override
+  String get dating_verifyStillNotWorking => 'Still not working? You can check another way.';
+
+  @override
+  String get dating_verifyUnder25 => 'We couldn\'t confirm your age from the video. That\'s common for people under 25. Let\'s check with your ID instead.';
+
+  @override
+  String get dating_verifyUncertain => 'The video couldn\'t confirm your age this time. Let\'s check with your ID instead.';
+
+  @override
+  String dating_verifyPhotoMismatch(int n) {
+    return 'Photo $n doesn\'t look like the video. Change that photo, or ask a person to review it.';
+  }
+
+  @override
+  String get dating_verifyChangePhoto => 'Change that photo';
+
+  @override
+  String get dating_verifyWhichId => 'Which ID do you have?';
+
+  @override
+  String get dating_verifyIdThanks => 'Thanks. Most checks finish in a few minutes. Some need a person, which takes up to 24 hours.';
+
+  @override
+  String get dating_verifyCheckAgain => 'Check again';
+
+  @override
+  String get dating_verifyDobMismatch => 'The date of birth on your ID doesn\'t match the one you gave us. A person will check this within 24 hours.';
+
+  @override
+  String get dating_verifyAgeNotConfirmed => 'We couldn\'t confirm your age, so Dating isn\'t available on this account. If you think this is wrong, contact support.';
+
+  @override
+  String get dating_verifyFarBelow => 'We need to check a few things on your account. Contact support if you have questions.';
+
+  @override
+  String get dating_verifyWaiting => 'A person is checking. This usually takes less than a day. We\'ll show the result here.';
+
+  @override
+  String get dating_verifyNetwork => 'That didn\'t go through. Try again.';
+
+  @override
+  String get dating_verifyTryAgain => 'Try again';
+
+  @override
+  String get dating_verifyUnavailable => 'Checking isn\'t available right now. Try again later.';
+
+  @override
+  String get dating_verifyPhotosFirst => 'Add two photos first, then check it\'s you.';
+
+  @override
+  String get dating_humanTitle => 'Take two quick photos';
+
+  @override
+  String get dating_humanBody => 'Take each photo with your camera. A person checks the photos are you, and the photos are deleted after the check.';
+
+  @override
+  String dating_humanTake(int n) {
+    return 'Take photo $n';
+  }
+
+  @override
+  String dating_humanPhotoLabel(int n, String state) {
+    return 'Photo $n of 2, $state';
+  }
+
+  @override
+  String get dating_humanDone => 'Done';
+
+  @override
+  String get dating_humanToDo => 'not taken yet';
+
+  @override
+  String get dating_humanSend => 'Send for review';
+
+  @override
+  String get dating_humanPhotoFailed => 'That photo didn\'t go through. Take it again.';
+
+  @override
+  String get dating_gestureThreeFingers => 'Hold up three fingers next to your face';
+
+  @override
+  String get dating_gestureLeftEar => 'Touch your left ear';
+
+  @override
+  String get dating_gestureThumbsUp => 'Give a thumbs up';
+
+  @override
+  String get dating_id_ghana_card => 'Ghana Card';
+
+  @override
+  String get dating_id_passport => 'Passport';
+
+  @override
+  String get dating_id_uk_driving_licence => 'UK photocard driving licence';
+
+  @override
+  String get dating_verifyRateLimited => 'You\'ve started a lot of checks. Try again later.';
+
+  @override
+  String get dating_verifyStillChecking => 'We\'re still checking your video. Check again in a moment.';
+
+  @override
+  String get dating_verifyAskedForId => 'A person asked to see your ID. Check with your ID next.';
+
+  @override
+  String get dating_verifyFixDob => 'Change my date of birth';
+
+  @override
+  String get dating_verifyOpenPhotos => 'Go to my photos';
+
+  @override
+  String get dating_sectionVerifyingNeutral => 'We\'re checking it\'s you. This usually takes less than a day.';
+
+  @override
+  String get dating_verifyAgeConfirmed => 'Your age is confirmed. Now we check it\'s you: a short video, or a person can look at two quick photos.';
+
+  @override
+  String get dating_verifyConsentAgain => 'Tick the box to agree to the check, then start again.';
+
+  @override
+  String get dating_verifyLightWarningPerson => 'This check flashes colours on your screen. If flashing lights affect you, ask a person to review it instead.';
+
+  @override
+  String get dating_reverifyBody => 'Welcome back. Before we show Dating on this phone, please do a quick video check. It\'s how we keep your conversations yours.';
+
+  @override
+  String get dating_reverifyRestart => 'You started setting up Dating on another phone. To keep your answers private, start again here.';
+
+  @override
+  String get dating_startAgain => 'Start again';
+
+  @override
+  String get dating_reverifyRestartKeeps => 'Your \'Never introduce me\' list stays. You can delete it from Leave Dating and delete my data.';
+
+  @override
+  String get dating_reverifyRestartWhy => 'This can also happen on the same phone after a problem with the phone or the app.';
+
+  @override
+  String get dating_deviceUnavailable => 'We can\'t check this phone right now. Close Attune and open it again. If this keeps happening, contact support.';
+
+  @override
+  String get dating_reverifyPhotosElsewhere => 'This check needs two approved photos. You can change your photos on a phone where you already use Dating, or leave Dating and delete your data.';
+
+  @override
+  String dating_neverIntroduceKept(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count people from before stay protected. To remove them, leave Dating and delete your data.',
+      one: '1 person from before stays protected. To remove this protection, leave Dating and delete your data.',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get dating_verifyResultPending => 'We\'re still checking. Check again in a moment.';
+
+  @override
+  String get dating_humanCameraDenied => 'Attune needs your camera for these photos. Tap Take photo and choose Allow, or allow the camera in your phone\'s Settings.';
+
+  @override
+  String get dating_humanCameraBlocked => 'Attune can\'t use your camera right now. To take these photos, allow the camera for Attune in your phone\'s Settings.';
+
+  @override
+  String get dating_openSettings => 'Open Settings';
+
+  @override
+  String get dating_verifySessionElsewhere => 'A check is already open on another phone. Finish it there, or try again later.';
 }

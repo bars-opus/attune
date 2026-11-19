@@ -49,6 +49,7 @@ BEGIN
   EXECUTE 'SET LOCAL ROLE authenticated';
   PERFORM set_config('request.jwt.claim.sub', p_user::text, true);
   PERFORM set_config('request.jwt.claims', json_build_object('sub', p_user, 'role', 'authenticated')::text, true);
+  PERFORM set_config('request.headers', '{"x-attune-device": "0123456789abcdef0123456789abcdef"}', true); -- Spec 2 W4b (T5 fix round 1, I-3): the app names its phone
 END $$;
 
 CREATE FUNCTION pg_temp.as_owner() RETURNS void LANGUAGE plpgsql AS $$
@@ -1537,8 +1538,10 @@ BEGIN
       RAISE EXCEPTION 'CONTRACT VIOLATED: % is callable by an API role', v_t;
     END IF;
   END LOOP;
-  IF public.dating_require_trusted_device() IS NOT TRUE THEN
-    RAISE EXCEPTION 'CONTRACT VIOLATED: the W1c trusted-device pass-through does not allow';
+  -- Spec 2 W4b: the real check (W1c's pass-through is gone); a caller
+  -- Spec 2 W4b who isn't signed in is never trusted.
+  IF (SELECT p.prosrc FROM pg_proc AS p WHERE p.oid = 'public.dating_require_trusted_device()'::regprocedure) !~ 'dating_device_state' OR public.dating_require_trusted_device() IS NOT FALSE THEN -- Spec 2 W4b
+    RAISE EXCEPTION 'CONTRACT VIOLATED: the trusted-device check is not W4b''s, or trusts nobody signed in';
   END IF;
 END $$;
 
@@ -1787,7 +1790,7 @@ BEGIN
   PERFORM pg_temp.as_user(v_b);
   v := public.list_dating_never_introduce();
   PERFORM pg_temp.as_owner();
-  IF v IS DISTINCT FROM '{"ok": true, "items": []}'::jsonb
+  IF v IS DISTINCT FROM '{"ok": true, "items": [], "kept_count": 0}'::jsonb -- Spec 2 W4b (T5 fix round 1, C-1): the kept count
      OR has_table_privilege('authenticated', 'public.dating_never_introduce', 'SELECT') THEN
     RAISE EXCEPTION 'CONTRACT VIOLATED: the listed person can see the list: %', v;
   END IF;
@@ -2017,7 +2020,7 @@ BEGIN
   UPDATE public.feature_flags SET enabled = true WHERE key = 'dating_mode_enabled';
   IF v IS DISTINCT FROM '[{"ok": true, "message": "added"}, {"ok": false, "reason": "reverify_device"},
                           {"ok": false, "reason": "reverify_device"}]'::jsonb
-     OR public.dating_require_trusted_device() IS NOT TRUE THEN
+     OR (SELECT p.prosrc FROM pg_proc AS p WHERE p.oid = 'public.dating_require_trusted_device()'::regprocedure) !~ 'dating_device_state' THEN -- Spec 2 W4b
     RAISE EXCEPTION 'CONTRACT VIOLATED: adding was gated (eligibility, Dating off or the device), or remove/list skipped the device check: %', v;
   END IF;
   PERFORM pg_temp.as_user(v_closed);
@@ -2049,7 +2052,7 @@ BEGIN
                          public.remove_dating_never_introduce(NULL),
                          public.list_dating_never_introduce());
   PERFORM pg_temp.as_owner();
-  IF v IS DISTINCT FROM '[{"ok": false, "reason": "not_eligible"}, {"ok": true}, {"ok": true}, {"ok": true, "items": []}]'::jsonb THEN
+  IF v IS DISTINCT FROM '[{"ok": false, "reason": "not_eligible"}, {"ok": true}, {"ok": true}, {"ok": true, "items": [], "kept_count": 0}]'::jsonb THEN -- Spec 2 W4b (T5 fix round 1, C-1)
     RAISE EXCEPTION 'CONTRACT VIOLATED: an account with no users row got a wrong answer: %', v;
   END IF;
 
@@ -2444,8 +2447,8 @@ BEGIN
     RAISE EXCEPTION 'fixture: setup failed for %: %', p_n, v;
   END IF;
   UPDATE public.dating_profiles SET verification_state = 'verified' WHERE user_id = v_u;
-  INSERT INTO public.dating_age_verifications (user_id, birth_date, verification_method, verified_at)
-  VALUES (v_u, current_date - interval '30 years', 'w1d-contract', now());
+  INSERT INTO public.dating_age_verifications (user_id, age_method, age_result, age_vendor, age_decided_at, identity_method, identity_result, identity_vendor, identity_decided_at) -- Spec 2 W4a (R-2)
+  VALUES (v_u, 'id', 'pass', 'contract', now(), 'liveness_compare', 'pass', 'contract', now());
   INSERT INTO public.dating_profile_photos (user_id, storage_key, position, moderation_state) VALUES
     (v_u, 'w1d/' || p_n || '-1.jpg', 1, 'approved'), (v_u, 'w1d/' || p_n || '-2.jpg', 2, 'approved');
   RETURN v_u;
@@ -2866,8 +2869,8 @@ BEGIN
     (v_u, 1, 'perfect_sunday', 'A long walk by the river.'), (v_u, 2, 'ask_me_about', 'The book I am reading now.');
   INSERT INTO public.dating_profile_photos (user_id, storage_key, position, moderation_state) VALUES
     (v_u, 'w1d/' || p_n || '-1.jpg', 1, 'approved'), (v_u, 'w1d/' || p_n || '-2.jpg', 2, 'approved');
-  INSERT INTO public.dating_age_verifications (user_id, birth_date, verification_method, verified_at)
-  VALUES (v_u, current_date - interval '30 years', 'w1d-contract', now());
+  INSERT INTO public.dating_age_verifications (user_id, age_method, age_result, age_vendor, age_decided_at, identity_method, identity_result, identity_vendor, identity_decided_at) -- Spec 2 W4a (R-2)
+  VALUES (v_u, 'id', 'pass', 'contract', now(), 'liveness_compare', 'pass', 'contract', now());
   IF NOT public.dating_profile_complete(v_u) THEN
     RAISE EXCEPTION 'fixture: % is not complete', p_n;
   END IF;
@@ -3374,6 +3377,10 @@ BEGIN
     (p_u, 1, 'perfect_sunday', 'A long walk by the river.'), (p_u, 2, 'ask_me_about', 'The book I am reading now.');
   INSERT INTO public.dating_profile_photos (user_id, storage_key, position, moderation_state) VALUES
     (p_u, 'w1d/' || p_n || '-r1.jpg', 1, 'approved'), (p_u, 'w1d/' || p_n || '-r2.jpg', 2, 'approved');
+  -- Spec 2 W4 final (I-1a ruling): Leave cleared the age pass with the
+  -- identity; the rebuilt setup's new check passes the age again.
+  UPDATE public.dating_age_verifications SET age_method = 'id', age_result = 'pass', age_vendor = 'fake', age_decided_at = now()
+   WHERE user_id = p_u;
 END $$;
 
 DO $$

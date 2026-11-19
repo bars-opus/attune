@@ -7441,7 +7441,7 @@ abstract class AppLocalizations {
   /// **'Add a few words, not just emoji or symbols.'**
   String get dating_promptNeedsWords;
 
-  /// Spec 2 §3.2 D11 / §3.3.2 (the shell until W4a, R-26).
+  /// Spec 2 §3.2 D11 / §3.3.2: D11's title (W4a flow).
   ///
   /// In en, this message translates to:
   /// **'Verify it\'s you'**
@@ -7452,12 +7452,6 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'A short video selfie checks that you\'re a real person, that your photos are you, and that you\'re over 18. The video is deleted at once. We keep only whether it passed.'**
   String get dating_verifyBody;
-
-  /// D11 shell line until W4a (plan, R-26).
-  ///
-  /// In en, this message translates to:
-  /// **'You\'ll do this check before your first introduction.'**
-  String get dating_verifyLater;
 
   /// Spec 2 §3.2 D12.
   ///
@@ -7729,7 +7723,7 @@ abstract class AppLocalizations {
   /// **'Done'**
   String get dating_done;
 
-  /// D13 activation before W4a (plan, R-26).
+  /// D13: activation refused while a check is outstanding (R-33: stays true with W4a's check; links to D11).
   ///
   /// In en, this message translates to:
   /// **'We still need to check it\'s you before introductions start.'**
@@ -7908,6 +7902,444 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Keep it'**
   String get dating_photoKeep;
+
+  /// Spec 2 W4a plan copy: the verifying card's link to the check's status (reviewer list).
+  ///
+  /// In en, this message translates to:
+  /// **'See where it is'**
+  String get dating_verifyStatusLink;
+
+  /// Spec 2 W4a plan copy (carry 1): paused because an age check was revoked or failed (reviewer list).
+  ///
+  /// In en, this message translates to:
+  /// **'Dating is paused until you verify it\'s you again.'**
+  String get dating_sectionPausedVerification;
+
+  /// Spec 2 §3.3.2 spoken capture prompt.
+  ///
+  /// In en, this message translates to:
+  /// **'Move the phone a little closer'**
+  String get dating_capturePromptCloser;
+
+  /// Spec 2 §3.3.2 spoken capture prompt.
+  ///
+  /// In en, this message translates to:
+  /// **'Hold still'**
+  String get dating_capturePromptHold;
+
+  /// Spec 2 §3.3.2 spoken capture prompt.
+  ///
+  /// In en, this message translates to:
+  /// **'Done'**
+  String get dating_capturePromptDone;
+
+  /// Spec 2 W4a plan copy: the development-only capture (fake vendor); never in production (R-10).
+  ///
+  /// In en, this message translates to:
+  /// **'Practice check'**
+  String get dating_capturePracticeTitle;
+
+  /// Spec 2 W4a plan copy: development-only (R-10).
+  ///
+  /// In en, this message translates to:
+  /// **'This is a practice check for testing. Nothing is recorded. Pick what the check should answer.'**
+  String get dating_capturePracticeBody;
+
+  /// Spec 2 W4a plan copy: leaves the capture (reviewer list).
+  ///
+  /// In en, this message translates to:
+  /// **'Cancel'**
+  String get dating_captureCancel;
+
+  /// Spec 2 §3.3.2 intro tip.
+  ///
+  /// In en, this message translates to:
+  /// **'Face a window or a lamp, not away from it.'**
+  String get dating_verifyTip1;
+
+  /// Spec 2 §3.3.2 intro tip.
+  ///
+  /// In en, this message translates to:
+  /// **'Take off sunglasses. Glasses are fine without glare.'**
+  String get dating_verifyTip2;
+
+  /// Spec 2 §3.3.2 intro tip.
+  ///
+  /// In en, this message translates to:
+  /// **'Hold the phone at eye level.'**
+  String get dating_verifyTip3;
+
+  /// Spec 2 §3.3.2 light warning, before capture.
+  ///
+  /// In en, this message translates to:
+  /// **'This check flashes colours on your screen. If flashing lights affect you, choose \'Check another way\'.'**
+  String get dating_verifyLightWarning;
+
+  /// Spec 2 §3.3.2 required consent (biometric_verification). Owner gate: true only with the vendors' deletion terms (DPIA).
+  ///
+  /// In en, this message translates to:
+  /// **'I agree that Attune and its verification partner can use my face to check my age and match my photos. Nothing is kept after the check.'**
+  String get dating_verifyConsent;
+
+  /// Spec 2 §3.3.2 primary.
+  ///
+  /// In en, this message translates to:
+  /// **'Start video check'**
+  String get dating_verifyStart;
+
+  /// Spec 2 §3.3.2 secondary, as prominent as Start (§3.15).
+  ///
+  /// In en, this message translates to:
+  /// **'Check another way'**
+  String get dating_verifyAnotherWay;
+
+  /// Spec 2 W4a plan copy: the other ways (reviewer list).
+  ///
+  /// In en, this message translates to:
+  /// **'You can check with your ID. Or a person can look at two quick photos to check it\'s you (this doesn\'t confirm your age).'**
+  String get dating_verifyAnotherBody;
+
+  /// Spec 2 W4a plan copy (reviewer list).
+  ///
+  /// In en, this message translates to:
+  /// **'Check with my ID'**
+  String get dating_verifyUseId;
+
+  /// Spec 2 §3.3.2 (photo mismatch) and the human route's entry.
+  ///
+  /// In en, this message translates to:
+  /// **'Ask a person to review it'**
+  String get dating_verifyAskPerson;
+
+  /// Spec 2 §3.3.2: a resumed session.
+  ///
+  /// In en, this message translates to:
+  /// **'Let\'s pick up where you left off.'**
+  String get dating_verifyResume;
+
+  /// Spec 2 §3.3.2: both checks passed (one 400 ms fade, none under reduce motion).
+  ///
+  /// In en, this message translates to:
+  /// **'You\'re verified.'**
+  String get dating_verifyVerified;
+
+  /// Spec 2 §3.3.2: liveness failed (1st).
+  ///
+  /// In en, this message translates to:
+  /// **'That didn\'t work. Let\'s try again.'**
+  String get dating_verifyRetry;
+
+  /// Spec 2 §3.3.2: liveness failed (2nd).
+  ///
+  /// In en, this message translates to:
+  /// **'Still not working? You can check another way.'**
+  String get dating_verifyStillNotWorking;
+
+  /// Spec 2 §3.3.2: estimate below 25.
+  ///
+  /// In en, this message translates to:
+  /// **'We couldn\'t confirm your age from the video. That\'s common for people under 25. Let\'s check with your ID instead.'**
+  String get dating_verifyUnder25;
+
+  /// Spec 2 §3.3.2 (R-13, owner ruling 2026-11-09; plan copy): the estimate was uncertain or unavailable; the ID route next.
+  ///
+  /// In en, this message translates to:
+  /// **'The video couldn\'t confirm your age this time. Let\'s check with your ID instead.'**
+  String get dating_verifyUncertain;
+
+  /// Spec 2 §3.3.2.
+  ///
+  /// In en, this message translates to:
+  /// **'Photo {n} doesn\'t look like the video. Change that photo, or ask a person to review it.'**
+  String dating_verifyPhotoMismatch(int n);
+
+  /// Spec 2 §3.3.2 (photo mismatch): opens D9.
+  ///
+  /// In en, this message translates to:
+  /// **'Change that photo'**
+  String get dating_verifyChangePhoto;
+
+  /// Spec 2 §3.3.2 ID route.
+  ///
+  /// In en, this message translates to:
+  /// **'Which ID do you have?'**
+  String get dating_verifyWhichId;
+
+  /// Spec 2 §3.3.2 ID route.
+  ///
+  /// In en, this message translates to:
+  /// **'Thanks. Most checks finish in a few minutes. Some need a person, which takes up to 24 hours.'**
+  String get dating_verifyIdThanks;
+
+  /// Spec 2 W4a plan copy: reads a pending ID check, or a video result the vendor hasn't finished, again (reviewer list).
+  ///
+  /// In en, this message translates to:
+  /// **'Check again'**
+  String get dating_verifyCheckAgain;
+
+  /// Spec 2 §3.3.2.
+  ///
+  /// In en, this message translates to:
+  /// **'The date of birth on your ID doesn\'t match the one you gave us. A person will check this within 24 hours.'**
+  String get dating_verifyDobMismatch;
+
+  /// Spec 2 §3.3.2.
+  ///
+  /// In en, this message translates to:
+  /// **'We couldn\'t confirm your age, so Dating isn\'t available on this account. If you think this is wrong, contact support.'**
+  String get dating_verifyAgeNotConfirmed;
+
+  /// Spec 2 §3.3.2: far below 18 (Spec 1's age_review hold).
+  ///
+  /// In en, this message translates to:
+  /// **'We need to check a few things on your account. Contact support if you have questions.'**
+  String get dating_verifyFarBelow;
+
+  /// Spec 2 §3.3.2: waiting for a person.
+  ///
+  /// In en, this message translates to:
+  /// **'A person is checking. This usually takes less than a day. We\'ll show the result here.'**
+  String get dating_verifyWaiting;
+
+  /// Spec 2 §3.15 D11: the vendor's network failure (no attempt counted).
+  ///
+  /// In en, this message translates to:
+  /// **'That didn\'t go through. Try again.'**
+  String get dating_verifyNetwork;
+
+  /// Spec 2 W4a plan copy.
+  ///
+  /// In en, this message translates to:
+  /// **'Try again'**
+  String get dating_verifyTryAgain;
+
+  /// Spec 2 W4a plan copy: the check is switched off or has no capture yet (R-10) (reviewer list).
+  ///
+  /// In en, this message translates to:
+  /// **'Checking isn\'t available right now. Try again later.'**
+  String get dating_verifyUnavailable;
+
+  /// Spec 2 W4a plan copy (reviewer list).
+  ///
+  /// In en, this message translates to:
+  /// **'Add two photos first, then check it\'s you.'**
+  String get dating_verifyPhotosFirst;
+
+  /// Spec 2 §3.3.3 human route.
+  ///
+  /// In en, this message translates to:
+  /// **'Take two quick photos'**
+  String get dating_humanTitle;
+
+  /// Spec 2 W4a plan copy, §3.3.3 (reviewer list).
+  ///
+  /// In en, this message translates to:
+  /// **'Take each photo with your camera. A person checks the photos are you, and the photos are deleted after the check.'**
+  String get dating_humanBody;
+
+  /// Spec 2 W4a plan copy.
+  ///
+  /// In en, this message translates to:
+  /// **'Take photo {n}'**
+  String dating_humanTake(int n);
+
+  /// Spec 2 W4a: a gesture photo's label for screen readers.
+  ///
+  /// In en, this message translates to:
+  /// **'Photo {n} of 2, {state}'**
+  String dating_humanPhotoLabel(int n, String state);
+
+  /// Spec 2 W4a: a gesture photo taken.
+  ///
+  /// In en, this message translates to:
+  /// **'Done'**
+  String get dating_humanDone;
+
+  /// Spec 2 W4a: a gesture photo not taken (screen readers).
+  ///
+  /// In en, this message translates to:
+  /// **'not taken yet'**
+  String get dating_humanToDo;
+
+  /// Spec 2 W4a plan copy (reviewer list).
+  ///
+  /// In en, this message translates to:
+  /// **'Send for review'**
+  String get dating_humanSend;
+
+  /// Spec 2 W4a plan copy (reviewer list).
+  ///
+  /// In en, this message translates to:
+  /// **'That photo didn\'t go through. Take it again.'**
+  String get dating_humanPhotoFailed;
+
+  /// Spec 2 §3.3.3 gesture.
+  ///
+  /// In en, this message translates to:
+  /// **'Hold up three fingers next to your face'**
+  String get dating_gestureThreeFingers;
+
+  /// Spec 2 §3.3.3 gesture.
+  ///
+  /// In en, this message translates to:
+  /// **'Touch your left ear'**
+  String get dating_gestureLeftEar;
+
+  /// Spec 2 §3.3.3 gesture.
+  ///
+  /// In en, this message translates to:
+  /// **'Give a thumbs up'**
+  String get dating_gestureThumbsUp;
+
+  /// Spec 2 §2.2 id_documents (GH).
+  ///
+  /// In en, this message translates to:
+  /// **'Ghana Card'**
+  String get dating_id_ghana_card;
+
+  /// Spec 2 §2.2 id_documents.
+  ///
+  /// In en, this message translates to:
+  /// **'Passport'**
+  String get dating_id_passport;
+
+  /// Spec 2 §2.2 id_documents (GB).
+  ///
+  /// In en, this message translates to:
+  /// **'UK photocard driving licence'**
+  String get dating_id_uk_driving_licence;
+
+  /// Spec 2 W4a Task 4 plan copy (carry A): rate_limited from the verification check (the 5-a-day limit or the vendor-session limit); calm (reviewer list).
+  ///
+  /// In en, this message translates to:
+  /// **'You\'ve started a lot of checks. Try again later.'**
+  String get dating_verifyRateLimited;
+
+  /// Spec 2 W4a Task 4 plan copy (carry A): the vendor hasn't finished the video's result (outcome pending); calm (reviewer list).
+  ///
+  /// In en, this message translates to:
+  /// **'We\'re still checking your video. Check again in a moment.'**
+  String get dating_verifyStillChecking;
+
+  /// Spec 2 W4a Task 4 plan copy (carry A; fix round 1 I-4): a person's review asked for an ID (outcome ask_for_id); the ID route next (it confirms age only) (reviewer list).
+  ///
+  /// In en, this message translates to:
+  /// **'A person asked to see your ID. Check with your ID next.'**
+  String get dating_verifyAskedForId;
+
+  /// Spec 2 W4a Task 4 plan copy (carry E, R-12): opens Spec 1's date-of-birth correction (Settings, Date of birth); then Check again (reviewer list).
+  ///
+  /// In en, this message translates to:
+  /// **'Change my date of birth'**
+  String get dating_verifyFixDob;
+
+  /// Spec 2 W4a Task 4 plan copy (carry A): photos_required / photos_missing; opens D9 (reviewer list).
+  ///
+  /// In en, this message translates to:
+  /// **'Go to my photos'**
+  String get dating_verifyOpenPhotos;
+
+  /// Spec 2 W4a Task 4 plan copy (carry 3/F; fix round 1 M-7): the §3.1 'verifying' card for every waiting check (a person's review of two photos, or an ID); names no video. Owner: §3.1 spec edit (reviewer list).
+  ///
+  /// In en, this message translates to:
+  /// **'We\'re checking it\'s you. This usually takes less than a day.'**
+  String get dating_sectionVerifyingNeutral;
+
+  /// Spec 2 W4a Task 4 fix round 1 plan copy (I-4): the ID passed (age only, §3.3.1); identity still needs the video face match or a person (reviewer list).
+  ///
+  /// In en, this message translates to:
+  /// **'Your age is confirmed. Now we check it\'s you: a short video, or a person can look at two quick photos.'**
+  String get dating_verifyAgeConfirmed;
+
+  /// Spec 2 W4a Task 4 fix round 1 plan copy (I-2): consent_required; the intro with the consent box (reviewer list).
+  ///
+  /// In en, this message translates to:
+  /// **'Tick the box to agree to the check, then start again.'**
+  String get dating_verifyConsentAgain;
+
+  /// Spec 2 W4a Task 4 fix round 1 plan copy (I-4): §3.3.2's light warning on the 'age confirmed' stage, whose other way is the person route (reviewer list).
+  ///
+  /// In en, this message translates to:
+  /// **'This check flashes colours on your screen. If flashing lights affect you, ask a person to review it instead.'**
+  String get dating_verifyLightWarningPerson;
+
+  /// Spec 2 §3.3.4 re-verification on a new phone.
+  ///
+  /// In en, this message translates to:
+  /// **'Welcome back. Before we show Dating on this phone, please do a quick video check. It\'s how we keep your conversations yours.'**
+  String get dating_reverifyBody;
+
+  /// Spec 2 §3.3.4 setup_restart.
+  ///
+  /// In en, this message translates to:
+  /// **'You started setting up Dating on another phone. To keep your answers private, start again here.'**
+  String get dating_reverifyRestart;
+
+  /// Spec 2 §3.3.4 setup_restart: deletes the draft (as exit, keeping the 'Never introduce me' list, R-32) and opens D1.
+  ///
+  /// In en, this message translates to:
+  /// **'Start again'**
+  String get dating_startAgain;
+
+  /// Spec 2 §3.3.4 setup_restart (R-32, owner ruling 2026-11-09; plan copy).
+  ///
+  /// In en, this message translates to:
+  /// **'Your \'Never introduce me\' list stays. You can delete it from Leave Dating and delete my data.'**
+  String get dating_reverifyRestartKeeps;
+
+  /// Spec 2 W4b Task 7 (T6 review M-5): the safety keystore can be reset after a phone or app problem, which makes this phone new to Dating. Plan copy.
+  ///
+  /// In en, this message translates to:
+  /// **'This can also happen on the same phone after a problem with the phone or the app.'**
+  String get dating_reverifyRestartWhy;
+
+  /// Spec 2 W4b Task 7 (T6 I-4 ruling): this phone has no install id, so no check can run; shown instead of every way to the re-check, with no button. Plan copy.
+  ///
+  /// In en, this message translates to:
+  /// **'We can\'t check this phone right now. Close Attune and open it again. If this keeps happening, contact support.'**
+  String get dating_deviceUnavailable;
+
+  /// Spec 2 W4b Task 7 (T6 review M-6): the re-check found fewer than two approved photos; photos can't be added from a phone that isn't trusted. Plan copy.
+  ///
+  /// In en, this message translates to:
+  /// **'This check needs two approved photos. You can change your photos on a phone where you already use Dating, or leave Dating and delete your data.'**
+  String get dating_reverifyPhotosElsewhere;
+
+  /// Spec 2 W4b Task 7 (Task 5 C-1 ruling; fix round 1 M-5: the singular names the protection): 'Never introduce me' entries kept from before (Start again, or a Leave that kept the list) are never shown and can't be removed one by one; only Leave Dating and delete my data removes them. Plan copy.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =1{1 person from before stays protected. To remove this protection, leave Dating and delete your data.} other{{count} people from before stay protected. To remove them, leave Dating and delete your data.}}'**
+  String dating_neverIntroduceKept(int count);
+
+  /// Spec 2 W4 final fix (M-1): a check answered as passed, but the person's status couldn't be read, so D11 can't yet say both checks passed; Check again reads the status. Calm, never 'You're verified.'. Plan copy.
+  ///
+  /// In en, this message translates to:
+  /// **'We\'re still checking. Check again in a moment.'**
+  String get dating_verifyResultPending;
+
+  /// Spec 2 W4 final fix (M-4): the human route's camera was refused, and the phone can still ask again. Calm line. Plan copy.
+  ///
+  /// In en, this message translates to:
+  /// **'Attune needs your camera for these photos. Tap Take photo and choose Allow, or allow the camera in your phone\'s Settings.'**
+  String get dating_humanCameraDenied;
+
+  /// Spec 2 W4 final fix (M-4): the human route's camera was refused for good (only Settings can allow it). Calm line. Plan copy.
+  ///
+  /// In en, this message translates to:
+  /// **'Attune can\'t use your camera right now. To take these photos, allow the camera for Attune in your phone\'s Settings.'**
+  String get dating_humanCameraBlocked;
+
+  /// Spec 2 W4 final fix (M-4): opens this app's page in the phone's Settings (to allow the camera). Plan copy.
+  ///
+  /// In en, this message translates to:
+  /// **'Open Settings'**
+  String get dating_openSettings;
+
+  /// Spec 2 W4 final fix (server M-4): dating-verification answered session_elsewhere, a verification session is open on another of the person's phones. Calm line on D11 and /dating/verify. Plan copy.
+  ///
+  /// In en, this message translates to:
+  /// **'A check is already open on another phone. Finish it there, or try again later.'**
+  String get dating_verifySessionElsewhere;
 }
 
 class _AppLocalizationsDelegate extends LocalizationsDelegate<AppLocalizations> {

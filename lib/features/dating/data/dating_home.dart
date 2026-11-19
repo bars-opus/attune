@@ -7,6 +7,8 @@ enum DatingHomeState {
   countryClosed('country_closed'),
   regionClosed('region_closed'),
   reverifyDevice('reverify_device'),
+  // Spec 2 W4a (§3.1): a person or the ID vendor is checking.
+  verifying('verifying'),
   restricted('restricted'),
   hold('hold'),
   ageReview('age_review'),
@@ -38,6 +40,8 @@ enum DatingPauseReason {
   away('away'),
   accountParked('account_parked'),
   gates('gates'),
+  // Spec 2 W4a (carry 1): an age check revoked or failed.
+  verification('verification'),
   unknown('');
 
   const DatingPauseReason(this.wire);
@@ -47,6 +51,44 @@ enum DatingPauseReason {
   static DatingPauseReason fromWire(Object? value) => values.firstWhere(
     (r) => r != unknown && r.wire == value,
     orElse: () => DatingPauseReason.unknown,
+  );
+}
+
+/// Spec 2 W4b (§3.3.4): which re-check an untrusted phone needs. Before a
+/// passed check the setup starts again there; after one, a video check
+/// (anything else reads as that).
+enum DatingReverifyVariant {
+  setupRestart('setup_restart'),
+  verified('verified');
+
+  const DatingReverifyVariant(this.wire);
+
+  final String wire;
+
+  static DatingReverifyVariant fromWire(Object? value) =>
+      value == setupRestart.wire ? setupRestart : verified;
+}
+
+/// Spec 2 W4b (Task 3 M-4, Task 5): where a verification pause's check
+/// stands. [held]: the check holds (anything still pausing is something
+/// else, such as an open shared space); [ended]: a failed ID check, so no
+/// check can pass now (the server's `final`); [waiting]: a person or the
+/// ID vendor is checking; [needed]: a check can run. Anything else is
+/// [unknown] and shows the plain paused card (fail closed).
+enum DatingPauseCheck {
+  held('held'),
+  ended('final'),
+  waiting('waiting'),
+  needed('needed'),
+  unknown('');
+
+  const DatingPauseCheck(this.wire);
+
+  final String wire;
+
+  static DatingPauseCheck fromWire(Object? value) => values.firstWhere(
+    (c) => c != unknown && c.wire == value,
+    orElse: () => DatingPauseCheck.unknown,
   );
 }
 
@@ -82,6 +124,8 @@ class DatingHome {
     this.hasData = false,
     this.nextStep,
     this.notice = const DatingNotice(),
+    this.reverifyVariant = DatingReverifyVariant.verified,
+    this.check = DatingPauseCheck.unknown,
   });
 
   final DatingHomeState state;
@@ -104,6 +148,12 @@ class DatingHome {
   final bool hasData;
   final String? nextStep;
   final DatingNotice notice;
+
+  /// reverify_device only (Spec 2 W4b).
+  final DatingReverifyVariant reverifyVariant;
+
+  /// A verification pause only (Spec 2 W4b, Task 3 M-4).
+  final DatingPauseCheck check;
 
   factory DatingHome.fromJson(Map<String, dynamic> json) {
     DateTime? at(String key) {
@@ -129,6 +179,8 @@ class DatingHome {
       hasData: json['has_data'] == true,
       nextStep: text('next_step'),
       notice: DatingNotice.fromJson(json['notify']),
+      reverifyVariant: DatingReverifyVariant.fromWire(json['variant']),
+      check: DatingPauseCheck.fromWire(json['check']),
     );
   }
 
@@ -137,7 +189,8 @@ class DatingHome {
   /// path-change pause, or one with no reason resume; a relationship
   /// pause only once the server says no shared space holds it. Never
   /// while `can_resume` is false, nor for travel, a parked number or a
-  /// same-gender switch (T4 fix round 1, I-2).
+  /// same-gender switch (T4 fix round 1, I-2). A verification pause only
+  /// once `can_resume` says a new check holds (Spec 2 W4a, carry 1).
   bool get resumeOffered {
     if (state != DatingHomeState.paused || canResume == false) return false;
     return switch (pauseReason) {
@@ -145,7 +198,9 @@ class DatingHome {
       DatingPauseReason.gates ||
       DatingPauseReason.pathChange ||
       DatingPauseReason.unknown => true,
-      DatingPauseReason.relationship => canResume == true,
+      DatingPauseReason.relationship ||
+      // Spec 2 W4a (carry 1): resume refuses until a new check passes.
+      DatingPauseReason.verification => canResume == true,
       DatingPauseReason.away ||
       DatingPauseReason.accountParked ||
       DatingPauseReason.sameGenderSwitch => false,
@@ -155,6 +210,7 @@ class DatingHome {
   /// A Dating profile exists, so Dating settings have something to show.
   bool get hasProfile => const {
     DatingHomeState.setupInProgress,
+    DatingHomeState.verifying, // Spec 2 W4a
     DatingHomeState.gentleWait,
     DatingHomeState.coolOff,
     DatingHomeState.active,

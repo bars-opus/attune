@@ -20,6 +20,7 @@ import 'package:attune/features/dating/routes/dating_routes.dart';
 import 'package:attune/features/dating/routes/dating_setup_steps.dart';
 import 'package:attune/features/dating/setup/dating_setup_models.dart';
 import 'package:attune/features/dating/setup/dating_setup_providers.dart';
+import 'package:attune/features/dating/verify/dating_reverify_line.dart';
 import 'package:attune/i10n/generated/app_localizations.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -247,6 +248,8 @@ Widget datingRefusalLine(AppLocalizations loc, DatingWrite w) {
   if (w.reason == 'busy') {
     return Semantics(liveRegion: true, child: Text(loc.dating_busy));
   }
+  // Spec 2 W4b (carry 9): calm, and the re-check on this phone.
+  if (w.reason == 'reverify_device') return const DatingReverifyLine();
   final line = FlowErrorLine(text: datingWriteError(loc, w), liveRegion: true);
   final (label, place) = switch (w.reason) {
     'terms_consent_required' || 'dating_opt_in_required' => (
@@ -274,16 +277,32 @@ Widget datingRefusalLine(AppLocalizations loc, DatingWrite w) {
 }
 
 /// A read that failed: generic copy and Retry (T6 carry B). Never the
-/// error itself.
+/// error itself. Spec 2 W4b fix round 1 (M-3): a read Dating refused
+/// because it doesn't trust this phone leads to the re-check instead (a
+/// retry could only answer the same).
 class DatingLoadError extends StatelessWidget {
-  const DatingLoadError({super.key, required this.busy, required this.onRetry});
+  const DatingLoadError({
+    super.key,
+    required this.busy,
+    required this.onRetry,
+    this.errors = const [],
+  });
 
   final bool busy;
   final VoidCallback onRetry;
 
+  /// The failed reads' errors (read only for reverify_device).
+  final List<Object?> errors;
+
   @override
   Widget build(BuildContext context) {
     final loc = AppLocalizations.of(context)!;
+    if (errors.any(datingReadNeedsReverify)) {
+      return const Padding(
+        padding: EdgeInsets.only(bottom: Spacing.md),
+        child: DatingReverifyLine(),
+      );
+    }
     return Padding(
       padding: const EdgeInsets.only(bottom: Spacing.md),
       child: Column(
@@ -360,6 +379,9 @@ mixin DatingStepState<W extends ConsumerStatefulWidget> on ConsumerState<W> {
 
   /// The last [watchProfile] read failed (shown as [DatingLoadError]).
   bool get profileFailed => _read?.hasError ?? false;
+
+  /// Why it failed (fix round 1, M-3: [DatingLoadError] reads it).
+  Object? get profileError => _read?.error;
 
   /// The profile read is running again after a failure.
   bool get profileRetrying => _read?.isLoading ?? false;

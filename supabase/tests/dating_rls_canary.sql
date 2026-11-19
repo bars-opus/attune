@@ -402,6 +402,57 @@ INSERT INTO allowed_fn (sig, clients, service) VALUES
   ('private.dating_photo_bucket_limits()', '', ''), -- Spec 2 W3 final (M-3)
   ('check_dating_photo_strip(uuid,text,text)', '', 'service_role'); -- Spec 2 W3 final (M-5)
 -- ---------------------------------------------------------------------
+-- W4a (migration 1): the v1 age writers are gone (§4.10); the session
+-- table is no API role's, the service role included (vendor references:
+-- dating-verification reaches it through its service functions); the
+-- status read and the human-review upload predicate are the app's (the
+-- predicate runs inside the storage policy); the session, result, review
+-- and far-below writers and the config read are the service role's; the
+-- helpers and the sweep are the database's own.
+DELETE FROM allowed_fn WHERE sig IN ('resolve_dating_verification_review(uuid,text)',
+  'revoke_dating_age_verification(uuid)', 'verify_dating_age(uuid,date,text,uuid,timestamp with time zone)');
+INSERT INTO allowed_rel (name, authenticated, service_dml) VALUES
+  ('dating_verification_sessions', '', '');
+INSERT INTO allowed_fn (sig, clients, service) VALUES
+  ('get_my_dating_verification()', 'authenticated', ''),
+  ('dating_review_upload_open(text)', 'authenticated', ''),
+  ('get_dating_verification_config()', '', 'service_role'),
+  ('begin_dating_verification(uuid,text,text,text,text,text)', '', 'service_role'),
+  ('get_dating_verification_session(uuid,uuid)', '', 'service_role'),
+  ('get_dating_verification_photos(uuid)', '', 'service_role'),
+  ('set_dating_verification_ref(uuid,text)', '', 'service_role'),
+  ('record_dating_liveness_attempt(uuid,boolean)', '', 'service_role'),
+  ('finish_dating_verification_session(uuid,text,text,smallint)', '', 'service_role'),
+  ('record_dating_identity_check(uuid,text,text,text,uuid)', '', 'service_role'),
+  ('record_dating_age_assurance(uuid,text,text,smallint,text)', '', 'service_role'),
+  ('record_dating_age_far_below(uuid,uuid,text)', '', 'service_role'), -- Spec 2 W4 final (M-8)
+  ('record_dating_video_outcome(uuid,uuid,text,text,smallint,text,text)', '', 'service_role'), -- Spec 2 W4a (T2 fix round 1, I-3)
+  ('check_dating_id_birth_date(uuid,date)', '', 'service_role'),
+  ('submit_dating_human_review(uuid,uuid)', '', 'service_role'),
+  ('decide_dating_human_review(uuid,text,uuid)', '', 'service_role'),
+  ('revoke_dating_age_verification(uuid,text)', '', 'service_role'),
+  ('sweep_dating_verification_sessions()', '', ''),
+  ('private.dating_verification_mode()', '', ''),
+  ('private.dating_verification_available()', '', ''),
+  ('private.dating_verification_state(uuid)', '', ''),
+  ('private.dating_age_recheck_due(uuid)', '', ''), -- Spec 2 W4 final (I-1b)
+  ('private.dating_request_device_hash()', '', '');
+-- ---------------------------------------------------------------------
+-- W4b (migration 1): the device table is no API role's, the service role
+-- included; the trust writer is the service role's (dating-verification);
+-- the device helpers are the database's own.
+INSERT INTO allowed_rel (name, authenticated, service_dml) VALUES
+  ('dating_trusted_devices', '', '');
+INSERT INTO allowed_fn (sig, clients, service) VALUES
+  ('trust_dating_device(uuid,text,uuid)', '', 'service_role'), -- Spec 2 W4 final (M-3)
+  ('private.dating_device_state(uuid,text)', '', ''),
+  ('private.dating_touch_device(uuid,text)', '', ''),
+  ('private.dating_bind_setup_device(uuid)', '', ''),
+  ('private.dating_device_gate(uuid)', '', ''),
+  ('private.dating_reverify_variant(uuid)', '', ''),
+  -- Spec 2 W4b (T3 review M-4): where a verification pause's check stands.
+  ('private.dating_check_standing(uuid,text)', '', '');
+-- ---------------------------------------------------------------------
 -- Checks (every batch adds its rows above this line).
 -- ---------------------------------------------------------------------
 CREATE FUNCTION pg_temp.table_privs(p_rel oid, p_role text, p_dml_only boolean) RETURNS text LANGUAGE sql AS $$

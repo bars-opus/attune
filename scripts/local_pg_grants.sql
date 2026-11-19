@@ -391,3 +391,9 @@ GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public
 
 -- Spec 2 W3c: the photo and intent tables lose the client SELECT (R11); the photo RPCs and the storage predicates are the app's; the CSAM recorder and the orphan sweep are the service role's.
 \i supabase/migrations/20261107170010_dating_v2_photos_grants.sql
+
+-- Spec 2 W4a: the verification sessions and the service writers are the service role's; the status read and the review-upload predicate are the app's.
+\i supabase/migrations/20261109100010_dating_v2_age_assurance_grants.sql
+
+-- Spec 2 W4b: trusted devices are the service role's to write (trust_dating_device); the device check stays the app's.
+\i supabase/migrations/20261109110010_dating_v2_trusted_devices_grants.sql

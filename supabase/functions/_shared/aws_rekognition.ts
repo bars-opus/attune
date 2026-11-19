@@ -5,12 +5,60 @@ export interface CompareFacesResult {
 
 const SIMILARITY_THRESHOLD = 90; // percent; tune after real-world testing
 
+/// Spec 2 W4a (Task 2 fix round 1, I-2): what an AWS refusal was, by its
+/// __type alone (never its message, which can describe the image).
+export type RekognitionErrorKind =
+  | "invalid_parameter" // e.g. no face found in an image
+  | "invalid_image_format"
+  | "image_too_large"
+  | "throttled"
+  | "server"
+  | "refused";
+
+const REKOGNITION_ERROR_TYPES: ReadonlyMap<string, RekognitionErrorKind> = new Map([
+  ["InvalidParameterException", "invalid_parameter"],
+  ["InvalidImageFormatException", "invalid_image_format"],
+  ["ImageTooLargeException", "image_too_large"],
+  ["ThrottlingException", "throttled"],
+  ["ProvisionedThroughputExceededException", "throttled"],
+  ["LimitExceededException", "throttled"],
+  ["InternalServerError", "server"],
+]);
+
+/// A non-2xx answer. Only throttling and server errors are worth another
+/// try; its message is the kind and the status, nothing of AWS's text.
+export class RekognitionError extends Error {
+  readonly kind: RekognitionErrorKind;
+  readonly retryable: boolean;
+  constructor(kind: RekognitionErrorKind, status: number) {
+    super(`rekognition_${kind}_${status}`);
+    this.name = "RekognitionError";
+    this.kind = kind;
+    this.retryable = kind === "throttled" || kind === "server";
+  }
+}
+
+async function rekognitionFailure(response: Response): Promise<RekognitionError> {
+  if (response.status >= 500) return new RekognitionError("server", response.status);
+  if (response.status === 429) return new RekognitionError("throttled", response.status);
+  let type = "";
+  try {
+    const body = await response.json();
+    if (typeof body?.__type === "string") type = body.__type.split("#").pop() ?? "";
+  } catch {
+    // no body: refused
+  }
+  return new RekognitionError(REKOGNITION_ERROR_TYPES.get(type) ?? "refused", response.status);
+}
+
 export async function compareFaces(params: {
   sourceImageBytes: Uint8Array;
   targetImageBytes: Uint8Array;
   accessKeyId: string;
   secretAccessKey: string;
   region: string;
+  /// Spec 2 W4a: tests pass their own; production uses the global fetch.
+  fetch?: typeof fetch;
 }): Promise<CompareFacesResult> {
   const body = JSON.stringify({
     SourceImage: { Bytes: encodeBase64(params.sourceImageBytes) },
@@ -30,7 +78,7 @@ export async function compareFaces(params: {
     secretAccessKey: params.secretAccessKey,
   });
 
-  const response = await fetch(`https://${host}/`, {
+  const response = await (params.fetch ?? fetch)(`https://${host}/`, {
     method: "POST",
     headers,
     body,
@@ -38,7 +86,7 @@ export async function compareFaces(params: {
   });
 
   if (!response.ok) {
-    throw new Error(`rekognition_http_error_${response.status}`);
+    throw await rekognitionFailure(response); // Spec 2 W4a (Task 2 fix round 1, I-2)
   }
 
   const payload = await response.json();
@@ -53,6 +101,42 @@ export async function compareFaces(params: {
     matched: bestSimilarity >= SIMILARITY_THRESHOLD,
     similarity: bestSimilarity,
   };
+}
+
+/// Spec 2 W4a (§3.3.5): one signed Rekognition call (the Face Liveness
+/// session calls), signed as compareFaces is. A non-2xx answer throws a
+/// RekognitionError (its kind and status only); nothing is logged.
+export async function rekognitionCall(params: {
+  target: string;
+  payload: unknown;
+  accessKeyId: string;
+  secretAccessKey: string;
+  region: string;
+  fetch?: typeof fetch;
+  timeoutMs?: number;
+}): Promise<Record<string, unknown>> {
+  const body = JSON.stringify(params.payload);
+  const host = `rekognition.${params.region}.amazonaws.com`;
+  const headers = await signRequest({
+    method: "POST",
+    host,
+    region: params.region,
+    service: "rekognition",
+    target: `RekognitionService.${params.target}`,
+    body,
+    accessKeyId: params.accessKeyId,
+    secretAccessKey: params.secretAccessKey,
+  });
+  const response = await (params.fetch ?? fetch)(`https://${host}/`, {
+    method: "POST",
+    headers,
+    body,
+    signal: AbortSignal.timeout(params.timeoutMs ?? 10000),
+  });
+  if (!response.ok) {
+    throw await rekognitionFailure(response);
+  }
+  return await response.json();
 }
 
 async function signRequest(params: {

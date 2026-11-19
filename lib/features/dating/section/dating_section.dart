@@ -9,7 +9,9 @@ import 'package:attune/app/routing/app_router.dart' show RouteNames;
 import 'package:attune/app/theme/design_tokens.dart';
 import 'package:attune/core/ui/motion/motion_tokens.dart';
 import 'package:attune/core/ui/motion/reduce_motion.dart';
+import 'package:attune/core/utils/constants.dart';
 import 'package:attune/core/utils/date_formatter.dart';
+import 'package:attune/core/utils/url_launcher_utils.dart';
 import 'package:attune/features/auth/sign_up/presentation/widgets/flow_buttons.dart';
 import 'package:attune/features/auth/sign_up/presentation/widgets/flow_text_field.dart'
     show FlowErrorLine;
@@ -25,6 +27,7 @@ import 'package:attune/features/dating/routes/dating_setup_steps.dart'
     show datingStepLocation;
 import 'package:attune/features/dating/section/dating_why_sheet.dart';
 import 'package:attune/features/dating/setup/dating_list_names.dart';
+import 'package:attune/features/dating/verify/dating_reverify_line.dart';
 import 'package:attune/features/me/presentation/path_switch.dart';
 import 'package:attune/features/onboarding/domain/home_state.dart';
 import 'package:attune/features/onboarding/presentation/path_chooser.dart'
@@ -325,8 +328,47 @@ class _DatingSectionState extends ConsumerState<DatingSection>
         );
       case DatingHomeState.paused:
         return _paused(context, loc, h, online, settings);
+      // Spec 2 W4b (§3.3.4): the re-check, or the setup again, here; a
+      // phone with no install id can't be checked (T6 I-4 ruling).
       case DatingHomeState.reverifyDevice:
-        return _plain(loc, loc.dating_sectionReverify, settings);
+        final ready = datingDeviceReady(ref);
+        if (ready == false) {
+          return _plain(loc, loc.dating_deviceUnavailable, settings);
+        }
+        final restart = h.reverifyVariant == DatingReverifyVariant.setupRestart;
+        return _SectionCard(
+          title: loc.flow_slotDatingTitle,
+          lines: [
+            restart ? loc.dating_reverifyRestart : loc.dating_sectionReverify,
+          ],
+          onTap: ready == true ? () => context.push(DatingPaths.verify) : null,
+          children: [
+            if (ready == true)
+              FlowSecondaryButton(
+                label: restart ? loc.dating_startAgain : loc.dating_verifyTitle,
+                onPressed: () => context.push(DatingPaths.verify),
+              ),
+            if (settings != null) settings,
+          ],
+        );
+      // Spec 2 W4a (§3.1): the waiting screen of the check (§3.3 status).
+      // Task 4 fix round 1 (M-7): 'verifying' is a person's review of two
+      // photos or an ID check (a video result never waits), so the line
+      // names no video.
+      case DatingHomeState.verifying:
+        return _SectionCard(
+          title: loc.flow_slotDatingTitle,
+          lines: [loc.dating_sectionVerifyingNeutral],
+          onTap: () => context.push(DatingPaths.step('verify')),
+          children: [
+            FlowTextLink(
+              label: loc.dating_verifyStatusLink,
+              alignment: AlignmentDirectional.centerStart,
+              onPressed: () => context.push(DatingPaths.step('verify')),
+            ),
+            if (settings != null) settings,
+          ],
+        );
       case DatingHomeState.restricted:
         return _plain(loc, loc.dating_sectionRestricted, settings);
       case DatingHomeState.hold:
@@ -391,6 +433,14 @@ class _DatingSectionState extends ConsumerState<DatingSection>
     final spaceOpen =
         reason == DatingPauseReason.relationship && h.canResume != true;
     final canResume = h.resumeOffered;
+    // Spec 2 W4a (carry 1): a verification pause needs the check while the
+    // server says nothing can resume it. Spec 2 W4b (Task 3 M-4): the
+    // home's check says where it stands; anything else is a plain pause.
+    final check =
+        reason == DatingPauseReason.verification && h.canResume != true
+            ? h.check
+            : DatingPauseCheck.unknown;
+    final needsCheck = check == DatingPauseCheck.needed;
     final line = switch (reason) {
       DatingPauseReason.relationship =>
         spaceOpen
@@ -400,12 +450,33 @@ class _DatingSectionState extends ConsumerState<DatingSection>
         datingCountryName(loc, h.country ?? ''),
       ),
       DatingPauseReason.away => loc.dating_sectionAway,
+      // Spec 2 W4a (carry 1): paused until the check passes again.
+      DatingPauseReason.verification => switch (check) {
+        DatingPauseCheck.needed => loc.dating_sectionPausedVerification,
+        // Spec 2 W4b: a person or the ID vendor is checking.
+        DatingPauseCheck.waiting => loc.dating_sectionVerifyingNeutral,
+        // Spec 2 W4b (R-13): a failed ID check is final: support copy.
+        DatingPauseCheck.ended => loc.dating_verifyAgeNotConfirmed,
+        // Spec 2 W4b: the check holds; an open shared space keeps it.
+        DatingPauseCheck.held => loc.dating_sectionPausedRelationship,
+        DatingPauseCheck.unknown => loc.dating_sectionPaused,
+      },
       _ => loc.dating_sectionPaused,
     };
+    final ended = check == DatingPauseCheck.ended;
     return _SectionCard(
       title: loc.flow_slotDatingTitle,
-      lines: [line],
+      lines: [if (!ended) line],
       children: [
+        // Final fix (M-10): the one final ending is D11's error row (the
+        // icon, then the support copy at full contrast).
+        if (ended)
+          FlowErrorLine(
+            text: line,
+            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+              color: Theme.of(context).colorScheme.onSurface,
+            ),
+          ),
         if (reason == DatingPauseReason.sameGenderSwitch) ...[
           FlowTextLink(
             label: loc.dating_why,
@@ -420,6 +491,34 @@ class _DatingSectionState extends ConsumerState<DatingSection>
                 () => context.push(datingStepLocation('you?from=section')!),
           ),
         ],
+        // Spec 2 W4a (carry 1): the way back is the check, not Resume.
+        // Final fix (M-2): D11 from here comes back here (read again,
+        // so Resume shows), never on through D12 and D13.
+        if (needsCheck)
+          FlowPrimaryButton(
+            label: loc.dating_verifyTitle,
+            onPressed:
+                () => context.push(datingStepLocation('verify?from=section')!),
+          ),
+        // Spec 2 W4b (Task 3 M-4): where a waiting check is; a failed ID
+        // check offers support only, nothing to try again.
+        if (check == DatingPauseCheck.waiting)
+          FlowTextLink(
+            label: loc.dating_verifyStatusLink,
+            alignment: AlignmentDirectional.centerStart,
+            onPressed:
+                () => context.push(datingStepLocation('verify?from=section')!),
+          ),
+        if (check == DatingPauseCheck.ended)
+          FlowTextLink(
+            label: loc.flow_holdContact,
+            alignment: AlignmentDirectional.centerStart,
+            onPressed:
+                () => UrlLauncherUtils.launchEmail(
+                  context: context,
+                  email: AppConstants.supportEmail,
+                ),
+          ),
         if (canResume)
           FlowPrimaryButton(
             label: loc.dating_resume,
@@ -461,9 +560,8 @@ class _DatingSectionState extends ConsumerState<DatingSection>
       DatingLifecycleError.notEligible => [
         FlowErrorLine(text: loc.dating_errorResumeGates, liveRegion: true),
       ],
-      DatingLifecycleError.reverifyDevice => [
-        _Calm(loc.dating_sectionReverify),
-      ],
+      // Spec 2 W4b (carry 9): the re-check on this phone.
+      DatingLifecycleError.reverifyDevice => [const DatingReverifyLine()],
       DatingLifecycleError.busy => [_Calm(loc.dating_busy)],
       DatingLifecycleError.rateLimited => [
         FlowErrorLine(text: loc.dating_errorRateLimited, liveRegion: true),

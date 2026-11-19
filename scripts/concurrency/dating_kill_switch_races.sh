@@ -95,7 +95,8 @@ DECLARE t text;
 BEGIN
   FOREACH t IN ARRAY ARRAY['dating_profile_sensitive', 'dating_enrollments', 'dating_profiles', 'dating_preferences',
                            'dating_introductions', 'dating_matches',
-                           'dating_profile_photos', 'dating_photo_upload_intents'] LOOP -- Spec 2 W3c (Task 8)
+                           'dating_profile_photos', 'dating_photo_upload_intents', -- Spec 2 W3c (Task 8)
+                           'dating_trusted_devices'] LOOP -- Spec 2 W4b (Task 5)
     EXECUTE format('DROP TRIGGER IF EXISTS zz_race_delay ON public.%I', t);
     EXECUTE format('CREATE TRIGGER zz_race_delay BEFORE UPDATE OR DELETE ON public.%I FOR EACH ROW EXECUTE FUNCTION race.delay()', t);
   END LOOP;
@@ -108,6 +109,7 @@ DECLARE v jsonb;
 BEGIN
   PERFORM set_config('request.jwt.claim.sub', p_user::text, false);
   PERFORM set_config('request.jwt.claims', json_build_object('sub', p_user, 'role', 'authenticated')::text, false);
+  PERFORM set_config('request.headers', '{"x-attune-device": "0123456789abcdef0123456789abcdef"}', false); -- Spec 2 W4b (T5 fix round 1, I-3): the app names its phone
   EXECUTE 'SET LOCAL ROLE authenticated';
   EXECUTE p_sql INTO v;
   RESET ROLE;
@@ -634,6 +636,30 @@ run "a gone hit's Dating hold vs exit (the hold first)" "$FX_PHOTO" \
                WHEN NOT EXISTS (SELECT 1 FROM public.dating_account_restrictions
                                  WHERE user_id = race.id('04') AND restriction_type = 'moderation_hold' AND lifted_at IS NULL)
                THEN 'the gone hit''s hold was lost'
+               ELSE 'ok' END;" serialised
+
+# Spec 2 W4b (Task 5, §3.3.4): two new devices trusted at once for one
+# person who has three already: the setup lock serialises the two trusts
+# (the first sleeps in its cap delete, holding it), so the cap holds:
+# three devices, the two new ones among them, no deadlock.
+FX_DEVICES="SELECT race.reset(); ALTER SEQUENCE race.s1 RESTART;
+SELECT race.person('06', 'GB', 'TLI', 'woman', ARRAY['man']);
+INSERT INTO public.dating_trusted_devices (user_id, device_hash, verified_at, last_seen_at)
+SELECT race.id('06'), repeat(c, 64), now(), now() - interval '2 days' FROM unnest(ARRAY['1', '2', '5']) AS c;
+-- Spec 2 W4 final (M-3): each new phone is trusted through a session that ran on it.
+INSERT INTO public.dating_verification_sessions (id, user_id, kind, step, vendor, state, outcome, device_hash, expires_at)
+VALUES ('5e4f0000-0000-4000-8000-000000000003', race.id('06'), 'activation', 'liveness', 'fake', 'passed', 'verified', repeat('3', 64), now()),
+       ('5e4f0000-0000-4000-8000-000000000004', race.id('06'), 'reverify', 'liveness', 'fake', 'passed', 'verified', repeat('4', 64), now());"
+run "two devices trusted at once: at most three stay" "$FX_DEVICES" \
+  "SET race.sleep_dating_trusted_devices_delete = '2:race.s1';
+   SELECT public.trust_dating_device(race.id('06'), repeat('3', 64), '5e4f0000-0000-4000-8000-000000000003') ->> 'ok';" \
+  "SELECT pg_sleep(0.5);
+   SELECT public.trust_dating_device(race.id('06'), repeat('4', 64), '5e4f0000-0000-4000-8000-000000000004') ->> 'ok';" \
+  "SELECT CASE WHEN NOT (SELECT is_called FROM race.s1) THEN 'the first trust never reached its delete (no race)'
+               WHEN (SELECT count(*) FROM public.dating_trusted_devices WHERE user_id = race.id('06')) <> 3
+               THEN 'devices kept: ' || (SELECT count(*) FROM public.dating_trusted_devices WHERE user_id = race.id('06'))
+               WHEN (SELECT count(*) FROM public.dating_trusted_devices WHERE user_id = race.id('06')
+                       AND device_hash IN (repeat('3', 64), repeat('4', 64))) <> 2 THEN 'a new device was dropped'
                ELSE 'ok' END;" serialised
 
 $P -c "SELECT race.reset();" > /dev/null 2>&1

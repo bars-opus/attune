@@ -723,7 +723,11 @@ class _DatingPhotosStepState extends ConsumerState<DatingPhotosStep>
           ],
           const SizedBox(height: Spacing.md),
           if (read.hasError)
-            DatingLoadError(busy: read.isLoading, onRetry: _refresh),
+            DatingLoadError(
+              busy: read.isLoading,
+              onRetry: _refresh,
+              errors: [read.error],
+            ),
           // Drag (the thumbnail is the handle) or Move earlier / Move later
           // (§3.2 D9 "reorder by drag or by" the actions); empty slots follow.
           ReorderableListView(

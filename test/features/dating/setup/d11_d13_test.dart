@@ -49,6 +49,7 @@ import '../support/dating_photos_fakes.dart';
 import '../support/dating_private_keyboard.dart';
 import '../support/dating_setup_fakes.dart';
 import '../support/dating_shell.dart';
+import '../support/dating_verify_fakes.dart';
 
 class _Preview implements DatingPreviewGateway {
   _Preview(this.card);
@@ -110,14 +111,17 @@ void main() {
     SharedPreferences.setMockInitialValues({});
   });
 
-  testWidgets('D11 shell: the intro copy, Continue opens the preview (R-26)', (
-    t,
-  ) async {
+  // Spec 2 W4a: D11 is the flow (verify_flow_test.dart); here, its intro
+  // as step 10, and with both checks passed Continue opens the preview.
+  testWidgets('D11: the intro as step 10; verified, Continue opens the '
+      'preview', (t) async {
     final n = (steps: <String>[], me: <String>[]);
     await pumpFlowScreen(
       t,
       () => DatingVerifyStep(nav: _nav(n)),
-      overrides: datingShellOverrides(),
+      overrides: datingShellOverrides(
+        verification: FakeDatingVerificationGateway(),
+      ),
     );
     await t.pumpAndSettle();
     expect(find.text("Verify it's you"), findsOneWidget);
@@ -126,6 +130,14 @@ void main() {
       find.textContaining('The video is deleted at once.'),
       findsOneWidget,
     );
+    expect(find.text('Start video check'), findsOneWidget);
+    await pumpFlowScreen(
+      t,
+      () => DatingVerifyStep(nav: _nav(n)),
+      overrides: datingShellOverrides(),
+    );
+    await t.pumpAndSettle();
+    expect(find.text("You're verified."), findsOneWidget);
     await tapInReach(t, find.text('Continue'));
     expect(n.steps, ['preview']);
   });
@@ -496,7 +508,9 @@ void main() {
       t,
       'd11_verify',
       () => DatingVerifyStep(nav: _nav((steps: <String>[], me: <String>[]))),
-      overrides: datingShellOverrides(),
+      overrides: datingShellOverrides(
+        verification: FakeDatingVerificationGateway(),
+      ),
     );
   });
 
@@ -1189,7 +1203,10 @@ void main() {
               nav: _nav((steps: <String>[], me: <String>[])),
             ),
           ),
-          overrides: datingShellOverrides(),
+          // Task 4 (carry H): D11 is the flow; its intro in each theme.
+          overrides: datingShellOverrides(
+            verification: FakeDatingVerificationGateway(),
+          ),
         );
         await t.pumpAndSettle();
         surfaces();

@@ -30,6 +30,7 @@ import 'package:attune/features/dating/setup/dating_preview_providers.dart';
 import 'package:attune/features/dating/setup/dating_setup_models.dart';
 import 'package:attune/features/dating/setup/dating_setup_providers.dart';
 import 'package:attune/features/dating/setup/dating_step_frame.dart';
+import 'package:attune/features/dating/verify/dating_reverify_line.dart';
 import 'package:attune/i10n/generated/app_localizations.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -278,8 +279,17 @@ class _DatingPreviewStepState extends ConsumerState<DatingPreviewStep>
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           if (profileFailed)
-            DatingLoadError(busy: profileRetrying, onRetry: retryProfile),
-          if (read.hasError) ...[
+            DatingLoadError(
+              busy: profileRetrying,
+              onRetry: retryProfile,
+              errors: [profileError],
+            ),
+          // Spec 2 W4b fix round 1 (M-3): the card refused on a phone
+          // to check: the re-check (once, if the profile said so too).
+          if (read.hasError && datingReadNeedsReverify(read.error)) ...[
+            if (!datingReadNeedsReverify(profileError))
+              const DatingReverifyLine(),
+          ] else if (read.hasError) ...[
             FlowErrorLine(
               text: loc.dating_previewUnavailable,
               liveRegion: true,

@@ -3,6 +3,10 @@ project_id = "mrgjtyacrzfylawyzabm"
 [functions.create-relationship-invite]
 verify_jwt = true
 
+# Spec 2 W4a (§4.7): the verification flow; the caller is the signed-in person.
+[functions.dating-verification]
+verify_jwt = true
+
 [functions.accept-invite]
 verify_jwt = true
 

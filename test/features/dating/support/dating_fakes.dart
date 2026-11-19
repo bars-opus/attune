@@ -4,6 +4,7 @@ import 'dart:async';
 import 'package:attune/features/dating/data/dating_home.dart';
 import 'package:attune/features/dating/data/dating_home_repository.dart';
 import 'package:attune/features/dating/data/dating_lifecycle_repository.dart';
+import 'package:attune/features/dating/data/dating_never_introduce.dart';
 import 'package:attune/features/dating/data/dating_rpc.dart';
 
 class FakeDatingHomeGateway implements DatingHomeGateway {
@@ -80,9 +81,14 @@ class FakeDatingLifecycleGateway implements DatingLifecycleGateway {
   DatingLifecycleResult result = const DatingLifecycleResult.done('active');
   bool? keptList;
 
+  /// Spec 2 W4b: while set and not completed, every call waits for it.
+  Completer<void>? callHold;
+
   Future<DatingLifecycleResult> _record(String name, String key) async {
     calls.add(name);
     keys.add(key);
+    final held = callHold;
+    if (held != null) await held.future;
     return result;
   }
 
@@ -103,6 +109,20 @@ class FakeDatingLifecycleGateway implements DatingLifecycleGateway {
   }) {
     keptList = keepNeverIntroduce;
     return _record('exit', key);
+  }
+}
+
+/// Spec 2 W4b: the 'Never introduce me' list as the server shows it.
+class FakeNeverIntroduce implements DatingNeverIntroduceGateway {
+  FakeNeverIntroduce([this.value = const DatingNeverIntroduceList(ok: true)]);
+
+  DatingNeverIntroduceList value;
+  int reads = 0;
+
+  @override
+  Future<DatingNeverIntroduceList> list() async {
+    reads++;
+    return value;
   }
 }
 

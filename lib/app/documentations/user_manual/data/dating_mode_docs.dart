@@ -108,7 +108,10 @@ class DatingModeDocs implements DocumentationModule {
           title: 'Checking it\'s you',
           numberPrefix: '4',
           content:
-              'Before your first introduction, a short video selfie checks your age and that your photos are you. The video is deleted straight away.',
+              // Spec 2 W4a Task 4 (carry 4): what W4a builds (§3.3.2, §3.3.3;
+              // R-9, R-12, R-13). "Keeps only whether the check passed" holds
+              // only with the vendors' deletion terms: owner gate R-22 (DPIA).
+              'Before your first introduction, a short video selfie checks that you\'re a real person and that your photos are you, and it can confirm you\'re over 18. The video is deleted straight away, and Attune keeps only whether the check passed. The video check flashes colours on your screen; if flashing lights affect you, you can check another way. If the video can\'t confirm your age, you check with your ID instead. If you check with your ID first, a short video or two quick photos then check that your photos are you. If the date of birth on your ID doesn\'t match the one you gave us, you can correct your date of birth and check again. If the ID check fails, Dating isn\'t available on your account; if you think that\'s wrong, contact support. If the video check doesn\'t work for you, a person can look at two quick photos to check it\'s you. That checks it\'s you, not your age.',
           type: ManualContentType.text,
         ),
       ],
@@ -168,6 +171,18 @@ class DatingModeDocs implements DocumentationModule {
           numberPrefix: '2',
           content:
               'If someone else uses your phone, you can lock Dating with your Safety PIN in Dating settings, and ask for the PIN every time Attune opens.',
+          type: ManualContentType.text,
+        ),
+        ManualContent(
+          id: 'dating_new_phone',
+          title: 'A new phone',
+          numberPrefix: '3',
+          content:
+              // Spec 2 W4b Task 7 (§3.3.4; R-14, R-15, R-32; T5 C-1; T6
+              // I-4, M-5; fix round 1 M-6: an iOS reinstall keeps the
+              // install id): the re-check, Start again, the kept list, and
+              // a phone that can't be checked.
+              'On a new phone, a phone restored from a backup, or after a problem with your phone or the app, Dating asks you to check it\'s you before it shows anything: a short video check, or a person looks at two quick photos. It never asks for your ID again. Dating keeps working on up to three of your phones, and a phone you haven\'t used for Dating in 180 days needs the check again. If you started setting up Dating on another phone and hadn\'t passed the check yet, you start again on this one, so your answers stay private. Starting again keeps your "Never introduce me" list, and you can still delete it from Leave Dating and delete my data. People kept on your list from before stay protected but aren\'t shown, and can\'t be removed one at a time: to remove them, leave Dating and delete your data. If Attune can\'t check your phone at all, close Attune and open it again; if that keeps happening, contact support.',
           type: ManualContentType.text,
         ),
       ],

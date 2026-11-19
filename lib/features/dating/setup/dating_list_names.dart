@@ -56,6 +56,10 @@ String? datingListName(AppLocalizations loc, String key) => switch (key) {
   'dating_denomination_other_christian' => loc.dating_denomination_other_christian,
   'dating_denomination_church_of_england_anglican' => loc.dating_denomination_church_of_england_anglican,
   'dating_denomination_orthodox' => loc.dating_denomination_orthodox,
+  // Spec 2 W4a (§2.2 id_documents, §3.3.2 ID route).
+  'dating_id_ghana_card' => loc.dating_id_ghana_card,
+  'dating_id_passport' => loc.dating_id_passport,
+  'dating_id_uk_driving_licence' => loc.dating_id_uk_driving_licence,
   _ => null,
 };
 

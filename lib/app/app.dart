@@ -3,6 +3,7 @@ import 'dart:async';
 
 import 'package:attune/app/app_shell.dart';
 import 'package:attune/app/theme/app_theme.dart';
+import 'package:attune/core/device/install_id.dart';
 import 'package:attune/core/notifications/services/onesignal_service.dart';
 import 'package:attune/core/providers/locale_provider.dart';
 import 'package:attune/core/providers/routing_providers.dart';
@@ -42,6 +43,12 @@ class _AppState extends ConsumerState<App> {
     Future.microtask(() {
       if (!mounted) return;
       ref.read(localeNotifierProvider.notifier).initialize();
+    });
+    // Spec 2 W4b (§3.3.4): this install's id exists from the first launch,
+    // for everyone (so its presence says nothing about Dating).
+    Future.microtask(() {
+      if (!mounted) return;
+      unawaited(ref.read(installIdStoreProvider).ensure());
     });
     Future.microtask(() {
       if (!mounted) return;

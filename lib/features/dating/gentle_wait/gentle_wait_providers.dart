@@ -3,18 +3,20 @@
 // account changes (another account on the same phone never sees it).
 import 'package:attune/features/auth/providers/auth_provider.dart'
     show currentUserProvider;
+import 'package:attune/features/dating/data/dating_supabase_client.dart';
 import 'package:attune/features/dating/gentle_wait/gentle_wait_repository.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
 
 /// The signed-in account's id (null when signed out).
 final gentleWaitAccountProvider = Provider<String?>(
   (ref) => ref.watch(currentUserProvider.select((u) => u?.id)),
 );
 
+// Spec 2 W4b (S-7, carry C): on the Dating client, which sends the
+// install's id (the gentle wait's reads and saves are device-gated).
 final gentleWaitGatewayProvider = Provider<GentleWaitGateway>(
-  (ref) => GentleWaitRepository(Supabase.instance.client),
+  (ref) => GentleWaitRepository(ref.watch(datingSupabaseClientProvider)),
 );
 
 /// D0's data, one entry per account (D8, batch 5 fix round 1 I-2): the

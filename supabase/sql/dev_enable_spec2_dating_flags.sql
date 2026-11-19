@@ -1,6 +1,7 @@
 -- DEV / MANUAL TESTING ONLY. Never a migration (Spec 2 §4.9, R-6, Q19b,
 -- I-15). Turns every Spec 2 Dating flag that exists ON, and opens Ghana and
--- the UK for Dating, on the development project only. The guard comes
+-- the UK for Dating, on the development project only. W4a: also the
+-- verification mode (fake locally, sandbox on the project) when none is set. The guard comes
 -- first and everything is one statement, so when Spec 1's guard raises
 -- env:not_development (the project doesn't read 'development', or
 -- supabase_url is set and doesn't name the development ref, or it can't be
@@ -26,8 +27,18 @@ BEGIN
     ('dating_match_messaging', true),
     ('dating_profile_photos', true),
     ('dating_alignment_algorithm_v1', true),
-    ('dating_same_gender_matching', true)
+    ('dating_same_gender_matching', true),
+    ('dating_age_assurance', true) -- Spec 2 W4a
   ON CONFLICT (key) DO UPDATE SET enabled = EXCLUDED.enabled, updated_at = now();
+
+  -- Spec 2 W4a (§3.3.5, §4.9): the verification mode, only when none is set
+  -- Spec 2 W4a (an owner's 'live' or 'sandbox' is kept): 'fake' on a local
+  -- Spec 2 W4a database (no project URL), 'sandbox' on the development
+  -- Spec 2 W4a project. Vault, which app_setting reads first.
+  IF public.app_setting('age_assurance_mode') IS NULL THEN -- Spec 2 W4a
+    PERFORM vault.create_secret(CASE WHEN public.app_setting('supabase_url') IS NULL THEN 'fake' ELSE 'sandbox' END, -- Spec 2 W4a
+                                'age_assurance_mode', 'Spec 2 W4a: dev verification mode'); -- Spec 2 W4a
+  END IF; -- Spec 2 W4a
 
   -- W1b: Ghana (Greater Accra and Ashanti, as seeded) and the UK open,
   -- only through publish_country_config (nothing writes the table directly).

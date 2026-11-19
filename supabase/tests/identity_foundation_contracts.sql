@@ -923,8 +923,8 @@ BEGIN
   -- 2. The flag on and every gate met (adult age check, Healing readiness,
   --    good standing, no relationship): it activates and leaves users.mode.
   UPDATE public.feature_flags SET enabled = true WHERE key = 'dating_mode_enabled';
-  INSERT INTO public.dating_age_verifications (user_id, birth_date, verification_method, verified_at)
-  VALUES (v_c, DATE '1990-01-01', 'w1_contract', now());
+  INSERT INTO public.dating_age_verifications (user_id, age_method, age_result, age_vendor, age_decided_at, identity_method, identity_result, identity_vendor, identity_decided_at) -- Spec 2 W4a (R-2)
+  VALUES (v_c, 'id', 'pass', 'contract', now(), 'liveness_compare', 'pass', 'contract', now());
   INSERT INTO public.healing_journeys (user_id, breakup_at, breakup_at_source, status,
                                        reflection_completed_at, post_mortem_completed_at,
                                        pattern_awareness_completed_at, portrait_completed_at,

@@ -9,6 +9,7 @@ import 'package:attune/features/dating/not_open/dating_not_open_screen.dart';
 import 'package:attune/features/dating/routes/dating_setup_steps.dart';
 import 'package:attune/features/dating/settings/dating_leave_screen.dart';
 import 'package:attune/features/dating/settings/dating_settings_screen.dart';
+import 'package:attune/features/dating/verify/reverify_route.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
@@ -17,6 +18,9 @@ abstract final class DatingPaths {
   static const settings = '/dating/settings';
   static const notOpen = '/dating/not-open';
   static const leave = '/dating/leave';
+
+  /// Spec 2 W4b (§3.3.4, §3.14): where every reverify_device answer leads.
+  static const verify = '/dating/verify';
 
   static String step(String step) => '/dating/setup/$step';
 
@@ -172,6 +176,14 @@ List<RouteBase> datingRoutes({required bool Function() signedIn}) => [
     'datingLeave',
     signedIn,
     (s) => const DatingLeaveScreen(),
+    motion: (s) => DatingMotion.none,
+  ),
+  // Spec 2 W4b: the check's outcomes are never animated (§3.0).
+  datingRoute(
+    DatingPaths.verify,
+    'datingVerify',
+    signedIn,
+    (s) => const DatingReverifyRoute(),
     motion: (s) => DatingMotion.none,
   ),
 ];

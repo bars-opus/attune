@@ -260,6 +260,7 @@ class _DatingWhereStepState extends ConsumerState<DatingWhereStep>
         children: [
           if (loadFailed)
             DatingLoadError(
+              errors: [listsRead.error, profileError],
               busy: listsRead.isLoading || profileRetrying,
               onRetry: () {
                 if (listsRead.hasError) {

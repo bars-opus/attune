@@ -1,10 +1,8 @@
-// Spec 2 §3.2 D11 (Step 10 of 12): the shell until W4a builds §3.3's flow
-// (R-26). The intro copy is §3.3.2's; Continue opens D12.
-import 'package:attune/app/theme/design_tokens.dart';
-import 'package:attune/features/auth/sign_up/presentation/widgets/flow_buttons.dart';
+// Spec 2 §3.2 D11 (Step 10 of 12): the verification flow (W4a, §3.3).
+// Both checks passed: D12 (or back to where it was opened, R-40). "Change
+// that photo" opens D9.
 import 'package:attune/features/dating/routes/dating_setup_steps.dart';
-import 'package:attune/features/dating/setup/dating_step_frame.dart';
-import 'package:attune/i10n/generated/app_localizations.dart';
+import 'package:attune/features/dating/verify/verify_flow.dart';
 import 'package:flutter/material.dart';
 
 class DatingVerifyStep extends StatelessWidget {
@@ -13,25 +11,11 @@ class DatingVerifyStep extends StatelessWidget {
   final DatingStepNav nav;
 
   @override
-  Widget build(BuildContext context) {
-    final loc = AppLocalizations.of(context)!;
-    final theme = Theme.of(context);
-    return DatingStepFrame(
-      step: 'verify',
-      title: loc.dating_verifyTitle,
-      onBack: nav.back,
-      body: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Text(loc.dating_verifyBody, style: theme.textTheme.bodyLarge),
-          const SizedBox(height: Spacing.md),
-          Text(loc.dating_verifyLater, style: theme.textTheme.bodyMedium),
-        ],
-      ),
-      primary: FlowPrimaryButton(
-        label: loc.dating_continue,
-        onPressed: () => nav.next('preview'),
-      ),
-    );
-  }
+  Widget build(BuildContext context) => DatingVerifyFlow(
+    step: 'verify',
+    onBack: nav.back,
+    onDone: () => nav.next('preview'),
+    onChangePhotos:
+        () => nav.next(nav.from == null ? 'photos' : 'photos?from=${nav.from}'),
+  );
 }

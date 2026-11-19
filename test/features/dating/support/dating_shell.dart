@@ -5,10 +5,16 @@ import 'package:attune/app/theme/app_theme.dart';
 import 'package:attune/core/utils/screen_util_config.dart';
 import 'package:attune/features/auth/providers/auth_provider.dart'
     show currentUserProvider;
+import 'package:attune/features/dating/data/dating_never_introduce.dart';
 import 'package:attune/features/dating/data/dating_providers.dart';
+import 'package:attune/features/dating/data/dating_supabase_client.dart'
+    show datingDeviceReadyProvider;
 import 'package:attune/features/dating/gentle_wait/gentle_wait_providers.dart';
 import 'package:attune/features/dating/gentle_wait/gentle_wait_repository.dart';
 import 'package:attune/features/dating/routes/dating_routes.dart';
+import 'package:attune/features/dating/verify/dating_verification.dart';
+import 'package:attune/features/dating/verify/dating_verification_providers.dart';
+import 'package:attune/features/dating/verify/dating_verification_repository.dart';
 import 'package:attune/features/safety/data/dating_lock_store.dart';
 import 'package:attune/i10n/generated/app_localizations.dart';
 import 'package:flutter/material.dart';
@@ -20,6 +26,16 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../../helpers/home_harness.dart' show testUser;
 import 'dating_fakes.dart';
+import 'dating_verify_fakes.dart';
+
+/// Spec 2 W4a: both checks passed, so D11 shows "You're verified." and
+/// Continue moves on (the W3 tests walk through it).
+const datingVerifiedState = DatingVerification(
+  available: true,
+  age: DatingCheck.pass,
+  identity: DatingCheck.pass,
+  photosReady: true,
+);
 
 class FakeLock extends DatingLockStore {
   FakeLock(this.on, {this.unreadable = false});
@@ -106,6 +122,7 @@ Future<DatingShell> pumpDatingShell(
   bool signedIn = true,
   bool online = true,
   double textScale = 1.0,
+  bool deviceReady = true,
   FakeDatingHomeGateway? home,
   List<Override> overrides = const [],
   Widget Function(GoRouter router, Widget child)? wrap,
@@ -176,6 +193,14 @@ Future<DatingShell> pumpDatingShell(
         datingLifecycleGatewayProvider.overrideWithValue(life),
         gentleWaitGatewayProvider.overrideWithValue(wait),
         datingOnlineProvider.overrideWith((ref) => Stream.value(online)),
+        datingVerificationGatewayProvider.overrideWithValue(
+          FakeDatingVerificationGateway(state: datingVerifiedState),
+        ),
+        // Spec 2 W4b: this phone has an install id unless a test says not.
+        datingDeviceReadyProvider.overrideWith((ref) async => deviceReady),
+        datingNeverIntroduceGatewayProvider.overrideWithValue(
+          FakeNeverIntroduce(),
+        ),
         ...overrides,
       ],
       child: ScreenUtilConfig.builder(
@@ -202,6 +227,8 @@ List<Override> datingShellOverrides({
   FakeDatingLifecycleGateway? life,
   FakeWait? wait,
   bool online = true,
+  DatingVerificationGateway? verification,
+  bool deviceReady = true,
 }) => [
   currentUserProvider.overrideWith((ref) {
     final id = ref.watch(datingTestAccount);
@@ -219,6 +246,12 @@ List<Override> datingShellOverrides({
   ),
   gentleWaitGatewayProvider.overrideWithValue(wait ?? FakeWait()),
   datingOnlineProvider.overrideWith((ref) => Stream.value(online)),
+  datingVerificationGatewayProvider.overrideWithValue(
+    verification ?? FakeDatingVerificationGateway(state: datingVerifiedState),
+  ),
+  // Spec 2 W4b: this phone has an install id unless a test says not.
+  datingDeviceReadyProvider.overrideWith((ref) async => deviceReady),
+  datingNeverIntroduceGatewayProvider.overrideWithValue(FakeNeverIntroduce()),
 ];
 
 /// The Dating section's overrides for a Spec 1 test that renders Me on the

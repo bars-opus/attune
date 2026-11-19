@@ -211,7 +211,11 @@ class _DatingReadyStepState extends ConsumerState<DatingReadyStep>
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           if (profileFailed)
-            DatingLoadError(busy: profileRetrying, onRetry: retryProfile),
+            DatingLoadError(
+              busy: profileRetrying,
+              onRetry: retryProfile,
+              errors: [profileError],
+            ),
           if (drop != null)
             Text(
               loc.dating_readyFirst(

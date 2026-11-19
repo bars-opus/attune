@@ -19,7 +19,10 @@ DECLARE
   v_got text;
   v_want constant jsonb := jsonb_build_object(
     'dating-profile-photos',
-    'dating_profile_photos_insert_by_intent:INSERT:{authenticated};dating_profile_photos_select_owner:SELECT:{authenticated}');
+    'dating_profile_photos_insert_by_intent:INSERT:{authenticated};dating_profile_photos_select_owner:SELECT:{authenticated}',
+    -- Spec 2 W4a (§3.3.3, §4.5): the human route's photos: INSERT only, no client SELECT.
+    'dating-verification-review',
+    'dating_verification_review_insert_by_session:INSERT:{authenticated}');
 BEGIN
   FOR v_bucket IN SELECT jsonb_object_keys(v_want) LOOP
     IF NOT EXISTS (SELECT 1 FROM storage.buckets WHERE id = v_bucket) THEN
@@ -46,10 +49,12 @@ BEGIN
     INTO v_got
     FROM pg_policies AS p
    WHERE p.schemaname = 'storage' AND p.tablename = 'objects'
-     AND p.policyname IN ('dating_profile_photos_insert_by_intent', 'dating_profile_photos_select_owner');
+     AND p.policyname IN ('dating_profile_photos_insert_by_intent', 'dating_profile_photos_select_owner',
+                          'dating_verification_review_insert_by_session'); -- Spec 2 W4a
   -- Spec 2 W3c (R-2): both policies call definer predicates now.
   IF v_got IS DISTINCT FROM 'dating_profile_photos_insert_by_intent=9d7dc3110cf2de1a35eb71135348cca5;'
-                            'dating_profile_photos_select_owner=91e5256f5bc6ddfba83d30e571585244' THEN
+                            'dating_profile_photos_select_owner=91e5256f5bc6ddfba83d30e571585244;'
+                            'dating_verification_review_insert_by_session=a1e02f11af65b060f7a9262f5dbc92d9' THEN -- Spec 2 W4a
     RAISE EXCEPTION 'CONTRACT VIOLATED: a Dating storage policy''s expression changed: %', v_got;
   END IF;
   -- Spec 2 W3c fix round 1 (M-3): the policies call definer predicates, so
@@ -59,9 +64,11 @@ BEGIN
                     ';' ORDER BY p.proname)
     INTO v_got
     FROM pg_proc AS p JOIN pg_namespace AS n ON n.oid = p.pronamespace
-   WHERE n.nspname = 'public' AND p.proname IN ('dating_storage_intent_open', 'dating_storage_owns');
-  IF v_got IS DISTINCT FROM 'dating_storage_intent_open=e06c835fdb2d5569b475e782c3052437;'
-                            'dating_storage_owns=2c9a38d7244b6e2211bdcb298f1262e0' THEN
+   WHERE n.nspname = 'public' AND p.proname IN ('dating_storage_intent_open', 'dating_storage_owns',
+                                                'dating_review_upload_open'); -- Spec 2 W4a
+  IF v_got IS DISTINCT FROM 'dating_review_upload_open=7465719589715a4603eab123b0179cf7;' -- Spec 2 W4a
+                            'dating_storage_intent_open=e06c835fdb2d5569b475e782c3052437;'
+                            'dating_storage_owns=0fad8f8fac06df5e9996908adcbec393' THEN -- Spec 2 W4b (T5 fix round 1, I-5): the owner's trusted phone only
     RAISE EXCEPTION 'CONTRACT VIOLATED: a Dating storage predicate changed: %', v_got;
   END IF;
 
@@ -103,7 +110,8 @@ END $$;
 ALTER TABLE storage.objects ENABLE ROW LEVEL SECURITY;
 GRANT SELECT ON storage.objects TO anon, authenticated;
 INSERT INTO storage.objects (bucket_id, name, owner)
-VALUES ('dating-profile-photos', 'spec2-w1-bucket-probe/photo.jpg', '5e2a0000-0000-0000-0000-0000000000f1');
+VALUES ('dating-profile-photos', 'spec2-w1-bucket-probe/photo.jpg', '5e2a0000-0000-0000-0000-0000000000f1'),
+       ('dating-verification-review', 'spec2-w4a-bucket-probe/1.jpg', '5e2a0000-0000-0000-0000-0000000000f1'); -- Spec 2 W4a
 
 DO $$
 DECLARE
@@ -115,7 +123,7 @@ BEGIN
     PERFORM set_config('request.jwt.claims',
       json_build_object('sub', '5e2a0000-0000-0000-0000-0000000000f2', 'role', v_role)::text, true);
     PERFORM set_config('request.jwt.claim.sub', '5e2a0000-0000-0000-0000-0000000000f2', true);
-    SELECT count(*) INTO v_n FROM storage.objects WHERE bucket_id = 'dating-profile-photos';
+    SELECT count(*) INTO v_n FROM storage.objects WHERE bucket_id IN ('dating-profile-photos', 'dating-verification-review'); -- Spec 2 W4a
     RESET ROLE;
     PERFORM set_config('request.jwt.claims', '', true);
     PERFORM set_config('request.jwt.claim.sub', '', true);

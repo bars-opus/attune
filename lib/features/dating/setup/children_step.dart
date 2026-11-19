@@ -60,7 +60,11 @@ class _DatingChildrenStepState extends ConsumerState<DatingChildrenStep>
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           if (profileFailed)
-            DatingLoadError(busy: profileRetrying, onRetry: retryProfile),
+            DatingLoadError(
+              busy: profileRetrying,
+              onRetry: retryProfile,
+              errors: [profileError],
+            ),
           DatingChoiceGroup<bool>(
             label: loc.dating_childrenHaveQ,
             options: [(true, loc.dating_yes), (false, loc.dating_no)],
