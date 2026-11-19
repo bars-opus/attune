@@ -14,6 +14,7 @@ abstract final class GameStrings {
   static String waitingFor(String name) => 'Waiting for $name';
   static const String remind = 'Send a reminder';
   static String entryNumber(int number, String title) => '$number. $title';
+  static String roundOf(int round, int total) => 'Round $round of $total';
 
   // Header
   static const String back = 'Back';

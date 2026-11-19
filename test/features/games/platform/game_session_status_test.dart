@@ -130,41 +130,96 @@ void main() {
         'Round 3 of 10',
       );
     });
+
+    test('nobody is locked out before either has answered', () {
+      // Waiting only when the viewer HAS answered and the partner has not.
+      // Without the viewer's half, both players would wait at the start of
+      // every round and neither could move.
+      for (final pair in const [(false, false), (null, false), (true, true)]) {
+        expect(
+          map(
+            card(
+              status: 'active',
+              viewerAnswered: pair.$1,
+              partnerAnswered: pair.$2,
+            ),
+          ).status,
+          GameLandingStatus.yourTurn,
+          reason: 'viewerAnswered ${pair.$1}, partnerAnswered ${pair.$2}',
+        );
+      }
+    });
   });
 
-  testWidgets('watchSessionLanding is loading until the card arrives', (
-    tester,
-  ) async {
-    useSurface(tester, phone);
-    final cards = StreamController<GameCardState?>();
-    addTearDown(cards.close);
+  group('watchSessionLanding', () {
+    late StreamController<GameCardState?> cards;
     late GameLandingState seen;
 
-    await tester.pumpWidget(
-      ProviderScope(
-        overrides: [
-          currentUserIdProvider.overrideWithValue('me'),
-          gamePartnerNameProvider.overrideWith((ref) async => 'Ama'),
-          gameCardProvider.overrideWith((ref, id) => cards.stream),
-        ],
-        child: Consumer(
-          builder: (context, ref, _) {
-            seen = watchSessionLanding(ref, sessionId: 's1', initiatorId: 'me');
-            return const SizedBox();
-          },
+    Future<void> pumpLanding(WidgetTester tester) async {
+      useSurface(tester, phone);
+      cards = StreamController<GameCardState?>();
+      addTearDown(cards.close);
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            currentUserIdProvider.overrideWithValue('me'),
+            gamePartnerNameProvider.overrideWith((ref) async => 'Ama'),
+            gameCardProvider.overrideWith((ref, id) => cards.stream),
+          ],
+          child: Consumer(
+            builder: (context, ref, _) {
+              seen = watchSessionLanding(
+                ref,
+                sessionId: 's1',
+                initiatorId: 'me',
+              );
+              return const SizedBox();
+            },
+          ),
         ),
-      ),
-    );
+      );
+      // The control for every test here: a card still on its way is loading.
+      expect(seen.status, GameLandingStatus.loading);
+      expect(seen.sessionId, 's1');
+    }
 
-    expect(seen.status, GameLandingStatus.loading);
-    expect(seen.sessionId, 's1');
+    testWidgets('is loading until the card arrives', (tester) async {
+      await pumpLanding(tester);
 
-    cards.add(card(status: 'invited'));
-    await tester.pump();
+      cards.add(card(status: 'invited'));
+      await tester.pump();
 
-    // The viewer is the initiator, so their own invitation waits on Ama.
-    expect(seen.status, GameLandingStatus.waiting);
-    expect(seen.sessionId, 's1');
-    expect(seen.partnerName, 'Ama');
+      // The viewer is the initiator, so their own invitation waits on Ama.
+      expect(seen.status, GameLandingStatus.waiting);
+      expect(seen.sessionId, 's1');
+      expect(seen.partnerName, 'Ama');
+    });
+
+    testWidgets('a session with no row still lets the player in', (
+      tester,
+    ) async {
+      await pumpLanding(tester);
+
+      cards.add(null);
+      await tester.pump();
+
+      // Not a dead button: the game's own screen handles a missing session.
+      expect(seen.status, GameLandingStatus.yourTurn);
+      expect(seen.sessionId, 's1');
+      expect(seen.partnerName, 'Ama');
+    });
+
+    testWidgets('a card that fails to load still lets the player in', (
+      tester,
+    ) async {
+      await pumpLanding(tester);
+
+      cards.addError(Exception('offline'));
+      await tester.pump();
+
+      expect(seen.status, GameLandingStatus.yourTurn);
+      expect(seen.sessionId, 's1');
+      expect(seen.partnerName, 'Ama');
+    });
   });
 }

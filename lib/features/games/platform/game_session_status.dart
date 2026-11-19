@@ -1,4 +1,5 @@
 import 'package:attune/features/games/platform/game_landing_state.dart';
+import 'package:attune/features/games/platform/game_strings.dart';
 import 'package:attune/features/games/presentation/providers/game_card_provider.dart';
 import 'package:attune/features/games/presentation/providers/game_partner_name_provider.dart';
 import 'package:attune/features/games/presentation/providers/games_hub_providers.dart';
@@ -23,7 +24,7 @@ GameLandingState landingStateFromCard({
     status: _status(card, viewerId: viewerId, viewerStarted: viewerStarted),
     sessionId: sessionId,
     partnerName: partnerName,
-    caption: round > 0 && total > 0 ? 'Round $round of $total' : null,
+    caption: round > 0 && total > 0 ? GameStrings.roundOf(round, total) : null,
   );
 }
 
@@ -58,21 +59,36 @@ GameLandingStatus _status(
   }
 }
 
-/// Watches one session live. Loading, or signed out, is
-/// GameLandingStatus.loading with the sessionId set.
+/// Watches one session live.
+///
+/// Only a card still on its way, or a signed-out viewer, is
+/// GameLandingStatus.loading (with the sessionId set). A card that resolves
+/// to null (no such row), or fails with no earlier value, is
+/// GameLandingStatus.yourTurn with the sessionId and the partner's name when
+/// known: a disabled button would shut the player out, and the game's own
+/// screen handles a missing session. A failure after a card arrived keeps
+/// showing that card.
 GameLandingState watchSessionLanding(
   WidgetRef ref, {
   required String sessionId,
   required String? initiatorId,
 }) {
   final viewerId = ref.watch(currentUserIdProvider);
-  final card = ref.watch(gameCardProvider(sessionId)).valueOrNull;
+  final cardValue = ref.watch(gameCardProvider(sessionId));
   // The name is not waited for: the button falls back to "your partner".
   final partnerName = ref.watch(gamePartnerNameProvider).valueOrNull;
-  if (viewerId == null || card == null) {
+  if (viewerId == null || (!cardValue.hasValue && !cardValue.hasError)) {
     return GameLandingState(
       status: GameLandingStatus.loading,
       sessionId: sessionId,
+    );
+  }
+  final card = cardValue.valueOrNull;
+  if (card == null) {
+    return GameLandingState(
+      status: GameLandingStatus.yourTurn,
+      sessionId: sessionId,
+      partnerName: partnerName,
     );
   }
   return landingStateFromCard(
