@@ -84,6 +84,7 @@ void main() {
       collectionLabel: 'Demo',
       tagline: 'Many rules.',
       theme: const GameTheme(primary: GameColors.wordHunt),
+      icon: Icons.extension_rounded,
       heroBuilder: (_, __) => const SizedBox(),
       howToPlay: [
         for (var i = 0; i < 30; i++)

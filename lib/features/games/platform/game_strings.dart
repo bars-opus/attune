@@ -9,6 +9,7 @@ abstract final class GameStrings {
   static const String join = 'Join';
   static const String yourTurn = 'Your turn';
   static const String playAgain = 'Play again';
+  static const String comingSoon = 'Coming soon';
   static const String waitingForPartner = 'Waiting for your partner';
   static String waitingFor(String name) => 'Waiting for $name';
   static const String remind = 'Send a reminder';

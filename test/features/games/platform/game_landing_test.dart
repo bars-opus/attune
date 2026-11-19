@@ -1,3 +1,5 @@
+import 'package:attune/features/games/platform/game_definition.dart';
+import 'package:attune/features/games/platform/game_landing_state.dart';
 import 'package:attune/features/games/platform/shell/game_buttons.dart';
 import 'package:attune/features/games/platform/shell/game_landing_screen.dart';
 import 'package:flutter/material.dart';
@@ -26,14 +28,35 @@ void main() {
       expect(label(GameLandingStatus.finished), 'Play again');
     });
 
-    test('is only disabled while waiting on the partner', () {
+    test('is only disabled while waiting, loading or coming soon', () {
+      const disabled = {
+        GameLandingStatus.waiting,
+        GameLandingStatus.loading,
+        GameLandingStatus.comingSoon,
+      };
       for (final status in GameLandingStatus.values) {
         expect(
           landingAction(GameLandingState(status: status)).enabled,
-          status != GameLandingStatus.waiting,
+          !disabled.contains(status),
           reason: '$status',
         );
       }
+    });
+
+    test('while the game\'s state is loading the button waits', () {
+      final action = landingAction(
+        const GameLandingState(status: GameLandingStatus.loading),
+      );
+      expect(action.label, 'Play');
+      expect(action.enabled, isFalse);
+    });
+
+    test('a coming-soon game says so and cannot be started', () {
+      final action = landingAction(
+        const GameLandingState(status: GameLandingStatus.comingSoon),
+      );
+      expect(action.label, 'Coming soon');
+      expect(action.enabled, isFalse);
     });
 
     test('names the partner being waited for', () {
@@ -74,14 +97,15 @@ void main() {
       VoidCallback? onRemind,
       VoidCallback? onHowToPlay,
       double textScale = 1,
-      bool withEntries = true,
+      List<GameEntry> entries = demoEntries,
     }) async {
       useSurface(tester, phone);
       await tester.pumpWidget(
         gameHost(
           GameLandingScreen(
-            definition: demoGame(withEntries: withEntries),
+            definition: demoGame(),
             state: state,
+            entries: entries,
             onPrimary: onPrimary,
             onRemind: onRemind,
             onHowToPlay: onHowToPlay,
@@ -220,7 +244,7 @@ void main() {
     });
 
     testWidgets('a game with no entries shows no list', (tester) async {
-      await pump(tester, withEntries: false);
+      await pump(tester, entries: const []);
 
       expect(find.textContaining('1. '), findsNothing);
       expect(find.text('Tile Tutorial'), findsOneWidget);

@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:attune/features/games/platform/game_landing_state.dart';
 import 'package:attune/features/games/platform/game_theme.dart';
 import 'package:attune/features/games/platform/feel/game_tile.dart';
 import 'package:attune/features/games/platform/shell/game_buttons.dart';
@@ -104,6 +105,7 @@ void main() {
         (context) => GameLandingScreen(
           definition: demoGame(withSettings: true),
           state: const GameLandingState(status: GameLandingStatus.fresh),
+          entries: demoEntries,
           onPrimary: () => open(context),
         ),
   );
@@ -114,6 +116,7 @@ void main() {
           () => GameLandingScreen(
             definition: demoGame(),
             state: const GameLandingState(status: GameLandingStatus.fresh),
+            entries: demoEntries,
             onPrimary: () {},
             onHowToPlay: () {},
           ),
@@ -129,6 +132,7 @@ void main() {
               caption: 'Round 3 of 10',
               canRemind: true,
             ),
+            entries: demoEntries,
             onPrimary: () {},
             onRemind: () {},
             onHowToPlay: () {},
@@ -203,6 +207,7 @@ void main() {
         GameLandingScreen(
           definition: demoGame(),
           state: const GameLandingState(status: GameLandingStatus.yourTurn),
+          entries: demoEntries,
           onPrimary: () {},
           onHowToPlay: () {},
         ),

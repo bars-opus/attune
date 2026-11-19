@@ -1,5 +1,7 @@
+import 'package:attune/features/games/platform/game_landing_state.dart';
 import 'package:attune/features/games/platform/game_theme.dart';
 import 'package:flutter/widgets.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 /// Whether a game can be started.
 enum GameAvailability {
@@ -23,12 +25,44 @@ class GameEntry {
 
 typedef GameHeroBuilder =
     Widget Function(BuildContext context, GameTheme theme);
-typedef GameEntriesBuilder = List<GameEntry> Function(BuildContext context);
 typedef GameSettingsBuilder = Widget Function(BuildContext context);
 
-/// Enters play: a new game when [sessionId] is null, that session otherwise.
-typedef GameOpen =
-    Future<void> Function(BuildContext context, {String? sessionId});
+/// What the shell needs from a game to show its landing page and get a
+/// player into it.
+abstract class GameController {
+  const GameController();
+
+  /// Where the couple's game stands. Called from build.
+  GameLandingState watchLanding(WidgetRef ref);
+
+  /// Play, Join, Your turn or Play again, according to [state].
+  Future<void> onPrimary(
+    BuildContext context,
+    WidgetRef ref,
+    GameLandingState state,
+  );
+
+  /// Only called when [state.canRemind].
+  Future<void> onRemind(
+    BuildContext context,
+    WidgetRef ref,
+    GameLandingState state,
+  ) async {}
+
+  /// The rows under the button.
+  List<GameEntry> entries(
+    BuildContext context,
+    WidgetRef ref,
+    GameLandingState state,
+  ) => const [];
+
+  /// Opens one session directly: from a chat card or the hub.
+  Future<void> openSession(
+    BuildContext context,
+    WidgetRef ref, {
+    required String sessionId,
+  });
+}
 
 /// Everything the shell needs to know about one game.
 ///
@@ -44,11 +78,11 @@ class GameDefinition {
     required this.collectionLabel,
     required this.tagline,
     required this.theme,
+    required this.icon,
     required this.heroBuilder,
-    this.entriesBuilder,
     this.howToPlay = const [],
     this.settingsBuilder,
-    this.open,
+    this.controller,
     this.availability = GameAvailability.launch,
   });
 
@@ -63,11 +97,11 @@ class GameDefinition {
   final String tagline;
   final GameTheme theme;
 
+  /// The game's small mark, where a list names it without its tile art.
+  final IconData icon;
+
   /// Draws the tile art at the top of the landing page.
   final GameHeroBuilder heroBuilder;
-
-  /// The rows under the Play button. Null means none.
-  final GameEntriesBuilder? entriesBuilder;
 
   /// The rules, a sentence each, for the "?" button.
   final List<String> howToPlay;
@@ -75,8 +109,9 @@ class GameDefinition {
   /// The game's own settings tab. Null hides the tab.
   final GameSettingsBuilder? settingsBuilder;
 
-  /// How play is entered. Wraps the game's existing routes.
-  final GameOpen? open;
+  /// Reads the couple's state and gets a player into the game. Null for a
+  /// coming-soon game with no screens: there is nothing to open.
+  final GameController? controller;
 
   final GameAvailability availability;
 }

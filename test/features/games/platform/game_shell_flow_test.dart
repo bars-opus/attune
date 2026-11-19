@@ -2,6 +2,7 @@ import 'package:attune/core/ui/feedback/sound_service.dart';
 import 'package:attune/features/games/platform/feel/game_feedback.dart';
 import 'package:attune/features/games/platform/feel/game_tile.dart';
 import 'package:attune/features/games/platform/game_definition.dart';
+import 'package:attune/features/games/platform/game_landing_state.dart';
 import 'package:attune/features/games/platform/shell/game_complete_screen.dart';
 import 'package:attune/features/games/platform/shell/game_how_to_play_sheet.dart';
 import 'package:attune/features/games/platform/shell/game_landing_screen.dart';
@@ -29,6 +30,7 @@ class _DemoLanding extends StatelessWidget {
     return GameLandingScreen(
       definition: definition,
       state: const GameLandingState(status: GameLandingStatus.fresh),
+      entries: demoEntries,
       onHowToPlay: () => showGameHowToPlay(context, definition: definition),
       onPrimary:
           () => Navigator.of(context).push(

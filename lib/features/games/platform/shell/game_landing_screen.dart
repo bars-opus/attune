@@ -1,110 +1,12 @@
 import 'package:attune/app/theme/design_tokens.dart';
 import 'package:attune/features/games/platform/game_definition.dart';
+import 'package:attune/features/games/platform/game_landing_state.dart';
 import 'package:attune/features/games/platform/game_strings.dart';
 import 'package:attune/features/games/platform/game_theme.dart';
 import 'package:attune/features/games/platform/shell/game_backdrop.dart';
 import 'package:attune/features/games/platform/shell/game_buttons.dart';
 import 'package:attune/features/games/platform/shell/game_content_width.dart';
 import 'package:flutter/material.dart';
-
-/// Where the two players stand in a game.
-enum GameLandingStatus {
-  /// No game in progress.
-  fresh,
-
-  /// The partner started one and is waiting for this player.
-  invited,
-
-  /// A game is in progress and this player can act.
-  yourTurn,
-
-  /// A game is in progress and the partner has to act.
-  waiting,
-
-  /// The last game is over.
-  finished,
-}
-
-@immutable
-class GameLandingState {
-  const GameLandingState({
-    required this.status,
-    this.partnerName,
-    this.caption,
-    this.canRemind = false,
-  });
-
-  final GameLandingStatus status;
-
-  /// Named on the button while waiting. Null falls back to "your partner".
-  final String? partnerName;
-
-  /// Where the game stands, such as "Round 3 of 10". Shown under the button.
-  final String? caption;
-
-  /// Whether a reminder can be sent right now. Only read while waiting.
-  final bool canRemind;
-}
-
-/// What the landing page's one button says and whether it can be pressed.
-@immutable
-class GameLandingAction {
-  const GameLandingAction({
-    required this.label,
-    required this.enabled,
-    this.icon,
-  });
-
-  final String label;
-  final bool enabled;
-  final IconData? icon;
-}
-
-/// The button for a state.
-///
-/// Pure, so each of the five states is checked without building a screen.
-/// The button is what makes this page about two people rather than one:
-/// the same game says Play, Your turn or Waiting for Ama depending on who
-/// has to move.
-GameLandingAction landingAction(GameLandingState state) {
-  switch (state.status) {
-    case GameLandingStatus.fresh:
-      return const GameLandingAction(
-        label: GameStrings.play,
-        enabled: true,
-        icon: Icons.play_arrow_rounded,
-      );
-    case GameLandingStatus.invited:
-      return const GameLandingAction(
-        label: GameStrings.join,
-        enabled: true,
-        icon: Icons.play_arrow_rounded,
-      );
-    case GameLandingStatus.yourTurn:
-      return const GameLandingAction(
-        label: GameStrings.yourTurn,
-        enabled: true,
-        icon: Icons.play_arrow_rounded,
-      );
-    case GameLandingStatus.waiting:
-      final name = state.partnerName?.trim();
-      return GameLandingAction(
-        label:
-            name == null || name.isEmpty
-                ? GameStrings.waitingForPartner
-                : GameStrings.waitingFor(name),
-        // Waiting is information, not an action: there is nothing this
-        // player can do in the game until the partner moves.
-        enabled: false,
-      );
-    case GameLandingStatus.finished:
-      return const GameLandingAction(
-        label: GameStrings.playAgain,
-        enabled: true,
-        icon: Icons.replay_rounded,
-      );
-  }
-}
 
 /// The page every game opens on.
 ///
@@ -116,6 +18,7 @@ class GameLandingScreen extends StatelessWidget {
     super.key,
     required this.definition,
     required this.state,
+    this.entries = const <GameEntry>[],
     this.onPrimary,
     this.onRemind,
     this.onBack,
@@ -125,7 +28,11 @@ class GameLandingScreen extends StatelessWidget {
   final GameDefinition definition;
   final GameLandingState state;
 
-  /// Called when the button is pressed. Never called while waiting.
+  /// The rows under the button. Empty shows no list.
+  final List<GameEntry> entries;
+
+  /// Called when the button is pressed. Never called while it is disabled:
+  /// waiting, loading or coming soon.
   final VoidCallback? onPrimary;
 
   final VoidCallback? onRemind;
@@ -135,8 +42,6 @@ class GameLandingScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final action = landingAction(state);
-    final entries =
-        definition.entriesBuilder?.call(context) ?? const <GameEntry>[];
     final showRemind =
         state.status == GameLandingStatus.waiting &&
         state.canRemind &&
