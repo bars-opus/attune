@@ -86,6 +86,7 @@ mechanical. Cost: the new shell ships English-only, like the games it wraps.
 | Displayed dates use `MyDateFormat`. | Owner memory |
 | Say the couple's chosen name (`coupleNameProvider`) or a partner's name, not "both of you". | Owner memory |
 | Wide screens: content sits in `AppContentWidth`; ScreenUtil scale is capped at 1.25×. | iPad layout work |
+| Inside `platform/` the column is `GameContentWidth`: the same `ContentWidth` tokens and the same layout, but the widget tree keeps one shape at every width. `AppContentWidth` swaps a bare child for a padded one at 600 wide, which throws away a game's state when a phone is turned or a split view resized. | Phase 1 final review |
 | Inside `platform/`, sizes are plain logical pixels with flexible layout — no ScreenUtil `.w/.h/.r/.sp`. Mixing the two is how screens end up distorted, and the extensions throw in tests that have not initialised ScreenUtil. | Phase 1 build ruling |
 | Large text must not break layouts; error red is `#C62828`. | Accessibility wave W10 |
 | Every animation degrades under the OS reduce-motion setting. | `lib/core/ui/motion/reduce_motion.dart` |

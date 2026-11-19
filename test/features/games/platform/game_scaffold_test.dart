@@ -59,6 +59,71 @@ void main() {
     );
   });
 
+  testWidgets('turning the phone keeps what the player was doing', (
+    tester,
+  ) async {
+    useSurface(tester, phone);
+    final prefs = await testPrefs();
+    Widget host() => gameHost(
+      const GameScaffold(
+        theme: theme,
+        title: 'Play',
+        body: Center(child: _Counter()),
+      ),
+      prefs: prefs,
+    );
+    await tester.pumpWidget(host());
+    await tester.tap(find.text('count 0'));
+    await tester.pump();
+    expect(find.text('count 1'), findsOneWidget);
+
+    // On its side a phone is wider than the content column, so the
+    // column's side margins appear. The body must survive that.
+    tester.view.physicalSize = Size(phone.height, phone.width);
+    await tester.pump();
+
+    expect(find.text('count 1'), findsOneWidget);
+  });
+
+  testWidgets('the header is solid white and bold, the ink that reads on a '
+      'game colour', (tester) async {
+    // The header sits on the colour itself, not the ground. The theme test
+    // holds white on every game colour to 3:1, which is the bar for bold
+    // text -- so the header has to be bold, and must not be thinned out
+    // with transparency.
+    useSurface(tester, phone);
+    await tester.pumpWidget(
+      gameHost(
+        const GameScaffold(
+          theme: theme,
+          title: 'Round 3 of 10',
+          subtitle: 'Word Hunt',
+          body: SizedBox(),
+        ),
+        prefs: await testPrefs(),
+      ),
+    );
+
+    for (final words in ['Round 3 of 10', 'Word Hunt']) {
+      final style =
+          tester
+              .widget<RichText>(
+                find.descendant(
+                  of: find.text(words),
+                  matching: find.byType(RichText),
+                ),
+              )
+              .text
+              .style!;
+      expect(style.color, GameTheme.onGround, reason: words);
+      expect(
+        style.fontWeight!.value,
+        greaterThanOrEqualTo(FontWeight.w700.value),
+        reason: words,
+      );
+    }
+  });
+
   testWidgets('back and settings each report their own tap', (tester) async {
     useSurface(tester, phone);
     final taps = <String>[];
@@ -215,4 +280,21 @@ void main() {
     expect(body.width, lessThan(tablet.width));
     expect(body.center.dx, closeTo(tablet.width / 2, 0.5));
   });
+}
+
+class _Counter extends StatefulWidget {
+  const _Counter();
+
+  @override
+  State<_Counter> createState() => _CounterState();
+}
+
+class _CounterState extends State<_Counter> {
+  int _count = 0;
+
+  @override
+  Widget build(BuildContext context) => TextButton(
+    onPressed: () => setState(() => _count++),
+    child: Text('count $_count'),
+  );
 }

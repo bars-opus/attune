@@ -1,11 +1,11 @@
 import 'package:attune/app/theme/design_tokens.dart';
-import 'package:attune/core/widgets/app_content_width.dart';
 import 'package:attune/features/games/platform/feel/game_feedback.dart';
 import 'package:attune/features/games/platform/feel/game_letter_tiles.dart';
 import 'package:attune/features/games/platform/game_strings.dart';
 import 'package:attune/features/games/platform/game_theme.dart';
 import 'package:attune/features/games/platform/shell/game_backdrop.dart';
 import 'package:attune/features/games/platform/shell/game_buttons.dart';
+import 'package:attune/features/games/platform/shell/game_content_width.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -68,7 +68,7 @@ class _GameCompleteScreenState extends ConsumerState<GameCompleteScreen> {
       body: GameBackdrop(
         theme: widget.theme,
         child: SafeArea(
-          child: AppContentWidth(
+          child: GameContentWidth(
             maxWidth: ContentWidth.form,
             child: Column(
               children: [

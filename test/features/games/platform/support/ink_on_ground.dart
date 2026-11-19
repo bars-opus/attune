@@ -41,7 +41,10 @@ List<({String text, double contrast})> inkOnGround(
     );
     if (isIcon) continue;
     final color = rich.text.style?.color ?? const Color(0xFF000000);
-    found.add((text: text, contrast: contrast(color, GameTheme.ground)));
+    // Translucent ink is judged as it lands on the ground, not as if it
+    // were solid: white at half strength is grey, and reads like grey.
+    final asDrawn = Color.alphaBlend(color, GameTheme.ground);
+    found.add((text: text, contrast: contrast(asDrawn, GameTheme.ground)));
   }
   return found;
 }

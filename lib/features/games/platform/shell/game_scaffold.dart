@@ -1,9 +1,9 @@
 import 'package:attune/app/theme/design_tokens.dart';
-import 'package:attune/core/widgets/app_content_width.dart';
 import 'package:attune/features/games/platform/game_strings.dart';
 import 'package:attune/features/games/platform/game_theme.dart';
 import 'package:attune/features/games/platform/shell/game_backdrop.dart';
 import 'package:attune/features/games/platform/shell/game_buttons.dart';
+import 'package:attune/features/games/platform/shell/game_content_width.dart';
 import 'package:flutter/material.dart';
 
 /// The frame every game is played in.
@@ -69,11 +69,13 @@ class GameScaffold extends StatelessWidget {
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
                                 textAlign: TextAlign.center,
-                                style: TextStyle(
-                                  color: GameTheme.onGround.withValues(
-                                    alpha: 0.72,
-                                  ),
+                                // Solid and bold: the header sits on the
+                                // game's colour, where thin or translucent
+                                // white is hard to read.
+                                style: const TextStyle(
+                                  color: GameTheme.onGround,
                                   fontSize: 14,
+                                  fontWeight: FontWeight.w700,
                                 ),
                               ),
                             Semantics(
@@ -84,7 +86,8 @@ class GameScaffold extends StatelessWidget {
                                 overflow: TextOverflow.ellipsis,
                                 textAlign: TextAlign.center,
                                 style: const TextStyle(
-                                  fontSize: 18,
+                                  color: GameTheme.onGround,
+                                  fontSize: 20,
                                   fontWeight: FontWeight.w800,
                                 ),
                               ),
@@ -105,7 +108,7 @@ class GameScaffold extends StatelessWidget {
                 ),
               ),
               Expanded(
-                child: AppContentWidth(maxWidth: maxContentWidth, child: body),
+                child: GameContentWidth(maxWidth: maxContentWidth, child: body),
               ),
               if (actions.isNotEmpty)
                 Padding(

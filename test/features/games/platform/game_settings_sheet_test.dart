@@ -2,11 +2,13 @@ import 'package:attune/features/games/platform/game_definition.dart';
 import 'package:attune/features/games/platform/game_prefs.dart';
 import 'package:attune/features/games/platform/shell/game_settings_sheet.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/semantics.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'support/demo_game.dart';
 import 'support/game_test_support.dart';
+import 'support/ink_on_ground.dart';
 
 void main() {
   Future<void> open(
@@ -166,6 +168,40 @@ void main() {
     expect(find.text('Leave game'), findsOneWidget);
     expect(tester.getRect(support).right, lessThanOrEqualTo(phone.width));
     expect(tester.getRect(support).left, greaterThanOrEqualTo(0));
+  });
+
+  testWidgets('a screen reader can change tab', (tester) async {
+    final handle = tester.ensureSemantics();
+    await open(tester, onLeaveGame: () {});
+
+    final node = tester.getSemantics(find.bySemanticsLabel('Support'));
+    tester.binding.performSemanticsAction(
+      SemanticsActionEvent(
+        type: SemanticsAction.tap,
+        viewId: tester.view.viewId,
+        nodeId: node.id,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Leave game'), findsOneWidget);
+    handle.dispose();
+  });
+
+  testWidgets('everything written on the sheet can be read there', (
+    tester,
+  ) async {
+    await open(tester);
+
+    final ink = inkOnGround(tester, of: find.byType(GameSettingsSheet));
+    expect(
+      ink.map((piece) => piece.text),
+      containsAll(['Settings', 'General', 'Support', 'Sound effects']),
+    );
+    expect(
+      ink.where((piece) => piece.contrast < 4.5).map((piece) => piece.text),
+      isEmpty,
+    );
   });
 
   testWidgets('the selected tab is announced as selected', (tester) async {

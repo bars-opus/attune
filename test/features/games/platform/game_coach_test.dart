@@ -1,5 +1,6 @@
 import 'package:attune/features/games/platform/shell/game_coach.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/semantics.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -22,8 +23,9 @@ void main() {
     VoidCallback? onDone,
     VoidCallback? onTargetTap,
     double textScale = 1,
+    Size surface = phone,
   }) async {
-    useSurface(tester, phone);
+    useSurface(tester, surface);
     await tester.pumpWidget(
       gameHost(
         Scaffold(
@@ -200,6 +202,129 @@ void main() {
     expect(tester.takeException(), isNull);
     final ring = tester.getRect(find.byKey(const ValueKey('game-coach-ring')));
     expect(ring, tester.getRect(find.byKey(outside)).inflate(5));
+  });
+
+  testWidgets('the ring is placed from where the tutorial itself sits', (
+    tester,
+  ) async {
+    // In a real game the tutorial wraps the body, under a header -- not
+    // the top-left corner of the screen, where every other test here puts
+    // it and where getting this wrong would not show.
+    useSurface(tester, phone);
+    await tester.pumpWidget(
+      gameHost(
+        Scaffold(
+          body: Padding(
+            padding: const EdgeInsets.fromLTRB(30, 90, 0, 0),
+            child: GameCoach(
+              gameType: 'demo',
+              steps: [GameCoachStep(text: 'Tap this tile.', target: target)],
+              child: Align(
+                alignment: const Alignment(0, 0.8),
+                child: SizedBox(key: target, width: 64, height: 64),
+              ),
+            ),
+          ),
+        ),
+        prefs: await testPrefs(),
+      ),
+    );
+    await tester.pump();
+    await tester.pump();
+
+    final ring = tester.getRect(find.byKey(const ValueKey('game-coach-ring')));
+    expect(ring, tester.getRect(find.byKey(target)).inflate(5));
+  });
+
+  testWidgets('the ring follows its target when the game scrolls', (
+    tester,
+  ) async {
+    useSurface(tester, phone);
+    await tester.pumpWidget(
+      gameHost(
+        Scaffold(
+          body: GameCoach(
+            gameType: 'demo',
+            steps: [GameCoachStep(text: 'Tap this tile.', target: target)],
+            child: ListView(
+              children: [
+                const SizedBox(height: 420),
+                Center(child: SizedBox(key: target, width: 64, height: 64)),
+                const SizedBox(height: 2000),
+              ],
+            ),
+          ),
+        ),
+        prefs: await testPrefs(),
+      ),
+    );
+    await tester.pump();
+    await tester.pump();
+    final before = tester.getRect(find.byKey(target));
+    expect(
+      tester.getRect(find.byKey(const ValueKey('game-coach-ring'))),
+      before.inflate(5),
+    );
+
+    await tester.drag(find.byType(ListView), const Offset(0, -120));
+    await tester.pump();
+    await tester.pump();
+
+    final after = tester.getRect(find.byKey(target));
+    expect(after.top, lessThan(before.top), reason: 'the target did move');
+    expect(
+      tester.getRect(find.byKey(const ValueKey('game-coach-ring'))),
+      after.inflate(5),
+    );
+  });
+
+  testWidgets('on a small phone at the largest text, Next and Skip can '
+      'still be reached', (tester) async {
+    // A long step at twice the text size is taller than a small screen.
+    // The words scroll; the two buttons stay where a finger can get them.
+    // (A missed tap fails the test, so the taps below are the assertion.)
+    const long =
+        'Each round you both answer the same question without seeing the '
+        'other answer. When you have both answered, the two answers turn '
+        'over together and you can talk about where you differed.';
+    await pump(
+      tester,
+      surface: const Size(320, 568),
+      textScale: 2,
+      withSteps: const [
+        GameCoachStep(text: long),
+        GameCoachStep(text: long),
+        GameCoachStep(text: 'Done.'),
+      ],
+    );
+    expect(tester.takeException(), isNull);
+
+    await tester.tap(find.text('Next'));
+    await tester.pump();
+    await tester.tap(find.text('Skip'));
+    await tester.pump();
+
+    expect(find.byType(GameCoachBubble), findsNothing);
+  });
+
+  testWidgets('Skip can be activated by a screen reader', (tester) async {
+    final handle = tester.ensureSemantics();
+    var done = 0;
+    await pump(tester, onDone: () => done++);
+
+    final node = tester.getSemantics(find.bySemanticsLabel('Skip'));
+    tester.binding.performSemanticsAction(
+      SemanticsActionEvent(
+        type: SemanticsAction.tap,
+        viewId: tester.view.viewId,
+        nodeId: node.id,
+      ),
+    );
+    await tester.pump();
+
+    expect(done, 1);
+    expect(find.byType(GameCoachBubble), findsNothing);
+    handle.dispose();
   });
 
   testWidgets('the ring goes when the step that needed it is over', (

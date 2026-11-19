@@ -30,8 +30,10 @@ void main() {
   });
 
   test('white titles stay readable on every game colour', () {
-    // 3:1 is the bar for large bold text, which is all that sits on the
-    // colour. A retune that drops below it makes a header unreadable.
+    // 3:1 is the bar for bold text. What sits on the colour itself -- the
+    // play header, the landing page's label and title -- is kept bold and
+    // solid white for that reason (game_scaffold_test holds the header to
+    // it). A retune that drops below 3:1 makes a header unreadable.
     for (final colour in GameColors.all) {
       expect(
         contrast(GameTheme.onGround, colour),

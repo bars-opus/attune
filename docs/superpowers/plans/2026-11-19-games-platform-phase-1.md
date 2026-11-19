@@ -5974,3 +5974,25 @@ For whoever reviews a task or the phase:
 - The tablet layout is a capped, top-anchored column. Whether the lower half of a tall tablet wants more is a judgement for the device gate.
 - Sounds are still the synthesized placeholders; a licensed pack replaces files, not code.
 - The shell's text is English-only until the `.arb` files are free to edit.
+
+---
+
+## After the final review
+
+Phase 1 was executed as written (13 tasks, 136 tests), then reviewed once by a fresh reviewer. These changes followed. Where they touch a file, the code in the tasks above is superseded by what is in the repository.
+
+| Finding | Change | Test that failed first |
+|---|---|---|
+| Turning a phone, or resizing a split view, threw away the game body's state and restarted the tutorial. `AppContentWidth` changes widget type at 600 wide. | New `shell/game_content_width.dart` (`GameContentWidth`), used by the scaffold, landing and completion screens. Same layout, one shape at every width. | `game_scaffold_test`: turning the phone keeps what the player was doing |
+| A long tutorial step at the largest text size on a small phone pushed Next and Skip off the screen, with no way out. | The bubble is bounded by the space it has; its words scroll and its buttons stay put. | `game_coach_test`: on a small phone at the largest text, Next and Skip can still be reached |
+| The tutorial ring stayed behind when its target scrolled. | The coach re-measures after every frame while it is showing (it asks for no frames itself). | `game_coach_test`: the ring follows its target when the game scrolls |
+| The play header's small line was white at 72% on the game colour: under 3:1. | Header subtitle is solid white, bold; title is 20 px. | `game_scaffold_test`: the header is solid white and bold |
+| The contrast helper judged translucent ink as if it were solid. | `inkOnGround` blends the ink onto the ground before measuring. | — (test support) |
+| Nothing but a macOS-only golden guarded: the ring's position when the tutorial is not at the screen's corner; Skip's and the tabs' screen-reader taps; ink colour on the two sheets. | Five tests added. Each was confirmed by breaking the code it guards and watching it fail. | — (the code was already right) |
+
+The suite is now 145 tests. Six play-screen goldens changed (the header); the other sixteen are byte-identical, which is the evidence that `GameContentWidth` lays out exactly as before.
+
+**Carried into the phase 2 plan** (decisions, not polish — nothing consumes these types yet, so phase 2 is the cheapest place to settle them): the landing page needs a loading state and must respect `availability`; `GameOpen` needs to carry more than a session id; `GameDefinition` needs an icon for the hub and chat card; whether `howToPlay` and the tutorial's steps share one source; replaying the tutorial from "?" (today `force` is read once).
+
+**Left for the device gate:** on a tablet the landing tagline sits on the colour rather than the ground (about 4:1); the play header's 14 px line is bold white on colour at 3:1 or better, short of the 4.5:1 a small line formally wants. Both move with the colour tuning the spec already schedules for the gate.
+

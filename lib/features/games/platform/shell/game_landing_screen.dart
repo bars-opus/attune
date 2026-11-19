@@ -1,10 +1,10 @@
 import 'package:attune/app/theme/design_tokens.dart';
-import 'package:attune/core/widgets/app_content_width.dart';
 import 'package:attune/features/games/platform/game_definition.dart';
 import 'package:attune/features/games/platform/game_strings.dart';
 import 'package:attune/features/games/platform/game_theme.dart';
 import 'package:attune/features/games/platform/shell/game_backdrop.dart';
 import 'package:attune/features/games/platform/shell/game_buttons.dart';
+import 'package:attune/features/games/platform/shell/game_content_width.dart';
 import 'package:flutter/material.dart';
 
 /// Where the two players stand in a game.
@@ -147,7 +147,7 @@ class GameLandingScreen extends StatelessWidget {
       body: GameBackdrop(
         theme: definition.theme,
         child: SafeArea(
-          child: AppContentWidth(
+          child: GameContentWidth(
             maxWidth: ContentWidth.form,
             child: ListView(
               padding: const EdgeInsets.fromLTRB(24, 8, 24, 24),

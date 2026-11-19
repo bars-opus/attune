@@ -6,6 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'support/demo_game.dart';
 import 'support/game_test_support.dart';
+import 'support/ink_on_ground.dart';
 
 void main() {
   Future<void> open(
@@ -49,6 +50,20 @@ void main() {
     expect(third, findsOneWidget);
     expect(tester.getTopLeft(first).dy, lessThan(tester.getTopLeft(second).dy));
     expect(tester.getTopLeft(second).dy, lessThan(tester.getTopLeft(third).dy));
+  });
+
+  testWidgets('the rules can be read on the sheet', (tester) async {
+    await open(tester);
+
+    final ink = inkOnGround(tester, of: find.byType(GameHowToPlaySheet));
+    expect(
+      ink.map((piece) => piece.text),
+      containsAll(['How to play', '1. Tap a tile to pick it.']),
+    );
+    expect(
+      ink.where((piece) => piece.contrast < 4.5).map((piece) => piece.text),
+      isEmpty,
+    );
   });
 
   testWidgets('Got it closes the sheet', (tester) async {

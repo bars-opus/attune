@@ -66,14 +66,22 @@ class GameCoachBubble extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Semantics(
-            liveRegion: true,
-            child: Text(
-              text,
-              style: const TextStyle(
-                color: GameTheme.onGround,
-                fontSize: 16,
-                height: 1.35,
+          // The words give way when space is short; the buttons under
+          // them never do. A long step at a large text size on a small
+          // phone is taller than the screen, and a tutorial whose Next and
+          // Skip have run off the bottom cannot be got out of.
+          Flexible(
+            child: SingleChildScrollView(
+              child: Semantics(
+                liveRegion: true,
+                child: Text(
+                  text,
+                  style: const TextStyle(
+                    color: GameTheme.onGround,
+                    fontSize: 16,
+                    height: 1.35,
+                  ),
+                ),
               ),
             ),
           ),
@@ -153,7 +161,31 @@ class _GameCoachState extends ConsumerState<GameCoach> {
   void initState() {
     super.initState();
     final seen = ref.read(gameCoachStoreProvider).seen(widget.gameType);
-    if (widget.steps.isNotEmpty && (widget.force || !seen)) _index = 0;
+    if (widget.steps.isNotEmpty && (widget.force || !seen)) {
+      _index = 0;
+      _watchTarget();
+    }
+  }
+
+  bool _watching = false;
+
+  /// Re-measures the target after every frame for as long as the tutorial
+  /// is showing.
+  ///
+  /// The target can move without this widget rebuilding: the game scrolls,
+  /// the phone turns, a keyboard opens. Each of those draws a frame, and a
+  /// callback registered from inside a post-frame callback runs after the
+  /// next frame without asking for one -- so this follows the target
+  /// wherever it goes and costs nothing while the screen is still.
+  void _watchTarget() {
+    if (_watching) return;
+    _watching = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _watching = false;
+      if (!mounted || _index == null) return;
+      _measure();
+      _watchTarget();
+    });
   }
 
   void _advance() {
@@ -181,8 +213,8 @@ class _GameCoachState extends ConsumerState<GameCoach> {
   /// Finds the current target on screen, in this widget's own coordinates.
   ///
   /// Runs after layout, because a target's position does not exist until
-  /// then. It only rebuilds when the answer changed, so measuring every
-  /// frame the tutorial is up cannot loop.
+  /// then. It only rebuilds when the answer changed, so measuring after
+  /// every frame cannot loop.
   void _measure() {
     final index = _index;
     if (!mounted || index == null) return;
@@ -208,9 +240,6 @@ class _GameCoachState extends ConsumerState<GameCoach> {
   @override
   Widget build(BuildContext context) {
     final index = _index;
-    if (index != null) {
-      WidgetsBinding.instance.addPostFrameCallback((_) => _measure());
-    }
     final rect = _targetRect;
     final isLast = index != null && index >= widget.steps.length - 1;
 
@@ -246,15 +275,23 @@ class _GameCoachState extends ConsumerState<GameCoach> {
             ),
           ),
         if (index != null)
+          // Bounded top and bottom so the bubble can never be taller than
+          // the space it has; aligned to the top so it is only as tall as
+          // it needs. The Align takes no touches of its own, so the game
+          // under the rest of this area stays live.
           Positioned(
             left: 16,
             right: 16,
             top: 8,
-            child: GameCoachBubble(
-              text: widget.steps[index].text,
-              actionLabel: isLast ? GameStrings.gotIt : GameStrings.next,
-              onAction: _advance,
-              onSkip: isLast ? null : _finish,
+            bottom: 8,
+            child: Align(
+              alignment: Alignment.topCenter,
+              child: GameCoachBubble(
+                text: widget.steps[index].text,
+                actionLabel: isLast ? GameStrings.gotIt : GameStrings.next,
+                onAction: _advance,
+                onSkip: isLast ? null : _finish,
+              ),
             ),
           ),
       ],
