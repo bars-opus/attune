@@ -197,8 +197,10 @@ class ThisOrThatController extends GameController {
           GameEntry(
             title: tone.label,
             subtitle: tone.description,
-            onTap:
-                (rowContext) => _startAndOpen(rowContext, ref, tone: tone.id),
+            // The page's context, not the row's: a re-read while the game
+            // is being created can take the tone rows away, and a game
+            // started from a row that is gone must still open.
+            onTap: (_) => _startAndOpen(context, ref, tone: tone.id),
           ),
       GameEntry(
         title: 'Your questions',
@@ -284,15 +286,18 @@ class _ThisOrThatHero extends StatelessWidget {
     );
   }
 
+  /// The accent is the tile's face, not its ink: these colours were chosen
+  /// to sit on the dark ground, and as ink on a white face they fall below
+  /// 3:1. The tile's own dark ink reads at well over 4.5:1 on either.
   static Widget _word(String word, Color color) {
     return GameTile(
+      color: color,
       radius: 16,
       depth: 6,
       padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
       child: Text(
         word,
-        style: TextStyle(
-          color: color,
+        style: const TextStyle(
           fontSize: 34,
           fontWeight: FontWeight.w900,
           letterSpacing: 1,

@@ -17,7 +17,19 @@ Future<String?> startThisOrThat(
   required String tone,
 }) async {
   final messenger = ScaffoldMessenger.of(context);
-  final relationshipId = await ref.read(currentRelationshipIdProvider.future);
+  final String? relationshipId;
+  try {
+    relationshipId = await ref.read(currentRelationshipIdProvider.future);
+  } catch (_) {
+    // The read is kept, error and all, for the rest of the session unless
+    // it is dropped: every later tap would fail the same way, silently.
+    if (!context.mounted) return null;
+    ref.invalidate(currentRelationshipIdProvider);
+    messenger.showSnackBar(
+      const SnackBar(content: Text('The game could not start. Try again.')),
+    );
+    return null;
+  }
   if (relationshipId == null) {
     if (!context.mounted) return null;
     messenger.showSnackBar(

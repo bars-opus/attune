@@ -68,6 +68,13 @@ void main() {
   late List<Map<String, dynamic>> recent;
   late Map<String, GameCardState?> cards;
   late List<GameRound> rounds;
+
+  /// When true, the session read fails.
+  late bool sessionFails;
+
+  /// How many relationship reads fail before one answers.
+  late int relationshipFailures;
+  late int relationshipReads;
   late StreamController<void> events;
   late GameLandingState seen;
   late BuildContext probeContext;
@@ -84,14 +91,24 @@ void main() {
     recent = [];
     cards = {};
     rounds = [];
+    sessionFails = false;
+    relationshipFailures = 0;
+    relationshipReads = 0;
   });
 
   List<Override> overrides() => [
     thisOrThatRepositoryProvider.overrideWithValue(repository),
     currentUserIdProvider.overrideWithValue('user-a'),
-    currentRelationshipIdProvider.overrideWith((ref) async => 'rel-1'),
+    currentRelationshipIdProvider.overrideWith((ref) async {
+      relationshipReads++;
+      if (relationshipReads <= relationshipFailures) {
+        throw Exception('offline');
+      }
+      return 'rel-1';
+    }),
     hub.currentUserIdProvider.overrideWithValue('user-a'),
     activeThisOrThatSessionProvider.overrideWith((ref) async {
+      if (sessionFails) throw Exception('offline');
       final answer =
           sessions[reads < sessions.length ? reads : sessions.length - 1];
       reads++;
@@ -424,6 +441,102 @@ void main() {
     });
   });
 
+  group('the caption is the session\'s own round', () {
+    // The card says round 3 of 10 in each of these, so a caption that
+    // came from the card instead would read differently.
+    Future<String?> captionFor(
+      WidgetTester tester, {
+      required int currentRound,
+      required int totalRounds,
+    }) async {
+      sessions = [
+        thisOrThatSession(currentRound: currentRound, totalRounds: totalRounds),
+      ];
+      cards = {'s1': _card('active')};
+      await pumpProbe(tester);
+      expect(seen.status, GameLandingStatus.yourTurn);
+      return seen.caption;
+    }
+
+    testWidgets('a round past the last reads as the last', (tester) async {
+      expect(
+        await captionFor(tester, currentRound: 11, totalRounds: 10),
+        'Round 10 of 10',
+      );
+    });
+
+    testWidgets('a game not yet on its first round reads as round 1', (
+      tester,
+    ) async {
+      expect(
+        await captionFor(tester, currentRound: 0, totalRounds: 10),
+        'Round 1 of 10',
+      );
+    });
+
+    testWidgets('a session with no round count keeps the card\'s caption', (
+      tester,
+    ) async {
+      // Nothing to clamp to: the session's own count is unusable, so the
+      // card's count stands, rather than the clamp throwing.
+      expect(
+        await captionFor(tester, currentRound: 3, totalRounds: 0),
+        'Round 3 of 10',
+      );
+      expect(tester.takeException(), isNull);
+    });
+  });
+
+  testWidgets('a session that cannot be read is a fresh start', (tester) async {
+    // Not a dead button: the game's own screens resume an open session.
+    sessionFails = true;
+    await pumpProbe(tester);
+
+    expect(seen.status, GameLandingStatus.fresh);
+    expect(seen.sessionId, isNull);
+    expect(titles(), contains('Connecting'));
+  });
+
+  group('a relationship that cannot be read', () {
+    testWidgets('Play says the game could not start, and starts nothing', (
+      tester,
+    ) async {
+      relationshipFailures = 1;
+      await pumpPage(tester);
+      expect(find.text('Play'), findsOneWidget);
+
+      await tester.tap(find.byType(GamePrimaryButton));
+      await tester.pumpAndSettle();
+
+      expect(tester.takeException(), isNull);
+      expect(find.text('The game could not start. Try again.'), findsOneWidget);
+      verifyNoSessionCreated(repository);
+      expect(find.textContaining('opened:'), findsNothing);
+    });
+
+    testWidgets('the next tap reads it again, and starts the game', (
+      tester,
+    ) async {
+      // The control that the failed read is not kept: a provider that
+      // remembered its error would fail every tap from here on.
+      relationshipFailures = 1;
+      await pumpPage(tester);
+      await tester.tap(find.byType(GamePrimaryButton));
+      await tester.pumpAndSettle();
+      expect(find.text('The game could not start. Try again.'), findsOneWidget);
+
+      await tester.tap(find.byType(GamePrimaryButton));
+      await tester.pumpAndSettle();
+
+      expect(relationshipReads, 2);
+      expect(createdTones(repository), ['connecting']);
+      expect(
+        find.text('opened:thisOrThatSessionRouter:new-session'),
+        findsOneWidget,
+      );
+    });
+  });
+
   group('one start at a time, on the page', () {
     testWidgets('a tone row starts a game in that tone', (tester) async {
       // The control for the test below.
@@ -434,6 +547,60 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(createdTones(repository), ['playful']);
+      expect(
+        find.text('opened:thisOrThatSessionRouter:new-session'),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('a game started from a row opens even when the rows change '
+        'meanwhile', (tester) async {
+      // The partner starts a game while ours is being created: the page
+      // re-reads, the tone rows go, and the row that was tapped with them.
+      final creating = Completer<ThisOrThatSession>();
+      when(
+        () => repository.createSession(
+          relationshipId: any(named: 'relationshipId'),
+          initiatorId: any(named: 'initiatorId'),
+          tone: any(named: 'tone'),
+          idempotencyKey: any(named: 'idempotencyKey'),
+        ),
+      ).thenAnswer((_) => creating.future);
+      sessions = [null, thisOrThatSession(id: 's1')];
+      cards = {'s1': _card('active')};
+      await pumpPage(tester);
+      // Romantic: where its row stood, the new list has a divider, so the
+      // row itself is taken out of the page rather than reused for another.
+      await scrollTo(tester, '2. Romantic');
+
+      await tester.tap(find.text('2. Romantic'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 600));
+      expect(createdTones(repository), ['romantic']);
+
+      events.add(null);
+      // The event, the re-read session, then its card.
+      for (var i = 0; i < 4; i++) {
+        await tester.pump(const Duration(milliseconds: 100));
+      }
+      expect(reads, 2);
+      expect(find.text('Your turn'), findsOneWidget);
+      expect(find.text('2. Romantic'), findsNothing);
+      // The control: the page did re-read, and still lists the rest.
+      expect(
+        find.text('1. Your questions', skipOffstage: false),
+        findsOneWidget,
+      );
+
+      creating.complete(
+        thisOrThatSession(
+          id: 'new-session',
+          tone: 'romantic',
+          status: 'invited',
+        ),
+      );
+      await tester.pumpAndSettle();
+
       expect(
         find.text('opened:thisOrThatSessionRouter:new-session'),
         findsOneWidget,
