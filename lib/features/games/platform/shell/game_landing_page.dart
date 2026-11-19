@@ -7,6 +7,7 @@ import 'package:attune/features/games/platform/game_theme.dart';
 import 'package:attune/features/games/platform/games_catalogue.dart';
 import 'package:attune/features/games/platform/shell/game_how_to_play_sheet.dart';
 import 'package:attune/features/games/platform/shell/game_landing_screen.dart';
+import 'package:attune/features/games/platform/shell/game_route_resume.dart';
 import 'package:attune/features/games/platform/shell/game_scaffold.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -25,7 +26,8 @@ class GameLandingPage extends ConsumerStatefulWidget {
   ConsumerState<GameLandingPage> createState() => _GameLandingPageState();
 }
 
-class _GameLandingPageState extends ConsumerState<GameLandingPage> {
+class _GameLandingPageState extends ConsumerState<GameLandingPage>
+    with GameRouteResume<GameLandingPage> {
   /// A start asked for by the button or a row is still running: a consent
   /// dialog, the call that creates the game, the push. A second tap
   /// meanwhile would start a second game.
@@ -38,33 +40,15 @@ class _GameLandingPageState extends ConsumerState<GameLandingPage> {
   /// just closed.
   bool _busy = false;
 
-  /// Whether this page's route was in front at the last look. Null before
-  /// the first.
-  bool? _wasCurrent;
-
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    // Depends on the route's isCurrent alone, so this runs again exactly
-    // when something covers the page or stops covering it.
-    final current = ModalRoute.isCurrentOf(context) ?? true;
-    if (current && _wasCurrent == false) _resumed();
-    _wasCurrent = current;
-  }
-
   /// The page is in front again after a game, a sheet or anything else
   /// covered it: the game re-reads its state.
-  void _resumed() {
-    // Not now: re-reading may invalidate a provider, which throws during
-    // build.
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
-      ref
-          .read(gameRegistryProvider)
-          .byType(widget.gameType)
-          ?.controller
-          ?.onResume(ref);
-    });
+  @override
+  void onRouteResumed() {
+    ref
+        .read(gameRegistryProvider)
+        .byType(widget.gameType)
+        ?.controller
+        ?.onResume(ref);
   }
 
   Future<void> _runOnce(FutureOr<void> Function() action) async {

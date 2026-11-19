@@ -18,6 +18,12 @@ abstract final class GameStrings {
   static const String games = 'Games';
   static const String notAvailable = 'This game is not available.';
 
+  // Hub
+  static const String inPlay = 'In play';
+  static const String playTogether = 'Play together';
+  static String playWith(String name) => 'Play with $name';
+  static String comingSoonNamed(String title) => '$title, coming soon';
+
   // Header
   static const String back = 'Back';
   static const String settings = 'Settings';

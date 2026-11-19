@@ -1,6 +1,7 @@
 import 'package:attune/features/games/platform/feel/game_tile.dart';
 import 'package:attune/features/games/platform/game_theme.dart';
 import 'package:attune/features/games/platform/shell/game_buttons.dart';
+import 'package:attune/features/games/platform/shell/game_hub_card.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -10,8 +11,9 @@ import 'game_test_support.dart';
 /// each piece can be read there.
 ///
 /// Words on a white tile or the white Play button are left out: those are
-/// meant to be dark. Everything else has to be light, and a golden is the
-/// only other thing that would notice if it were not.
+/// meant to be dark. So are a hub card's, which sit on the game's colour and
+/// are checked against it. Everything else has to be light, and a golden is
+/// the only other thing that would notice if it were not.
 List<({String text, double contrast})> inkOnGround(
   WidgetTester tester, {
   required Finder of,
@@ -22,7 +24,9 @@ List<({String text, double contrast})> inkOnGround(
     var onLightSurface = false;
     element.visitAncestorElements((ancestor) {
       final widget = ancestor.widget;
-      if (widget is GameTile || widget is GamePrimaryButton) {
+      if (widget is GameTile ||
+          widget is GamePrimaryButton ||
+          widget is GameHubCard) {
         onLightSurface = true;
         return false;
       }
