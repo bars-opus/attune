@@ -5,6 +5,7 @@ import 'package:attune/app/theme/app_theme.dart';
 import 'package:attune/core/providers/shared_prefs_provider.dart';
 import 'package:attune/core/ui/feedback/haptics.dart';
 import 'package:attune/core/ui/feedback/sound_service.dart';
+import 'package:attune/features/games/platform/shell/game_buttons.dart';
 import 'package:attune/features/games/platform/shell/game_coach.dart';
 import 'package:attune/features/games/this_or_that/data/models/game_round.dart';
 import 'package:attune/features/games/this_or_that/data/models/this_or_that_session.dart';
@@ -692,10 +693,10 @@ void main() {
       expect(sounds.played, isEmpty);
       expect(haptics.mediumCount, 0);
       expect(find.text('Current round'), findsOneWidget);
-      // The shell's Back button carries the same arrow; the previous
-      // round is the arrow in the round's own action row.
+      // The shell's Back button leaves the screen; the previous round is
+      // the quieter pill in the round's own action row.
       await tester.tap(
-        find.widgetWithIcon(OutlinedButton, Icons.arrow_back_rounded),
+        find.widgetWithText(GameSecondaryButton, 'Previous round'),
       );
       expect(previousCount, 1);
       expect(tester.takeException(), isNull);
@@ -902,6 +903,9 @@ void main() {
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
+          // The reveal's feedback reads the games' sound and vibration
+          // switches from the device's preferences.
+          sharedPreferencesProvider.overrideWithValue(_prefs),
           thisOrThatRepositoryProvider.overrideWithValue(repository),
           currentUserIdProvider.overrideWithValue('user-a'),
           soundServiceProvider.overrideWithValue(FakeSoundService()),

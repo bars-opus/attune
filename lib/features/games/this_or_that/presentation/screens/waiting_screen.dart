@@ -3,6 +3,9 @@ import 'dart:async';
 import 'package:attune/core/ui/feedback/haptics.dart';
 import 'package:attune/core/ui/feedback/sound_service.dart';
 import 'package:attune/core/ui/motion/reduce_motion.dart';
+import 'package:attune/features/games/platform/feel/game_motion.dart';
+import 'package:attune/features/games/platform/feel/game_tile.dart';
+import 'package:attune/features/games/platform/shell/game_buttons.dart';
 import 'package:attune/features/games/this_or_that/presentation/providers/this_or_that_providers.dart';
 import 'package:attune/features/games/this_or_that/presentation/widgets/this_or_that_game_ui.dart';
 import 'package:flutter/material.dart';
@@ -182,18 +185,85 @@ class _WaitingScreenState extends ConsumerState<WaitingScreen> {
     final palette = ThisOrThatPalette.of(context);
     final choiceText = _currentChoice == 'a' ? widget.optionA : widget.optionB;
     final choiceEmoji = _currentChoice == 'a' ? widget.emojiA : widget.emojiB;
+    final face = _currentChoice == 'b' ? palette.thatColor : palette.thisColor;
+    final ink = palette.inkOn(face);
+    // The router's stand-in when the name is not known: a sentence then
+    // says "your partner" rather than calling them "Partner".
+    final partner =
+        widget.partnerName == 'Partner' ? 'your partner' : widget.partnerName;
 
     return ThisOrThatGameScaffold(
       roundNumber: widget.roundNumber,
       totalRounds: widget.totalRounds,
       onBack: _showExitConfirmation,
+      scrollable: true,
       child: Column(
         children: [
-          const SizedBox(height: 8),
-          const ThisOrThatWaitingMark(),
+          const SizedBox(height: 4),
+          // The player's own pick, in its own colour: the one thing on this
+          // screen that is theirs, so it leads.
+          GameTile(
+            key: const ValueKey('this-or-that-locked-pick'),
+            color: face,
+            radius: 22,
+            depth: 6,
+            padding: const EdgeInsets.fromLTRB(20, 18, 20, 22),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: ThisOrThatStageLabel(
+                    text: 'Your locked pick',
+                    icon: Icons.lock_rounded,
+                    color: ink,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Text(
+                  widget.questionText,
+                  style: TextStyle(
+                    color: ink,
+                    fontSize: 15,
+                    height: 1.25,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const SizedBox(height: 10),
+                AnimatedSwitcher(
+                  duration: GameMotion.of(context, GameMotion.settle),
+                  switchInCurve: GameMotion.settleCurve,
+                  // The new pick springs in where the old one was; the old
+                  // one goes at once rather than fading under it.
+                  layoutBuilder:
+                      (current, previous) => current ?? const SizedBox(),
+                  transitionBuilder:
+                      (child, animation) => ScaleTransition(
+                        scale: Tween(begin: 0.9, end: 1.0).animate(animation),
+                        alignment: Alignment.centerLeft,
+                        child: child,
+                      ),
+                  child: Text(
+                    '${choiceEmoji ?? ''} $choiceText'.trim(),
+                    key: ValueKey(_currentChoice),
+                    style: TextStyle(
+                      color: ink,
+                      fontSize: 24,
+                      height: 1.15,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: -0.2,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 22),
+          const ThisOrThatWaitingMark(size: 96),
           const SizedBox(height: 12),
           Text(
             '${widget.partnerName} is choosing',
+            textAlign: TextAlign.center,
             style: Theme.of(context).textTheme.headlineSmall?.copyWith(
               color: palette.ink,
               fontWeight: FontWeight.w800,
@@ -202,7 +272,8 @@ class _WaitingScreenState extends ConsumerState<WaitingScreen> {
           ),
           const SizedBox(height: 8),
           Text(
-            'Your answer is tucked away. The reveal begins as soon as they lock theirs in.',
+            'Your answer is tucked away. The reveal begins as soon as '
+            '$partner locks theirs in.',
             textAlign: TextAlign.center,
             style: Theme.of(context).textTheme.bodyMedium?.copyWith(
               color: palette.mutedInk,
@@ -211,72 +282,20 @@ class _WaitingScreenState extends ConsumerState<WaitingScreen> {
             ),
           ),
           const SizedBox(height: 24),
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: palette.panel.withValues(alpha: 0.94),
-              borderRadius: BorderRadius.circular(24),
-              border: Border.all(color: palette.line),
-            ),
-            child: Column(
-              children: [
-                ThisOrThatStageLabel(
-                  text: 'Your locked pick',
-                  icon: Icons.lock_rounded,
-                  color: palette.mutedInk,
-                ),
-                const SizedBox(height: 14),
-                AnimatedSwitcher(
-                  duration:
-                      reduceMotionOf(context)
-                          ? Duration.zero
-                          : const Duration(milliseconds: 220),
-                  child: Text(
-                    '${choiceEmoji ?? ''} $choiceText'.trim(),
-                    key: ValueKey(_currentChoice),
-                    textAlign: TextAlign.center,
-                    style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                      color: palette.ink,
-                      fontWeight: FontWeight.w800,
-                      letterSpacing: 0,
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  widget.questionText,
-                  textAlign: TextAlign.center,
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: palette.mutedInk,
-                    letterSpacing: 0,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 14),
           if (reduceMotionOf(context))
             _buildChoiceEditor()
           else
             AnimatedSize(
-              duration: const Duration(milliseconds: 260),
-              curve: Curves.easeOutCubic,
+              duration: GameMotion.of(context, GameMotion.settle),
+              curve: GameMotion.enterCurve,
               alignment: Alignment.topCenter,
               child: _buildChoiceEditor(),
             ),
           if (_showRemindButton) ...[
-            const SizedBox(height: 20),
-            OutlinedButton.icon(
-              onPressed: _isSendingReminder ? null : _sendReminder,
-              icon:
-                  _isSendingReminder
-                      ? const SizedBox.square(
-                        dimension: 16,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                      : const Icon(Icons.notifications_active_outlined),
-              label: Text('Nudge ${widget.partnerName}'),
+            const SizedBox(height: 12),
+            GameSecondaryButton(
+              label: 'Nudge ${widget.partnerName}',
+              onTap: _isSendingReminder ? null : _sendReminder,
             ),
           ],
         ],
@@ -286,12 +305,11 @@ class _WaitingScreenState extends ConsumerState<WaitingScreen> {
 
   Widget _buildChoiceEditor() {
     if (!_isEditing) {
-      return TextButton.icon(
+      return GameSecondaryButton(
         key: const ValueKey('change-pick'),
-        onPressed:
+        label: 'Change my pick',
+        onTap:
             _isUpdatingChoice ? null : () => setState(() => _isEditing = true),
-        icon: const Icon(Icons.swap_horiz_rounded),
-        label: const Text('Change my pick'),
       );
     }
 

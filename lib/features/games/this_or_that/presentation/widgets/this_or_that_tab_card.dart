@@ -147,26 +147,13 @@ class ThisOrThatTabCard extends StatelessWidget {
             optionB: optionB,
             emojiA: emojiA,
             emojiB: emojiB,
-            ink: _inkOn(surface),
+            ink: palette.inkOn(surface),
           ),
         ),
       ],
     );
   }
 }
-
-/// WCAG contrast between two opaque colours.
-double _contrast(Color a, Color b) {
-  final la = a.computeLuminance();
-  final lb = b.computeLuminance();
-  return (la > lb ? la + 0.05 : lb + 0.05) / (la > lb ? lb + 0.05 : la + 0.05);
-}
-
-/// White or the tile's ink, whichever reads better on [face].
-Color _inkOn(Color face) =>
-    _contrast(Colors.white, face) > _contrast(GameTheme.tileInk, face)
-        ? Colors.white
-        : GameTheme.tileInk;
 
 /// [ink] mixed toward [face] for a tab that is not forward: 62% strength
 /// where that still reads, and only as faint as 4.5:1 allows where it does
@@ -176,7 +163,7 @@ Color _dimmed(Color ink, Color face) {
   const bar = 4.6;
   for (var strength = 0.62; strength < 1; strength += 0.02) {
     final mixed = Color.lerp(face, ink, strength)!;
-    if (_contrast(mixed, face) >= bar) return mixed;
+    if (ThisOrThatPalette.contrast(mixed, face) >= bar) return mixed;
   }
   return ink;
 }
@@ -197,7 +184,7 @@ class _Tab extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final ink = _inkOn(face);
+    final ink = ThisOrThatPalette.of(context).inkOn(face);
 
     final caption = Center(
       child: AnimatedDefaultTextStyle(

@@ -11,10 +11,12 @@ import 'package:attune/features/games/this_or_that/presentation/providers/this_o
 import 'package:attune/features/games/this_or_that/presentation/providers/this_or_that_providers.dart';
 import 'package:attune/features/games/this_or_that/presentation/screens/question_screen.dart';
 import 'package:attune/features/games/this_or_that/presentation/screens/question_source_screen.dart';
+import 'package:attune/features/games/this_or_that/presentation/screens/reveal_screen.dart';
 import 'package:attune/features/games/this_or_that/presentation/screens/session_history_screen.dart';
 import 'package:attune/features/games/this_or_that/presentation/screens/this_or_that_custom_create_screen.dart';
 import 'package:attune/features/games/this_or_that/presentation/screens/this_or_that_custom_list_screen.dart';
 import 'package:attune/features/games/this_or_that/presentation/screens/this_or_that_session_router_screen.dart';
+import 'package:attune/features/games/this_or_that/presentation/screens/waiting_screen.dart';
 import 'package:attune/features/games/this_or_that/this_or_that_game.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -62,9 +64,29 @@ ThisOrThatSession _finished({
   createdAt: on,
 );
 
-/// The screens this task moved and has pictures of: the question deck
-/// list, the write-a-question form, past games, the next-card chooser and
-/// the invitation decision.
+/// A round's reveal: you chose Stay in; Ama chose [partner].
+RevealScreen _reveal({required String partner}) => RevealScreen(
+  questionText: 'Friday night: stay in or go out?',
+  userChoice: 'a',
+  userChoiceText: 'Stay in',
+  userChoiceEmoji: '🛋️',
+  partnerChoice: partner,
+  partnerChoiceText: partner == 'a' ? 'Stay in' : 'Go out',
+  partnerChoiceEmoji: partner == 'a' ? '🛋️' : '✨',
+  partnerName: 'Ama',
+  roundNumber: 3,
+  totalRounds: 10,
+  isMatch: partner == 'a',
+  hasPrevious: true,
+  onPrevious: () {},
+  onNext: () {},
+);
+
+/// The screens moved onto the shell that have pictures: the question deck
+/// list, the write-a-question form, past games, the next-card chooser, the
+/// invitation decision, waiting for the partner, and the reveal on a match
+/// and on a difference. The reveal's burst is an animation; these are the
+/// settled screens, under reduced motion.
 Map<String, ShellScreen> thisOrThatShellScreens() => {
   'deck_list': (
     build: () => const ThisOrThatCustomListScreen(),
@@ -158,6 +180,43 @@ Map<String, ShellScreen> thisOrThatShellScreens() => {
             (_, __) => const Stream<void>.empty(),
           ),
         ],
+    then: null,
+  ),
+  'waiting': (
+    build:
+        () => const WaitingScreen(
+          sessionId: 'session-1',
+          roundId: 'round-3',
+          questionText: 'Friday night: stay in or go out?',
+          userChoice: 'a',
+          userChoiceText: 'Stay in',
+          userChoiceEmoji: '🛋️',
+          optionA: 'Stay in',
+          optionB: 'Go out',
+          emojiA: '🛋️',
+          emojiB: '✨',
+          roundNumber: 3,
+          totalRounds: 10,
+          isPartnerA: true,
+          partnerName: 'Ama',
+        ),
+    overrides:
+        () => [
+          thisOrThatRepositoryProvider.overrideWithValue(
+            MockThisOrThatRepository(),
+          ),
+          currentUserIdProvider.overrideWithValue('user-a'),
+        ],
+    then: null,
+  ),
+  'reveal_match': (
+    build: () => _reveal(partner: 'a'),
+    overrides: () => const [],
+    then: null,
+  ),
+  'reveal_differ': (
+    build: () => _reveal(partner: 'b'),
+    overrides: () => const [],
     then: null,
   ),
 };

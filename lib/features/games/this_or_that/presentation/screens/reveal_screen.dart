@@ -1,9 +1,13 @@
 import 'dart:math' as math;
 import 'dart:async';
 
-import 'package:attune/core/ui/feedback/haptics.dart';
-import 'package:attune/core/ui/feedback/sound_service.dart';
 import 'package:attune/core/ui/motion/reduce_motion.dart';
+import 'package:attune/features/games/platform/feel/game_burst.dart';
+import 'package:attune/features/games/platform/feel/game_feedback.dart';
+import 'package:attune/features/games/platform/feel/game_motion.dart';
+import 'package:attune/features/games/platform/feel/game_tile.dart';
+import 'package:attune/features/games/platform/game_theme.dart';
+import 'package:attune/features/games/platform/shell/game_buttons.dart';
 import 'package:attune/features/games/this_or_that/presentation/widgets/match_indicator.dart';
 import 'package:attune/features/games/this_or_that/presentation/widgets/this_or_that_game_ui.dart';
 import 'package:flutter/material.dart';
@@ -53,50 +57,76 @@ class RevealScreen extends ConsumerStatefulWidget {
 
 class _RevealScreenState extends ConsumerState<RevealScreen>
     with SingleTickerProviderStateMixin {
+  /// Your pick turns over, then theirs a beat later, then the verdict.
+  static final Duration _total =
+      GameMotion.stagger + GameMotion.enter + GameMotion.settle;
+
   late final AnimationController _controller = AnimationController(
-    duration: const Duration(milliseconds: 1180),
+    duration: _total,
     vsync: this,
   );
+
+  /// Where [at] falls in the whole run, from 0 to 1.
+  static double _share(Duration at) =>
+      at.inMicroseconds / _total.inMicroseconds;
+
+  /// The [index]th pick's turn: it starts a stagger after the one before.
+  static Interval _turn(int index) => Interval(
+    _share(GameMotion.stagger * index),
+    _share(GameMotion.stagger * index + GameMotion.enter),
+  );
+
+  /// When the second pick is down: the reveal has landed.
+  static final double _landing = _share(GameMotion.stagger + GameMotion.enter);
+
+  late final Animation<double> _resultAnimation = CurvedAnimation(
+    parent: _controller,
+    curve: Interval(
+      _share(GameMotion.stagger + GameMotion.enter * 0.75),
+      1,
+      curve: Curves.easeOutBack,
+    ),
+  );
+
   bool _started = false;
+  bool _landed = false;
+  int _bursts = 0;
   bool _isAdvancing = false;
-
-  Animation<double> get _questionAnimation => CurvedAnimation(
-    parent: _controller,
-    curve: const Interval(0, 0.28, curve: Curves.easeOut),
-  );
-
-  Animation<double> get _cardAnimation => CurvedAnimation(
-    parent: _controller,
-    curve: const Interval(0.16, 0.68, curve: Curves.easeOutCubic),
-  );
-
-  Animation<double> get _resultAnimation => CurvedAnimation(
-    parent: _controller,
-    curve: const Interval(0.62, 1, curve: Curves.easeOutBack),
-  );
-
-  @override
-  void initState() {
-    super.initState();
-    if (!widget.celebrate) return;
-    if (widget.isMatch) {
-      ref.read(hapticsProvider).medium();
-      ref.read(soundServiceProvider).play(AppSound.gameMatch);
-    } else {
-      ref.read(hapticsProvider).light();
-      ref.read(soundServiceProvider).play(AppSound.gameReveal);
-    }
-  }
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
     if (_started) return;
     _started = true;
+    _controller.duration = GameMotion.of(context, _total);
     if (reduceMotionOf(context)) {
+      // Both picks are down on the first frame, and nothing ticks.
       _controller.value = 1;
+      _land();
     } else {
+      _controller.addListener(_watchForLanding);
       _controller.forward();
+    }
+  }
+
+  void _watchForLanding() {
+    if (_landed || _controller.value < _landing) return;
+    _controller.removeListener(_watchForLanding);
+    setState(_land);
+  }
+
+  /// The moment both picks are showing. Once per screen, however often it
+  /// rebuilds; a round looked back on ([RevealScreen.celebrate] false)
+  /// replays nothing.
+  void _land() {
+    if (_landed) return;
+    _landed = true;
+    if (!widget.celebrate) return;
+    if (widget.isMatch) {
+      _bursts = 1;
+      ref.read(gameFeedbackProvider).fire(GameEvent.match);
+    } else {
+      ref.read(gameFeedbackProvider).fire(GameEvent.reveal);
     }
   }
 
@@ -126,215 +156,258 @@ class _RevealScreenState extends ConsumerState<RevealScreen>
   @override
   Widget build(BuildContext context) {
     final palette = ThisOrThatPalette.of(context);
+    final isLast = widget.roundNumber == widget.totalRounds;
     return ThisOrThatGameScaffold(
       roundNumber: widget.roundNumber,
       totalRounds: widget.totalRounds,
-      bottom: Row(
+      scrollable: true,
+      bottom: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          if (widget.hasPrevious) ...[
-            SizedBox(
-              width: 56,
-              height: 56,
-              child: OutlinedButton(
-                onPressed: widget.onPrevious,
-                style: OutlinedButton.styleFrom(
-                  padding: EdgeInsets.zero,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(18),
-                  ),
-                ),
-                child: const Icon(Icons.arrow_back_rounded),
-              ),
-            ),
-            const SizedBox(width: 10),
-          ],
-          Expanded(
-            child: ThisOrThatPrimaryAction(
-              label:
-                  widget.nextLabel ??
-                  (widget.roundNumber == widget.totalRounds
-                      ? 'See our result'
-                      : 'Next round'),
-              onPressed: _advance,
-              loading: _isAdvancing,
-              icon:
-                  widget.roundNumber == widget.totalRounds
-                      ? Icons.emoji_events_rounded
-                      : Icons.arrow_forward_rounded,
-            ),
+          GamePrimaryButton(
+            label:
+                widget.nextLabel ?? (isLast ? 'See our result' : 'Next round'),
+            icon:
+                isLast
+                    ? Icons.emoji_events_rounded
+                    : Icons.arrow_forward_rounded,
+            onTap: _advance,
+            busy: _isAdvancing,
           ),
+          if (widget.hasPrevious) ...[
+            const SizedBox(height: 10),
+            GameSecondaryButton(
+              label: 'Previous round',
+              onTap: widget.onPrevious,
+            ),
+          ],
         ],
       ),
-      child: Stack(
-        clipBehavior: Clip.none,
+      child: Column(
         children: [
-          if (widget.isMatch && widget.celebrate)
-            Positioned.fill(
-              child: IgnorePointer(
-                child: AnimatedBuilder(
-                  animation: _controller,
-                  builder:
-                      (context, _) => CustomPaint(
-                        painter: _CelebrationPainter(
-                          progress: _resultAnimation.value,
-                          first: palette.thisColor,
-                          second: palette.thatColor,
+          const SizedBox(height: 4),
+          ThisOrThatStageLabel(
+            text: 'The reveal',
+            icon: Icons.visibility_rounded,
+            // On the game's orange, where only white reads.
+            color: palette.ink,
+          ),
+          const SizedBox(height: 12),
+          Text(
+            widget.questionText,
+            textAlign: TextAlign.center,
+            style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+              color: palette.ink,
+              fontWeight: FontWeight.w800,
+              height: 1.15,
+              letterSpacing: 0,
+            ),
+          ),
+          const SizedBox(height: 24),
+          Stack(
+            clipBehavior: Clip.none,
+            children: [
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Row(
+                    // Bottoms aligned, so a name on two lines still sits
+                    // right on its tile.
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
+                      Expanded(child: _PickCaption(text: 'YOU')),
+                      const SizedBox(width: _gap),
+                      Expanded(
+                        child: _PickCaption(
+                          text: widget.partnerName.toUpperCase(),
                         ),
                       ),
-                ),
-              ),
-            ),
-          Column(
-            children: [
-              const SizedBox(height: 8),
-              FadeTransition(
-                opacity: _questionAnimation,
-                child: Column(
-                  children: [
-                    const ThisOrThatStageLabel(
-                      text: 'The reveal',
-                      icon: Icons.visibility_rounded,
-                    ),
-                    const SizedBox(height: 12),
-                    Text(
-                      widget.questionText,
-                      textAlign: TextAlign.center,
-                      style: Theme.of(
-                        context,
-                      ).textTheme.headlineSmall?.copyWith(
-                        color: palette.ink,
-                        fontWeight: FontWeight.w800,
-                        height: 1.15,
-                        letterSpacing: 0,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 24),
-              Expanded(
-                child: AnimatedBuilder(
-                  animation: _cardAnimation,
-                  builder: (context, _) {
-                    final value = _cardAnimation.value;
-                    return Row(
+                    ],
+                  ),
+                  const SizedBox(height: 10),
+                  IntrinsicHeight(
+                    child: Row(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
                         Expanded(
-                          child: Opacity(
-                            opacity: value,
-                            child: Transform.translate(
-                              offset: Offset(-54 * (1 - value), 0),
-                              child: ThisOrThatChoiceCard(
-                                side: widget.userChoice == 'b' ? 'b' : 'a',
-                                text: widget.userChoiceText,
-                                emoji: widget.userChoiceEmoji,
-                                selected: true,
-                                badge: 'YOU',
-                              ),
+                          child: _TurningPick(
+                            tileKey: const ValueKey('this-or-that-reveal-you'),
+                            turnKey: const ValueKey(
+                              'this-or-that-reveal-you-flip',
                             ),
+                            animation: _controller,
+                            turn: _turn(0),
+                            fromLeft: true,
+                            face:
+                                widget.userChoice == 'b'
+                                    ? palette.thatColor
+                                    : palette.thisColor,
+                            text: widget.userChoiceText,
+                            emoji: widget.userChoiceEmoji,
                           ),
                         ),
-                        SizedBox(
-                          width: 42,
-                          child: Center(
-                            child: Transform.scale(
-                              scale: 0.75 + (value * 0.25),
-                              child: Container(
-                                width: 34,
-                                height: 34,
-                                alignment: Alignment.center,
-                                decoration: BoxDecoration(
-                                  color: palette.ink,
-                                  shape: BoxShape.circle,
-                                  border: Border.all(
-                                    color: palette.canvas,
-                                    width: 3,
-                                  ),
-                                ),
-                                child: Text(
-                                  'VS',
-                                  style: Theme.of(
-                                    context,
-                                  ).textTheme.labelSmall?.copyWith(
-                                    color: palette.canvas,
-                                    fontWeight: FontWeight.w900,
-                                    letterSpacing: 0,
-                                  ),
-                                ),
-                              ),
-                            ),
-                          ),
-                        ),
+                        const SizedBox(width: _gap),
                         Expanded(
-                          child: Opacity(
-                            opacity: value,
-                            child: Transform.translate(
-                              offset: Offset(54 * (1 - value), 0),
-                              child: ThisOrThatChoiceCard(
-                                side: widget.partnerChoice == 'b' ? 'b' : 'a',
-                                text: widget.partnerChoiceText,
-                                emoji: widget.partnerChoiceEmoji,
-                                selected: true,
-                                badge: widget.partnerName.toUpperCase(),
-                              ),
+                          child: _TurningPick(
+                            tileKey: const ValueKey(
+                              'this-or-that-reveal-partner',
                             ),
+                            turnKey: const ValueKey(
+                              'this-or-that-reveal-partner-flip',
+                            ),
+                            animation: _controller,
+                            turn: _turn(1),
+                            fromLeft: false,
+                            face:
+                                widget.partnerChoice == 'b'
+                                    ? palette.thatColor
+                                    : palette.thisColor,
+                            text: widget.partnerChoiceText,
+                            emoji: widget.partnerChoiceEmoji,
                           ),
                         ),
                       ],
-                    );
-                  },
+                    ),
+                  ),
+                ],
+              ),
+              // Over the pair, from the seam between them. It plays when
+              // [_bursts] goes up, which happens once, on a match.
+              Positioned.fill(
+                child: Center(
+                  child: GameBurst(
+                    count: _bursts,
+                    color: GameTheme.onGround,
+                    size: 240,
+                    rays: 12,
+                  ),
                 ),
               ),
-              const SizedBox(height: 18),
-              MatchIndicator(
-                isMatch: widget.isMatch,
-                animation: _resultAnimation,
-              ),
             ],
+          ),
+          const SizedBox(height: 22),
+          MatchIndicator(
+            isMatch: widget.isMatch,
+            animation: _resultAnimation,
           ),
         ],
       ),
     );
   }
+
+  static const double _gap = 12;
 }
 
-class _CelebrationPainter extends CustomPainter {
-  const _CelebrationPainter({
-    required this.progress,
-    required this.first,
-    required this.second,
-  });
+/// "YOU" or the partner's name, over their pick. On the backdrop, so white.
+class _PickCaption extends StatelessWidget {
+  const _PickCaption({required this.text});
 
-  final double progress;
-  final Color first;
-  final Color second;
+  final String text;
 
   @override
-  void paint(Canvas canvas, Size size) {
-    if (progress <= 0) return;
-    final center = Offset(size.width / 2, size.height * 0.52);
-    final eased = Curves.easeOut.transform(progress.clamp(0, 1));
-    for (var i = 0; i < 18; i++) {
-      final angle = (math.pi * 2 / 18) * i;
-      final distance = (28 + ((i % 4) * 12)) * eased;
-      final point =
-          center + Offset(math.cos(angle), math.sin(angle)) * distance;
-      final radius = (i.isEven ? 3.2 : 2.2) * (1 - (progress * 0.35));
-      canvas.drawCircle(
-        point,
-        radius,
-        Paint()
-          ..color = (i.isEven ? first : second).withValues(
-            alpha: (1 - progress).clamp(0, 0.75),
-          ),
-      );
-    }
+  Widget build(BuildContext context) {
+    return Text(
+      text,
+      textAlign: TextAlign.center,
+      maxLines: 2,
+      style: const TextStyle(
+        color: GameTheme.onGround,
+        fontSize: 13,
+        height: 1.2,
+        fontWeight: FontWeight.w900,
+        letterSpacing: 1.4,
+      ),
+    );
+  }
+}
+
+/// One pick: a tile in its option's colour that turns over into view.
+///
+/// It starts edge-on and swings round to face the player, overshooting a
+/// little before it settles. There is no fade: edge-on, it is already
+/// invisible. At rest the transform is exactly none.
+class _TurningPick extends StatelessWidget {
+  const _TurningPick({
+    required this.tileKey,
+    required this.turnKey,
+    required this.animation,
+    required this.turn,
+    required this.fromLeft,
+    required this.face,
+    required this.text,
+    required this.emoji,
+  });
+
+  final Key tileKey;
+  final Key turnKey;
+  final Animation<double> animation;
+  final Interval turn;
+  final bool fromLeft;
+  final Color face;
+  final String text;
+  final String emoji;
+
+  Matrix4 _at(double progress) {
+    if (progress >= 1) return Matrix4.identity();
+    final eased = GameMotion.settleCurve.transform(progress);
+    final angle = (1 - eased) * (math.pi / 2) * (fromLeft ? -1 : 1);
+    return Matrix4.identity()
+      // A little perspective, so the turn reads as a turn.
+      ..setEntry(3, 2, 0.0012)
+      ..translate(0.0, 18 * (1 - eased))
+      ..rotateY(angle);
   }
 
   @override
-  bool shouldRepaint(covariant _CelebrationPainter oldDelegate) =>
-      oldDelegate.progress != progress ||
-      oldDelegate.first != first ||
-      oldDelegate.second != second;
+  Widget build(BuildContext context) {
+    final ink = ThisOrThatPalette.of(context).inkOn(face);
+    final tile = GameTile(
+      key: tileKey,
+      color: face,
+      radius: 20,
+      depth: 6,
+      padding: const EdgeInsets.fromLTRB(14, 20, 14, 22),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(minHeight: 168),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            if (emoji.isNotEmpty) ...[
+              Text(
+                emoji,
+                textAlign: TextAlign.center,
+                style: TextStyle(color: ink, fontSize: 36, height: 1),
+              ),
+              const SizedBox(height: 12),
+            ],
+            Text(
+              text,
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: ink,
+                fontSize: 19,
+                height: 1.18,
+                fontWeight: FontWeight.w800,
+                letterSpacing: -0.2,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    return AnimatedBuilder(
+      animation: animation,
+      child: tile,
+      builder:
+          (context, tile) => Transform(
+            key: turnKey,
+            alignment: Alignment.center,
+            transform: _at(turn.transform(animation.value)),
+            child: tile,
+          ),
+    );
+  }
 }

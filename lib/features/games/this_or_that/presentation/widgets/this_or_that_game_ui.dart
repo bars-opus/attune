@@ -53,6 +53,24 @@ class ThisOrThatPalette {
   );
 
   static ThisOrThatPalette of(BuildContext context) => _game;
+
+  /// The ink for words on a coloured [face] -- a tab, the card, a pick's
+  /// tile: white or the tiles' ink, whichever reads better on it.
+  ///
+  /// One rule for the whole game, so the card, the waiting screen and the
+  /// reveal cannot drift apart on what is readable.
+  Color inkOn(Color face) =>
+      contrast(Colors.white, face) > contrast(GameTheme.tileInk, face)
+          ? Colors.white
+          : GameTheme.tileInk;
+
+  /// WCAG contrast between two opaque colours.
+  static double contrast(Color a, Color b) {
+    final la = a.computeLuminance();
+    final lb = b.computeLuminance();
+    return (la > lb ? la + 0.05 : lb + 0.05) /
+        (la > lb ? lb + 0.05 : la + 0.05);
+  }
 }
 
 /// The game's dark theme over [child], for a dialog or sheet a screen opens
