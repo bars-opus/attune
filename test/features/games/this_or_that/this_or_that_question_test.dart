@@ -230,7 +230,8 @@ void main() {
       rectMoreOrLessEquals(tabRow(tester).inflate(5)),
     );
 
-    // The second step points at the lock button, the third at nothing.
+    // The second step points at the lock button; the third at the tabs
+    // again, so its bubble stays clear of them too.
     await tester.tap(find.text('Next'));
     await tester.pumpAndSettle();
     expect(
@@ -250,7 +251,10 @@ void main() {
     await tester.tap(find.text('Next'));
     await tester.pumpAndSettle();
     expect(find.text(lastStep), findsOneWidget);
-    expect(ring, findsNothing);
+    expect(
+      tester.getRect(ring),
+      rectMoreOrLessEquals(tabRow(tester).inflate(5)),
+    );
   });
 
   testWidgets('the game can be played with the tutorial still up', (
@@ -463,20 +467,20 @@ void main() {
     ),
   };
   for (final MapEntry(key: name, value: (size, padding)) in phones.entries) {
-    for (final step in [1, 2]) {
+    for (final step in [1, 2, 3]) {
       testWidgets('on a $name phone, step $step\'s bubble covers neither what '
           'it points at nor the tabs', (tester) async {
         await pump(tester, stored: const {}, surface: size, padding: padding);
-        if (step == 2) {
+        for (var next = 1; next < step; next++) {
           await tester.tap(find.text('Next'));
           await tester.pumpAndSettle();
         }
 
         final bubble = tester.getRect(find.byType(GameCoachBubble));
         final pointed =
-            step == 1
-                ? tabRow(tester)
-                : tester.getRect(find.byType(ThisOrThatPrimaryAction));
+            step == 2
+                ? tester.getRect(find.byType(ThisOrThatPrimaryAction))
+                : tabRow(tester);
         expect(bubble.overlaps(pointed), isFalse);
         expect(find.byKey(const ValueKey('game-coach-ring')), findsOneWidget);
 

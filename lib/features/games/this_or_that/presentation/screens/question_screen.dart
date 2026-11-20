@@ -334,10 +334,13 @@ class _QuestionScreenState extends ConsumerState<QuestionScreen>
                 'your pick until they have answered too.',
             target: _lockKey,
           ),
-          const GameCoachStep(
+          // Back at the tabs: a step that pointed at nothing would put its
+          // bubble at the top, over the tabs on a small phone.
+          GameCoachStep(
             text:
                 'When you have both picked, the two answers turn over '
                 'together.',
+            target: _tabRowKey,
           ),
         ],
         child: Column(
