@@ -31,8 +31,10 @@ void main() {
     }, skip: !comparedHere);
   }
 
-  for (final MapEntry(key: name, value: shot)
-      in thisOrThatQuestionScreens().entries) {
+  for (final MapEntry(key: name, value: shot) in {
+    ...thisOrThatQuestionScreens(),
+    ...thisOrThatSmallScreens(),
+  }.entries) {
     testWidgets('$name on a phone', (tester) async {
       await pumpShellScreen(
         tester,

@@ -155,12 +155,10 @@ class _RevealScreenState extends ConsumerState<RevealScreen>
 
   @override
   Widget build(BuildContext context) {
-    final palette = ThisOrThatPalette.of(context);
     final isLast = widget.roundNumber == widget.totalRounds;
     return ThisOrThatGameScaffold(
       roundNumber: widget.roundNumber,
       totalRounds: widget.totalRounds,
-      scrollable: true,
       bottom: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -184,117 +182,178 @@ class _RevealScreenState extends ConsumerState<RevealScreen>
           ],
         ],
       ),
-      child: Column(
-        children: [
-          const SizedBox(height: 4),
-          ThisOrThatStageLabel(
-            text: 'The reveal',
-            icon: Icons.visibility_rounded,
-            // On the game's orange, where only white reads.
-            color: palette.ink,
-          ),
-          const SizedBox(height: 12),
-          Text(
-            widget.questionText,
-            textAlign: TextAlign.center,
-            style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-              color: palette.ink,
-              fontWeight: FontWeight.w800,
-              height: 1.15,
-              letterSpacing: 0,
-            ),
-          ),
-          const SizedBox(height: 24),
-          Stack(
-            clipBehavior: Clip.none,
-            children: [
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Row(
+      child: ThisOrThatCentredBody(builder: _body),
+    );
+  }
+
+  /// The question's height in [style], [width] wide, as it will be drawn.
+  double _questionHeight(TextStyle? style, double width) {
+    final painter = TextPainter(
+      text: TextSpan(text: widget.questionText, style: style),
+      textAlign: TextAlign.center,
+      textDirection: Directionality.of(context),
+      textScaler: MediaQuery.textScalerOf(context),
+    )..layout(maxWidth: width);
+    final height = painter.height;
+    painter.dispose();
+    return height;
+  }
+
+  /// The question, the two picks and the verdict, fitted to [room].
+  ///
+  /// The verdict is the point of the screen, so it must be in view without
+  /// scrolling. The picks give way to make that so: they stand tall
+  /// (up to 168 inside) where there is room, shrink toward 96 where there
+  /// is less, and on the shortest phones the whole screen tightens -- a
+  /// smaller question, smaller picks, closer gaps. Only content that cannot
+  /// fit even then, such as two long options, scrolls.
+  Widget _body(BuildContext context, BoxConstraints room) {
+    final palette = ThisOrThatPalette.of(context);
+    final headline = Theme.of(context).textTheme.headlineSmall?.copyWith(
+      color: palette.ink,
+      fontWeight: FontWeight.w800,
+      height: 1.15,
+      letterSpacing: 0,
+    );
+
+    // Everything but the question and the picks' own height: the label,
+    // the captions, the tiles' padding and shadow, the verdict and the
+    // gaps between, with a little to spare.
+    const roomyRest = 226.0 + 20;
+    const compactRest = 184.0 + 16;
+    final spare =
+        room.maxHeight - roomyRest - _questionHeight(headline, room.maxWidth);
+    final compact = spare < 96;
+    final question =
+        compact ? headline?.copyWith(fontSize: 20, height: 1.15) : headline;
+    final pickHeight =
+        compact
+            ? (room.maxHeight -
+                    compactRest -
+                    _questionHeight(question, room.maxWidth))
+                .clamp(0.0, 96.0)
+            : spare.clamp(96.0, 168.0);
+
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        const SizedBox(height: 4),
+        ThisOrThatStageLabel(
+          text: 'The reveal',
+          icon: Icons.visibility_rounded,
+          // On the game's orange, where only white reads.
+          color: palette.ink,
+        ),
+        SizedBox(height: compact ? 8 : 12),
+        Text(
+          widget.questionText,
+          textAlign: TextAlign.center,
+          style: question,
+        ),
+        SizedBox(height: compact ? 14 : 24),
+        Stack(
+          clipBehavior: Clip.none,
+          children: [
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                // The captions are said with their picks, below; on their
+                // own they would be read as a list of names.
+                ExcludeSemantics(
+                  child: Row(
                     // Bottoms aligned, so a name on two lines still sits
                     // right on its tile.
                     crossAxisAlignment: CrossAxisAlignment.end,
                     children: [
-                      Expanded(child: _PickCaption(text: 'YOU')),
+                      const Expanded(child: _PickCaption(text: 'YOU')),
                       const SizedBox(width: _gap),
                       Expanded(
-                        child: _PickCaption(
-                          text: widget.partnerName.toUpperCase(),
+                        child: _PickCaption(text: _partner.toUpperCase()),
+                      ),
+                    ],
+                  ),
+                ),
+                SizedBox(height: compact ? 8 : 10),
+                IntrinsicHeight(
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Expanded(
+                        child: _TurningPick(
+                          tileKey: const ValueKey('this-or-that-reveal-you'),
+                          turnKey: const ValueKey(
+                            'this-or-that-reveal-you-flip',
+                          ),
+                          animation: _controller,
+                          turn: _turn(0),
+                          fromLeft: true,
+                          face:
+                              widget.userChoice == 'b'
+                                  ? palette.thatColor
+                                  : palette.thisColor,
+                          text: widget.userChoiceText,
+                          emoji: widget.userChoiceEmoji,
+                          owner: 'You',
+                          minHeight: pickHeight,
+                          compact: compact,
+                        ),
+                      ),
+                      const SizedBox(width: _gap),
+                      Expanded(
+                        child: _TurningPick(
+                          tileKey: const ValueKey(
+                            'this-or-that-reveal-partner',
+                          ),
+                          turnKey: const ValueKey(
+                            'this-or-that-reveal-partner-flip',
+                          ),
+                          animation: _controller,
+                          turn: _turn(1),
+                          fromLeft: false,
+                          face:
+                              widget.partnerChoice == 'b'
+                                  ? palette.thatColor
+                                  : palette.thisColor,
+                          text: widget.partnerChoiceText,
+                          emoji: widget.partnerChoiceEmoji,
+                          owner:
+                              _partnerKnown
+                                  ? widget.partnerName
+                                  : 'Your partner',
+                          minHeight: pickHeight,
+                          compact: compact,
                         ),
                       ),
                     ],
                   ),
-                  const SizedBox(height: 10),
-                  IntrinsicHeight(
-                    child: Row(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        Expanded(
-                          child: _TurningPick(
-                            tileKey: const ValueKey('this-or-that-reveal-you'),
-                            turnKey: const ValueKey(
-                              'this-or-that-reveal-you-flip',
-                            ),
-                            animation: _controller,
-                            turn: _turn(0),
-                            fromLeft: true,
-                            face:
-                                widget.userChoice == 'b'
-                                    ? palette.thatColor
-                                    : palette.thisColor,
-                            text: widget.userChoiceText,
-                            emoji: widget.userChoiceEmoji,
-                          ),
-                        ),
-                        const SizedBox(width: _gap),
-                        Expanded(
-                          child: _TurningPick(
-                            tileKey: const ValueKey(
-                              'this-or-that-reveal-partner',
-                            ),
-                            turnKey: const ValueKey(
-                              'this-or-that-reveal-partner-flip',
-                            ),
-                            animation: _controller,
-                            turn: _turn(1),
-                            fromLeft: false,
-                            face:
-                                widget.partnerChoice == 'b'
-                                    ? palette.thatColor
-                                    : palette.thisColor,
-                            text: widget.partnerChoiceText,
-                            emoji: widget.partnerChoiceEmoji,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-              // Over the pair, from the seam between them. It plays when
-              // [_bursts] goes up, which happens once, on a match.
-              Positioned.fill(
-                child: Center(
-                  child: GameBurst(
-                    count: _bursts,
-                    color: GameTheme.onGround,
-                    size: 240,
-                    rays: 12,
-                  ),
+                ),
+              ],
+            ),
+            // Over the pair, from the seam between them. It plays when
+            // [_bursts] goes up, which happens once, on a match.
+            Positioned.fill(
+              child: Center(
+                child: GameBurst(
+                  count: _bursts,
+                  color: GameTheme.onGround,
+                  size: 240,
+                  rays: 12,
                 ),
               ),
-            ],
-          ),
-          const SizedBox(height: 22),
-          MatchIndicator(
-            isMatch: widget.isMatch,
-            animation: _resultAnimation,
-          ),
-        ],
-      ),
+            ),
+          ],
+        ),
+        SizedBox(height: compact ? 12 : 22),
+        MatchIndicator(isMatch: widget.isMatch, animation: _resultAnimation),
+      ],
     );
   }
+
+  /// The router's stand-in when the partner's name is not known.
+  bool get _partnerKnown => widget.partnerName != 'Partner';
+
+  /// Who the second pick belongs to, as a caption says it.
+  String get _partner => _partnerKnown ? widget.partnerName : 'your partner';
 
   static const double _gap = 12;
 }
@@ -337,6 +396,9 @@ class _TurningPick extends StatelessWidget {
     required this.face,
     required this.text,
     required this.emoji,
+    required this.owner,
+    required this.minHeight,
+    required this.compact,
   });
 
   final Key tileKey;
@@ -347,6 +409,15 @@ class _TurningPick extends StatelessWidget {
   final Color face;
   final String text;
   final String emoji;
+
+  /// Whose pick it is: "You", or the partner. Said with the pick.
+  final String owner;
+
+  /// The least height inside the tile's padding.
+  final double minHeight;
+
+  /// Smaller words and padding, for the shortest phones.
+  final bool compact;
 
   Matrix4 _at(double progress) {
     if (progress >= 1) return Matrix4.identity();
@@ -367,9 +438,13 @@ class _TurningPick extends StatelessWidget {
       color: face,
       radius: 20,
       depth: 6,
-      padding: const EdgeInsets.fromLTRB(14, 20, 14, 22),
+      semanticLabel: '$owner: $text',
+      padding:
+          compact
+              ? const EdgeInsets.fromLTRB(12, 12, 12, 14)
+              : const EdgeInsets.fromLTRB(14, 20, 14, 22),
       child: ConstrainedBox(
-        constraints: const BoxConstraints(minHeight: 168),
+        constraints: BoxConstraints(minHeight: minHeight),
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -378,16 +453,20 @@ class _TurningPick extends StatelessWidget {
               Text(
                 emoji,
                 textAlign: TextAlign.center,
-                style: TextStyle(color: ink, fontSize: 36, height: 1),
+                style: TextStyle(
+                  color: ink,
+                  fontSize: compact ? 28 : 36,
+                  height: 1,
+                ),
               ),
-              const SizedBox(height: 12),
+              SizedBox(height: compact ? 8 : 12),
             ],
             Text(
               text,
               textAlign: TextAlign.center,
               style: TextStyle(
                 color: ink,
-                fontSize: 19,
+                fontSize: compact ? 17 : 19,
                 height: 1.18,
                 fontWeight: FontWeight.w800,
                 letterSpacing: -0.2,

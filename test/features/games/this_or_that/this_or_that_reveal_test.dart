@@ -8,6 +8,7 @@ import 'package:attune/features/games/platform/shell/game_buttons.dart';
 import 'package:attune/features/games/this_or_that/presentation/providers/this_or_that_providers.dart';
 import 'package:attune/features/games/this_or_that/presentation/screens/reveal_screen.dart';
 import 'package:attune/features/games/this_or_that/presentation/screens/waiting_screen.dart';
+import 'package:attune/features/games/this_or_that/presentation/widgets/match_indicator.dart';
 import 'package:attune/features/games/this_or_that/presentation/widgets/this_or_that_game_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
@@ -36,6 +37,7 @@ void main() {
     String optionA = 'Stay in',
     String optionB = 'Go out',
     String partnerName = 'Ama',
+    String question = 'Friday night: stay in or go out?',
     bool celebrate = true,
     bool hasPrevious = false,
     VoidCallback? onPrevious,
@@ -45,7 +47,7 @@ void main() {
     String emoji(String side) => side == 'a' ? '🛋️' : '✨';
     return RevealScreen(
       key: key,
-      questionText: 'Friday night: stay in or go out?',
+      questionText: question,
       userChoice: you,
       userChoiceText: text(you),
       userChoiceEmoji: emoji(you),
@@ -587,5 +589,234 @@ void main() {
       expect(find.text('Nudge Kwame Mensah'), findsOneWidget);
       expectNothingClipped(tester, small);
     });
+  });
+
+  /// The screen's scrolling body: the room the content has.
+  Finder bodyOf(Type screen) {
+    final found = find.descendant(
+      of: find.byType(screen),
+      matching: find.byType(Scrollable),
+    );
+    expect(found, findsOneWidget);
+    return found;
+  }
+
+  group('room on a phone', () {
+    // The control is the 375x812 phone: the verdict was already in view
+    // there before the tiles learned to give way.
+    const sizes = {
+      'smallest': Size(320, 568),
+      'short Android': Size(360, 640),
+      'short iPhone': Size(375, 667),
+      'phone': phone,
+    };
+    for (final MapEntry(key: name, value: size) in sizes.entries) {
+      for (final previous in [true, false]) {
+        testWidgets('$name${previous ? ', with Previous round' : ''}: the '
+            'verdict is in view without scrolling', (tester) async {
+          // A question on one line and one on two (at 320 wide, the short
+          // one already takes two).
+          for (final (partner, question) in [
+            ('a', 'Friday night: stay in or go out?'),
+            ('b', 'Friday night: stay in or go out?'),
+            if (size.width > 320)
+              ('b', 'Friday night after a long week: stay in or go out?'),
+          ]) {
+            await pump(
+              tester,
+              reveal(
+                key: ValueKey('$partner $question'),
+                partner: partner,
+                question: question,
+                hasPrevious: previous,
+                onPrevious: previous ? () {} : null,
+              ),
+              size: size,
+              reduceMotion: true,
+            );
+
+            final body = bodyOf(RevealScreen);
+            final position =
+                tester.state<ScrollableState>(body).position.pixels;
+            expect(position, 0);
+            final verdict = tester.getRect(find.byType(MatchIndicator));
+            final room = tester.getRect(body);
+            final buttons = tester.getRect(find.byType(GamePrimaryButton));
+            expect(verdict.top, greaterThanOrEqualTo(room.top));
+            expect(verdict.bottom, lessThanOrEqualTo(room.bottom));
+            expect(verdict.bottom, lessThanOrEqualTo(buttons.top));
+            expect(tester.takeException(), isNull);
+          }
+        });
+      }
+    }
+
+    testWidgets('short content sits in the middle of its room', (tester) async {
+      Rect rectOf(Finder finder) => tester.getRect(finder);
+
+      await pump(tester, reveal(partner: 'b'), reduceMotion: true);
+      var room = rectOf(bodyOf(RevealScreen));
+      var content = rectOf(
+        find.text('THE REVEAL'),
+      ).expandToInclude(rectOf(find.byType(MatchIndicator)));
+      expect(content.height, lessThan(room.height));
+      expect(content.center.dy, closeTo(room.center.dy, 12));
+
+      // A fresh host: the waiting screen brings providers of its own.
+      await tester.pumpWidget(const SizedBox());
+      await pump(
+        tester,
+        waiting(),
+        reduceMotion: true,
+        overrides: waitingOverrides(),
+      );
+      room = rectOf(bodyOf(WaitingScreen));
+      content = rectOf(
+        find.byKey(lockedTile),
+      ).expandToInclude(rectOf(find.byType(GameSecondaryButton)));
+      expect(content.height, lessThan(room.height));
+      expect(content.center.dy, closeTo(room.center.dy, 12));
+    });
+
+    testWidgets('content taller than its room starts at the top and '
+        'scrolls', (tester) async {
+      const small = Size(320, 568);
+      await pump(
+        tester,
+        reveal(
+          optionA: longOption,
+          optionB: longOption,
+          partner: 'b',
+          hasPrevious: true,
+          onPrevious: () {},
+        ),
+        size: small,
+        reduceMotion: true,
+      );
+      var room = tester.getRect(bodyOf(RevealScreen));
+      expect(
+        tester.getRect(find.byType(MatchIndicator)).bottom,
+        greaterThan(room.bottom),
+      );
+      expect(
+        tester.getRect(find.text('THE REVEAL')).top - room.top,
+        lessThan(12),
+      );
+
+      await tester.pumpWidget(const SizedBox());
+      await pump(
+        tester,
+        waiting(
+          optionA: longOption,
+          optionB: longOption,
+          answeredAt: DateTime.now().subtract(const Duration(hours: 3)),
+        ),
+        size: small,
+        reduceMotion: true,
+        overrides: waitingOverrides(),
+      );
+      room = tester.getRect(bodyOf(WaitingScreen));
+      expect(
+        tester.getRect(find.text('Nudge Ama')).bottom,
+        greaterThan(room.bottom),
+      );
+      expect(
+        tester.getRect(find.byKey(lockedTile)).top - room.top,
+        lessThan(12),
+      );
+    });
+  });
+
+  group('when the partner\'s name is not known', () {
+    testWidgets('waiting says "your partner" everywhere', (tester) async {
+      // Control: 'nudge and change are the shell\'s quieter pills' and
+      // 'the waiting line names the partner', where Ama is named.
+      await pump(
+        tester,
+        waiting(
+          partnerName: 'Partner',
+          answeredAt: DateTime.now().subtract(const Duration(hours: 3)),
+        ),
+        reduceMotion: true,
+        overrides: waitingOverrides(),
+      );
+
+      expect(find.text('Your partner is choosing'), findsOneWidget);
+      expect(find.text('Nudge your partner'), findsOneWidget);
+      expect(find.textContaining('Partner is'), findsNothing);
+      expect(find.textContaining('Nudge Partner'), findsNothing);
+    });
+
+    testWidgets('the reveal captions their pick "YOUR PARTNER"', (
+      tester,
+    ) async {
+      // Control: '"You" and the partner\'s name sit above their picks'.
+      await pump(
+        tester,
+        reveal(partner: 'b', partnerName: 'Partner'),
+        reduceMotion: true,
+      );
+
+      expect(find.text('YOUR PARTNER'), findsOneWidget);
+      expect(find.text('PARTNER'), findsNothing);
+    });
+  });
+
+  testWidgets('a nudge on its way says so and cannot be sent twice', (
+    tester,
+  ) async {
+    final repository = MockThisOrThatRepository();
+    final sending = Completer<bool>();
+    when(
+      () => repository.sendReminder(any(), any()),
+    ).thenAnswer((_) => sending.future);
+    await pump(
+      tester,
+      waiting(answeredAt: DateTime.now().subtract(const Duration(hours: 3))),
+      reduceMotion: true,
+      overrides: [
+        thisOrThatRepositoryProvider.overrideWithValue(repository),
+        currentUserIdProvider.overrideWithValue('user-a'),
+      ],
+    );
+
+    await tester.ensureVisible(find.text('Nudge Ama'));
+    await tester.tap(find.text('Nudge Ama'));
+    await tester.pump();
+    expect(find.text('Sending…'), findsOneWidget);
+    expect(find.text('Nudge Ama'), findsNothing);
+
+    await tester.tap(find.text('Sending…'));
+    await tester.pump();
+    verify(() => repository.sendReminder('session-1', 'user-a')).called(1);
+
+    // It did not go through: the button is back, to try again.
+    sending.completeError(Exception('offline'));
+    await tester.pumpAndSettle();
+    expect(find.text('Sending…'), findsNothing);
+    expect(find.text('Nudge Ama'), findsOneWidget);
+    verifyNever(() => repository.sendReminder(any(), any()));
+  });
+
+  testWidgets('a screen reader hears each name with its pick', (tester) async {
+    final semantics = tester.ensureSemantics();
+    await pump(tester, reveal(partner: 'b'), reduceMotion: true);
+
+    expect(find.bySemanticsLabel('You: Stay in'), findsOneWidget);
+    expect(find.bySemanticsLabel('Ama: Go out'), findsOneWidget);
+    expect(find.bySemanticsLabel('YOU'), findsNothing);
+    expect(find.bySemanticsLabel('AMA'), findsNothing);
+
+    await pump(
+      tester,
+      reveal(
+        key: const ValueKey('unnamed'),
+        partner: 'b',
+        partnerName: 'Partner',
+      ),
+      reduceMotion: true,
+    );
+    expect(find.bySemanticsLabel('Your partner: Go out'), findsOneWidget);
+    semantics.dispose();
   });
 }

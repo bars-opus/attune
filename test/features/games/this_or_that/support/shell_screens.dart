@@ -284,6 +284,21 @@ thisOrThatQuestionScreens() {
   };
 }
 
+/// Screens with a picture on the smallest phone in use, 320x568: the
+/// reveal, with Previous round, keeps its verdict above the buttons.
+Map<String, ({ShellScreen screen, Map<String, Object> stored, Size size})>
+thisOrThatSmallScreens() => {
+  'reveal_small': (
+    screen: (
+      build: () => _reveal(partner: 'b'),
+      overrides: () => const [],
+      then: null,
+    ),
+    stored: const {},
+    size: const Size(320, 568),
+  ),
+};
+
 /// Pumps [screen] on [size] in a light app, on a device that remembers
 /// [stored].
 Future<void> pumpShellScreen(

@@ -465,10 +465,14 @@ void main() {
         in thisOrThatShellScreens().entries)
       name: (screen: screen, stored: const <String, Object>{}, size: phone),
     ...thisOrThatQuestionScreens(),
+    ...thisOrThatSmallScreens(),
   };
   test('the screens below have something to check', () {
     expect(screens, isNotEmpty);
-    expect(screens.keys, containsAll(['question', 'question_this']));
+    expect(
+      screens.keys,
+      containsAll(['question', 'question_this', 'reveal_small']),
+    );
   });
   for (final MapEntry(key: name, value: shot) in screens.entries) {
     testWidgets('$name: every word in the body can be read where it sits, '

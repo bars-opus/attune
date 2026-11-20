@@ -172,6 +172,33 @@ class ThisOrThatGameScaffold extends StatelessWidget {
   }
 }
 
+/// A screen's body that sits in the middle of the room it has, and scrolls
+/// from the top when it is taller than that room.
+///
+/// For a [ThisOrThatGameScaffold] that is not
+/// [ThisOrThatGameScaffold.scrollable]: the scaffold's scrolling body
+/// top-aligns, which leaves a short screen's lower half empty. [builder] is given the room, so a screen can fit
+/// itself to it.
+class ThisOrThatCentredBody extends StatelessWidget {
+  const ThisOrThatCentredBody({super.key, required this.builder});
+
+  final Widget Function(BuildContext context, BoxConstraints room) builder;
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder:
+          (context, constraints) => SingleChildScrollView(
+            physics: const BouncingScrollPhysics(),
+            child: ConstrainedBox(
+              constraints: BoxConstraints(minHeight: constraints.maxHeight),
+              child: Center(child: builder(context, constraints)),
+            ),
+          ),
+    );
+  }
+}
+
 class _GameProgressTrack extends StatelessWidget {
   const _GameProgressTrack({required this.value});
 
