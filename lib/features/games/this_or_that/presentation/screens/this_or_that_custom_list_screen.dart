@@ -37,7 +37,8 @@ class ThisOrThatCustomListScreen extends ConsumerWidget {
               'Make the game sound more like the two of you.',
               textAlign: TextAlign.center,
               style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                color: palette.mutedInk,
+                // On the game's orange, where muted ink cannot be read.
+                color: palette.ink,
                 letterSpacing: 0,
               ),
             ),

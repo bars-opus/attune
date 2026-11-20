@@ -173,7 +173,17 @@ void main() {
     // lives INSIDE it, and the options are the left and right tabs. The
     // behaviour under test is unchanged -- the round reads as a
     // two-sided game and shows its progress -- so only the hooks move.
-    expect(find.text('ROUND 3 OF 10'), findsOneWidget);
+    // The round now reads in the games shell's header (the screen's body
+    // also names it, under the question's own heading).
+    expect(
+      find.descendant(
+        of: find.byWidgetPredicate(
+          (widget) => widget is Semantics && widget.properties.header == true,
+        ),
+        matching: find.text('Round 3 of 10'),
+      ),
+      findsOneWidget,
+    );
     expect(find.text('Friday night: stay in or go out?'), findsOneWidget);
     expect(find.byType(ThisOrThatTabCard), findsOneWidget);
     expect(find.text('THIS'), findsOneWidget);
@@ -666,7 +676,11 @@ void main() {
       expect(sounds.played, isEmpty);
       expect(haptics.mediumCount, 0);
       expect(find.text('Current round'), findsOneWidget);
-      await tester.tap(find.byIcon(Icons.arrow_back_rounded));
+      // The shell's Back button carries the same arrow; the previous
+      // round is the arrow in the round's own action row.
+      await tester.tap(
+        find.widgetWithIcon(OutlinedButton, Icons.arrow_back_rounded),
+      );
       expect(previousCount, 1);
       expect(tester.takeException(), isNull);
     },

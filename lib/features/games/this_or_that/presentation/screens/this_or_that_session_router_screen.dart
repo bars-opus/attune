@@ -1,3 +1,4 @@
+import 'package:attune/features/games/platform/shell/game_material_theme.dart';
 import 'package:attune/features/games/presentation/widgets/game_icon.dart';
 import 'package:attune/features/games/this_or_that/data/models/game_round.dart';
 import 'package:attune/features/games/this_or_that/data/models/this_or_that_session.dart';
@@ -9,6 +10,7 @@ import 'package:attune/features/games/this_or_that/presentation/screens/question
 import 'package:attune/features/games/this_or_that/presentation/screens/reveal_screen.dart';
 import 'package:attune/features/games/this_or_that/presentation/screens/waiting_screen.dart';
 import 'package:attune/features/games/this_or_that/presentation/widgets/this_or_that_game_ui.dart';
+import 'package:attune/features/games/this_or_that/this_or_that_game.dart';
 import 'package:flutter/material.dart';
 import 'package:attune/features/games/presentation/providers/game_session_live_provider.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -611,7 +613,13 @@ class _InviteSentScreenState extends State<_InviteSentScreen> {
                         _error!,
                         textAlign: TextAlign.center,
                         style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: Theme.of(context).colorScheme.error,
+                          // The game's error red: this context is above the
+                          // dark backdrop, where the app's own is too dark.
+                          color:
+                              gameMaterialTheme(
+                                context,
+                                thisOrThatTheme,
+                              ).colorScheme.error,
                           fontWeight: FontWeight.w700,
                         ),
                       ),
@@ -717,7 +725,13 @@ class _InvitationDecisionScreenState extends State<_InvitationDecisionScreen> {
                         _error!,
                         textAlign: TextAlign.center,
                         style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: Theme.of(context).colorScheme.error,
+                          // The game's error red: this context is above the
+                          // dark backdrop, where the app's own is too dark.
+                          color:
+                              gameMaterialTheme(
+                                context,
+                                thisOrThatTheme,
+                              ).colorScheme.error,
                           fontWeight: FontWeight.w700,
                         ),
                       ),

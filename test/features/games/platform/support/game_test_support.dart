@@ -89,6 +89,10 @@ Future<SharedPreferences> testPrefs([
 
 /// Hosts a shell widget with the three things it reads from the app: local
 /// preferences, sound and haptics.
+///
+/// [overrides] are a game screen's own providers. They go in the same scope:
+/// a second scope around this one would hide the preferences from the
+/// providers that read them.
 Widget gameHost(
   Widget child, {
   required SharedPreferences prefs,
@@ -96,12 +100,14 @@ Widget gameHost(
   Haptics? haptics,
   bool reduceMotion = false,
   double textScale = 1,
+  List<Override> overrides = const [],
 }) {
   return ProviderScope(
     overrides: [
       sharedPreferencesProvider.overrideWithValue(prefs),
       soundServiceProvider.overrideWithValue(sound ?? FakeSoundService()),
       hapticsProvider.overrideWithValue(haptics ?? FakeHaptics()),
+      ...overrides,
     ],
     child: MaterialApp(
       debugShowCheckedModeBanner: false,

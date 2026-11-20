@@ -15,24 +15,35 @@ import 'package:flutter_test/flutter_test.dart';
 /// against a spinner rather than the behaviour. What must hold is that
 /// none of them is a dead end.
 void main() {
-  const waitingScreens = <String, String>{
-    'thirty_six_waiting_screen':
-        'lib/features/games/thirty_six_questions/presentation/screens/'
-        'thirty_six_waiting_screen.dart',
-    'partner_watching_screen':
-        'lib/features/games/truth_or_dare/presentation/screens/'
-        'partner_watching_screen.dart',
-    'this_or_that_waiting_screen':
-        'lib/features/games/this_or_that/presentation/screens/'
-        'waiting_screen.dart',
+  // Each screen's explicit way out. This or That's is the games shell's
+  // Back button, which it points at its own confirmation.
+  const waitingScreens = <String, ({String path, String exit})>{
+    'thirty_six_waiting_screen': (
+      path:
+          'lib/features/games/thirty_six_questions/presentation/screens/'
+          'thirty_six_waiting_screen.dart',
+      exit: 'leading: IconButton',
+    ),
+    'partner_watching_screen': (
+      path:
+          'lib/features/games/truth_or_dare/presentation/screens/'
+          'partner_watching_screen.dart',
+      exit: 'leading: IconButton',
+    ),
+    'this_or_that_waiting_screen': (
+      path:
+          'lib/features/games/this_or_that/presentation/screens/'
+          'waiting_screen.dart',
+      exit: 'onBack: _showExitConfirmation',
+    ),
   };
 
-  waitingScreens.forEach((name, path) {
+  waitingScreens.forEach((name, screen) {
     test('$name offers a way out of the wait', () {
-      final source = File(path).readAsStringSync();
+      final source = File(screen.path).readAsStringSync();
 
       expect(
-        source.contains('leading: IconButton'),
+        source.contains(screen.exit),
         isTrue,
         reason:
             '$name waits on the partner indefinitely and must not rely on '

@@ -106,23 +106,26 @@ class _SessionHistoryScreenState extends ConsumerState<SessionHistoryScreen> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder:
-          (dialogContext) => AlertDialog(
-            icon: const Icon(Icons.visibility_off_outlined),
-            title: const Text('Hide this game?'),
-            content: const Text(
-              'It disappears from your history only. Your partner keeps their copy.',
-              textAlign: TextAlign.center,
+          (dialogContext) => thisOrThatDarkTheme(
+            dialogContext,
+            child: AlertDialog(
+              icon: const Icon(Icons.visibility_off_outlined),
+              title: const Text('Hide this game?'),
+              content: const Text(
+                'It disappears from your history only. Your partner keeps their copy.',
+                textAlign: TextAlign.center,
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(dialogContext, false),
+                  child: const Text('Keep it'),
+                ),
+                FilledButton(
+                  onPressed: () => Navigator.pop(dialogContext, true),
+                  child: const Text('Hide'),
+                ),
+              ],
             ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(dialogContext, false),
-                child: const Text('Keep it'),
-              ),
-              FilledButton(
-                onPressed: () => Navigator.pop(dialogContext, true),
-                child: const Text('Hide'),
-              ),
-            ],
           ),
     );
 
@@ -198,7 +201,9 @@ class _SessionHistoryScreenState extends ConsumerState<SessionHistoryScreen> {
                             style: Theme.of(
                               context,
                             ).textTheme.bodyMedium?.copyWith(
-                              color: palette.mutedInk,
+                              // On the game's orange, where muted ink
+                              // cannot be read.
+                              color: palette.ink,
                               height: 1.4,
                               letterSpacing: 0,
                             ),

@@ -1,4 +1,5 @@
 import 'package:attune/app/theme/app_theme.dart';
+import 'package:attune/features/games/platform/shell/game_buttons.dart';
 import 'package:attune/features/games/this_or_that/data/models/custom_this_or_that_question.dart';
 import 'package:attune/features/games/this_or_that/presentation/providers/this_or_that_custom_providers.dart'
     as custom;
@@ -95,11 +96,11 @@ void main() {
     );
     await tester.pump();
 
-    FilledButton saveButton() => tester.widget<FilledButton>(
-      find.widgetWithText(FilledButton, 'Add to my deck'),
+    GamePrimaryButton saveButton() => tester.widget<GamePrimaryButton>(
+      find.widgetWithText(GamePrimaryButton, 'Add to my deck'),
     );
 
-    expect(saveButton().onPressed, isNull);
+    expect(saveButton().onTap, isNull);
     final fields = find.byType(TextField);
     expect(fields, findsNWidgets(3));
     await tester.enterText(fields.at(0), 'Perfect Sunday?');
@@ -107,7 +108,7 @@ void main() {
     await tester.enterText(fields.at(2), 'Head outside');
     await tester.pump();
 
-    expect(saveButton().onPressed, isNotNull);
+    expect(saveButton().onTap, isNotNull);
     expect(tester.takeException(), isNull);
   });
 }

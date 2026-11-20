@@ -1,7 +1,6 @@
-import 'package:attune/features/games/platform/shell/game_material_theme.dart';
 import 'package:attune/features/games/this_or_that/data/models/game_round.dart';
 import 'package:attune/features/games/this_or_that/presentation/providers/this_or_that_providers.dart';
-import 'package:attune/features/games/this_or_that/this_or_that_game.dart';
+import 'package:attune/features/games/this_or_that/presentation/widgets/this_or_that_game_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -47,8 +46,8 @@ Future<String?> startThisOrThat(
       // Asked over a game, whose screens are dark whatever the app is
       // doing; the route above it would otherwise take the app's theme.
       builder:
-          (dialogContext) => Theme(
-            data: gameMaterialTheme(dialogContext, thisOrThatTheme),
+          (dialogContext) => thisOrThatDarkTheme(
+            dialogContext,
             child: AlertDialog(
               icon: const Icon(Icons.favorite_outline_rounded),
               title: const Text('Choose Intimate together'),

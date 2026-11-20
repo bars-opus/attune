@@ -1,3 +1,4 @@
+import 'package:attune/features/games/platform/game_theme.dart';
 import 'package:attune/features/games/this_or_that/presentation/providers/this_or_that_custom_providers.dart';
 import 'package:attune/features/games/this_or_that/presentation/widgets/this_or_that_game_ui.dart';
 import 'package:flutter/material.dart';
@@ -139,56 +140,66 @@ class _ThisOrThatCustomCreateScreenState
     final palette = ThisOrThatPalette.of(context);
     final emoji = await showModalBottomSheet<String>(
       context: context,
+      // The sheet itself takes the theme of the context it is opened from,
+      // which is above the screen's dark backdrop: its colour is set here.
+      backgroundColor: GameTheme.ground,
       showDragHandle: true,
       isScrollControlled: true,
       builder:
-          (sheetContext) => SafeArea(
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(20, 4, 20, 20),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Give this choice a face',
-                    style: Theme.of(
-                      sheetContext,
-                    ).textTheme.titleLarge?.copyWith(
-                      fontWeight: FontWeight.w800,
-                      letterSpacing: 0,
+          (sheetContext) => thisOrThatDarkTheme(
+            sheetContext,
+            child: SafeArea(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(20, 4, 20, 20),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Give this choice a face',
+                      style: Theme.of(
+                        sheetContext,
+                      ).textTheme.titleLarge?.copyWith(
+                        color: palette.ink,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: 0,
+                      ),
                     ),
-                  ),
-                  const SizedBox(height: 14),
-                  GridView.builder(
-                    shrinkWrap: true,
-                    gridDelegate:
-                        const SliverGridDelegateWithFixedCrossAxisCount(
-                          crossAxisCount: 6,
-                          mainAxisSpacing: 8,
-                          crossAxisSpacing: 8,
-                        ),
-                    itemCount: _emojis.length,
-                    itemBuilder:
-                        (_, index) => InkWell(
-                          borderRadius: BorderRadius.circular(14),
-                          onTap:
-                              () => Navigator.pop(sheetContext, _emojis[index]),
-                          child: DecoratedBox(
-                            decoration: BoxDecoration(
-                              color: palette.panel,
-                              borderRadius: BorderRadius.circular(14),
-                              border: Border.all(color: palette.line),
-                            ),
-                            child: Center(
-                              child: Text(
-                                _emojis[index],
-                                style: const TextStyle(fontSize: 26),
+                    const SizedBox(height: 14),
+                    GridView.builder(
+                      shrinkWrap: true,
+                      gridDelegate:
+                          const SliverGridDelegateWithFixedCrossAxisCount(
+                            crossAxisCount: 6,
+                            mainAxisSpacing: 8,
+                            crossAxisSpacing: 8,
+                          ),
+                      itemCount: _emojis.length,
+                      itemBuilder:
+                          (_, index) => InkWell(
+                            borderRadius: BorderRadius.circular(14),
+                            onTap:
+                                () => Navigator.pop(
+                                  sheetContext,
+                                  _emojis[index],
+                                ),
+                            child: DecoratedBox(
+                              decoration: BoxDecoration(
+                                color: palette.panel,
+                                borderRadius: BorderRadius.circular(14),
+                                border: Border.all(color: palette.line),
+                              ),
+                              child: Center(
+                                child: Text(
+                                  _emojis[index],
+                                  style: const TextStyle(fontSize: 26),
+                                ),
                               ),
                             ),
                           ),
-                        ),
-                  ),
-                ],
+                    ),
+                  ],
+                ),
               ),
             ),
           ),
@@ -216,7 +227,8 @@ class _ThisOrThatCustomCreateScreenState
             child: ThisOrThatStageLabel(
               text: 'Make it yours',
               icon: Icons.edit_note_rounded,
-              color: palette.thisColor,
+              // On the game's orange, where the accent cannot be read.
+              color: palette.ink,
             ),
           ),
           const SizedBox(height: 16),
@@ -235,7 +247,8 @@ class _ThisOrThatCustomCreateScreenState
             'Keep it clear, specific, and fun to reveal together.',
             textAlign: TextAlign.center,
             style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-              color: palette.mutedInk,
+              // On the game's orange, where muted ink cannot be read.
+              color: palette.ink,
               height: 1.4,
               letterSpacing: 0,
             ),

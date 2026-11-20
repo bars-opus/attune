@@ -186,11 +186,7 @@ class _WaitingScreenState extends ConsumerState<WaitingScreen> {
     return ThisOrThatGameScaffold(
       roundNumber: widget.roundNumber,
       totalRounds: widget.totalRounds,
-      leading: IconButton(
-        icon: const Icon(Icons.close_rounded),
-        tooltip: 'Leave game',
-        onPressed: _showExitConfirmation,
-      ),
+      onBack: _showExitConfirmation,
       child: Column(
         children: [
           const SizedBox(height: 8),
@@ -335,21 +331,24 @@ class _WaitingScreenState extends ConsumerState<WaitingScreen> {
     final exit = await showDialog<bool>(
       context: context,
       builder:
-          (context) => AlertDialog(
-            title: const Text('Leave for now?'),
-            content: const Text(
-              'Your pick is saved. You can come back when your partner answers.',
+          (context) => thisOrThatDarkTheme(
+            context,
+            child: AlertDialog(
+              title: const Text('Leave for now?'),
+              content: const Text(
+                'Your pick is saved. You can come back when your partner answers.',
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context, false),
+                  child: const Text('Keep waiting'),
+                ),
+                FilledButton(
+                  onPressed: () => Navigator.pop(context, true),
+                  child: const Text('Leave game'),
+                ),
+              ],
             ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(context, false),
-                child: const Text('Keep waiting'),
-              ),
-              FilledButton(
-                onPressed: () => Navigator.pop(context, true),
-                child: const Text('Leave game'),
-              ),
-            ],
           ),
     );
     if (exit == true && mounted) Navigator.of(context).maybePop();

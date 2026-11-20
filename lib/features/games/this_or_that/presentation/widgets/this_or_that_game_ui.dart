@@ -1,8 +1,21 @@
 import 'dart:math' as math;
 
 import 'package:attune/core/ui/motion/reduce_motion.dart';
+import 'package:attune/features/games/platform/game_strings.dart';
+import 'package:attune/features/games/platform/game_theme.dart';
+import 'package:attune/features/games/platform/shell/game_buttons.dart';
+import 'package:attune/features/games/platform/shell/game_how_to_play_sheet.dart';
+import 'package:attune/features/games/platform/shell/game_material_theme.dart';
+import 'package:attune/features/games/platform/shell/game_scaffold.dart';
+import 'package:attune/features/games/platform/shell/game_settings_sheet.dart';
+import 'package:attune/features/games/this_or_that/this_or_that_game.dart';
 import 'package:flutter/material.dart';
 
+/// This or That's colours.
+///
+/// One palette, whatever the app theme is doing: every screen of the game
+/// sits on the games' dark ground, so a light app no longer gets light
+/// cards.
 @immutable
 class ThisOrThatPalette {
   const ThisOrThatPalette({
@@ -27,34 +40,38 @@ class ThisOrThatPalette {
   final Color mutedInk;
   final Color line;
 
-  static ThisOrThatPalette of(BuildContext context) {
-    final dark = Theme.of(context).brightness == Brightness.dark;
-    return dark
-        ? const ThisOrThatPalette(
-          thisColor: Color(0xFFFF8A76),
-          thatColor: Color(0xFF8DA7FF),
-          thisSurface: Color(0xFF3A2424),
-          thatSurface: Color(0xFF202B46),
-          canvas: Color(0xFF111214),
-          panel: Color(0xFF1B1D20),
-          ink: Color(0xFFF8F7F4),
-          mutedInk: Color(0xFFA9ABB1),
-          line: Color(0xFF34363B),
-        )
-        : const ThisOrThatPalette(
-          thisColor: Color(0xFFD94C3D),
-          thatColor: Color(0xFF3F66D4),
-          thisSurface: Color(0xFFFFE5DF),
-          thatSurface: Color(0xFFE4EAFF),
-          canvas: Color(0xFFF7F5F1),
-          panel: Color(0xFFFFFFFF),
-          ink: Color(0xFF202126),
-          mutedInk: Color(0xFF6D6F77),
-          line: Color(0xFFE3E0DA),
-        );
-  }
+  static const ThisOrThatPalette _game = ThisOrThatPalette(
+    thisColor: Color(0xFFFF8A76),
+    thatColor: Color(0xFF8DA7FF),
+    thisSurface: Color(0xFF3A2424),
+    thatSurface: Color(0xFF202B46),
+    canvas: GameTheme.ground,
+    panel: GameTheme.raised,
+    ink: GameTheme.onGround,
+    mutedInk: GameTheme.mutedOnGround,
+    line: GameTheme.hairline,
+  );
+
+  static ThisOrThatPalette of(BuildContext context) => _game;
 }
 
+/// The game's dark theme over [child], for a dialog or sheet a screen opens
+/// from its own context.
+///
+/// That context sits above the screen's GameBackdrop, so what it opens
+/// would otherwise take the app's theme: light, in a light app, over a dark
+/// game. A widget inside the screen's body is already under the backdrop's
+/// theme and does not need this.
+Widget thisOrThatDarkTheme(BuildContext context, {required Widget child}) {
+  return Theme(data: gameMaterialTheme(context, thisOrThatTheme), child: child);
+}
+
+/// Every This or That screen's frame: the games shell, in the game's colour.
+///
+/// With a round, the header reads the round under the screen's [title];
+/// without, the [title] alone. The gear opens the games' settings, with How
+/// to play in Support. There is no Leave game there: a screen that needs to
+/// ask before leaving does it through [onBack].
 class ThisOrThatGameScaffold extends StatelessWidget {
   const ThisOrThatGameScaffold({
     super.key,
@@ -62,8 +79,8 @@ class ThisOrThatGameScaffold extends StatelessWidget {
     this.title = 'This or That',
     this.roundNumber,
     this.totalRounds,
-    this.leading,
-    this.actions,
+    this.onBack,
+    this.onHowToPlay,
     this.bottom,
     this.scrollable = false,
   });
@@ -72,99 +89,67 @@ class ThisOrThatGameScaffold extends StatelessWidget {
   final String title;
   final int? roundNumber;
   final int? totalRounds;
-  final Widget? leading;
-  final List<Widget>? actions;
+
+  /// Null pops the screen.
+  final VoidCallback? onBack;
+
+  /// Null opens the game's rules.
+  final VoidCallback? onHowToPlay;
+
+  /// Pinned under the body: the screen's main action.
   final Widget? bottom;
   final bool scrollable;
 
   @override
   Widget build(BuildContext context) {
-    final palette = ThisOrThatPalette.of(context);
     final hasProgress = roundNumber != null && totalRounds != null;
-    final body = ConstrainedBox(
-      constraints: const BoxConstraints(maxWidth: 620),
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(20, 16, 20, 20),
-        child: child,
-      ),
+    final content = Padding(
+      padding: const EdgeInsets.fromLTRB(20, 16, 20, 20),
+      child: child,
     );
 
-    return Scaffold(
-      backgroundColor: palette.canvas,
-      appBar: AppBar(
-        backgroundColor: palette.canvas,
-        surfaceTintColor: Colors.transparent,
-        elevation: 0,
-        leading: leading,
-        title: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(title),
-            if (hasProgress)
-              Text(
-                'ROUND $roundNumber OF $totalRounds',
-                style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                  color: palette.mutedInk,
-                  fontWeight: FontWeight.w700,
-                  letterSpacing: 0,
-                ),
-              ),
-          ],
-        ),
-        centerTitle: true,
-        actions: actions,
-        bottom:
-            hasProgress
-                ? PreferredSize(
-                  preferredSize: const Size.fromHeight(5),
-                  child: _GameProgressTrack(
-                    value:
-                        totalRounds == 0
-                            ? 0
-                            : roundNumber!.clamp(0, totalRounds!) /
-                                totalRounds!,
-                  ),
-                )
-                : null,
-      ),
-      body: Stack(
-        children: [
-          const Positioned.fill(
-            child: IgnorePointer(
-              child: ExcludeSemantics(child: _SplitCanvasTexture()),
-            ),
+    return GameScaffold(
+      theme: thisOrThatTheme,
+      title:
+          hasProgress ? GameStrings.roundOf(roundNumber!, totalRounds!) : title,
+      subtitle: hasProgress ? title : null,
+      onBack: onBack,
+      onSettings:
+          () => showGameSettingsSheet(
+            context,
+            definition: thisOrThatGame,
+            onHowToPlay:
+                onHowToPlay ??
+                () => showGameHowToPlay(context, definition: thisOrThatGame),
           ),
-          if (scrollable)
-            SafeArea(
-              top: false,
-              child: SingleChildScrollView(
-                physics: const BouncingScrollPhysics(),
-                padding: EdgeInsets.only(
-                  bottom: MediaQuery.paddingOf(context).bottom + 16,
-                ),
-                child: Center(child: body),
-              ),
-            )
-          else
-            SafeArea(top: false, child: Center(child: body)),
-        ],
-      ),
-      bottomNavigationBar:
+      bottom:
           bottom == null
               ? null
-              : SafeArea(
-                top: false,
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(20, 8, 20, 12),
-                  child: Center(
-                    heightFactor: 1,
-                    child: ConstrainedBox(
-                      constraints: const BoxConstraints(maxWidth: 580),
-                      child: bottom,
-                    ),
-                  ),
-                ),
+              : Padding(
+                padding: const EdgeInsets.fromLTRB(20, 8, 20, 12),
+                child: bottom,
               ),
+      body: Column(
+        children: [
+          if (hasProgress)
+            _GameProgressTrack(
+              value:
+                  totalRounds == 0
+                      ? 0
+                      : roundNumber!.clamp(0, totalRounds!) / totalRounds!,
+            ),
+          Expanded(
+            child:
+                scrollable
+                    ? SingleChildScrollView(
+                      physics: const BouncingScrollPhysics(),
+                      padding: const EdgeInsets.only(bottom: 16),
+                      child: Center(child: content),
+                    )
+                    : Center(child: content),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -193,59 +178,6 @@ class _GameProgressTrack extends StatelessWidget {
           ),
     );
   }
-}
-
-class _SplitCanvasTexture extends StatelessWidget {
-  const _SplitCanvasTexture();
-
-  @override
-  Widget build(BuildContext context) {
-    final palette = ThisOrThatPalette.of(context);
-    return CustomPaint(painter: _SplitCanvasPainter(palette));
-  }
-}
-
-class _SplitCanvasPainter extends CustomPainter {
-  const _SplitCanvasPainter(this.palette);
-
-  final ThisOrThatPalette palette;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final left = Paint()..color = palette.thisSurface.withValues(alpha: 0.22);
-    final right = Paint()..color = palette.thatSurface.withValues(alpha: 0.22);
-    final divider =
-        Paint()
-          ..color = palette.line.withValues(alpha: 0.45)
-          ..strokeWidth = 1;
-
-    final split =
-        Path()
-          ..moveTo(0, size.height * 0.08)
-          ..lineTo(size.width * 0.48, 0)
-          ..lineTo(size.width * 0.55, size.height)
-          ..lineTo(0, size.height)
-          ..close();
-    canvas.drawPath(split, left);
-
-    final other =
-        Path()
-          ..moveTo(size.width * 0.48, 0)
-          ..lineTo(size.width, 0)
-          ..lineTo(size.width, size.height)
-          ..lineTo(size.width * 0.55, size.height)
-          ..close();
-    canvas.drawPath(other, right);
-    canvas.drawLine(
-      Offset(size.width * 0.48, 0),
-      Offset(size.width * 0.55, size.height),
-      divider,
-    );
-  }
-
-  @override
-  bool shouldRepaint(covariant _SplitCanvasPainter oldDelegate) =>
-      oldDelegate.palette != palette;
 }
 
 class ThisOrThatStageLabel extends StatelessWidget {
@@ -491,43 +423,13 @@ class ThisOrThatPrimaryAction extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final palette = ThisOrThatPalette.of(context);
     return SizedBox(
       width: double.infinity,
-      height: 58,
-      child: FilledButton(
-        onPressed: loading ? null : onPressed,
-        style: FilledButton.styleFrom(
-          backgroundColor: palette.ink,
-          foregroundColor: palette.canvas,
-          disabledBackgroundColor: palette.line,
-          disabledForegroundColor: palette.mutedInk,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(18),
-          ),
-          textStyle: const TextStyle(
-            fontSize: 16,
-            fontWeight: FontWeight.w800,
-            letterSpacing: 0,
-          ),
-        ),
-        child:
-            loading
-                ? SizedBox.square(
-                  dimension: 20,
-                  child: CircularProgressIndicator(
-                    strokeWidth: 2.2,
-                    color: palette.canvas,
-                  ),
-                )
-                : Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Text(label),
-                    const SizedBox(width: 8),
-                    Icon(icon, size: 20),
-                  ],
-                ),
+      child: GamePrimaryButton(
+        label: label,
+        icon: icon,
+        onTap: onPressed,
+        busy: loading,
       ),
     );
   }
