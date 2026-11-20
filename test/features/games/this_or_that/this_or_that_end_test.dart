@@ -33,6 +33,22 @@ void main() {
 
   const longPick = 'Stay in and cook something slow together';
   const pickTile = ValueKey('this-or-that-end-pick');
+  const youPick = ValueKey('this-or-that-end-pick-you');
+  const partnerPick = ValueKey('this-or-that-end-pick-partner');
+
+  /// The colour a pick is drawn on.
+  Color? faceOf(WidgetTester tester, Key key) {
+    final box = tester.widget<DecoratedBox>(
+      find
+          .descendant(
+            of: find.byKey(key),
+            matching: find.byType(DecoratedBox),
+            matchRoot: true,
+          )
+          .first,
+    );
+    return (box.decoration as BoxDecoration).color;
+  }
 
   Map<String, dynamic> pick({
     String question = 'Beach morning or city night?',
@@ -224,6 +240,25 @@ void main() {
       }
     });
 
+    testWidgets('each pick is drawn on the side its player chose', (
+      tester,
+    ) async {
+      // You chose THAT and your partner THIS: the other way round from
+      // every other picture here.
+      await pumpEnd(
+        tester,
+        end(mostInterestingPick: {...pick(), 'answer_a': 'b', 'answer_b': 'a'}),
+      );
+      final palette = ThisOrThatPalette.of(tester.element(find.byKey(youPick)));
+      expect(faceOf(tester, youPick), palette.thatColor);
+      expect(faceOf(tester, partnerPick), palette.thisColor);
+
+      // The control: the usual way round.
+      await pumpEnd(tester, end(key: const ValueKey('usual')));
+      expect(faceOf(tester, youPick), palette.thisColor);
+      expect(faceOf(tester, partnerPick), palette.thatColor);
+    });
+
     testWidgets('with no pick there is no tile for one', (tester) async {
       // Control: the test above, where the same lookup finds it.
       await pumpEnd(tester, end(mostInterestingPick: const {}));
@@ -390,12 +425,17 @@ void main() {
         expect(rect.bottom, lessThanOrEqualTo(again.top), reason: text);
       }
       // The long pick wraps rather than being cut short.
-      for (final piece in tester.widgetList<Text>(
-        find.descendant(
-          of: find.byKey(pickTile),
-          matching: find.textContaining(longPick),
-        ),
-      )) {
+      final longPieces =
+          tester
+              .widgetList<Text>(
+                find.descendant(
+                  of: find.byKey(pickTile),
+                  matching: find.textContaining(longPick),
+                ),
+              )
+              .toList();
+      expect(longPieces, hasLength(2));
+      for (final piece in longPieces) {
         expect(piece.maxLines, isNull);
         expect(piece.overflow, isNot(TextOverflow.ellipsis));
       }
@@ -429,14 +469,16 @@ void main() {
     List<Override> overrides(
       ThisOrThatSession? session, {
       String? relationshipId = 'rel-1',
+      String userId = 'user-a',
+      String? partnerName = 'Ama',
     }) => [
       thisOrThatRepositoryProvider.overrideWithValue(repository),
-      currentUserIdProvider.overrideWithValue('user-a'),
+      currentUserIdProvider.overrideWithValue(userId),
       currentRelationshipIdProvider.overrideWith((ref) async => relationshipId),
       sessionProvider.overrideWith((_, __) async => session),
       sessionRoundsProvider.overrideWith((_, __) async => rounds),
-      partnerNameProvider.overrideWith((_) async => 'Ama'),
-      gamePartnerNameProvider.overrideWith((_) async => 'Ama'),
+      partnerNameProvider.overrideWith((_) async => partnerName),
+      gamePartnerNameProvider.overrideWith((_) async => partnerName),
       relationshipMembersProvider.overrideWith(
         (_, __) async => (userA: 'user-a', userB: 'user-b'),
       ),
@@ -450,6 +492,8 @@ void main() {
       WidgetTester tester,
       ThisOrThatSession? session, {
       String? relationshipId = 'rel-1',
+      String userId = 'user-a',
+      String? partnerName = 'Ama',
     }) async {
       useSurface(tester, phone);
       await tester.pumpWidget(
@@ -470,7 +514,12 @@ void main() {
                 ),
           ),
           prefs: await testPrefs(),
-          overrides: overrides(session, relationshipId: relationshipId),
+          overrides: overrides(
+            session,
+            relationshipId: relationshipId,
+            userId: userId,
+            partnerName: partnerName,
+          ),
           routes: [
             GoRoute(
               path: '/router-under-test',
@@ -508,6 +557,66 @@ void main() {
       expect(find.byType(EndScreen), findsOneWidget);
       expect(find.text('You matched on 7 of 10.'), findsOneWidget);
       expect(find.text('You & Ama'), findsOneWidget);
+    });
+
+    testWidgets('each pick is coloured by the side its player chose, for '
+        'either partner', (tester) async {
+      // Round 8 is the first that differs: user-a chose THIS, user-b THAT.
+      for (final (viewer, yours, theirs, youChoseThat) in [
+        ('user-a', 'This 8', 'That 8', false),
+        ('user-b', 'That 8', 'This 8', true),
+      ]) {
+        await pumpRouter(tester, finished, userId: viewer);
+        final palette = ThisOrThatPalette.of(
+          tester.element(find.byKey(youPick)),
+        );
+        final yourFace = youChoseThat ? palette.thatColor : palette.thisColor;
+        final theirFace = youChoseThat ? palette.thisColor : palette.thatColor;
+
+        expect(find.text('Question 8?'), findsOneWidget, reason: viewer);
+        expect(
+          find.descendant(of: find.byKey(youPick), matching: find.text(yours)),
+          findsOneWidget,
+          reason: viewer,
+        );
+        expect(
+          find.descendant(
+            of: find.byKey(partnerPick),
+            matching: find.text(theirs),
+          ),
+          findsOneWidget,
+          reason: viewer,
+        );
+        expect(faceOf(tester, youPick), yourFace, reason: viewer);
+        expect(faceOf(tester, partnerPick), theirFace, reason: viewer);
+        await tester.pumpWidget(const SizedBox());
+      }
+    });
+
+    testWidgets('an unknown partner is "Your partner" on the invitations', (
+      tester,
+    ) async {
+      // Controls: the same screens with Ama's name.
+      for (final (initiator, partnerName, said) in [
+        ('user-a', 'Ama', 'Ama has the next move'),
+        ('user-a', null, 'Your partner has the next move'),
+        ('user-b', 'Ama', 'Ama picked a game for you'),
+        ('user-b', null, 'Your partner picked a game for you'),
+      ]) {
+        await pumpRouter(
+          tester,
+          thisOrThatSession(
+            initiatorId: initiator,
+            status: 'invited',
+            currentRound: 1,
+          ),
+          partnerName: partnerName,
+        );
+
+        expect(find.text(said), findsOneWidget);
+        expect(find.textContaining('Partner'), findsNothing);
+        await tester.pumpWidget(const SizedBox());
+      }
     });
 
     testWidgets('Play again starts a new game in the same tone', (
@@ -639,6 +748,25 @@ void main() {
   });
 
   group('a partner whose name is not known', () {
+    test('one rule says who they are', () {
+      for (final (name, mid, start) in [
+        (null, 'your partner', 'Your partner'),
+        ('', 'your partner', 'Your partner'),
+        ('   ', 'your partner', 'Your partner'),
+        ('Partner', 'your partner', 'Your partner'),
+        ('Ama', 'Ama', 'Ama'),
+        ('Kwame Mensah', 'Kwame Mensah', 'Kwame Mensah'),
+      ]) {
+        expect(thisOrThatPartnerLabel(name), mid, reason: '$name');
+        expect(
+          thisOrThatPartnerLabel(name, sentenceStart: true),
+          start,
+          reason: '$name',
+        );
+        expect(thisOrThatPartnerKnown(name), name == mid, reason: '$name');
+      }
+    });
+
     testWidgets('the nudge was sent to "your partner"', (tester) async {
       for (final (name, said) in [
         // The control: a real name reads as it always has.

@@ -33,11 +33,9 @@ class EndScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final name = ref.watch(gamePartnerNameProvider).valueOrNull?.trim();
-    // Unknown, or the router's stand-in for unknown: "your partner", never
-    // "Partner".
-    final known = name != null && name.isNotEmpty && name != 'Partner';
-    final partner = known ? name : 'your partner';
+    final partner = thisOrThatPartnerLabel(
+      ref.watch(gamePartnerNameProvider).valueOrNull?.trim(),
+    );
 
     return GameCompleteScreen(
       theme: thisOrThatTheme,
@@ -74,10 +72,7 @@ class EndScreen extends ConsumerWidget {
           ),
           if (mostInterestingPick.isNotEmpty) ...[
             const SizedBox(height: 24),
-            _PickTile(
-              pick: mostInterestingPick,
-              partner: known ? name : 'Your partner',
-            ),
+            _PickTile(pick: mostInterestingPick, partner: partner),
           ],
         ],
       ),
@@ -151,6 +146,7 @@ class _PickTile extends StatelessWidget {
               children: [
                 Expanded(
                   child: _Pick(
+                    key: const ValueKey('this-or-that-end-pick-you'),
                     owner: 'You',
                     text: _text('answer_a_text'),
                     emoji: _text('answer_a_emoji'),
@@ -160,6 +156,7 @@ class _PickTile extends StatelessWidget {
                 const SizedBox(width: 10),
                 Expanded(
                   child: _Pick(
+                    key: const ValueKey('this-or-that-end-pick-partner'),
                     owner: partner,
                     text: _text('answer_b_text'),
                     emoji: _text('answer_b_emoji'),
@@ -178,6 +175,7 @@ class _PickTile extends StatelessWidget {
 /// One player's pick, captioned with whose it is.
 class _Pick extends StatelessWidget {
   const _Pick({
+    super.key,
     required this.owner,
     required this.text,
     required this.emoji,

@@ -218,7 +218,7 @@ class _QuestionScreenState extends ConsumerState<QuestionScreen>
   /// its placeholder: the words then say "your partner".
   String? get _partnerName {
     final name = widget.partnerName.trim();
-    return name.isEmpty || name == 'Partner' ? null : name;
+    return thisOrThatPartnerKnown(name) ? name : null;
   }
 
   /// How to play, on this screen, is the tutorial again rather than the

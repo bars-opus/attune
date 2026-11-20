@@ -612,6 +612,10 @@ class _InviteSentScreenState extends State<_InviteSentScreen> {
   @override
   Widget build(BuildContext context) {
     final palette = ThisOrThatPalette.of(context);
+    final partner = thisOrThatPartnerLabel(
+      widget.partnerName,
+      sentenceStart: true,
+    );
     return ThisOrThatGameScaffold(
       title: 'Invitation sent',
       child: Column(
@@ -620,7 +624,7 @@ class _InviteSentScreenState extends State<_InviteSentScreen> {
           const ThisOrThatWaitingMark(size: 132),
           const SizedBox(height: 20),
           Text(
-            '${widget.partnerName} has the next move',
+            '$partner has the next move',
             style: Theme.of(context).textTheme.headlineMedium?.copyWith(
               color: palette.ink,
               fontWeight: FontWeight.w900,
@@ -730,6 +734,10 @@ class _InvitationDecisionScreenState extends State<_InvitationDecisionScreen> {
   @override
   Widget build(BuildContext context) {
     final palette = ThisOrThatPalette.of(context);
+    final partner = thisOrThatPartnerLabel(
+      widget.partnerName,
+      sentenceStart: true,
+    );
     final isIntimate = widget.tone == 'intimate';
     final toneLabel =
         '${widget.tone[0].toUpperCase()}${widget.tone.substring(1)}';
@@ -794,7 +802,7 @@ class _InvitationDecisionScreenState extends State<_InvitationDecisionScreen> {
           const GameIcon(gameType: 'this_or_that', size: 116),
           const SizedBox(height: 20),
           Text(
-            '${widget.partnerName} picked a game for you',
+            '$partner picked a game for you',
             style: Theme.of(context).textTheme.headlineMedium?.copyWith(
               color: palette.ink,
               fontWeight: FontWeight.w900,

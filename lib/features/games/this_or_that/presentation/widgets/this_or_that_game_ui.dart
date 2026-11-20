@@ -73,6 +73,25 @@ class ThisOrThatPalette {
   }
 }
 
+/// Whether [name] is the partner's real name: not missing, not blank, and
+/// not "Partner", the stand-in the router and providers pass when they
+/// found none.
+bool thisOrThatPartnerKnown(String? name) {
+  final trimmed = name?.trim();
+  return trimmed != null && trimmed.isNotEmpty && trimmed != 'Partner';
+}
+
+/// The partner as the game's words say them: their name when it is known,
+/// otherwise "your partner" ("Your partner" at the start of a sentence).
+/// Never "Partner", and never "both of you".
+///
+/// The one rule for every This or That screen, so they cannot drift apart.
+/// A known name comes back as given.
+String thisOrThatPartnerLabel(String? name, {bool sentenceStart = false}) {
+  if (thisOrThatPartnerKnown(name)) return name!;
+  return sentenceStart ? 'Your partner' : 'your partner';
+}
+
 /// The game's dark theme over [child], for a dialog or sheet a screen opens
 /// from its own context.
 ///
@@ -490,14 +509,11 @@ class ThisOrThatPartnerPresence extends StatelessWidget {
   final String partnerName;
   final bool answered;
 
-  /// "Partner" is the router's stand-in for a name it does not know.
-  String get _partner =>
-      partnerName != 'Partner' ? partnerName : 'Your partner';
-
   @override
   Widget build(BuildContext context) {
     final palette = ThisOrThatPalette.of(context);
     final color = answered ? palette.thisColor : palette.mutedInk;
+    final partner = thisOrThatPartnerLabel(partnerName, sentenceStart: true);
     final duration =
         reduceMotionOf(context)
             ? Duration.zero
@@ -526,7 +542,7 @@ class ThisOrThatPartnerPresence extends StatelessWidget {
             const SizedBox(width: 8),
             Flexible(
               child: Text(
-                answered ? '$_partner picked' : '$_partner is choosing',
+                answered ? '$partner picked' : '$partner is choosing',
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: Theme.of(context).textTheme.labelMedium?.copyWith(

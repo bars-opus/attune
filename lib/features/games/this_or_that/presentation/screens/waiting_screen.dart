@@ -163,9 +163,7 @@ class _WaitingScreenState extends ConsumerState<WaitingScreen> {
       await ref.read(sendReminderProvider(widget.sessionId).future);
       if (!mounted) return;
       ref.read(hapticsProvider).light();
-      // "Partner" is the router's stand-in for a name it does not know.
-      final partner =
-          widget.partnerName != 'Partner' ? widget.partnerName : 'your partner';
+      final partner = thisOrThatPartnerLabel(widget.partnerName);
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('A gentle nudge was sent to $partner.')),
       );
@@ -188,10 +186,12 @@ class _WaitingScreenState extends ConsumerState<WaitingScreen> {
     final choiceEmoji = _currentChoice == 'a' ? widget.emojiA : widget.emojiB;
     final face = _currentChoice == 'b' ? palette.thatColor : palette.thisColor;
     final ink = palette.inkOn(face);
-    // The router's stand-in when the name is not known: the screen then
-    // says "your partner" rather than calling them "Partner".
-    final named = widget.partnerName != 'Partner';
-    final partner = named ? widget.partnerName : 'your partner';
+    // "your partner" when the name is not known, never "Partner".
+    final partner = thisOrThatPartnerLabel(widget.partnerName);
+    final partnerFirst = thisOrThatPartnerLabel(
+      widget.partnerName,
+      sentenceStart: true,
+    );
 
     return ThisOrThatGameScaffold(
       roundNumber: widget.roundNumber,
@@ -269,7 +269,7 @@ class _WaitingScreenState extends ConsumerState<WaitingScreen> {
                 const ThisOrThatWaitingMark(size: 96),
                 const SizedBox(height: 12),
                 Text(
-                  named ? '$partner is choosing' : 'Your partner is choosing',
+                  '$partnerFirst is choosing',
                   textAlign: TextAlign.center,
                   style: Theme.of(context).textTheme.headlineSmall?.copyWith(
                     color: palette.ink,

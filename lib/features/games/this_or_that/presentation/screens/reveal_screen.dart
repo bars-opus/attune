@@ -316,10 +316,10 @@ class _RevealScreenState extends ConsumerState<RevealScreen>
                                   : palette.thisColor,
                           text: widget.partnerChoiceText,
                           emoji: widget.partnerChoiceEmoji,
-                          owner:
-                              _partnerKnown
-                                  ? widget.partnerName
-                                  : 'Your partner',
+                          owner: thisOrThatPartnerLabel(
+                            widget.partnerName,
+                            sentenceStart: true,
+                          ),
                           minHeight: pickHeight,
                           compact: compact,
                         ),
@@ -349,11 +349,8 @@ class _RevealScreenState extends ConsumerState<RevealScreen>
     );
   }
 
-  /// The router's stand-in when the partner's name is not known.
-  bool get _partnerKnown => widget.partnerName != 'Partner';
-
   /// Who the second pick belongs to, as a caption says it.
-  String get _partner => _partnerKnown ? widget.partnerName : 'your partner';
+  String get _partner => thisOrThatPartnerLabel(widget.partnerName);
 
   static const double _gap = 12;
 }
