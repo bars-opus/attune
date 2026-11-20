@@ -370,6 +370,20 @@ void main() {
     expect(find.textContaining('Play with'), findsNothing);
   });
 
+  testWidgets('nothing moves when the partner\'s name arrives', (tester) async {
+    // The subtitle's line is held while the name is unknown, so the name
+    // arriving does not push the games down under a finger.
+    await pumpHub(tester, partnerName: null);
+    expect(find.textContaining('Play with'), findsNothing);
+    final unknown = tester.getTopLeft(find.text('Play together')).dy;
+
+    await tester.pumpWidget(const SizedBox());
+    await pumpHub(tester);
+    // The control: the name is drawn this time.
+    expect(find.text('Play with Ama'), findsOneWidget);
+    expect(tester.getTopLeft(find.text('Play together')).dy, unknown);
+  });
+
   testWidgets('says who to play with', (tester) async {
     await pumpHub(tester);
     expect(find.text('Play with Ama'), findsOneWidget);

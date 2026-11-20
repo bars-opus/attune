@@ -123,19 +123,21 @@ class _GamesHubScreenState extends ConsumerState<GamesHubScreen>
                     ),
                   ),
                 ),
-                // Nothing while the name is unknown: "Play together" would
-                // repeat the section heading a few lines below.
-                if (name != null && name.isNotEmpty) ...[
-                  const SizedBox(height: 4),
-                  Text(
-                    GameStrings.playWith(name),
-                    style: const TextStyle(
-                      color: GameTheme.mutedOnGround,
-                      fontSize: 17,
-                      fontWeight: FontWeight.w600,
-                    ),
+                // An empty line while the name is unknown: "Play together"
+                // would repeat the section heading a few lines below, and
+                // holding the line's height keeps the games from moving
+                // down when the name arrives.
+                const SizedBox(height: 4),
+                Text(
+                  name != null && name.isNotEmpty
+                      ? GameStrings.playWith(name)
+                      : '',
+                  style: const TextStyle(
+                    color: GameTheme.mutedOnGround,
+                    fontSize: 17,
+                    fontWeight: FontWeight.w600,
                   ),
-                ],
+                ),
                 if (sessions.isNotEmpty) ...[
                   const _SectionTitle(GameStrings.inPlay),
                   for (final row in sessions)
