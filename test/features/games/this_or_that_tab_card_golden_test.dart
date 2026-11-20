@@ -1,7 +1,11 @@
+import 'dart:io';
+
 import 'package:attune/features/games/this_or_that/presentation/widgets/this_or_that_tab_card.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:flutter_test/flutter_test.dart';
+
+import 'platform/support/game_test_support.dart';
 
 /// Rendered and LOOKED AT, not merely diffed.
 ///
@@ -9,6 +13,14 @@ import 'package:flutter_test/flutter_test.dart';
 /// and still did not read as something worth opening. These frames exist
 /// to be opened.
 void main() {
+  // Real fonts, once for the file, so the frames show words rather than
+  // the test font's blocks.
+  setUpAll(loadGameTestFonts);
+
+  // Text is drawn slightly differently on each operating system; these
+  // are compared where they are made.
+  final comparedHere = Platform.isMacOS;
+
   /// Pin the view to a phone.
   ///
   /// The golden surface defaults to 800x600 LANDSCAPE while the design
@@ -26,7 +38,7 @@ void main() {
       designSize: const Size(375, 812),
       builder:
           (context, _) => MaterialApp(
-            theme: ThemeData(brightness: brightness),
+            theme: ThemeData(brightness: brightness, fontFamily: 'Roboto'),
             home: Scaffold(
               backgroundColor:
                   brightness == Brightness.light
@@ -62,7 +74,7 @@ void main() {
       find.byType(ThisOrThatTabCard),
       matchesGoldenFile('goldens/this_or_that_question.png'),
     );
-  });
+  }, skip: !comparedHere);
 
   testWidgets('THIS pulled forward', (tester) async {
     onPhone(tester);
@@ -73,7 +85,7 @@ void main() {
       find.byType(ThisOrThatTabCard),
       matchesGoldenFile('goldens/this_or_that_this.png'),
     );
-  });
+  }, skip: !comparedHere);
 
   testWidgets('THAT pulled forward', (tester) async {
     onPhone(tester);
@@ -84,7 +96,7 @@ void main() {
       find.byType(ThisOrThatTabCard),
       matchesGoldenFile('goldens/this_or_that_that.png'),
     );
-  });
+  }, skip: !comparedHere);
 
   testWidgets('in dark mode', (tester) async {
     onPhone(tester);
@@ -97,5 +109,5 @@ void main() {
       find.byType(ThisOrThatTabCard),
       matchesGoldenFile('goldens/this_or_that_dark.png'),
     );
-  });
+  }, skip: !comparedHere);
 }

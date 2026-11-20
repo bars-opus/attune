@@ -30,4 +30,16 @@ void main() {
       );
     }, skip: !comparedHere);
   }
+
+  for (final MapEntry(key: name, value: shot)
+      in thisOrThatQuestionScreens().entries) {
+    testWidgets('$name on a phone', (tester) async {
+      await pumpShellScreen(tester, shot.screen, stored: shot.stored);
+
+      await expectLater(
+        find.byType(MaterialApp),
+        matchesGoldenFile('goldens/this_or_that_shell_$name.phone.png'),
+      );
+    }, skip: !comparedHere);
+  }
 }

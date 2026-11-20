@@ -2,12 +2,14 @@ import 'package:attune/features/games/platform/feel/game_tile.dart';
 import 'package:attune/features/games/platform/game_theme.dart';
 import 'package:attune/features/games/platform/shell/game_buttons.dart';
 import 'package:attune/features/games/platform/shell/game_content_width.dart';
+import 'package:attune/features/games/platform/shell/game_coach.dart';
 import 'package:attune/features/games/presentation/providers/game_session_live_provider.dart';
 import 'package:attune/features/games/this_or_that/data/models/custom_this_or_that_question.dart';
 import 'package:attune/features/games/this_or_that/data/models/this_or_that_session.dart';
 import 'package:attune/features/games/this_or_that/presentation/providers/this_or_that_custom_providers.dart'
     as custom;
 import 'package:attune/features/games/this_or_that/presentation/providers/this_or_that_providers.dart';
+import 'package:attune/features/games/this_or_that/presentation/screens/question_screen.dart';
 import 'package:attune/features/games/this_or_that/presentation/screens/question_source_screen.dart';
 import 'package:attune/features/games/this_or_that/presentation/screens/session_history_screen.dart';
 import 'package:attune/features/games/this_or_that/presentation/screens/this_or_that_custom_create_screen.dart';
@@ -17,6 +19,7 @@ import 'package:attune/features/games/this_or_that/this_or_that_game.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:mocktail/mocktail.dart';
 
 import '../../platform/support/game_test_support.dart';
 import 'this_or_that_fakes.dart';
@@ -159,18 +162,75 @@ Map<String, ShellScreen> thisOrThatShellScreens() => {
   ),
 };
 
-/// Pumps [screen] on [size] in a light app.
+/// The question screen's pictures: before a choice, with THIS chosen, and
+/// a first-time player's tutorial over it. [stored] is what the device
+/// remembers; every picture but the tutorial's has the tutorial seen.
+Map<String, ({ShellScreen screen, Map<String, Object> stored})>
+thisOrThatQuestionScreens() {
+  final seen = {GameCoachStore.key('this_or_that'): true};
+  ShellScreen question({Future<void> Function(WidgetTester)? then}) => (
+    build:
+        () => const QuestionScreen(
+          roundId: 'round-3',
+          questionText: 'Friday night: stay in or go out?',
+          optionA: 'Stay in',
+          optionB: 'Go out',
+          emojiA: '🛋️',
+          emojiB: '✨',
+          roundNumber: 3,
+          totalRounds: 10,
+          tone: 'playful',
+          isPartnerA: true,
+          partnerName: 'Ama',
+        ),
+    overrides: () {
+      final repository = MockThisOrThatRepository();
+      when(
+        () => repository.submitAnswer(
+          roundId: any(named: 'roundId'),
+          userId: any(named: 'userId'),
+          choice: any(named: 'choice'),
+          isPartnerA: any(named: 'isPartnerA'),
+        ),
+      ).thenAnswer((_) async {});
+      return [
+        thisOrThatRepositoryProvider.overrideWithValue(repository),
+        thisOrThatAnswerOutboxProvider.overrideWithValue(MemoryAnswerOutbox()),
+        currentUserIdProvider.overrideWithValue('user-a'),
+      ];
+    },
+    then: then,
+  );
+
+  return {
+    'question': (screen: question(), stored: seen),
+    'question_this': (
+      screen: question(
+        then: (tester) async {
+          await tester.tap(find.text('THIS'));
+          await tester.pumpAndSettle();
+        },
+      ),
+      stored: seen,
+    ),
+    'question_coach': (screen: question(), stored: const {}),
+  };
+}
+
+/// Pumps [screen] on [size] in a light app, on a device that remembers
+/// [stored].
 Future<void> pumpShellScreen(
   WidgetTester tester,
   ShellScreen screen, {
   Size size = phone,
   bool reduceMotion = true,
+  Map<String, Object> stored = const {},
 }) async {
   useSurface(tester, size);
   await tester.pumpWidget(
     gameHost(
       screen.build(),
-      prefs: await testPrefs(),
+      prefs: await testPrefs(stored),
       reduceMotion: reduceMotion,
       overrides: screen.overrides(),
     ),

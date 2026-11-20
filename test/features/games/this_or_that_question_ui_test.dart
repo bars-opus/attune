@@ -2,8 +2,10 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:attune/app/theme/app_theme.dart';
+import 'package:attune/core/providers/shared_prefs_provider.dart';
 import 'package:attune/core/ui/feedback/haptics.dart';
 import 'package:attune/core/ui/feedback/sound_service.dart';
+import 'package:attune/features/games/platform/shell/game_coach.dart';
 import 'package:attune/features/games/this_or_that/data/models/game_round.dart';
 import 'package:attune/features/games/this_or_that/data/models/this_or_that_session.dart';
 import 'package:attune/features/games/this_or_that/data/repositories/this_or_that_repository.dart';
@@ -25,8 +27,14 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:attune/features/games/presentation/providers/game_session_live_provider.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class _MockRepository extends Mock implements ThisOrThatRepository {}
+
+/// The device's preferences: the shell's sound and haptics settings, and
+/// This or That's tutorial marked seen so it is not in the way here. The
+/// tutorial is tested in this_or_that/this_or_that_question_test.dart.
+late SharedPreferences _prefs;
 
 class _MemoryAnswerOutbox implements ThisOrThatAnswerOutbox {
   final Map<String, PendingThisOrThatAnswer> pending = {};
@@ -91,6 +99,7 @@ Widget _wrap({
 }) {
   return ProviderScope(
     overrides: [
+      sharedPreferencesProvider.overrideWithValue(_prefs),
       thisOrThatRepositoryProvider.overrideWithValue(repository),
       thisOrThatAnswerOutboxProvider.overrideWithValue(
         answerOutbox ?? _MemoryAnswerOutbox(),
@@ -132,6 +141,13 @@ QuestionScreen _question({VoidCallback? onSubmitted}) => QuestionScreen(
 
 void main() {
   late _MockRepository repository;
+
+  setUp(() async {
+    SharedPreferences.setMockInitialValues({
+      GameCoachStore.key('this_or_that'): true,
+    });
+    _prefs = await SharedPreferences.getInstance();
+  });
 
   setUp(() {
     repository = _MockRepository();

@@ -1,8 +1,40 @@
 import 'package:attune/features/games/this_or_that/data/models/this_or_that_session.dart';
 import 'package:attune/features/games/this_or_that/data/repositories/this_or_that_repository.dart';
+import 'package:attune/features/games/this_or_that/data/services/this_or_that_answer_outbox.dart';
 import 'package:mocktail/mocktail.dart';
 
 class MockThisOrThatRepository extends Mock implements ThisOrThatRepository {}
+
+/// The device's queue of picks waiting to be sent, in memory.
+class MemoryAnswerOutbox implements ThisOrThatAnswerOutbox {
+  final Map<String, PendingThisOrThatAnswer> pending = {};
+
+  String _key(String userId, String roundId) => '$userId:$roundId';
+
+  @override
+  Future<PendingThisOrThatAnswer?> read({
+    required String userId,
+    required String roundId,
+  }) async => pending[_key(userId, roundId)];
+
+  @override
+  Future<void> remove({required String userId, required String roundId}) async {
+    pending.remove(_key(userId, roundId));
+  }
+
+  @override
+  Future<void> save({
+    required String userId,
+    required String roundId,
+    required String choice,
+  }) async {
+    pending[_key(userId, roundId)] = PendingThisOrThatAnswer(
+      roundId: roundId,
+      choice: choice,
+      savedAt: DateTime.now(),
+    );
+  }
+}
 
 /// A session as the server returns one.
 ThisOrThatSession thisOrThatSession({

@@ -2,9 +2,9 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:attune/core/services/app_content_visibility.dart';
-import 'package:attune/core/ui/feedback/haptics.dart';
-import 'package:attune/core/ui/feedback/sound_service.dart';
 import 'package:attune/core/ui/motion/reduce_motion.dart';
+import 'package:attune/features/games/platform/feel/game_feedback.dart';
+import 'package:attune/features/games/platform/shell/game_coach.dart';
 import 'package:attune/features/games/this_or_that/presentation/providers/this_or_that_providers.dart';
 import 'package:attune/features/games/this_or_that/presentation/widgets/this_or_that_game_ui.dart';
 import 'package:attune/features/games/this_or_that/presentation/widgets/this_or_that_tab_card.dart';
@@ -57,6 +57,13 @@ class _QuestionScreenState extends ConsumerState<QuestionScreen>
   bool _queuedOffline = false;
   bool _startedEntrance = false;
   Timer? _retryTimer;
+
+  /// What the tutorial points at: the card's tabs and the lock button.
+  final GlobalKey _tabRowKey = GlobalKey();
+  final GlobalKey _lockKey = GlobalKey();
+
+  /// Raised by How to play, to show the tutorial again.
+  int _coachReplay = 0;
   late final AnimationController _entranceController = AnimationController(
     vsync: this,
     duration: const Duration(milliseconds: 680),
@@ -97,7 +104,7 @@ class _QuestionScreenState extends ConsumerState<QuestionScreen>
     if (selected == null || _isSubmitting) return;
 
     setState(() => _isSubmitting = true);
-    if (!automatic) ref.read(hapticsProvider).medium();
+    if (!automatic) ref.read(gameFeedbackProvider).fire(GameEvent.place);
 
     final userId = ref.read(currentUserIdProvider);
     if (userId == null) {
@@ -202,9 +209,26 @@ class _QuestionScreenState extends ConsumerState<QuestionScreen>
 
   void _selectChoice(String choice) {
     if (_isSubmitting || _selectedChoice == choice) return;
-    ref.read(hapticsProvider).selection();
-    ref.read(soundServiceProvider).play(AppSound.gameTap);
+    ref.read(gameFeedbackProvider).fire(GameEvent.tap);
     setState(() => _selectedChoice = choice);
+  }
+
+  /// The partner's name, or null when the router found none and passed
+  /// its placeholder: the words then say "your partner".
+  String? get _partnerName {
+    final name = widget.partnerName.trim();
+    return name.isEmpty || name == 'Partner' ? null : name;
+  }
+
+  /// How to play, on this screen, is the tutorial again rather than the
+  /// rules. The settings sheet calls this while it is still open, so it is
+  /// closed first: a tutorial replayed under the sheet would not be seen.
+  void _replayCoach() {
+    final route = ModalRoute.of(context);
+    if (route != null && !route.isCurrent) {
+      Navigator.of(context).popUntil((other) => other == route);
+    }
+    setState(() => _coachReplay++);
   }
 
   @override
@@ -217,13 +241,17 @@ class _QuestionScreenState extends ConsumerState<QuestionScreen>
             ? widget.optionB
             : null;
 
+    final partner = _partnerName;
+
     return ThisOrThatGameScaffold(
       roundNumber: widget.roundNumber,
       totalRounds: widget.totalRounds,
+      onHowToPlay: _replayCoach,
       bottom: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
           ThisOrThatPrimaryAction(
+            key: _lockKey,
             label:
                 selectedText == null
                     ? 'Choose your side'
@@ -234,7 +262,8 @@ class _QuestionScreenState extends ConsumerState<QuestionScreen>
           ),
           const SizedBox(height: 10),
           Text(
-            'Your pick stays private until both of you answer.',
+            'Your pick stays hidden until ${partner ?? 'your partner'} has '
+            'answered too.',
             textAlign: TextAlign.center,
             style: Theme.of(context).textTheme.bodySmall?.copyWith(
               color: palette.mutedInk,
@@ -287,109 +316,126 @@ class _QuestionScreenState extends ConsumerState<QuestionScreen>
           ),
         ],
       ),
-      child: Column(
-        children: [
-          Row(
-            children: [
-              ThisOrThatStageLabel(
-                text: widget.tone,
-                icon: _toneIcon(widget.tone),
-                color: palette.thisColor,
-              ),
-              const Spacer(),
-              ThisOrThatPartnerPresence(
-                partnerName: widget.partnerName,
-                answered: widget.partnerAnswered,
-              ),
-            ],
+      // Around the body, not the screen: the bubble sits under the header.
+      // The lock button is outside it, under the body, and is pointed at
+      // all the same.
+      child: GameCoach(
+        gameType: 'this_or_that',
+        replay: _coachReplay,
+        steps: [
+          GameCoachStep(
+            text: 'Pull THIS or THAT forward to choose.',
+            target: _tabRowKey,
           ),
-          const SizedBox(height: 26),
-          FadeTransition(
-            opacity: CurvedAnimation(
-              parent: _entranceController,
-              curve: const Interval(0, 0.55, curve: Curves.easeOut),
-            ),
-            child: SlideTransition(
-              position: Tween(
-                begin: const Offset(0, 0.08),
-                end: Offset.zero,
-              ).animate(
-                CurvedAnimation(
-                  parent: _entranceController,
-                  curve: const Interval(0, 0.65, curve: Curves.easeOutCubic),
-                ),
-              ),
-              child: Text(
-                'Round ${widget.roundNumber} of ${widget.totalRounds}',
-                style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                  color: palette.mutedInk,
-                  fontWeight: FontWeight.w700,
-                  letterSpacing: 1.4,
-                ),
-                textAlign: TextAlign.center,
-              ),
-            ),
+          GameCoachStep(
+            text:
+                'Then lock it in. ${partner ?? 'Your partner'} will not see '
+                'your pick until they have answered too.',
+            target: _lockKey,
           ),
-          const SizedBox(height: 12),
-          Text(
-            'No wrong answer. Pick the one that feels true first.',
-            textAlign: TextAlign.center,
-            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-              color: palette.mutedInk,
-              letterSpacing: 0,
-            ),
-          ),
-          const SizedBox(height: 24),
-          Expanded(
-            child: AnimatedBuilder(
-              animation: _entranceController,
-              builder: (context, child) {
-                final value =
-                    CurvedAnimation(
-                      parent: _entranceController,
-                      curve: const Interval(
-                        0.18,
-                        1,
-                        curve: Curves.easeOutCubic,
-                      ),
-                    ).value;
-                return Opacity(
-                  opacity: value,
-                  child: Transform.translate(
-                    offset: Offset(0, 26 * (1 - value)),
-                    child: child,
-                  ),
-                );
-              },
-              // One card that BECOMES the answer, rather than two cards
-              // to compare. Pulling a tab forward floods the card with
-              // that option's colour, and the colour arriving is the
-              // confirmation -- there is no separate submit.
-              child: SingleChildScrollView(
-                child: ThisOrThatTabCard(
-                  questionText: widget.questionText,
-                  optionA: widget.optionA,
-                  optionB: widget.optionB,
-                  emojiA: widget.emojiA,
-                  emojiB: widget.emojiB,
-                  active: switch (_selectedChoice) {
-                    'a' => ThisOrThatTab.thisOption,
-                    'b' => ThisOrThatTab.thatOption,
-                    _ => ThisOrThatTab.question,
-                  },
-                  // Null while submitting, so a committed answer cannot
-                  // be changed mid-flight.
-                  onSelect:
-                      _isSubmitting
-                          ? null
-                          : (tab) => _selectChoice(
-                            tab == ThisOrThatTab.thisOption ? 'a' : 'b',
-                          ),
-                ),
-              ),
-            ),
+          const GameCoachStep(
+            text:
+                'When you have both picked, the two answers turn over '
+                'together.',
           ),
         ],
+        child: Column(
+          children: [
+            Row(
+              children: [
+                ThisOrThatStageLabel(
+                  text: widget.tone,
+                  icon: _toneIcon(widget.tone),
+                  color: palette.thisColor,
+                ),
+                const Spacer(),
+                ThisOrThatPartnerPresence(
+                  partnerName: widget.partnerName,
+                  answered: widget.partnerAnswered,
+                ),
+              ],
+            ),
+            // The round is in the header; the body does not repeat it.
+            const SizedBox(height: 26),
+            Text(
+              'No wrong answer. Pick the one that feels true first.',
+              textAlign: TextAlign.center,
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                color: palette.mutedInk,
+                letterSpacing: 0,
+              ),
+            ),
+            const SizedBox(height: 24),
+            Expanded(
+              child: AnimatedBuilder(
+                animation: _entranceController,
+                builder: (context, child) {
+                  final value =
+                      CurvedAnimation(
+                        parent: _entranceController,
+                        curve: const Interval(
+                          0.18,
+                          1,
+                          curve: Curves.easeOutCubic,
+                        ),
+                      ).value;
+                  return Opacity(
+                    opacity: value,
+                    child: Transform.translate(
+                      offset: Offset(0, 26 * (1 - value)),
+                      child: child,
+                    ),
+                  );
+                },
+                // One card that BECOMES the answer, rather than two cards
+                // to compare. Pulling a tab forward floods the card with
+                // that option's colour, and the colour arriving is the
+                // confirmation -- there is no separate submit.
+                //
+                // Centred in the space it has, so it is the middle of the
+                // screen and sits clear of the tutorial's bubble above it;
+                // it still scrolls where a long question does not fit.
+                child: LayoutBuilder(
+                  builder:
+                      (context, constraints) => SingleChildScrollView(
+                        child: ConstrainedBox(
+                          constraints: BoxConstraints(
+                            minHeight: constraints.maxHeight,
+                          ),
+                          child: Center(
+                            child: ThisOrThatTabRowTarget(
+                              target: _tabRowKey,
+                              child: ThisOrThatTabCard(
+                                questionText: widget.questionText,
+                                optionA: widget.optionA,
+                                optionB: widget.optionB,
+                                emojiA: widget.emojiA,
+                                emojiB: widget.emojiB,
+                                active: switch (_selectedChoice) {
+                                  'a' => ThisOrThatTab.thisOption,
+                                  'b' => ThisOrThatTab.thatOption,
+                                  _ => ThisOrThatTab.question,
+                                },
+                                // Null while submitting, so a committed answer
+                                // cannot be changed mid-flight.
+                                onSelect:
+                                    _isSubmitting
+                                        ? null
+                                        : (tab) => _selectChoice(
+                                          tab == ThisOrThatTab.thisOption
+                                              ? 'a'
+                                              : 'b',
+                                        ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
