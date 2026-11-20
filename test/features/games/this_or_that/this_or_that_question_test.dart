@@ -1,5 +1,6 @@
 import 'package:attune/core/ui/feedback/haptics.dart';
 import 'package:attune/core/ui/feedback/sound_service.dart';
+import 'package:attune/features/games/platform/feel/game_motion.dart';
 import 'package:attune/features/games/platform/feel/game_tile.dart';
 import 'package:attune/features/games/platform/game_prefs.dart';
 import 'package:attune/features/games/platform/game_theme.dart';
@@ -51,8 +52,11 @@ void main() {
     FakeHaptics? haptics,
     Widget? screen,
     Size surface = phone,
+    FakeViewPadding? padding,
+    bool reduceMotion = true,
   }) async {
     useSurface(tester, surface);
+    if (padding != null) tester.view.padding = padding;
     final repository = MockThisOrThatRepository();
     when(
       () => repository.submitAnswer(
@@ -68,7 +72,7 @@ void main() {
         prefs: await testPrefs(stored ?? seenCoach),
         sound: sounds,
         haptics: haptics,
-        reduceMotion: true,
+        reduceMotion: reduceMotion,
         overrides: [
           thisOrThatRepositoryProvider.overrideWithValue(repository),
           thisOrThatAnswerOutboxProvider.overrideWithValue(
@@ -170,6 +174,31 @@ void main() {
     expect(find.text('Lock in That'), findsOneWidget);
     expect(haptics.selectionCount, 1);
     expect(sounds.played, isEmpty);
+  });
+
+  testWidgets('with vibration switched off in settings, choosing and locking '
+      'in are still', (tester) async {
+    // The control is the next test, where the same taps give a selection
+    // tick and a light tap.
+    final sounds = FakeSoundService();
+    final haptics = FakeHaptics();
+    await pump(
+      tester,
+      stored: {...seenCoach, GamePrefsNotifier.hapticsKey: false},
+      sounds: sounds,
+      haptics: haptics,
+    );
+
+    await tester.tap(find.text('THAT'));
+    await tester.pump();
+    await tester.tap(find.text('Lock in That'));
+    await tester.pump();
+
+    // Both taps landed, and the sound they still make says the feedback ran.
+    expect(sounds.played, [AppSound.gameTap, AppSound.gameAnswer]);
+    expect(haptics.selectionCount, 0);
+    expect(haptics.lightCount, 0);
+    expect(haptics.mediumCount, 0);
   });
 
   testWidgets('locking in is a placement: its sound and a light tap', (
@@ -419,5 +448,84 @@ void main() {
       expect(find.byType(GameCoachBubble), findsNothing);
     }
     expect(shown, hasLength(6));
+  });
+
+  // Phones the tutorial has to work on, with the space a notch and a home
+  // bar take on a real one. The 375 x 812 phone without insets is the
+  // control: 'the game can be played with the tutorial still up'.
+  final phones = <String, (Size, FakeViewPadding?)>{
+    '320 x 568': (const Size(320, 568), null),
+    '360 x 640': (const Size(360, 640), null),
+    '375 x 667': (const Size(375, 667), null),
+    '375 x 812 with a notch': (
+      const Size(375, 812),
+      const FakeViewPadding(top: 47, bottom: 34),
+    ),
+  };
+  for (final MapEntry(key: name, value: (size, padding)) in phones.entries) {
+    for (final step in [1, 2]) {
+      testWidgets('on a $name phone, step $step\'s bubble covers neither what '
+          'it points at nor the tabs', (tester) async {
+        await pump(tester, stored: const {}, surface: size, padding: padding);
+        if (step == 2) {
+          await tester.tap(find.text('Next'));
+          await tester.pumpAndSettle();
+        }
+
+        final bubble = tester.getRect(find.byType(GameCoachBubble));
+        final pointed =
+            step == 1
+                ? tabRow(tester)
+                : tester.getRect(find.byType(ThisOrThatPrimaryAction));
+        expect(bubble.overlaps(pointed), isFalse);
+        expect(find.byKey(const ValueKey('game-coach-ring')), findsOneWidget);
+
+        // A missed tap fails the test: THAT has to be reachable.
+        await tester.tap(find.text('THAT'));
+        await tester.pump();
+        expect(find.text('Lock in That'), findsOneWidget);
+        expect(find.byType(GameCoachBubble), findsOneWidget);
+      });
+    }
+  }
+
+  GameTile tab(WidgetTester tester, String label) => tester
+      .widgetList<GameTile>(tilesOfCard())
+      .singleWhere((tile) => tile.semanticLabel == label);
+
+  testWidgets('the chosen tab rises, and the one it replaces settles back', (
+    tester,
+  ) async {
+    await pump(tester, reduceMotion: false);
+    expect(tab(tester, 'THIS').depth, 2);
+    expect(tab(tester, 'OR').depth, 5);
+
+    await tester.tap(find.text('THIS'));
+    await tester.pump();
+    await tester.pump(GameMotion.settle ~/ 2);
+
+    final rising = tab(tester, 'THIS').depth;
+    final settling = tab(tester, 'OR').depth;
+    expect(rising, greaterThan(2));
+    expect(rising, lessThan(5));
+    expect(settling, greaterThan(2));
+    expect(settling, lessThan(5));
+
+    await tester.pumpAndSettle();
+    expect(tab(tester, 'THIS').depth, 5);
+    expect(tab(tester, 'OR').depth, 2);
+  });
+
+  testWidgets('with reduced motion the chosen tab is forward at once', (
+    tester,
+  ) async {
+    await pump(tester);
+
+    await tester.tap(find.text('THIS'));
+    await tester.pump();
+
+    expect(tab(tester, 'THIS').depth, 5);
+    expect(tab(tester, 'OR').depth, 2);
+    expect(tester.binding.hasScheduledFrame, isFalse);
   });
 }

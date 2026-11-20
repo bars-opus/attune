@@ -34,7 +34,12 @@ void main() {
   for (final MapEntry(key: name, value: shot)
       in thisOrThatQuestionScreens().entries) {
     testWidgets('$name on a phone', (tester) async {
-      await pumpShellScreen(tester, shot.screen, stored: shot.stored);
+      await pumpShellScreen(
+        tester,
+        shot.screen,
+        stored: shot.stored,
+        size: shot.size,
+      );
 
       await expectLater(
         find.byType(MaterialApp),

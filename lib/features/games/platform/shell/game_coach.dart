@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:attune/core/providers/shared_prefs_provider.dart';
 import 'package:attune/features/games/platform/game_strings.dart';
@@ -300,17 +301,13 @@ class _GameCoachState extends ConsumerState<GameCoach> {
             ),
           ),
         if (index != null)
-          // Bounded top and bottom so the bubble can never be taller than
-          // the space it has; aligned to the top so it is only as tall as
-          // it needs. The Align takes no touches of its own, so the game
-          // under the rest of this area stays live.
-          Positioned(
-            left: 16,
-            right: 16,
-            top: 8,
-            bottom: 8,
-            child: Align(
-              alignment: Alignment.topCenter,
+          // Never taller than the space it has, and only as tall as it
+          // needs; on whichever side leaves the target free. The layout
+          // takes no touches of its own, so the game under the rest of
+          // this area stays live.
+          Positioned.fill(
+            child: CustomSingleChildLayout(
+              delegate: _BubblePlacement(rect),
               child: GameCoachBubble(
                 text: widget.steps[index].text,
                 actionLabel: isLast ? GameStrings.gotIt : GameStrings.next,
@@ -322,4 +319,74 @@ class _GameCoachState extends ConsumerState<GameCoach> {
       ],
     );
   }
+}
+
+/// Puts the bubble where it does not cover what it points at.
+///
+/// A tutorial that says "tap this" over the thing to tap cannot be
+/// followed. So the bubble goes to the far side of its area from the
+/// target -- the bottom for a target in the upper part, the top for one in
+/// the lower part -- and to the other side if that is the one that misses
+/// the target. Where neither misses it, the side that leaves the target's
+/// middle free to tap wins, then the side covering less of it.
+///
+/// A target outside the area cannot be covered from either side; the
+/// bubble sits on the side nearest it, which reads as pointing at it and
+/// leaves the rest of the area -- the game -- clear. A step that points at
+/// nothing keeps the bubble at the top.
+class _BubblePlacement extends SingleChildLayoutDelegate {
+  _BubblePlacement(this.target);
+
+  /// The target, in the area's coordinates. Null when there is none, or
+  /// before it has been measured.
+  final Rect? target;
+
+  static const double _margin = 8;
+  static const double _inset = 16;
+
+  @override
+  BoxConstraints getConstraintsForChild(BoxConstraints constraints) {
+    final width = math.max(0.0, constraints.maxWidth - _inset * 2);
+    return BoxConstraints(
+      minWidth: width,
+      maxWidth: width,
+      maxHeight: math.max(0.0, constraints.maxHeight - _margin * 2),
+    );
+  }
+
+  @override
+  Offset getPositionForChild(Size size, Size childSize) {
+    const top = Offset(_inset, _margin);
+    final bottom = Offset(
+      _inset,
+      math.max(_margin, size.height - _margin - childSize.height),
+    );
+    final target = this.target;
+    if (target == null) return top;
+    if (target.top >= size.height) return bottom;
+    if (target.bottom <= 0) return top;
+
+    // The ring is part of what must stay visible.
+    final ringed = target.inflate(5);
+    final sides =
+        target.center.dy < size.height / 2 ? [bottom, top] : [top, bottom];
+    double covered(Offset at) {
+      final overlap = (at & childSize).intersect(ringed);
+      return overlap.isEmpty ? 0 : overlap.width * overlap.height;
+    }
+
+    for (final at in sides) {
+      if (covered(at) == 0) return at;
+    }
+    final centreFree = [
+      for (final at in sides)
+        if (!(at & childSize).contains(target.center)) at,
+    ];
+    final candidates = centreFree.isEmpty ? sides : centreFree;
+    return candidates.reduce((a, b) => covered(b) < covered(a) ? b : a);
+  }
+
+  @override
+  bool shouldRelayout(_BubblePlacement oldDelegate) =>
+      oldDelegate.target != target;
 }

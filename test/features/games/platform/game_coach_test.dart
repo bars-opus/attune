@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:attune/features/games/platform/shell/game_coach.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/semantics.dart';
@@ -431,5 +433,157 @@ void main() {
 
     expect(tester.takeException(), isNull);
     expect(find.text('Welcome to the game.'), findsOneWidget);
+  });
+
+  group('the bubble never covers what it points at', () {
+    Future<void> pumpAt(
+      WidgetTester tester, {
+      required Alignment at,
+      double targetHeight = 64,
+      String text = 'Tap this tile.',
+      Size surface = phone,
+      VoidCallback? onTargetTap,
+    }) async {
+      useSurface(tester, surface);
+      await tester.pumpWidget(
+        gameHost(
+          Scaffold(
+            body: GameCoach(
+              gameType: 'demo',
+              steps: [GameCoachStep(text: text, target: target)],
+              child: Align(
+                alignment: at,
+                child: GestureDetector(
+                  onTap: onTargetTap,
+                  child: SizedBox(
+                    key: target,
+                    width: 64,
+                    height: targetHeight,
+                    child: const ColoredBox(color: Colors.white),
+                  ),
+                ),
+              ),
+            ),
+          ),
+          prefs: await testPrefs(),
+        ),
+      );
+      await tester.pump();
+      await tester.pump();
+    }
+
+    Rect bubble(WidgetTester tester) =>
+        tester.getRect(find.byType(GameCoachBubble));
+    Rect area(WidgetTester tester) => tester.getRect(find.byType(GameCoach));
+
+    testWidgets('a target in the upper part puts the bubble at the bottom', (
+      tester,
+    ) async {
+      await pumpAt(tester, at: const Alignment(0, -0.8));
+
+      final pointed = tester.getRect(find.byKey(target));
+      expect(pointed.center.dy, lessThan(area(tester).center.dy));
+      expect(bubble(tester).bottom, area(tester).bottom - 8);
+      expect(bubble(tester).overlaps(pointed), isFalse);
+    });
+
+    testWidgets('a target in the lower part keeps the bubble at the top', (
+      tester,
+    ) async {
+      // The control for the test above: the same target, low down.
+      await pumpAt(tester, at: const Alignment(0, 0.8));
+
+      final pointed = tester.getRect(find.byKey(target));
+      expect(bubble(tester).top, area(tester).top + 8);
+      expect(bubble(tester).overlaps(pointed), isFalse);
+    });
+
+    testWidgets('a step that points at nothing keeps the bubble at the top', (
+      tester,
+    ) async {
+      await pump(tester);
+
+      expect(find.text('Welcome to the game.'), findsOneWidget);
+      expect(bubble(tester).top, area(tester).top + 8);
+    });
+
+    testWidgets('a target below the area has the bubble on the side nearest '
+        'it, leaving the area above free', (tester) async {
+      // The bubble cannot cover a target outside its area on either side.
+      // Next to the target it reads as pointing at it, and the game the
+      // area holds -- what the player may be about to touch -- stays clear.
+      useSurface(tester, phone);
+      final outside = GlobalKey();
+      await tester.pumpWidget(
+        gameHost(
+          Scaffold(
+            body: Column(
+              children: [
+                Expanded(
+                  child: GameCoach(
+                    gameType: 'demo',
+                    steps: [
+                      GameCoachStep(text: 'Then press this.', target: outside),
+                    ],
+                    child: const SizedBox.expand(),
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.all(20),
+                  child: SizedBox(key: outside, width: 48, height: 48),
+                ),
+              ],
+            ),
+          ),
+          prefs: await testPrefs(),
+        ),
+      );
+      await tester.pump();
+      await tester.pump();
+
+      expect(bubble(tester).bottom, area(tester).bottom - 8);
+      expect(
+        bubble(tester).overlaps(tester.getRect(find.byKey(outside))),
+        isFalse,
+      );
+    });
+
+    testWidgets('where either side would cover part of the target, the '
+        'bubble leaves its centre free to tap', (tester) async {
+      // A short area: no placement misses the target entirely, but one
+      // misses its middle. Where the target goes depends on how tall the
+      // bubble is, so that is measured first.
+      const area = Size(320, 300);
+      const text = 'Tap this tile to pick it.';
+      await pumpAt(tester, at: Alignment.topCenter, surface: area, text: text);
+      final height = bubble(tester).height;
+      // The target's middle just above where a bottom bubble would start.
+      final middle = area.height - 8 - height - 10;
+      const targetHeight = 60.0;
+      final top = middle - targetHeight / 2;
+      var taps = 0;
+      await pumpAt(
+        tester,
+        at: Alignment(0, 2 * top / (area.height - targetHeight) - 1),
+        targetHeight: targetHeight,
+        surface: area,
+        text: text,
+        onTargetTap: () => taps++,
+      );
+
+      final pointed = tester.getRect(find.byKey(target));
+      final above = Rect.fromLTRB(0, 0, 320, pointed.top);
+      final below = Rect.fromLTRB(0, pointed.bottom, 320, area.height);
+      expect(
+        bubble(tester).height,
+        greaterThan(math.max(above.height, below.height)),
+        reason: 'the bubble fits on neither side, or this tests nothing',
+      );
+      expect(bubble(tester).overlaps(pointed), isTrue);
+      expect(bubble(tester).contains(pointed.center), isFalse);
+      await tester.tapAt(pointed.center);
+      await tester.pump();
+      expect(taps, 1);
+    });
   });
 }

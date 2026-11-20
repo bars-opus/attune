@@ -163,9 +163,10 @@ Map<String, ShellScreen> thisOrThatShellScreens() => {
 };
 
 /// The question screen's pictures: before a choice, with THIS chosen, and
-/// a first-time player's tutorial over it. [stored] is what the device
-/// remembers; every picture but the tutorial's has the tutorial seen.
-Map<String, ({ShellScreen screen, Map<String, Object> stored})>
+/// a first-time player's tutorial over it, on a phone and on the smallest
+/// one. [stored] is what the device remembers; every picture but the
+/// tutorial's has the tutorial seen.
+Map<String, ({ShellScreen screen, Map<String, Object> stored, Size size})>
 thisOrThatQuestionScreens() {
   final seen = {GameCoachStore.key('this_or_that'): true};
   ShellScreen question({Future<void> Function(WidgetTester)? then}) => (
@@ -203,7 +204,7 @@ thisOrThatQuestionScreens() {
   );
 
   return {
-    'question': (screen: question(), stored: seen),
+    'question': (screen: question(), stored: seen, size: phone),
     'question_this': (
       screen: question(
         then: (tester) async {
@@ -212,8 +213,15 @@ thisOrThatQuestionScreens() {
         },
       ),
       stored: seen,
+      size: phone,
     ),
-    'question_coach': (screen: question(), stored: const {}),
+    'question_coach': (screen: question(), stored: const {}, size: phone),
+    // The smallest phone in use: the bubble still clears the tabs.
+    'question_coach_small': (
+      screen: question(),
+      stored: const {},
+      size: const Size(320, 568),
+    ),
   };
 }
 

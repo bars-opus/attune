@@ -199,33 +199,49 @@ class _Tab extends StatelessWidget {
   Widget build(BuildContext context) {
     final ink = _inkOn(face);
 
-    return GameTile(
-      color: face,
-      radius: 14,
-      depth: forward ? 5 : 2,
-      semanticLabel: label,
-      selected: forward,
-      onTap: onTap,
-      padding: const EdgeInsets.symmetric(vertical: 13),
-      child: Center(
-        child: AnimatedDefaultTextStyle(
-          duration: GameMotion.of(context, GameMotion.settle),
-          curve: GameMotion.enterCurve,
-          // Merged, not replaced: a bare style here would drop the app's
-          // font for the platform's default.
-          style: DefaultTextStyle.of(context).style.merge(
-            TextStyle(
-              color: forward ? ink : _dimmed(ink, face),
-              fontSize: 14,
-              fontWeight: FontWeight.w900,
-              letterSpacing: 1.6,
-            ),
+    final caption = Center(
+      child: AnimatedDefaultTextStyle(
+        duration: GameMotion.of(context, GameMotion.settle),
+        curve: GameMotion.enterCurve,
+        // Merged, not replaced: a bare style here would drop the app's
+        // font for the platform's default.
+        style: DefaultTextStyle.of(context).style.merge(
+          TextStyle(
+            color: forward ? ink : _dimmed(ink, face),
+            fontSize: 14,
+            fontWeight: FontWeight.w900,
+            letterSpacing: 1.6,
           ),
-          child: Text(label, maxLines: 1),
         ),
+        child: Text(label, maxLines: 1),
       ),
     );
+
+    // The tile's depth is a plain number, so it is animated here: the
+    // chosen tab rises onto a deeper shadow as the one before it settles
+    // back, at the same pace as the card's flood. The row aligns bottoms,
+    // so a deeper shadow lifts the face. Instant under reduced motion.
+    return TweenAnimationBuilder<double>(
+      tween: Tween(end: forward ? _forwardDepth : _backDepth),
+      duration: GameMotion.of(context, GameMotion.settle),
+      curve: GameMotion.enterCurve,
+      child: caption,
+      builder:
+          (context, depth, caption) => GameTile(
+            color: face,
+            radius: 14,
+            depth: depth,
+            semanticLabel: label,
+            selected: forward,
+            onTap: onTap,
+            padding: const EdgeInsets.symmetric(vertical: 13),
+            child: caption!,
+          ),
+    );
   }
+
+  static const double _forwardDepth = 5;
+  static const double _backDepth = 2;
 }
 
 /// The card itself: one tile-shaped panel whose colour is the choice.

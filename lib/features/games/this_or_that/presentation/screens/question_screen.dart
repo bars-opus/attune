@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:attune/core/services/app_content_visibility.dart';
 import 'package:attune/core/ui/motion/reduce_motion.dart';
 import 'package:attune/features/games/platform/feel/game_feedback.dart';
+import 'package:attune/features/games/platform/game_theme.dart';
 import 'package:attune/features/games/platform/shell/game_coach.dart';
 import 'package:attune/features/games/this_or_that/presentation/providers/this_or_that_providers.dart';
 import 'package:attune/features/games/this_or_that/presentation/widgets/this_or_that_game_ui.dart';
@@ -343,10 +344,12 @@ class _QuestionScreenState extends ConsumerState<QuestionScreen>
           children: [
             Row(
               children: [
+                // White, like the header: this row sits on the game's
+                // orange, where the coral and the muted grey do not read.
                 ThisOrThatStageLabel(
                   text: widget.tone,
                   icon: _toneIcon(widget.tone),
-                  color: palette.thisColor,
+                  color: GameTheme.onGround,
                 ),
                 const Spacer(),
                 ThisOrThatPartnerPresence(
@@ -356,16 +359,7 @@ class _QuestionScreenState extends ConsumerState<QuestionScreen>
               ],
             ),
             // The round is in the header; the body does not repeat it.
-            const SizedBox(height: 26),
-            Text(
-              'No wrong answer. Pick the one that feels true first.',
-              textAlign: TextAlign.center,
-              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                color: palette.mutedInk,
-                letterSpacing: 0,
-              ),
-            ),
-            const SizedBox(height: 24),
+            const SizedBox(height: 12),
             Expanded(
               child: AnimatedBuilder(
                 animation: _entranceController,
@@ -392,9 +386,13 @@ class _QuestionScreenState extends ConsumerState<QuestionScreen>
                 // that option's colour, and the colour arriving is the
                 // confirmation -- there is no separate submit.
                 //
-                // Centred in the space it has, so it is the middle of the
-                // screen and sits clear of the tutorial's bubble above it;
-                // it still scrolls where a long question does not fit.
+                // The card, with the line under it, is centred in the
+                // space it has, so the tabs sit above the middle of the
+                // screen. The tutorial's bubble then goes below them, over
+                // empty space and the card's lower half, and the tabs stay
+                // free to pull while it shows -- on a small phone too, where
+                // there is no room for the bubble above them. It still
+                // scrolls where a long question does not fit.
                 child: LayoutBuilder(
                   builder:
                       (context, constraints) => SingleChildScrollView(
@@ -403,30 +401,47 @@ class _QuestionScreenState extends ConsumerState<QuestionScreen>
                             minHeight: constraints.maxHeight,
                           ),
                           child: Center(
-                            child: ThisOrThatTabRowTarget(
-                              target: _tabRowKey,
-                              child: ThisOrThatTabCard(
-                                questionText: widget.questionText,
-                                optionA: widget.optionA,
-                                optionB: widget.optionB,
-                                emojiA: widget.emojiA,
-                                emojiB: widget.emojiB,
-                                active: switch (_selectedChoice) {
-                                  'a' => ThisOrThatTab.thisOption,
-                                  'b' => ThisOrThatTab.thatOption,
-                                  _ => ThisOrThatTab.question,
-                                },
-                                // Null while submitting, so a committed answer
-                                // cannot be changed mid-flight.
-                                onSelect:
-                                    _isSubmitting
-                                        ? null
-                                        : (tab) => _selectChoice(
-                                          tab == ThisOrThatTab.thisOption
-                                              ? 'a'
-                                              : 'b',
-                                        ),
-                              ),
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                ThisOrThatTabRowTarget(
+                                  target: _tabRowKey,
+                                  child: ThisOrThatTabCard(
+                                    questionText: widget.questionText,
+                                    optionA: widget.optionA,
+                                    optionB: widget.optionB,
+                                    emojiA: widget.emojiA,
+                                    emojiB: widget.emojiB,
+                                    active: switch (_selectedChoice) {
+                                      'a' => ThisOrThatTab.thisOption,
+                                      'b' => ThisOrThatTab.thatOption,
+                                      _ => ThisOrThatTab.question,
+                                    },
+                                    // Null while submitting, so a committed
+                                    // answer cannot be changed mid-flight.
+                                    onSelect:
+                                        _isSubmitting
+                                            ? null
+                                            : (tab) => _selectChoice(
+                                              tab == ThisOrThatTab.thisOption
+                                                  ? 'a'
+                                                  : 'b',
+                                            ),
+                                  ),
+                                ),
+                                const SizedBox(height: 16),
+                                Text(
+                                  'No wrong answer. Pick the one that feels '
+                                  'true first.',
+                                  textAlign: TextAlign.center,
+                                  style: Theme.of(
+                                    context,
+                                  ).textTheme.bodyMedium?.copyWith(
+                                    color: GameTheme.onGround,
+                                    letterSpacing: 0,
+                                  ),
+                                ),
+                              ],
                             ),
                           ),
                         ),

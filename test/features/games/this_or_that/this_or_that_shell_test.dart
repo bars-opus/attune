@@ -458,20 +458,33 @@ void main() {
     expect(contrast(inkOf(tester, error), GameTheme.ground), greaterThan(4.5));
   });
 
-  final screens = thisOrThatShellScreens();
+  // The question screen's pictures carry what the device remembers (the
+  // tutorial seen or not) and the phone they are taken on.
+  final screens = {
+    for (final MapEntry(key: name, value: screen)
+        in thisOrThatShellScreens().entries)
+      name: (screen: screen, stored: const <String, Object>{}, size: phone),
+    ...thisOrThatQuestionScreens(),
+  };
   test('the screens below have something to check', () {
     expect(screens, isNotEmpty);
+    expect(screens.keys, containsAll(['question', 'question_this']));
   });
-  for (final MapEntry(key: name, value: screen) in screens.entries) {
+  for (final MapEntry(key: name, value: shot) in screens.entries) {
     testWidgets('$name: every word in the body can be read where it sits, '
         'on the orange or the ground', (tester) async {
-      await pumpShellScreen(tester, screen);
+      await pumpShellScreen(
+        tester,
+        shot.screen,
+        stored: shot.stored,
+        size: shot.size,
+      );
 
       final ink = inkOnBackdrop(tester);
       expect(ink, isNotEmpty);
       // The control: the first words under the header sit high enough to
       // be on the orange, where the ground's contrast would not hold.
-      final height = phone.height;
+      final height = shot.size.height;
       expect(
         backdropAt(0, height).computeLuminance(),
         greaterThan(GameTheme.ground.computeLuminance() * 10),
