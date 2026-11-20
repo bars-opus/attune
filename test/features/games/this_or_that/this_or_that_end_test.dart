@@ -88,6 +88,7 @@ void main() {
     FakeSoundService? sound,
     FakeHaptics? haptics,
     Map<String, Object> stored = const {},
+    ThemeData? theme,
   }) async {
     useSurface(tester, size);
     await tester.pumpWidget(
@@ -100,6 +101,7 @@ void main() {
         overrides: [
           gamePartnerNameProvider.overrideWith((ref) async => partnerName),
         ],
+        theme: theme,
       ),
     );
     await tester.pumpAndSettle();
@@ -383,63 +385,67 @@ void main() {
       }
     });
 
-    testWidgets('on the smallest phone, the verdict, the score and both '
-        'buttons are in view without scrolling', (tester) async {
-      const small = Size(320, 568);
-      await pumpEnd(
-        tester,
-        end(
-          matchCount: 3,
-          mostInterestingPick: pick(
-            question: 'A free Saturday with nothing planned: what do we do?',
-            you: longPick,
-            partner: longPick,
+    for (final MapEntry(key: themeName, value: theme) in fitThemes.entries) {
+      testWidgets('on the smallest phone, the verdict, the score and both '
+          'buttons are in view without scrolling'
+          '${fitThemeSuffix(themeName, theme)}', (tester) async {
+        const small = Size(320, 568);
+        await pumpEnd(
+          tester,
+          end(
+            matchCount: 3,
+            mostInterestingPick: pick(
+              question: 'A free Saturday with nothing planned: what do we do?',
+              you: longPick,
+              partner: longPick,
+            ),
           ),
-        ),
-        partnerName: 'Kwame Mensah',
-        size: small,
-      );
+          partnerName: 'Kwame Mensah',
+          size: small,
+          theme: theme,
+        );
 
-      expect(tester.takeException(), isNull);
-      expect(find.text('You & Kwame Mensah'), findsOneWidget);
-      expect(find.text('KWAME MENSAH'), findsOneWidget);
+        expect(tester.takeException(), isNull);
+        expect(find.text('You & Kwame Mensah'), findsOneWidget);
+        expect(find.text('KWAME MENSAH'), findsOneWidget);
 
-      final body = find.descendant(
-        of: find.byType(GameCompleteScreen),
-        matching: find.byType(Scrollable),
-      );
-      expect(body, findsOneWidget);
-      expect(tester.state<ScrollableState>(body).position.pixels, 0);
+        final body = find.descendant(
+          of: find.byType(GameCompleteScreen),
+          matching: find.byType(Scrollable),
+        );
+        expect(body, findsOneWidget);
+        expect(tester.state<ScrollableState>(body).position.pixels, 0);
 
-      final screen = Offset.zero & small;
-      final again = tester.getRect(find.byType(GamePrimaryButton));
-      final back = tester.getRect(find.byType(GameSecondaryButton));
-      for (final button in [again, back]) {
-        expect(screen.contains(button.topLeft), isTrue);
-        expect(button.bottom, lessThanOrEqualTo(small.height));
-        expect(button.right, lessThanOrEqualTo(small.width));
-      }
-      for (final text in ['Full of surprises', 'You matched on 3 of 10.']) {
-        final rect = tester.getRect(find.text(text));
-        expect(rect.top, greaterThanOrEqualTo(0), reason: text);
-        expect(rect.bottom, lessThanOrEqualTo(again.top), reason: text);
-      }
-      // The long pick wraps rather than being cut short.
-      final longPieces =
-          tester
-              .widgetList<Text>(
-                find.descendant(
-                  of: find.byKey(pickTile),
-                  matching: find.textContaining(longPick),
-                ),
-              )
-              .toList();
-      expect(longPieces, hasLength(2));
-      for (final piece in longPieces) {
-        expect(piece.maxLines, isNull);
-        expect(piece.overflow, isNot(TextOverflow.ellipsis));
-      }
-    });
+        final screen = Offset.zero & small;
+        final again = tester.getRect(find.byType(GamePrimaryButton));
+        final back = tester.getRect(find.byType(GameSecondaryButton));
+        for (final button in [again, back]) {
+          expect(screen.contains(button.topLeft), isTrue);
+          expect(button.bottom, lessThanOrEqualTo(small.height));
+          expect(button.right, lessThanOrEqualTo(small.width));
+        }
+        for (final text in ['Full of surprises', 'You matched on 3 of 10.']) {
+          final rect = tester.getRect(find.text(text));
+          expect(rect.top, greaterThanOrEqualTo(0), reason: text);
+          expect(rect.bottom, lessThanOrEqualTo(again.top), reason: text);
+        }
+        // The long pick wraps rather than being cut short.
+        final longPieces =
+            tester
+                .widgetList<Text>(
+                  find.descendant(
+                    of: find.byKey(pickTile),
+                    matching: find.textContaining(longPick),
+                  ),
+                )
+                .toList();
+        expect(longPieces, hasLength(2));
+        for (final piece in longPieces) {
+          expect(piece.maxLines, isNull);
+          expect(piece.overflow, isNot(TextOverflow.ellipsis));
+        }
+      });
+    }
   });
 
   group('the router\'s end', () {

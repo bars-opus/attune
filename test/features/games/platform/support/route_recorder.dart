@@ -28,6 +28,10 @@ const List<String> standInRouteNames = [
 ///
 /// [routes] are added beside the stand-ins, for a test that needs a screen
 /// to behave in a way a stand-in does not, such as replacing itself.
+///
+/// [theme], when given, is the app's theme in place of the plain Roboto one
+/// in [brightness] -- `AppTheme.lightTheme` or `AppTheme.darkTheme`, to host
+/// the page in the app as it ships.
 Widget gameRouterHost({
   required Widget home,
   required SharedPreferences prefs,
@@ -35,6 +39,7 @@ Widget gameRouterHost({
   Brightness brightness = Brightness.light,
   double textScale = 1,
   List<RouteBase> routes = const [],
+  ThemeData? theme,
 }) {
   GoRoute standIn(String name, String path) => GoRoute(
     path: path,
@@ -65,7 +70,7 @@ Widget gameRouterHost({
     ],
     child: MaterialApp.router(
       debugShowCheckedModeBanner: false,
-      theme: ThemeData(fontFamily: 'Roboto', brightness: brightness),
+      theme: theme ?? ThemeData(fontFamily: 'Roboto', brightness: brightness),
       routerConfig: router,
       builder:
           (context, app) => MediaQuery(

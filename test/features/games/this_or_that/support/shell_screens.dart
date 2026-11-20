@@ -329,13 +329,14 @@ thisOrThatSmallScreens() => {
 };
 
 /// Pumps [screen] on [size] in a light app, on a device that remembers
-/// [stored].
+/// [stored]. [theme] is the app's theme, as [gameHost] takes it.
 Future<void> pumpShellScreen(
   WidgetTester tester,
   ShellScreen screen, {
   Size size = phone,
   bool reduceMotion = true,
   Map<String, Object> stored = const {},
+  ThemeData? theme,
 }) async {
   useSurface(tester, size);
   await tester.pumpWidget(
@@ -344,6 +345,7 @@ Future<void> pumpShellScreen(
       prefs: await testPrefs(stored),
       reduceMotion: reduceMotion,
       overrides: screen.overrides(),
+      theme: theme,
     ),
   );
   await tester.pumpAndSettle();

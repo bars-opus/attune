@@ -123,6 +123,7 @@ void main() {
     bool recordOpens = true,
     String? partnerName = 'Ama',
     List<Override> overrides = const [],
+    ThemeData? theme,
   }) async {
     useSurface(tester, surface);
     events = StreamController<void>();
@@ -134,6 +135,7 @@ void main() {
         home: home,
         prefs: await testPrefs(),
         textScale: textScale,
+        theme: theme,
         overrides: [
           activeGamesProvider.overrideWith((ref) async {
             listReads++;
@@ -184,47 +186,48 @@ void main() {
   Finder sessionRow(String sessionId) =>
       find.byKey(ValueKey('games-hub-session-$sessionId'));
 
-  testWidgets('lists the five launch games under Play together', (
-    tester,
-  ) async {
-    await pumpHub(tester);
+  for (final MapEntry(key: themeName, value: theme) in fitThemes.entries) {
+    testWidgets('lists the five launch games under Play together'
+        '${fitThemeSuffix(themeName, theme)}', (tester) async {
+      await pumpHub(tester, theme: theme);
 
-    final heading = tester.getRect(find.text('Play together'));
-    for (final title in _launchTitles) {
-      expect(find.text(title), findsOneWidget, reason: title);
+      final heading = tester.getRect(find.text('Play together'));
+      for (final title in _launchTitles) {
+        expect(find.text(title), findsOneWidget, reason: title);
+        expect(
+          tester.getRect(find.text(title)).top,
+          greaterThan(heading.top),
+          reason: '$title is under Play together',
+        );
+      }
+
+      // This or That's card is the featured one: above the others, and wider.
+      Finder cardOf(String title) =>
+          find.ancestor(of: find.text(title), matching: find.byType(GameHubCard));
+      final featured = tester.getRect(cardOf('This or That'));
+      expect(tester.widget<GameHubCard>(cardOf('This or That')).featured, isTrue);
+      final others = _launchTitles.skip(1).toList();
+      expect(others, isNotEmpty);
+      for (final title in others) {
+        final rect = tester.getRect(cardOf(title));
+        expect(tester.widget<GameHubCard>(cardOf(title)).featured, isFalse);
+        expect(rect.top, greaterThan(featured.bottom), reason: title);
+        expect(featured.width, greaterThan(rect.width), reason: title);
+        expect(featured.height, greaterThan(rect.height), reason: title);
+      }
+      expect(find.text('Quick choices, shared reveals'), findsOneWidget);
+
+      // Two to a row at the usual text size.
       expect(
-        tester.getRect(find.text(title)).top,
-        greaterThan(heading.top),
-        reason: '$title is under Play together',
+        tester.getRect(cardOf('Truth or Dare')).top,
+        tester.getRect(cardOf('36 Questions')).top,
       );
-    }
-
-    // This or That's card is the featured one: above the others, and wider.
-    Finder cardOf(String title) =>
-        find.ancestor(of: find.text(title), matching: find.byType(GameHubCard));
-    final featured = tester.getRect(cardOf('This or That'));
-    expect(tester.widget<GameHubCard>(cardOf('This or That')).featured, isTrue);
-    final others = _launchTitles.skip(1).toList();
-    expect(others, isNotEmpty);
-    for (final title in others) {
-      final rect = tester.getRect(cardOf(title));
-      expect(tester.widget<GameHubCard>(cardOf(title)).featured, isFalse);
-      expect(rect.top, greaterThan(featured.bottom), reason: title);
-      expect(featured.width, greaterThan(rect.width), reason: title);
-      expect(featured.height, greaterThan(rect.height), reason: title);
-    }
-    expect(find.text('Quick choices, shared reveals'), findsOneWidget);
-
-    // Two to a row at the usual text size.
-    expect(
-      tester.getRect(cardOf('Truth or Dare')).top,
-      tester.getRect(cardOf('36 Questions')).top,
-    );
-    expect(
-      tester.getRect(cardOf('Truth or Dare')).height,
-      tester.getRect(cardOf('36 Questions')).height,
-    );
-  });
+      expect(
+        tester.getRect(cardOf('Truth or Dare')).height,
+        tester.getRect(cardOf('36 Questions')).height,
+      );
+    });
+  }
 
   testWidgets('a launch game opens its landing page', (tester) async {
     // Stands in for the sheet's "a built game still selects".
@@ -451,47 +454,50 @@ void main() {
     expect(find.text('In play'), findsNothing);
   });
 
-  testWidgets('the largest text size scrolls and does not overflow', (
-    tester,
-  ) async {
-    // Stands in for the sheet's "the sheet grows with large text".
-    activeRows = [_row('s1', 'truth_or_dare'), _row('s2', 'mirror')];
-    cards['s1'] = _card(status: 'active', turn: 'me');
-    cards['s2'] = _card(status: 'active', turn: 'partner');
-    await pumpHub(tester, textScale: 2);
-    expect(tester.takeException(), isNull);
+  for (final MapEntry(key: themeName, value: theme) in fitThemes.entries) {
+    testWidgets('the largest text size scrolls and does not overflow'
+        '${fitThemeSuffix(themeName, theme)}', (tester) async {
+      // Stands in for the sheet's "the sheet grows with large text".
+      activeRows = [_row('s1', 'truth_or_dare'), _row('s2', 'mirror')];
+      cards['s1'] = _card(status: 'active', turn: 'me');
+      cards['s2'] = _card(status: 'active', turn: 'partner');
+      await pumpHub(tester, textScale: 2, theme: theme);
+      expect(tester.takeException(), isNull);
 
-    await tester.scrollUntilVisible(
-      find.text('Never Have I Ever'),
-      200,
-      scrollable: find.byType(Scrollable).first,
-    );
-    expect(tester.takeException(), isNull);
-    expect(find.text('Never Have I Ever'), findsOneWidget);
-  });
+      await tester.scrollUntilVisible(
+        find.text('Never Have I Ever'),
+        200,
+        scrollable: find.byType(Scrollable).first,
+      );
+      expect(tester.takeException(), isNull);
+      expect(find.text('Never Have I Ever'), findsOneWidget);
+    });
+  }
 
-  testWidgets('at the largest text size cards go one to a row, so no name '
-      'breaks mid-word', (tester) async {
-    Rect cardRect(String title) => tester.getRect(
-      find.ancestor(of: find.text(title), matching: find.byType(GameHubCard)),
-    );
+  for (final MapEntry(key: themeName, value: theme) in fitThemes.entries) {
+    testWidgets('at the largest text size cards go one to a row, so no name '
+        'breaks mid-word${fitThemeSuffix(themeName, theme)}', (tester) async {
+      Rect cardRect(String title) => tester.getRect(
+        find.ancestor(of: find.text(title), matching: find.byType(GameHubCard)),
+      );
 
-    // The control, at the usual size two to a row, is in "lists the five
-    // launch games under Play together".
-    await pumpHub(tester, textScale: 2);
-    final featured = cardRect('This or That');
-    expect(cardRect('Truth or Dare').width, featured.width);
-    expect(
-      cardRect('36 Questions').top,
-      greaterThan(cardRect('Truth or Dare').bottom),
-    );
-    await tester.scrollUntilVisible(
-      find.text('Scenario'),
-      200,
-      scrollable: find.byType(Scrollable).first,
-    );
-    expect(cardRect('Scenario').width, featured.width);
-  });
+      // The control, at the usual size two to a row, is in "lists the five
+      // launch games under Play together".
+      await pumpHub(tester, textScale: 2, theme: theme);
+      final featured = cardRect('This or That');
+      expect(cardRect('Truth or Dare').width, featured.width);
+      expect(
+        cardRect('36 Questions').top,
+        greaterThan(cardRect('Truth or Dare').bottom),
+      );
+      await tester.scrollUntilVisible(
+        find.text('Scenario'),
+        200,
+        scrollable: find.byType(Scrollable).first,
+      );
+      expect(cardRect('Scenario').width, featured.width);
+    });
+  }
 
   testWidgets('everything written on the ground can be read there', (
     tester,

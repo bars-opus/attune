@@ -474,14 +474,21 @@ void main() {
       containsAll(['question', 'question_this', 'reveal_small']),
     );
   });
-  for (final MapEntry(key: name, value: shot) in screens.entries) {
+  for (final (themeName, theme, name, shot) in [
+    for (final themed in fitThemes.entries)
+      for (final screen in screens.entries)
+        (themed.key, themed.value, screen.key, screen.value),
+  ]) {
     testWidgets('$name: every word in the body can be read where it sits, '
-        'on the orange or the ground', (tester) async {
+        'on the orange or the ground${fitThemeSuffix(themeName, theme)}', (
+      tester,
+    ) async {
       await pumpShellScreen(
         tester,
         shot.screen,
         stored: shot.stored,
         size: shot.size,
+        theme: theme,
       );
 
       final ink = inkOnBackdrop(tester);

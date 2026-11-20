@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:attune/app/theme/app_theme.dart';
 import 'package:attune/core/providers/shared_prefs_provider.dart';
 import 'package:attune/core/ui/feedback/haptics.dart';
 import 'package:attune/core/ui/feedback/sound_service.dart';
@@ -87,12 +88,39 @@ Future<SharedPreferences> testPrefs([
   return SharedPreferences.getInstance();
 }
 
+/// The themes a layout's fit is proven under, by name.
+///
+/// The tests' own theme (null: the host's default, plain Roboto) and the
+/// app's light theme, which is what ships. The app's text styles carry a 1.5
+/// line height on several roles, so a fit proven only under the plain theme
+/// is a few pixels short of proven for the app. The app's dark theme has the
+/// same text styles (`AppTextTheme.darkTextTheme` is the light one), so it
+/// fits wherever the light one does.
+///
+/// The app sets no font family; on the test platform (Android) Material's
+/// typography names Roboto, which [loadGameTestFonts] loads offline from the
+/// SDK. A phone running iOS draws in its system font instead.
+final Map<String, ThemeData?> fitThemes = {
+  'test theme': null,
+  'app light theme': AppTheme.lightTheme,
+};
+
+/// What a test run over [fitThemes] adds to its name: nothing under the
+/// tests' own theme, so the test keeps the name it had, and the theme's name
+/// under the app's.
+String fitThemeSuffix(String name, ThemeData? theme) =>
+    theme == null ? '' : ' (under the $name)';
+
 /// Hosts a shell widget with the three things it reads from the app: local
 /// preferences, sound and haptics.
 ///
 /// [overrides] are a game screen's own providers. They go in the same scope:
 /// a second scope around this one would hide the preferences from the
 /// providers that read them.
+///
+/// [theme] is the app's theme around the game; left out, a plain Roboto
+/// one. Pass `AppTheme.lightTheme` or `AppTheme.darkTheme` to host the game
+/// in the app as it ships.
 Widget gameHost(
   Widget child, {
   required SharedPreferences prefs,
@@ -101,6 +129,7 @@ Widget gameHost(
   bool reduceMotion = false,
   double textScale = 1,
   List<Override> overrides = const [],
+  ThemeData? theme,
 }) {
   return ProviderScope(
     overrides: [
@@ -111,7 +140,7 @@ Widget gameHost(
     ],
     child: MaterialApp(
       debugShowCheckedModeBanner: false,
-      theme: ThemeData(fontFamily: 'Roboto'),
+      theme: theme ?? ThemeData(fontFamily: 'Roboto'),
       builder:
           (context, app) => MediaQuery(
             data: MediaQuery.of(context).copyWith(

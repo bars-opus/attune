@@ -101,6 +101,7 @@ void main() {
     FakeSoundService? sounds,
     FakeHaptics? haptics,
     List<Override> overrides = const [],
+    ThemeData? theme,
   }) async {
     useSurface(tester, size);
     await tester.pumpWidget(
@@ -111,6 +112,7 @@ void main() {
         haptics: haptics,
         reduceMotion: reduceMotion,
         overrides: overrides,
+        theme: theme,
       ),
     );
   }
@@ -406,32 +408,34 @@ void main() {
       expect(tester.widget<GamePrimaryButton>(next).busy, isFalse);
     });
 
-    testWidgets('on the smallest phone, long picks and a long name fit', (
-      tester,
-    ) async {
-      const small = Size(320, 568);
-      for (final partner in ['a', 'b']) {
-        await pump(
-          tester,
-          reveal(
-            key: ValueKey(partner),
-            partner: partner,
-            optionA: longOption,
-            optionB: longOption,
-            partnerName: 'Kwame Mensah',
-            hasPrevious: true,
-            onPrevious: () {},
-          ),
-          size: small,
-        );
-        await tester.pumpAndSettle();
+    for (final MapEntry(key: themeName, value: theme) in fitThemes.entries) {
+      testWidgets('on the smallest phone, long picks and a long name fit'
+          '${fitThemeSuffix(themeName, theme)}', (tester) async {
+        const small = Size(320, 568);
+        for (final partner in ['a', 'b']) {
+          await pump(
+            tester,
+            reveal(
+              key: ValueKey(partner),
+              partner: partner,
+              optionA: longOption,
+              optionB: longOption,
+              partnerName: 'Kwame Mensah',
+              hasPrevious: true,
+              onPrevious: () {},
+            ),
+            size: small,
+            theme: theme,
+          );
+          await tester.pumpAndSettle();
 
-        expect(tester.takeException(), isNull);
-        expect(find.text(longOption), findsNWidgets(2));
-        expect(find.text('KWAME MENSAH'), findsOneWidget);
-        expectNothingClipped(tester, small);
-      }
-    });
+          expect(tester.takeException(), isNull);
+          expect(find.text(longOption), findsNWidgets(2));
+          expect(find.text('KWAME MENSAH'), findsOneWidget);
+          expectNothingClipped(tester, small);
+        }
+      });
+    }
   });
 
   group('waiting', () {
@@ -566,29 +570,31 @@ void main() {
       );
     });
 
-    testWidgets('on the smallest phone, a long pick and a long name fit', (
-      tester,
-    ) async {
-      const small = Size(320, 568);
-      await pump(
-        tester,
-        waiting(
-          partnerName: 'Kwame Mensah',
-          optionA: longOption,
-          optionB: longOption,
-          answeredAt: DateTime.now().subtract(const Duration(hours: 3)),
-        ),
-        size: small,
-        reduceMotion: true,
-        overrides: waitingOverrides(),
-      );
-      await tester.pumpAndSettle();
+    for (final MapEntry(key: themeName, value: theme) in fitThemes.entries) {
+      testWidgets('on the smallest phone, a long pick and a long name fit'
+          '${fitThemeSuffix(themeName, theme)}', (tester) async {
+        const small = Size(320, 568);
+        await pump(
+          tester,
+          waiting(
+            partnerName: 'Kwame Mensah',
+            optionA: longOption,
+            optionB: longOption,
+            answeredAt: DateTime.now().subtract(const Duration(hours: 3)),
+          ),
+          size: small,
+          reduceMotion: true,
+          overrides: waitingOverrides(),
+          theme: theme,
+        );
+        await tester.pumpAndSettle();
 
-      expect(tester.takeException(), isNull);
-      expect(find.text('🛋️ $longOption'), findsOneWidget);
-      expect(find.text('Nudge Kwame Mensah'), findsOneWidget);
-      expectNothingClipped(tester, small);
-    });
+        expect(tester.takeException(), isNull);
+        expect(find.text('🛋️ $longOption'), findsOneWidget);
+        expect(find.text('Nudge Kwame Mensah'), findsOneWidget);
+        expectNothingClipped(tester, small);
+      });
+    }
   });
 
   /// The screen's scrolling body: the room the content has.
@@ -610,10 +616,15 @@ void main() {
       'short iPhone': Size(375, 667),
       'phone': phone,
     };
-    for (final MapEntry(key: name, value: size) in sizes.entries) {
+    for (final (themeName, theme, name, size) in [
+      for (final themed in fitThemes.entries)
+        for (final sized in sizes.entries)
+          (themed.key, themed.value, sized.key, sized.value),
+    ]) {
       for (final previous in [true, false]) {
         testWidgets('$name${previous ? ', with Previous round' : ''}: the '
-            'verdict is in view without scrolling', (tester) async {
+            'verdict is in view without scrolling'
+            '${fitThemeSuffix(themeName, theme)}', (tester) async {
           // A question on one line and one on two (at 320 wide, the short
           // one already takes two).
           for (final (partner, question) in [
@@ -633,6 +644,7 @@ void main() {
               ),
               size: size,
               reduceMotion: true,
+              theme: theme,
             );
 
             final body = bodyOf(RevealScreen);

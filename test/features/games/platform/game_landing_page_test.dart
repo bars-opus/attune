@@ -124,6 +124,7 @@ Future<void> _pumpPage(
   required List<GameDefinition> games,
   Size surface = phone,
   List<RouteBase> routes = const [],
+  ThemeData? theme,
 }) async {
   useSurface(tester, surface);
   await tester.pumpWidget(
@@ -132,6 +133,7 @@ Future<void> _pumpPage(
       prefs: await testPrefs(),
       overrides: [gameRegistryProvider.overrideWithValue(GameRegistry(games))],
       routes: routes,
+      theme: theme,
     ),
   );
   await tester.pump();
@@ -830,24 +832,28 @@ void main() {
     expect(find.text('1. Pick one.'), findsOneWidget);
   });
 
-  testWidgets('a long name on a small phone does not overflow', (tester) async {
-    // Review Focus 6.
-    final controller = _FakeController(
-      const GameLandingState(
-        status: GameLandingStatus.waiting,
-        partnerName: 'Bartholomew-James',
-        canRemind: true,
-      ),
-      rows: demoEntries,
-    );
-    await _pumpPage(
-      tester,
-      gameType: 'demo',
-      games: [demoGame(controller: controller)],
-      surface: const Size(320, 568),
-    );
+  for (final MapEntry(key: themeName, value: theme) in fitThemes.entries) {
+    testWidgets('a long name on a small phone does not overflow'
+        '${fitThemeSuffix(themeName, theme)}', (tester) async {
+      // Review Focus 6.
+      final controller = _FakeController(
+        const GameLandingState(
+          status: GameLandingStatus.waiting,
+          partnerName: 'Bartholomew-James',
+          canRemind: true,
+        ),
+        rows: demoEntries,
+      );
+      await _pumpPage(
+        tester,
+        gameType: 'demo',
+        games: [demoGame(controller: controller)],
+        surface: const Size(320, 568),
+        theme: theme,
+      );
 
-    expect(tester.takeException(), isNull);
-    expect(find.text('Waiting for Bartholomew-James'), findsOneWidget);
-  });
+      expect(tester.takeException(), isNull);
+      expect(find.text('Waiting for Bartholomew-James'), findsOneWidget);
+    });
+  }
 }

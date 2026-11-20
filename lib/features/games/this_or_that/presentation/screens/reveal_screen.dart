@@ -216,13 +216,26 @@ class _RevealScreenState extends ConsumerState<RevealScreen>
       letterSpacing: 0,
     );
 
-    // Everything but the question and the picks' own height: the label,
-    // the captions, the tiles' padding and shadow, the verdict and the
-    // gaps between, with a little to spare.
-    const roomyRest = 226.0 + 20;
-    const compactRest = 184.0 + 16;
+    // The label and the verdict, measured as they will be drawn: the app's
+    // text theme sets taller lines than a plain one, and a guess fitted to
+    // one theme ran the verdict past the fold under the other.
+    final drawn =
+        ThisOrThatStageLabel.heightFor(context, _stage) +
+        MatchIndicator.heightFor(
+          context,
+          isMatch: widget.isMatch,
+          width: room.maxWidth,
+        );
+    // Everything else but the question and the picks' own height: the
+    // captions, the tiles' padding and shadow and the gaps between, with a
+    // little to spare.
+    const roomyRest = 156.0;
+    const compactRest = 98.0;
     final spare =
-        room.maxHeight - roomyRest - _questionHeight(headline, room.maxWidth);
+        room.maxHeight -
+        roomyRest -
+        drawn -
+        _questionHeight(headline, room.maxWidth);
     final compact = spare < 96;
     final question =
         compact ? headline?.copyWith(fontSize: 20, height: 1.15) : headline;
@@ -230,6 +243,7 @@ class _RevealScreenState extends ConsumerState<RevealScreen>
         compact
             ? (room.maxHeight -
                     compactRest -
+                    drawn -
                     _questionHeight(question, room.maxWidth))
                 .clamp(0.0, 96.0)
             : spare.clamp(96.0, 168.0);
@@ -239,7 +253,7 @@ class _RevealScreenState extends ConsumerState<RevealScreen>
       children: [
         const SizedBox(height: 4),
         ThisOrThatStageLabel(
-          text: 'The reveal',
+          text: _stage,
           icon: Icons.visibility_rounded,
           // On the game's orange, where only white reads.
           color: palette.ink,
@@ -348,6 +362,8 @@ class _RevealScreenState extends ConsumerState<RevealScreen>
       ],
     );
   }
+
+  static const String _stage = 'The reveal';
 
   /// Who the second pick belongs to, as a caption says it.
   String get _partner => thisOrThatPartnerLabel(widget.partnerName);

@@ -57,6 +57,7 @@ void main() {
     Size surface = phone,
     FakeViewPadding? padding,
     bool reduceMotion = true,
+    ThemeData? theme,
   }) async {
     useSurface(tester, surface);
     if (padding != null) tester.view.padding = padding;
@@ -83,6 +84,7 @@ void main() {
           ),
           currentUserIdProvider.overrideWithValue('user-a'),
         ],
+        theme: theme,
       ),
     );
     // One frame to build, one for the tutorial's measurement to land.
@@ -414,48 +416,50 @@ void main() {
     );
   });
 
-  testWidgets('every tutorial step fits its bubble on a 320 px phone', (
-    tester,
-  ) async {
-    final shown = <String>[];
-    for (final name in ['Ama', 'Partner']) {
-      await pump(
-        tester,
-        stored: const {},
-        screen: question(partnerName: name, key: ValueKey(name)),
-        surface: const Size(320, 568),
-      );
-
-      for (var step = 0; step < 3; step++) {
-        final bubble = find.byType(GameCoachBubble);
-        expect(bubble, findsOneWidget);
-        shown.add(tester.widget<GameCoachBubble>(bubble).text);
-
-        // The words are in a scroll view that gives way when space is
-        // short: fitting means it has nothing to scroll.
-        final scroll = find.descendant(
-          of: bubble,
-          matching: find.byType(Scrollable),
+  for (final MapEntry(key: themeName, value: theme) in fitThemes.entries) {
+    testWidgets('every tutorial step fits its bubble on a 320 px phone'
+        '${fitThemeSuffix(themeName, theme)}', (tester) async {
+      final shown = <String>[];
+      for (final name in ['Ama', 'Partner']) {
+        await pump(
+          tester,
+          stored: const {},
+          screen: question(partnerName: name, key: ValueKey(name)),
+          surface: const Size(320, 568),
+          theme: theme,
         );
-        expect(scroll, findsOneWidget);
-        final position = tester.state<ScrollableState>(scroll).position;
-        expect(position.maxScrollExtent, 0, reason: shown.last);
-        expect(tester.takeException(), isNull);
 
-        final action = step < 2 ? 'Next' : 'Got it';
-        final screenRect = Offset.zero & const Size(320, 568);
-        expect(
-          screenRect.contains(tester.getRect(find.text(action)).bottomRight),
-          isTrue,
-          reason: shown.last,
-        );
-        await tester.tap(find.text(action));
-        await tester.pumpAndSettle();
+        for (var step = 0; step < 3; step++) {
+          final bubble = find.byType(GameCoachBubble);
+          expect(bubble, findsOneWidget);
+          shown.add(tester.widget<GameCoachBubble>(bubble).text);
+
+          // The words are in a scroll view that gives way when space is
+          // short: fitting means it has nothing to scroll.
+          final scroll = find.descendant(
+            of: bubble,
+            matching: find.byType(Scrollable),
+          );
+          expect(scroll, findsOneWidget);
+          final position = tester.state<ScrollableState>(scroll).position;
+          expect(position.maxScrollExtent, 0, reason: shown.last);
+          expect(tester.takeException(), isNull);
+
+          final action = step < 2 ? 'Next' : 'Got it';
+          final screenRect = Offset.zero & const Size(320, 568);
+          expect(
+            screenRect.contains(tester.getRect(find.text(action)).bottomRight),
+            isTrue,
+            reason: shown.last,
+          );
+          await tester.tap(find.text(action));
+          await tester.pumpAndSettle();
+        }
+        expect(find.byType(GameCoachBubble), findsNothing);
       }
-      expect(find.byType(GameCoachBubble), findsNothing);
-    }
-    expect(shown, hasLength(6));
-  });
+      expect(shown, hasLength(6));
+    });
+  }
 
   // Phones the tutorial has to work on, with the space a notch and a home
   // bar take on a real one. The 375 x 812 phone without insets is the
@@ -469,11 +473,23 @@ void main() {
       const FakeViewPadding(top: 47, bottom: 34),
     ),
   };
-  for (final MapEntry(key: name, value: (size, padding)) in phones.entries) {
+  for (final (themeName, theme, name, (size, padding)) in [
+    for (final themed in fitThemes.entries)
+      for (final sized in phones.entries)
+        (themed.key, themed.value, sized.key, sized.value),
+  ]) {
     for (final step in [1, 2, 3]) {
       testWidgets('on a $name phone, step $step\'s bubble covers neither what '
-          'it points at nor the tabs', (tester) async {
-        await pump(tester, stored: const {}, surface: size, padding: padding);
+          'it points at nor the tabs${fitThemeSuffix(themeName, theme)}', (
+        tester,
+      ) async {
+        await pump(
+          tester,
+          stored: const {},
+          surface: size,
+          padding: padding,
+          theme: theme,
+        );
         for (var next = 1; next < step; next++) {
           await tester.tap(find.text('Next'));
           await tester.pumpAndSettle();
@@ -513,21 +529,25 @@ void main() {
     expect(step2Cases, isNotEmpty);
     expect(step2Cases.last.$1.length, 17);
   });
-  for (final size in [
-    const Size(320, 568),
-    const Size(360, 640),
-    const Size(375, 667),
+  for (final (themeName, theme, size) in [
+    for (final themed in fitThemes.entries)
+      for (final size in [
+        const Size(320, 568),
+        const Size(360, 640),
+        const Size(375, 667),
+      ])
+        (themed.key, themed.value, size),
   ]) {
     for (final (partner, asked) in step2Cases) {
       testWidgets('step 2 on a ${size.width.toInt()} x ${size.height.toInt()} '
-          'phone, for $partner and "$asked", keeps clear of the tabs', (
-        tester,
-      ) async {
+          'phone, for $partner and "$asked", keeps clear of the tabs'
+          '${fitThemeSuffix(themeName, theme)}', (tester) async {
         await pump(
           tester,
           stored: const {},
           surface: size,
           screen: question(partnerName: partner, questionText: asked),
+          theme: theme,
         );
         await tester.tap(find.text('Next'));
         await tester.pumpAndSettle();

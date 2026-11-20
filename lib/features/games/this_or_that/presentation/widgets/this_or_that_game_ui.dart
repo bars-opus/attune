@@ -256,6 +256,37 @@ class ThisOrThatStageLabel extends StatelessWidget {
   final IconData? icon;
   final Color? color;
 
+  static const double _iconSize = 16;
+
+  static TextStyle? _style(BuildContext context, Color color) =>
+      Theme.of(context).textTheme.labelMedium?.copyWith(
+        color: color,
+        fontWeight: FontWeight.w800,
+        letterSpacing: 0,
+      );
+
+  /// How tall a label of [text] is drawn on one line, in [context]'s theme
+  /// and text size: the app's text theme sets a taller line than a plain
+  /// one, so a screen fitting itself to its room measures it.
+  static double heightFor(
+    BuildContext context,
+    String text, {
+    bool withIcon = true,
+  }) {
+    final painter = TextPainter(
+      text: TextSpan(
+        text: text.toUpperCase(),
+        style: _style(context, ThisOrThatPalette.of(context).mutedInk),
+      ),
+      textDirection: Directionality.of(context),
+      textScaler: MediaQuery.textScalerOf(context),
+      maxLines: 1,
+    )..layout();
+    final height = painter.height;
+    painter.dispose();
+    return withIcon ? math.max(_iconSize, height) : height;
+  }
+
   @override
   Widget build(BuildContext context) {
     final palette = ThisOrThatPalette.of(context);
@@ -266,17 +297,10 @@ class ThisOrThatStageLabel extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           if (icon != null) ...[
-            Icon(icon, size: 16, color: effectiveColor),
+            Icon(icon, size: _iconSize, color: effectiveColor),
             const SizedBox(width: 6),
           ],
-          Text(
-            text.toUpperCase(),
-            style: Theme.of(context).textTheme.labelMedium?.copyWith(
-              color: effectiveColor,
-              fontWeight: FontWeight.w800,
-              letterSpacing: 0,
-            ),
-          ),
+          Text(text.toUpperCase(), style: _style(context, effectiveColor)),
         ],
       ),
     );

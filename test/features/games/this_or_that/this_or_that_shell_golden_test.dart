@@ -49,4 +49,29 @@ void main() {
       );
     }, skip: !comparedHere);
   }
+
+  // Under the app's own light theme, as it ships: the dark game holds
+  // inside a light app, and its taller text lines still fit.
+  final appLight = fitThemes['app light theme'];
+  final shell = thisOrThatShellScreens();
+  for (final MapEntry(key: name, value: screen) in {
+    'question': thisOrThatQuestionScreens()['question']!.screen,
+    'reveal': shell['reveal_differ']!,
+    'end': shell['end']!,
+  }.entries) {
+    testWidgets('$name on a phone, under the app light theme', (tester) async {
+      expect(appLight, isNotNull);
+      await pumpShellScreen(
+        tester,
+        screen,
+        stored: thisOrThatQuestionScreens()['question']!.stored,
+        theme: appLight,
+      );
+
+      await expectLater(
+        find.byType(MaterialApp),
+        matchesGoldenFile('goldens/this_or_that_shell_$name.app_light.phone.png'),
+      );
+    }, skip: !comparedHere);
+  }
 }
