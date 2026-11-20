@@ -12,6 +12,7 @@ import 'package:attune/features/dating/data/dating_supabase_client.dart'
 import 'package:attune/features/dating/gentle_wait/gentle_wait_providers.dart';
 import 'package:attune/features/dating/gentle_wait/gentle_wait_repository.dart';
 import 'package:attune/features/dating/routes/dating_routes.dart';
+import 'package:attune/features/dating/settings/dating_abroad.dart';
 import 'package:attune/features/dating/verify/dating_verification.dart';
 import 'package:attune/features/dating/verify/dating_verification_providers.dart';
 import 'package:attune/features/dating/verify/dating_verification_repository.dart';
@@ -201,6 +202,8 @@ Future<DatingShell> pumpDatingShell(
         datingNeverIntroduceGatewayProvider.overrideWithValue(
           FakeNeverIntroduce(),
         ),
+        // Spec 2 W5c: not eligible for Other countries unless a test says.
+        datingAbroadGatewayProvider.overrideWithValue(FakeAbroad()),
         ...overrides,
       ],
       child: ScreenUtilConfig.builder(
@@ -252,6 +255,7 @@ List<Override> datingShellOverrides({
   // Spec 2 W4b: this phone has an install id unless a test says not.
   datingDeviceReadyProvider.overrideWith((ref) async => deviceReady),
   datingNeverIntroduceGatewayProvider.overrideWithValue(FakeNeverIntroduce()),
+  datingAbroadGatewayProvider.overrideWithValue(FakeAbroad()),
 ];
 
 /// The Dating section's overrides for a Spec 1 test that renders Me on the

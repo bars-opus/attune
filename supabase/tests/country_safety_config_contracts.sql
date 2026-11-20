@@ -148,7 +148,7 @@ BEGIN
   IF (SELECT enabled FROM public.feature_flags WHERE key = 'dating_same_gender_matching') IS DISTINCT FROM false
      OR (SELECT count(*) FROM private.flag_production_gates
           WHERE flag_key IN ('dating_mode_enabled', 'dating_candidate_generation', 'dating_match_messaging',
-                             'dating_profile_photos', 'dating_alignment_algorithm_v1', 'dating_same_gender_matching')) IS DISTINCT FROM 6 THEN
+                             'dating_profile_photos', 'dating_same_gender_matching')) IS DISTINCT FROM 5 THEN -- Spec 2 W5a: the alignment flag is gone
     RAISE EXCEPTION 'CONTRACT VIOLATED: dating_same_gender_matching is not inserted off, or a Dating flag has no production gate row';
   END IF;
 END $$;
@@ -585,16 +585,11 @@ END $$;
 CREATE FUNCTION pg_temp.intro(p_a uuid, p_b uuid, p_state text DEFAULT 'presented', p_alg text DEFAULT 'w1d-switch')
 RETURNS uuid LANGUAGE plpgsql AS $$
 DECLARE
-  v_low uuid;
-  v_high uuid;
   v_id uuid;
 BEGIN
-  INSERT INTO public.dating_feature_snapshots (user_id, algorithm_version) VALUES (least(p_a, p_b), p_alg) RETURNING id INTO v_low;
-  INSERT INTO public.dating_feature_snapshots (user_id, algorithm_version) VALUES (greatest(p_a, p_b), p_alg) RETURNING id INTO v_high;
-  INSERT INTO public.dating_introductions (pair_key, user_low_id, user_high_id, display_band, state,
-                                           algorithm_version, snapshot_low_id, snapshot_high_id, internal_score)
-  VALUES (public.dating_pair_key(p_a, p_b), least(p_a, p_b), greatest(p_a, p_b), 'some_shared_ground', p_state,
-          p_alg, v_low, v_high, 0.5) RETURNING id INTO v_id;
+  INSERT INTO public.dating_introductions (pair_key, user_low_id, user_high_id, state, algorithm_version) -- Spec 2 W5a
+  VALUES (public.dating_pair_key(p_a, p_b), least(p_a, p_b), greatest(p_a, p_b), p_state, p_alg) -- Spec 2 W5a
+  RETURNING id INTO v_id;
   RETURN v_id;
 END $$;
 
@@ -748,8 +743,10 @@ BEGIN
   v_uk_unreadable2 := pg_temp.sg_person('26', 'GB', '{"identity": "woman", "specific": null, "specific_text": null, "pronouns": null, "pools": ["woman"]}',
                                         '{"seeking": ["man"]}');
   UPDATE public.dating_profile_sensitive SET identity_enc = '\x01deadbeef'::bytea WHERE user_id = v_uk_unreadable2;
-  v_i_gen := pg_temp.intro(v_man, v_uk_nb, 'generated', 'w1d-generated');
-  v_i_int := pg_temp.intro(v_man, v_uk_nb, 'interested', 'w1d-interested');
+  -- Spec 2 W5a (§5.2 14): one introduction per pair ever, so each state has its own
+  -- Spec 2 W5a not-man-woman pair (a non-binary person, then a man).
+  v_i_gen := pg_temp.intro(v_man, v_uk_nb_abroad, 'generated', 'w1d-generated'); -- Spec 2 W5a
+  v_i_int := pg_temp.intro(v_man, v_uk_man, 'interested', 'w1d-interested'); -- Spec 2 W5a
   v_i_unreadable := pg_temp.intro(v_man, v_uk_unreadable2);
   -- I-3: a UK person who hasn't answered (no stored identity), introduced to
   -- a Ghana man: an unknown pair is never man-woman.
@@ -1750,8 +1747,8 @@ BEGIN
   -- Fix round 1 (M-6): NULL-safe (a missing flag or current row fails).
   IF (SELECT count(*) FROM public.feature_flags
        WHERE key IN ('dating_mode_enabled', 'dating_candidate_generation', 'dating_match_messaging',
-                     'dating_profile_photos', 'dating_alignment_algorithm_v1', 'dating_same_gender_matching')
-         AND enabled) IS DISTINCT FROM 6::bigint
+                     'dating_profile_photos', 'dating_same_gender_matching') -- Spec 2 W5a: the alignment flag is gone
+         AND enabled) IS DISTINCT FROM 5::bigint
      OR (pg_temp.current('GH')).dating_enabled IS NOT TRUE OR (pg_temp.current('GB')).dating_enabled IS NOT TRUE
      OR (pg_temp.current('GH')).open_regions IS DISTINCT FROM ARRAY['AA', 'AH'] THEN
     RAISE EXCEPTION 'CONTRACT VIOLATED: in development the dev script did not turn every Dating flag on and open GH and GB';

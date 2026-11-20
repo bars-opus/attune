@@ -93,12 +93,20 @@ Widget? datingStepScreen(String step, DatingStepNav nav) => switch (step) {
 /// only, never a path (so a link can't send anyone outside Dating) and
 /// never anything typed. Final fix (M-8): 'section' is Me's Dating
 /// section (the kill-switch "Choose again").
-const _datingReturnPlaces = {'preview', 'settings', 'ready', 'section'};
+const _datingReturnPlaces = {
+  'preview',
+  'settings',
+  'ready',
+  'section',
+  // Spec 2 W5b (§3.4): Widen who I meet's editors.
+  'today',
+};
 
 /// Final fix (M-9): where a `from` step goes when there is no page to go
 /// back to (it was opened again through the unlock).
 String _datingReturnLocation(String from) => switch (from) {
   'settings' => DatingPaths.settings,
+  'today' => DatingPaths.today,
   'section' => homeLocation(tab: AppTab.me),
   _ => DatingPaths.step(from),
 };

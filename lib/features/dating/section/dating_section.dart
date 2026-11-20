@@ -324,7 +324,14 @@ class _DatingSectionState extends ConsumerState<DatingSection>
         return _SectionCard(
           title: loc.flow_slotDatingTitle,
           lines: [loc.dating_sectionActive],
-          children: [if (settings != null) settings],
+          children: [
+            // Spec 2 W5b (§3.1, §3.4): the day's introductions.
+            FlowPrimaryButton(
+              label: loc.dating_sectionOpenToday,
+              onPressed: () => context.push(DatingPaths.today),
+            ),
+            if (settings != null) settings,
+          ],
         );
       case DatingHomeState.paused:
         return _paused(context, loc, h, online, settings);

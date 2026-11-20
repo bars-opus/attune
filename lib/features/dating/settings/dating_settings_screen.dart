@@ -25,6 +25,7 @@ import 'package:attune/features/dating/photos/dating_photos_providers.dart';
 import 'package:attune/features/dating/routes/dating_routes.dart';
 import 'package:attune/features/dating/routes/dating_setup_steps.dart'
     show datingStepLocation;
+import 'package:attune/features/dating/settings/dating_abroad.dart';
 import 'package:attune/features/dating/section/dating_lifecycle_errors.dart';
 import 'package:attune/features/dating/setup/dating_setup_providers.dart';
 import 'package:attune/features/dating/setup/dating_step_frame.dart'
@@ -249,6 +250,11 @@ class _DatingSettingsScreenState extends ConsumerState<DatingSettingsScreen> {
             ? ref.watch(datingNeverIntroduceProvider(account)).valueOrNull
             : null;
     final kept = keptRead?.keptCount ?? 0;
+    // Spec 2 W5c (§3.12): Other countries, once the person is eligible.
+    final abroad =
+        showRows
+            ? ref.watch(datingAbroadProvider(account)).valueOrNull
+            : null;
     final granted = ref.watch(pushAskerProvider).permissionGranted;
     // Fix 1 (M-5): an icon, so the titles line up with the rows'.
     Widget toggle(
@@ -341,6 +347,16 @@ class _DatingSettingsScreenState extends ConsumerState<DatingSettingsScreen> {
                     Icons.near_me_outlined,
                     () => _open('where'),
                   ),
+                  // W5 final fix (M-11): eligible or not, so a person who
+                  // stopped being eligible can still turn a country off
+                  // (the page shows them no list).
+                  if (abroad != null && abroad.ok)
+                    row(
+                      loc.dating_abroadTitle,
+                      '',
+                      Icons.public,
+                      () => context.push(DatingPaths.abroad),
+                    ),
                   toggle(
                     Icons.photo_outlined,
                     loc.dating_settingsPhotosAfter,
@@ -397,6 +413,28 @@ class _DatingSettingsScreenState extends ConsumerState<DatingSettingsScreen> {
                       liveRegion: true,
                     ),
                 ],
+                // Task 10 fix round 1 (M-1): on a phone Dating doesn't
+                // trust, Other countries offers only "Turn off every other
+                // country" (the server narrows on any phone); no list.
+                if (!showRows &&
+                    home?.state == DatingHomeState.reverifyDevice)
+                  row(
+                    loc.dating_abroadTitle,
+                    '',
+                    Icons.public,
+                    () => context.push(DatingPaths.abroad),
+                  ),
+                // Spec 2 W5c (§3.12, in its order; carry 16): the list.
+                // Adding only reduces exposure, so it is offered on a phone
+                // Dating doesn't trust too (removing asks the server's
+                // check).
+                if (showRows || home?.state == DatingHomeState.reverifyDevice)
+                  row(
+                    loc.dating_neverTitle,
+                    '',
+                    Icons.block_outlined,
+                    () => context.push(DatingPaths.neverIntroduce),
+                  ),
                 // Switches are SwitchListTiles: the title is the switch's own
                 // semantic label and a tap anywhere on the row toggles it.
                 if (home?.notice.requested ?? false)

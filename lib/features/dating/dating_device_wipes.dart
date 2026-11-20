@@ -5,6 +5,7 @@
 // never edited. Nothing here is protective: the Dating lock stays.
 import 'package:attune/core/device/device_wipe_registry.dart';
 import 'package:attune/features/dating/lock/dating_unlock.dart';
+import 'package:attune/features/dating/today/dating_photo_memory.dart';
 
 void registerDatingDeviceWipes([DeviceWipeRegistry? registry]) {
   (registry ?? DeviceWipeRegistry.instance).register(
@@ -12,6 +13,14 @@ void registerDatingDeviceWipes([DeviceWipeRegistry? registry]) {
       id: 'spec2.dating_session',
       moments: {WipeMoment.signOut, WipeMoment.quickExit},
       run: DatingSessionMemory.clear,
+    ),
+  );
+  // Spec 2 W5b (§3.4, §6.7): the other people's photos held in memory.
+  (registry ?? DeviceWipeRegistry.instance).register(
+    const DeviceWipeEntry(
+      id: 'spec2.dating_photos',
+      moments: {WipeMoment.signOut, WipeMoment.quickExit},
+      run: DatingPhotoMemory.clear,
     ),
   );
 }

@@ -357,22 +357,13 @@ BEGIN
   END IF;
 END $$;
 
--- A pair's introduction ([p_state]), with the two snapshots today's schema
--- needs (dropped in W5a).
+-- A pair's introduction ([p_state]), in W5a's shape.
 CREATE FUNCTION pg_temp.intro(p_a uuid, p_b uuid, p_state text DEFAULT 'presented') RETURNS uuid LANGUAGE plpgsql AS $$
 DECLARE
-  v_low uuid;
-  v_high uuid;
   v_id uuid;
 BEGIN
-  INSERT INTO public.dating_feature_snapshots (user_id, algorithm_version)
-  VALUES (least(p_a, p_b), 'spec2-w1-contract') RETURNING id INTO v_low;
-  INSERT INTO public.dating_feature_snapshots (user_id, algorithm_version)
-  VALUES (greatest(p_a, p_b), 'spec2-w1-contract') RETURNING id INTO v_high;
-  INSERT INTO public.dating_introductions (pair_key, user_low_id, user_high_id, display_band, state,
-                                           algorithm_version, snapshot_low_id, snapshot_high_id, internal_score)
-  VALUES (public.dating_pair_key(p_a, p_b), least(p_a, p_b), greatest(p_a, p_b), 'some_shared_ground', p_state,
-          'spec2-w1-contract', v_low, v_high, 0.5)
+  INSERT INTO public.dating_introductions (pair_key, user_low_id, user_high_id, state, algorithm_version) -- Spec 2 W5a
+  VALUES (public.dating_pair_key(p_a, p_b), least(p_a, p_b), greatest(p_a, p_b), p_state, 'spec2-w1-contract') -- Spec 2 W5a
   RETURNING id INTO v_id;
   RETURN v_id;
 END $$;
@@ -689,7 +680,7 @@ BEGIN
   -- Generation (its flag on, inside this transaction only).
   UPDATE public.feature_flags SET enabled = true WHERE key = 'dating_candidate_generation';
   v_before := pg_temp.mismatch_count();
-  v := public.run_dating_candidate_generation(NULL);
+  v := public.run_dating_generation_tick();
   IF v IS DISTINCT FROM '{"skipped": "exclusion_key_mismatch"}'::jsonb THEN
     RAISE EXCEPTION 'CONTRACT VIOLATED: under a rotated exclusion key generation did not refuse: %', v;
   END IF;
@@ -2634,7 +2625,6 @@ BEGIN
      OR EXISTS (SELECT 1 FROM public.dating_photo_upload_intents WHERE user_id = v_a)
      OR EXISTS (SELECT 1 FROM public.dating_session_context WHERE user_id = v_a)
      OR EXISTS (SELECT 1 FROM public.dating_date_reflections WHERE author_user_id = v_a)
-     OR EXISTS (SELECT 1 FROM public.dating_feature_snapshots WHERE user_id = v_a)
      OR NOT EXISTS (SELECT 1 FROM public.dating_date_reflections WHERE author_user_id = v_b) THEN
     RAISE EXCEPTION 'CONTRACT VIOLATED: exit left a notify request, an upload, the session row, a reflection or a snapshot (or took the other person''s reflection)';
   END IF;
@@ -2739,10 +2729,10 @@ BEGIN
   -- Generation's key guard (mutant 5).
   UPDATE public.feature_flags SET enabled = true WHERE key = 'dating_candidate_generation';
   PERFORM set_config('app.settings.dating_exclusion_key', '', true);
-  v := public.run_dating_candidate_generation(NULL);
+  v := public.run_dating_generation_tick();
   PERFORM set_config('app.settings.dating_exclusion_key', 'spec2-w1-contract-exclusion-key', true);
   PERFORM set_config('app.settings.dating_field_key', '', true);
-  v := jsonb_build_array(v, public.run_dating_candidate_generation(NULL));
+  v := jsonb_build_array(v, public.run_dating_generation_tick());
   PERFORM set_config('app.settings.dating_field_key', 'spec2-w1d-identity-field-key-0123456789abcdef', true);
   UPDATE public.feature_flags SET enabled = false WHERE key = 'dating_candidate_generation';
   IF v IS DISTINCT FROM '[{"skipped": "missing_key"}, {"skipped": "missing_key"}]'::jsonb
@@ -3052,12 +3042,12 @@ BEGIN
     RAISE EXCEPTION 'CONTRACT VIOLATED: with no stored fingerprint activation went ahead, was not counted or seeded it';
   END IF;
   UPDATE public.feature_flags SET enabled = false WHERE key = 'dating_candidate_generation';
-  v := jsonb_build_array(public.run_dating_candidate_generation(NULL));
+  v := jsonb_build_array(public.run_dating_generation_tick());
   UPDATE public.feature_flags SET enabled = true WHERE key = 'dating_candidate_generation';
   v_before := pg_temp.mismatch_count();
-  v := v || jsonb_build_array(public.run_dating_candidate_generation(NULL));
+  v := v || jsonb_build_array(public.run_dating_generation_tick());
   PERFORM set_config('app.settings.dating_field_key', '', true);
-  v := v || jsonb_build_array(public.run_dating_candidate_generation(NULL));
+  v := v || jsonb_build_array(public.run_dating_generation_tick());
   PERFORM set_config('app.settings.dating_field_key', 'spec2-w1d-identity-field-key-0123456789abcdef', true);
   UPDATE public.feature_flags SET enabled = false WHERE key = 'dating_candidate_generation';
   IF v IS DISTINCT FROM '[{"skipped": "flag_disabled"}, {"skipped": "exclusion_key_mismatch"}, {"skipped": "exclusion_key_mismatch"}]'::jsonb
@@ -3148,7 +3138,7 @@ BEGIN
   v_e := public.activate_dating_profile('w1d-fk-act-00001');
   PERFORM pg_temp.as_owner();
   UPDATE public.feature_flags SET enabled = true WHERE key = 'dating_candidate_generation';
-  v := public.run_dating_candidate_generation(NULL);
+  v := public.run_dating_generation_tick();
   UPDATE public.feature_flags SET enabled = false WHERE key = 'dating_candidate_generation';
   IF v_e.state IS DISTINCT FROM 'profile_draft' OR (SELECT state FROM public.dating_enrollments WHERE user_id = v_u) IS DISTINCT FROM 'profile_draft'
      OR v IS DISTINCT FROM '{"skipped": "field_key_mismatch"}'::jsonb

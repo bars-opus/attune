@@ -8340,6 +8340,618 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'A check is already open on another phone. Finish it there, or try again later.'**
   String get dating_verifySessionElsewhere;
+
+  /// Spec 2 §3.4 the introduction card's reasons heading.
+  ///
+  /// In en, this message translates to:
+  /// **'Why you two were introduced'**
+  String get dating_cardWhyTitle;
+
+  /// Spec 2 §3.4, §5.8: always after the reasons.
+  ///
+  /// In en, this message translates to:
+  /// **'Attune can\'t predict chemistry; meeting is how you find out.'**
+  String get dating_cardChemistry;
+
+  /// Spec 2 §5.8 same_intention_timeline (within_two_years); the phrase as the card's (§3.4).
+  ///
+  /// In en, this message translates to:
+  /// **'You both said marriage, in the next year or two.'**
+  String get dating_reasonMarriageSoon;
+
+  /// Spec 2 §5.8 same_intention_timeline (few_years); the phrase as the card's (§3.4).
+  ///
+  /// In en, this message translates to:
+  /// **'You both said marriage, in a few years.'**
+  String get dating_reasonMarriageFew;
+
+  /// Spec 2 §5.8 same_intention_timeline (no_set_time); the phrase as the card's (§3.4).
+  ///
+  /// In en, this message translates to:
+  /// **'You both said marriage, with no set time.'**
+  String get dating_reasonMarriageNone;
+
+  /// Spec 2 §5.8 same_intention (marriage).
+  ///
+  /// In en, this message translates to:
+  /// **'You\'re both looking for marriage.'**
+  String get dating_reasonSameMarriage;
+
+  /// Spec 2 §5.8 same_intention (committed).
+  ///
+  /// In en, this message translates to:
+  /// **'You\'re both looking for a committed relationship.'**
+  String get dating_reasonSameCommitted;
+
+  /// Spec 2 §5.8 same_intention (companionship; the card's phrase, §3.4).
+  ///
+  /// In en, this message translates to:
+  /// **'You\'re both looking for companionship, at a comfortable pace.'**
+  String get dating_reasonSameCompanionship;
+
+  /// Spec 2 §5.8 same_intention (not_sure). Plan copy: 'looking for not sure yet' doesn't read.
+  ///
+  /// In en, this message translates to:
+  /// **'You\'re both still working out what you\'re looking for.'**
+  String get dating_reasonSameNotSure;
+
+  /// Spec 2 §5.8 compatible_intention.
+  ///
+  /// In en, this message translates to:
+  /// **'You both want something committed.'**
+  String get dating_reasonCompatible;
+
+  /// Spec 2 §5.8 children_want_yes.
+  ///
+  /// In en, this message translates to:
+  /// **'You both want children.'**
+  String get dating_reasonChildrenYes;
+
+  /// Spec 2 §5.8 children_want_no.
+  ///
+  /// In en, this message translates to:
+  /// **'Neither of you wants children.'**
+  String get dating_reasonChildrenNo;
+
+  /// Spec 2 §5.8 children_have_both.
+  ///
+  /// In en, this message translates to:
+  /// **'You both have children.'**
+  String get dating_reasonChildrenHave;
+
+  /// Spec 2 §5.8 same_faith (only when both show faith).
+  ///
+  /// In en, this message translates to:
+  /// **'You\'re both {faith}.'**
+  String dating_reasonSameFaith(String faith);
+
+  /// Spec 2 §5.8 faith_matters (only when both show faith).
+  ///
+  /// In en, this message translates to:
+  /// **'Faith matters a lot to you both.'**
+  String get dating_reasonFaithMatters;
+
+  /// Spec 2 §5.8 family_same (early).
+  ///
+  /// In en, this message translates to:
+  /// **'You both want family involved early.'**
+  String get dating_reasonFamilyEarly;
+
+  /// Spec 2 §5.8 family_same (when_serious).
+  ///
+  /// In en, this message translates to:
+  /// **'You both want family involved once it\'s serious.'**
+  String get dating_reasonFamilyWhenSerious;
+
+  /// Spec 2 §5.8 family_same (our_decision).
+  ///
+  /// In en, this message translates to:
+  /// **'You\'d both make the decision yourselves first.'**
+  String get dating_reasonFamilyOwn;
+
+  /// Spec 2 §5.8 same_side / same_region.
+  ///
+  /// In en, this message translates to:
+  /// **'You\'re both in {place}.'**
+  String dating_reasonSamePlace(String place);
+
+  /// Spec 2 §5.8: across borders, when nothing else applies.
+  ///
+  /// In en, this message translates to:
+  /// **'You\'re both open to meeting across borders.'**
+  String get dating_reasonAcrossBorders;
+
+  /// Spec 2 §3.4 Today's title (/dating/today). Plan copy.
+  ///
+  /// In en, this message translates to:
+  /// **'Today'**
+  String get dating_todayTitle;
+
+  /// Spec 2 §3.4 today_state before_drop.
+  ///
+  /// In en, this message translates to:
+  /// **'Your introductions arrive at {time}.'**
+  String dating_todayBeforeDrop(String time);
+
+  /// Spec 2 §3.4 today_state empty.
+  ///
+  /// In en, this message translates to:
+  /// **'No good fit today. Attune is still small in {region}. We\'ll introduce you when there\'s a good fit.'**
+  String dating_todayEmpty(String region);
+
+  /// Spec 2 §3.4 today_state empty when the region's name can't be shown. Plan copy.
+  ///
+  /// In en, this message translates to:
+  /// **'No good fit today. We\'ll introduce you when there\'s a good fit.'**
+  String get dating_todayEmptyNoRegion;
+
+  /// Spec 2 §3.4 today_state queue_full.
+  ///
+  /// In en, this message translates to:
+  /// **'You have introductions waiting. New ones arrive after you\'ve looked at these.'**
+  String get dating_todayQueueFull;
+
+  /// Spec 2 §3.4 today_state paused_open_chats.
+  ///
+  /// In en, this message translates to:
+  /// **'You have 3 conversations going. New introductions start again when one ends or you meet.'**
+  String get dating_todayPausedChats;
+
+  /// Spec 2 §3.4 introductions from earlier days (no dates, no countdown).
+  ///
+  /// In en, this message translates to:
+  /// **'Still waiting for you'**
+  String get dating_todayWaiting;
+
+  /// Spec 2 §3.4, §5.6 the Widen sheet's button and title.
+  ///
+  /// In en, this message translates to:
+  /// **'Widen who I meet'**
+  String get dating_todayWiden;
+
+  /// Spec 2 §3.4 Widen sheet row.
+  ///
+  /// In en, this message translates to:
+  /// **'Ages: {min}–{max}'**
+  String dating_widenAges(int min, int max);
+
+  /// Spec 2 §3.4 Widen sheet row; scope is My side / My region / Anywhere in {country}.
+  ///
+  /// In en, this message translates to:
+  /// **'How far: {scope}'**
+  String dating_widenHowFar(String scope);
+
+  /// Spec 2 §3.4 Widen sheet: the country scope when the country's name isn't on the card. Plan copy.
+  ///
+  /// In en, this message translates to:
+  /// **'Anywhere in my country'**
+  String get dating_widenCountry;
+
+  /// Spec 2 §3.4 the card's filled action.
+  ///
+  /// In en, this message translates to:
+  /// **'Interested'**
+  String get dating_cardInterested;
+
+  /// Spec 2 §3.4 the card's outlined action.
+  ///
+  /// In en, this message translates to:
+  /// **'Not for me'**
+  String get dating_cardNotForMe;
+
+  /// Spec 2 §3.4 after Interested.
+  ///
+  /// In en, this message translates to:
+  /// **'Noted. If {name} is interested too, you\'ll both see it here.'**
+  String dating_cardNoted(String name);
+
+  /// Spec 2 §3.4 the snackbar after Not for me (its action is Undo).
+  ///
+  /// In en, this message translates to:
+  /// **'Not for me.'**
+  String get dating_cardNotForMeDone;
+
+  /// Spec 2 §3.0, §3.15 an introduction gone meanwhile.
+  ///
+  /// In en, this message translates to:
+  /// **'This isn\'t available any more.'**
+  String get dating_cardGone;
+
+  /// Spec 2 §3.4 the family question (once, after the first introduction).
+  ///
+  /// In en, this message translates to:
+  /// **'One more question, if you like: How involved would you like family to be?'**
+  String get dating_familyQuestion;
+
+  /// Spec 2 §3.4 family question option.
+  ///
+  /// In en, this message translates to:
+  /// **'Involved early'**
+  String get dating_familyEarly;
+
+  /// Spec 2 §3.4 family question option.
+  ///
+  /// In en, this message translates to:
+  /// **'Involved once it\'s serious'**
+  String get dating_familyWhenSerious;
+
+  /// Spec 2 §3.4 family question option.
+  ///
+  /// In en, this message translates to:
+  /// **'Our decision first'**
+  String get dating_familyOwn;
+
+  /// Spec 2 §3.4 family question: skip (never asked again).
+  ///
+  /// In en, this message translates to:
+  /// **'Skip'**
+  String get dating_familySkip;
+
+  /// Spec 2 §5.6, once after 14 days without introductions.
+  ///
+  /// In en, this message translates to:
+  /// **'It\'s quiet in {region} right now. Widening your ages or area can help, or you can pause and come back later.'**
+  String dating_quietNote(String region);
+
+  /// Spec 2 §3.5 the match moment (once per side).
+  ///
+  /// In en, this message translates to:
+  /// **'You and {name} are both interested.'**
+  String dating_momentTitle(String name);
+
+  /// Spec 2 §3.5 the match moment.
+  ///
+  /// In en, this message translates to:
+  /// **'There\'s no rush. Say hello when you\'re ready.'**
+  String get dating_momentBody;
+
+  /// Spec 2 §3.5 opens the conversation (shown once W6a's chat exists).
+  ///
+  /// In en, this message translates to:
+  /// **'Say hello'**
+  String get dating_momentSayHello;
+
+  /// Spec 2 §3.5 back to Today.
+  ///
+  /// In en, this message translates to:
+  /// **'Later'**
+  String get dating_momentLater;
+
+  /// Spec 2 §3.1 active: the Dating section's way to Today (§3.4). Plan copy.
+  ///
+  /// In en, this message translates to:
+  /// **'Open Today'**
+  String get dating_sectionOpenToday;
+
+  /// Spec 2 §5.6 the quiet note when the region's name can't be shown. Plan copy (T7 fix 1, M-6).
+  ///
+  /// In en, this message translates to:
+  /// **'It\'s quiet right now. Widening your ages or area can help, or you can pause and come back later.'**
+  String get dating_quietNoteNoRegion;
+
+  /// Spec 2 §3.4 before_drop / cool_off when the time can't be shown. Plan copy (T7 fix 1, M-7).
+  ///
+  /// In en, this message translates to:
+  /// **'Your next introductions arrive at the time you chose.'**
+  String get dating_todayLaterNoTime;
+
+  /// Spec 2 §3.4 Today with no cards and no day state it can name. Plan copy (T7 fix 1, M-7).
+  ///
+  /// In en, this message translates to:
+  /// **'Nothing new right now.'**
+  String get dating_todayNothingNew;
+
+  /// Spec 2 §3.4 after Interested, when the card has no name. Plan copy (T7 fix 1, M-8).
+  ///
+  /// In en, this message translates to:
+  /// **'Noted. If it\'s mutual, you\'ll both see it here.'**
+  String get dating_cardNotedNoName;
+
+  /// Spec 2 §3.5 the match moment when the name can't be shown. Plan copy (T7 fix 1, M-8).
+  ///
+  /// In en, this message translates to:
+  /// **'You\'re both interested.'**
+  String get dating_momentTitleNoName;
+
+  /// Spec 2 §3.4 the card's overflow (Block now; Report joins it in W7a).
+  ///
+  /// In en, this message translates to:
+  /// **'More'**
+  String get dating_cardMore;
+
+  /// Spec 2 §3.4 the overflow's spoken label on one person's card. Plan copy.
+  ///
+  /// In en, this message translates to:
+  /// **'More for {name}'**
+  String dating_cardMoreLabel(String name);
+
+  /// Spec 2 §3.4 the overflow's Block; the Block confirm's button.
+  ///
+  /// In en, this message translates to:
+  /// **'Block'**
+  String get dating_cardBlock;
+
+  /// Spec 2 §3.4 the overflow's row, and the Block confirm button's spoken label. Plan copy.
+  ///
+  /// In en, this message translates to:
+  /// **'Block {name}'**
+  String dating_blockRow(String name);
+
+  /// Spec 2 §3.6 Block: the spec's first sentence, verbatim (the sheet's heading).
+  ///
+  /// In en, this message translates to:
+  /// **'Block {name}?'**
+  String dating_blockTitle(String name);
+
+  /// Spec 2 §3.6 Block: the spec's next two sentences, verbatim.
+  ///
+  /// In en, this message translates to:
+  /// **'{name} won\'t be told. You won\'t be introduced again, even if {name} makes a new account with the same number.'**
+  String dating_blockBody(String name);
+
+  /// Spec 2 §3.6 the Block confirm's cancel (as Close kindly's [Cancel]). Plan copy.
+  ///
+  /// In en, this message translates to:
+  /// **'Cancel'**
+  String get dating_blockCancel;
+
+  /// Spec 2 §3.6 the calm line in the card's place after Block. Plan copy.
+  ///
+  /// In en, this message translates to:
+  /// **'You\'ve blocked {name}. {name} won\'t be told, and you won\'t be introduced again.'**
+  String dating_blockDone(String name);
+
+  /// Spec 2 §3.4 the overflow's spoken label on a card whose name is missing (T7b fix 1, M-1; as Task 7's no-name lines). Plan copy.
+  ///
+  /// In en, this message translates to:
+  /// **'More options'**
+  String get dating_cardMoreNoName;
+
+  /// Spec 2 §3.4 the overflow's row, and the Block confirm button's spoken label, when the card's name is missing (T7b fix 1, M-1). Plan copy.
+  ///
+  /// In en, this message translates to:
+  /// **'Block this person'**
+  String get dating_blockRowNoName;
+
+  /// Spec 2 §3.6 Block's heading when the card's name is missing (T7b fix 1, M-1; the spec's sentence with 'this person' for the name). Plan copy.
+  ///
+  /// In en, this message translates to:
+  /// **'Block this person?'**
+  String get dating_blockTitleNoName;
+
+  /// Spec 2 §3.6 Block's body when the card's name is missing (T7b fix 1, M-1; the spec's sentences with 'this person' for the name). Plan copy.
+  ///
+  /// In en, this message translates to:
+  /// **'This person won\'t be told. You won\'t be introduced again, even if this person makes a new account with the same number.'**
+  String get dating_blockBodyNoName;
+
+  /// Spec 2 §3.6 the calm line in the card's place after Block, when the card's name is missing (T7b fix 1, M-1). Plan copy.
+  ///
+  /// In en, this message translates to:
+  /// **'You\'ve blocked this person. This person won\'t be told, and you won\'t be introduced again.'**
+  String get dating_blockDoneNoName;
+
+  /// Spec 2 §3.12 title and the settings row. DV specialist signs the never-introduce copy (W5 gate).
+  ///
+  /// In en, this message translates to:
+  /// **'Never introduce me to these numbers'**
+  String get dating_neverTitle;
+
+  /// Spec 2 §3.12. DV specialist sign-off (W5 gate).
+  ///
+  /// In en, this message translates to:
+  /// **'Add a phone number and Attune will never introduce you to the person who uses it, now or later. They\'re never told.'**
+  String get dating_neverBody;
+
+  /// Spec 2 §3.12. DV specialist sign-off (W5 gate).
+  ///
+  /// In en, this message translates to:
+  /// **'We keep a code made from the number, not the number itself.'**
+  String get dating_neverCode;
+
+  /// Spec 2 §3.12 the number field's label (after the country code). Plan copy.
+  ///
+  /// In en, this message translates to:
+  /// **'Phone number'**
+  String get dating_neverNumber;
+
+  /// Spec 2 §3.12, §3.15 the labelled country-code picker. Plan copy (W5 final review M-14); DV specialist sign-off (W5 gate).
+  ///
+  /// In en, this message translates to:
+  /// **'Country code {code}'**
+  String dating_neverCountryCode(String code);
+
+  /// Spec 2 §3.12 (20 characters).
+  ///
+  /// In en, this message translates to:
+  /// **'A name only you\'ll see (optional)'**
+  String get dating_neverLabel;
+
+  /// Spec 2 §3.12 the add button. Plan copy.
+  ///
+  /// In en, this message translates to:
+  /// **'Add'**
+  String get dating_neverAdd;
+
+  /// Spec 2 §3.12: the same answer whatever the number.
+  ///
+  /// In en, this message translates to:
+  /// **'Added.'**
+  String get dating_neverAdded;
+
+  /// Spec 2 §3.12 a list row.
+  ///
+  /// In en, this message translates to:
+  /// **'{label} · ending {digits}'**
+  String dating_neverRow(String label, String digits);
+
+  /// Spec 2 §3.12 a list row with no name. Plan copy.
+  ///
+  /// In en, this message translates to:
+  /// **'Ending {digits}'**
+  String dating_neverRowNoLabel(String digits);
+
+  /// Spec 2 §3.12 a row's action.
+  ///
+  /// In en, this message translates to:
+  /// **'Remove'**
+  String get dating_neverRemove;
+
+  /// Spec 2 §3.15: the Remove button's spoken label names its row. Plan copy.
+  ///
+  /// In en, this message translates to:
+  /// **'Remove {row}'**
+  String dating_neverRemoveLabel(String row);
+
+  /// Spec 2 W5c: a number the server can't read (never says whether anyone uses it). Plan copy, DV review.
+  ///
+  /// In en, this message translates to:
+  /// **'Check the number and try again.'**
+  String get dating_neverCheckNumber;
+
+  /// Spec 2 W5c: the name was refused (too long, a number, an invisible mark). Plan copy.
+  ///
+  /// In en, this message translates to:
+  /// **'Use up to 20 letters, with no numbers.'**
+  String get dating_neverCheckLabel;
+
+  /// Spec 2 §3.12 'Up to 50.' Plan copy.
+  ///
+  /// In en, this message translates to:
+  /// **'You can add up to 50 numbers.'**
+  String get dating_neverLimit;
+
+  /// Spec 2 §3.15 a list row as a screen reader says it (a comma, not the middle dot). Plan copy (Task 9 fix round 1, M-3).
+  ///
+  /// In en, this message translates to:
+  /// **'{label}, ending {digits}'**
+  String dating_neverRowSpoken(String label, String digits);
+
+  /// Spec 2 §3.12 Remove's confirm (owner decision, Task 9 fix round 1, I-2). Plan copy; DV specialist sign-off (W5 gate).
+  ///
+  /// In en, this message translates to:
+  /// **'Remove this number?'**
+  String get dating_neverRemoveTitle;
+
+  /// Spec 2 §3.12 Remove's confirm (I-2). Plan copy; DV specialist sign-off (W5 gate).
+  ///
+  /// In en, this message translates to:
+  /// **'You could be introduced to this person again.'**
+  String get dating_neverRemoveBody;
+
+  /// Spec 2 §3.12 Remove's confirm: the safe choice, keeps the number on the list (I-2). Plan copy; DV specialist sign-off (W5 gate).
+  ///
+  /// In en, this message translates to:
+  /// **'Keep'**
+  String get dating_neverKeep;
+
+  /// Spec 2 §3.12 the add's not_eligible or feature_unavailable answer, about every number, never this one (Task 9 fix round 1, M-2). Plan copy; DV specialist sign-off (W5 gate).
+  ///
+  /// In en, this message translates to:
+  /// **'Numbers can\'t be added right now.'**
+  String get dating_neverNotNow;
+
+  /// Spec 2 §3.12 the country-code sheet's heading (Task 9 fix round 1, M-5). Plan copy.
+  ///
+  /// In en, this message translates to:
+  /// **'Country code'**
+  String get dating_neverCountryTitle;
+
+  /// Spec 2 §3.12 the country-code sheet's search field (M-5). Plan copy.
+  ///
+  /// In en, this message translates to:
+  /// **'Search by country or code'**
+  String get dating_neverCountrySearch;
+
+  /// Spec 2 §3.12 the country-code sheet with no match (M-5). Plan copy.
+  ///
+  /// In en, this message translates to:
+  /// **'No country found.'**
+  String get dating_neverCountryNone;
+
+  /// Spec 2 §3.12 the Other countries setting (also the settings and Widen rows).
+  ///
+  /// In en, this message translates to:
+  /// **'Other countries'**
+  String get dating_abroadTitle;
+
+  /// Spec 2 §3.12 the cross-border card, shown when a country is turned on.
+  ///
+  /// In en, this message translates to:
+  /// **'Scams often start with someone abroad: a soldier, an oil-rig worker, a crypto \'mentor\'. Never send money to someone you haven\'t met. Cross-border introductions are only with verified people whose accounts are at least 14 days old.'**
+  String get dating_abroadCard;
+
+  /// Spec 2 §3.12 the cross-border card's button.
+  ///
+  /// In en, this message translates to:
+  /// **'Turn on for {country}'**
+  String dating_abroadTurnOn(String country);
+
+  /// Spec 2 §3.12 the cross-border card's way out. Plan copy.
+  ///
+  /// In en, this message translates to:
+  /// **'Not now'**
+  String get dating_abroadNotNow;
+
+  /// Spec 2 §2.6 no open country the person may join (or one whose same-gender rule refuses their answers). Plan copy.
+  ///
+  /// In en, this message translates to:
+  /// **'No other country is open to you yet.'**
+  String get dating_abroadNone;
+
+  /// Spec 2 W5c Task 10 fix round 1 (M-1): on a phone Dating doesn't trust, the one action Other countries offers (it shows no list there). Plan copy; the LGBTQ+ safety reviewer reads it.
+  ///
+  /// In en, this message translates to:
+  /// **'Turn off every other country'**
+  String get dating_abroadAllOff;
+
+  /// Spec 2 W5c Task 10 fix round 1 (M-1): the confirm's heading. Plan copy; the LGBTQ+ safety reviewer reads it.
+  ///
+  /// In en, this message translates to:
+  /// **'Turn off every other country?'**
+  String get dating_abroadAllOffTitle;
+
+  /// Spec 2 W5c Task 10 fix round 1 (M-1): the confirm's text; names no country. Plan copy; the LGBTQ+ safety reviewer reads it.
+  ///
+  /// In en, this message translates to:
+  /// **'You\'ll only be introduced to people in your own country. To turn a country on again, use a phone Dating trusts.'**
+  String get dating_abroadAllOffBody;
+
+  /// Spec 2 W5c Task 10 fix round 1 (M-1): the confirm's first, default choice (changes nothing). Plan copy; the LGBTQ+ safety reviewer reads it.
+  ///
+  /// In en, this message translates to:
+  /// **'Keep'**
+  String get dating_abroadAllOffKeep;
+
+  /// Spec 2 W5c Task 10 fix round 1 (M-1): the confirm's action. Plan copy; the LGBTQ+ safety reviewer reads it.
+  ///
+  /// In en, this message translates to:
+  /// **'Turn off'**
+  String get dating_abroadAllOffConfirm;
+
+  /// Spec 2 W5c Task 10 fix round 1 (M-1): shown after the action; the same whatever was on before. Plan copy; the LGBTQ+ safety reviewer reads it.
+  ///
+  /// In en, this message translates to:
+  /// **'Done. Introductions stay in your own country.'**
+  String get dating_abroadAllOffDone;
+
+  /// Spec 2 §3.12 Remove's confirm, naming the row it removes (W5 final fix M-3, T9 N-1). Plan copy; DV specialist sign-off (W5 gate).
+  ///
+  /// In en, this message translates to:
+  /// **'Remove {label}, ending {digits}?'**
+  String dating_neverRemoveTitleNamed(String label, String digits);
+
+  /// Spec 2 §3.12 Remove's confirm for a row with no name (W5 final fix M-3, T9 N-1). Plan copy; DV specialist sign-off (W5 gate).
+  ///
+  /// In en, this message translates to:
+  /// **'Remove the number ending {digits}?'**
+  String dating_neverRemoveTitleNoName(String digits);
+
+  /// Spec 2 W5 final fix (M-11): the 'Turn off every other country' confirm for a person who isn't eligible (any more); names no country. Plan copy; the LGBTQ+ safety reviewer reads it.
+  ///
+  /// In en, this message translates to:
+  /// **'You\'ll only be introduced to people in your own country. You can turn a country on again once you\'re verified and your account is 14 days old.'**
+  String get dating_abroadAllOffBodyNotYet;
 }
 
 class _AppLocalizationsDelegate extends LocalizationsDelegate<AppLocalizations> {

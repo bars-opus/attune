@@ -38,6 +38,24 @@
 #     introductions the switch is ending can still close a lock cycle on
 #     the introduction rows; the loser retries inside its own transaction
 #     (savepoints) and both complete. No 40P01 ever reaches a caller.
+#   generation (Spec 2 W5a): two ticks for one cohort claim one run (the
+#     second waits on the first's claim, then finds it taken), and the
+#     decrypted people never outlive the tick's transaction; while a tick
+#     holds its transaction open, a pause and a leave by people it
+#     introduced never wait on it, and while a leave holds its transaction
+#     open a tick never waits on it; either way the hourly sweep removes
+#     the introductions of the one who left.
+#   mutual interest (Spec 2 W5b): both people tap Interested at once; the
+#     second act waits on the introduction row, reads the first answer and
+#     makes the one match: no error, no deadlock.
+#   block vs Interested (Spec 2 W5b Task 7b): one person blocks while the
+#     other's Interested makes the match; the block waits on the
+#     introduction row, then closes that match: never a live match for a
+#     blocked pair, no error, no deadlock.
+#   block vs leaving on a matched pair (Spec 2 W5 final, M-4): the block
+#     takes the match's row before the introduction's, exit's order, so it
+#     waits on the leave instead of deadlocking with it; the leave
+#     completes and the block finds the card gone.
 #
 # The interleaving is forced by a one-shot BEFORE trigger that sleeps in
 # the session that asks for it (GUC race.sleep_<table>_<op>), so the first
@@ -50,7 +68,7 @@
 # among them: without its 'dating.' row no Dating counter is kept and the
 # "was counted" cases fail; setup refuses such a copy. `createdb -T` of a
 # migrated database copies everything). This script installs a "race"
-# schema, delay triggers on six Dating tables and test keys on the
+# schema, delay triggers on ten Dating tables and test keys on the
 # database (ALTER DATABASE). It refuses attune_test and attune_spec3a.
 set -uo pipefail
 DB="${1:-}"
@@ -96,7 +114,8 @@ BEGIN
   FOREACH t IN ARRAY ARRAY['dating_profile_sensitive', 'dating_enrollments', 'dating_profiles', 'dating_preferences',
                            'dating_introductions', 'dating_matches',
                            'dating_profile_photos', 'dating_photo_upload_intents', -- Spec 2 W3c (Task 8)
-                           'dating_trusted_devices'] LOOP -- Spec 2 W4b (Task 5)
+                           'dating_trusted_devices', -- Spec 2 W4b (Task 5)
+                           'dating_generation_runs'] LOOP -- Spec 2 W5a (Task 3)
     EXECUTE format('DROP TRIGGER IF EXISTS zz_race_delay ON public.%I', t);
     EXECUTE format('CREATE TRIGGER zz_race_delay BEFORE UPDATE OR DELETE ON public.%I FOR EACH ROW EXECUTE FUNCTION race.delay()', t);
   END LOOP;
@@ -144,15 +163,50 @@ BEGIN
   UPDATE public.dating_enrollments SET state = 'active', activated_at = now() WHERE user_id = v_u;
   RETURN v_u;
 END \$\$;
-CREATE OR REPLACE FUNCTION race.intro(p_a uuid, p_b uuid) RETURNS uuid LANGUAGE plpgsql AS \$\$
-DECLARE v_low uuid; v_high uuid; v_id uuid;
+-- Spec 2 W5a (Task 3): a current candidate generation can introduce, in
+-- Ghana AA (the matching contract's fixture person): 40 days old,
+-- verified, approved photos and prompts, a fresh trusted phone.
+CREATE OR REPLACE FUNCTION race.ready(p_n text, p_identity text, p_seeking text[]) RETURNS uuid LANGUAGE plpgsql AS \$\$
+DECLARE
+  v_u constant uuid := race.id(p_n);
 BEGIN
-  INSERT INTO public.dating_feature_snapshots (user_id, algorithm_version) VALUES (least(p_a, p_b), 'race') RETURNING id INTO v_low;
-  INSERT INTO public.dating_feature_snapshots (user_id, algorithm_version) VALUES (greatest(p_a, p_b), 'race') RETURNING id INTO v_high;
-  INSERT INTO public.dating_introductions (pair_key, user_low_id, user_high_id, display_band, state,
-                                           algorithm_version, snapshot_low_id, snapshot_high_id, internal_score)
-  VALUES (public.dating_pair_key(p_a, p_b), least(p_a, p_b), greatest(p_a, p_b), 'some_shared_ground', 'presented',
-          'race', v_low, v_high, 0.5) RETURNING id INTO v_id;
+  INSERT INTO auth.users (id, phone, phone_confirmed_at, created_at) VALUES (v_u, '15558719' || p_n, now(), now() - interval '40 days');
+  INSERT INTO public.users (id, phone, display_name, path, created_at, eula_accepted_at, eula_version)
+  VALUES (v_u, '+15558719' || p_n, 'Race Ready ' || p_n, 'dating', now() - interval '40 days', now(), '2');
+  INSERT INTO public.account_birthdates (user_id, birth_date) VALUES (v_u, current_date - interval '30 years 10 days');
+  INSERT INTO public.dating_enrollments (user_id, state, opted_in_at, activated_at) VALUES (v_u, 'active', now(), now());
+  INSERT INTO public.dating_profiles (user_id, display_name, profile_state, moderation_state, verification_state,
+    country_code, region_code, side_code, intention, marriage_timeline, timeline_visible, not_married_attested_at,
+    attestation_version, children_have, children_want, family_involvement, faith_visible)
+  VALUES (v_u, 'Race Ready ' || p_n, 'active', 'approved', 'verified', 'GH', 'AA', NULL, 'committed', NULL, true, now(),
+    '2026-10-v1', false, 'yes', NULL, false);
+  INSERT INTO public.dating_preferences (user_id, min_age, max_age, region_scope, open_abroad, want_must_match,
+    exclude_parents, intention_open)
+  VALUES (v_u, 25, 40, 'region', '{}', false, false, NULL);
+  INSERT INTO public.dating_profile_sensitive (user_id, identity_enc, seeking_enc, faith_enc)
+  VALUES (v_u, private.dating_field_encrypt(jsonb_build_object('identity', p_identity, 'pools', jsonb_build_array(p_identity))),
+          private.dating_field_encrypt(jsonb_build_object('seeking', to_jsonb(p_seeking))), NULL);
+  INSERT INTO public.dating_prompts (user_id, position, prompt_id, answer, moderation_state)
+  SELECT v_u, n, CASE n WHEN 1 THEN 'perfect_sunday' ELSE 'ask_me_about' END, 'A race fixture answer ' || n, 'approved'
+    FROM generate_series(1, 2) AS n;
+  INSERT INTO public.dating_profile_photos (user_id, storage_key, position, moderation_state, csam_state)
+  SELECT v_u, 'race/' || v_u || '/' || n || '.jpg', n, 'approved', 'clear' FROM generate_series(1, 2) AS n;
+  INSERT INTO public.dating_age_verifications (user_id, age_method, age_result, age_vendor, age_decided_at,
+    identity_method, identity_result, identity_vendor, identity_decided_at)
+  VALUES (v_u, 'id', 'pass', 'race', now(), 'liveness_compare', 'pass', 'race', now());
+  INSERT INTO public.dating_consent_events (user_id, idempotency_key, purpose, action, policy_version, occurred_at)
+  SELECT v_u, 'consent-' || p, p, 'granted', 'dating-2.0', clock_timestamp()
+    FROM unnest(ARRAY['dating_terms', 'dating_opt_in', 'special_category_profile']) AS p;
+  INSERT INTO public.dating_trusted_devices (user_id, device_hash, verified_at, last_seen_at) -- race.call's phone
+  VALUES (v_u, encode(extensions.digest('0123456789abcdef0123456789abcdef', 'sha256'), 'hex'), now(), now());
+  RETURN v_u;
+END \$\$;
+CREATE OR REPLACE FUNCTION race.intro(p_a uuid, p_b uuid) RETURNS uuid LANGUAGE plpgsql AS \$\$
+DECLARE v_id uuid;
+BEGIN
+  INSERT INTO public.dating_introductions (pair_key, user_low_id, user_high_id, state, algorithm_version) -- Spec 2 W5a
+  VALUES (public.dating_pair_key(p_a, p_b), least(p_a, p_b), greatest(p_a, p_b), 'presented', 'race') -- Spec 2 W5a
+  RETURNING id INTO v_id;
   RETURN v_id;
 END \$\$;
 CREATE OR REPLACE FUNCTION race.match(p_a uuid, p_b uuid) RETURNS uuid LANGUAGE sql AS \$\$
@@ -165,7 +219,6 @@ CREATE OR REPLACE FUNCTION race.reset() RETURNS void LANGUAGE plpgsql AS \$\$
 BEGIN
   DELETE FROM public.dating_matches WHERE user_low_id::text LIKE '5e2f%' OR user_high_id::text LIKE '5e2f%';
   DELETE FROM public.dating_introductions WHERE user_low_id::text LIKE '5e2f%' OR user_high_id::text LIKE '5e2f%';
-  DELETE FROM public.dating_feature_snapshots WHERE user_id::text LIKE '5e2f%';
   DELETE FROM auth.users WHERE id::text LIKE '5e2f%';
   DELETE FROM public.users WHERE id::text LIKE '5e2f%';
   DELETE FROM private.dating_kill_switch_pending;
@@ -662,5 +715,287 @@ run "two devices trusted at once: at most three stay" "$FX_DEVICES" \
                        AND device_hash IN (repeat('3', 64), repeat('4', 64))) <> 2 THEN 'a new device was dropped'
                ELSE 'ok' END;" serialised
 
-$P -c "SELECT race.reset();" > /dev/null 2>&1
+# Spec 2 W5a (Task 3, §5.5, §5.7, §7.6 1.6/6.3; mutant 6): two ticks for
+# Ghana's cohort at once. A claims the run and sleeps before marking it
+# completed (holding the claimed row); B's claim waits on it, then finds
+# the run taken. One run row, one attempt; A's session has no temp table
+# left once its tick has committed. Fix round 1: B proves the overlap: when
+# it starts, A has reached its hold (race.s1, not transactional) and its
+# claimed row is not committed; and B's tick waits on it (0.5 s or more:
+# alone, a tick of an empty partition takes milliseconds).
+GEN_AT="(date_trunc('day', now() AT TIME ZONE 'UTC') AT TIME ZONE 'UTC' + interval '3 hours 17 minutes')"
+FX_GEN="SELECT race.reset(); ALTER SEQUENCE race.s1 RESTART;
+DELETE FROM race.outcome WHERE name LIKE 'tick_%';
+DELETE FROM public.dating_generation_runs WHERE partition_key = 'GH';
+UPDATE public.feature_flags SET enabled = true WHERE key = 'dating_candidate_generation';
+UPDATE public.dating_algorithm_configs SET state = 'retired', retired_at = now() WHERE state = 'active' AND version <> 'introductions_v2';
+UPDATE public.dating_algorithm_configs SET state = 'active', activated_at = now(), product_review_ref = 'DEV-race',
+       clinical_review_ref = 'DEV-race', fairness_review_ref = 'DEV-race', safety_review_ref = 'DEV-race'
+ WHERE version = 'introductions_v2' AND state <> 'active';"
+run "two generation ticks claim one run (and no temp table survives)" "$FX_GEN" \
+  "SET race.sleep_dating_generation_runs_update = '2:race.s1';
+   INSERT INTO race.outcome VALUES ('tick_a', (SELECT public.run_dating_generation_tick($GEN_AT, 'GH')::text));
+   INSERT INTO race.outcome VALUES ('tick_a_temp', coalesce(to_regclass('pg_temp.dating_gen_people')::text, 'gone'));" \
+  "SELECT pg_sleep(0.5);
+   INSERT INTO race.outcome SELECT 'tick_b_overlap',
+     ((SELECT is_called FROM race.s1) AND NOT EXISTS (SELECT 1 FROM public.dating_generation_runs WHERE partition_key = 'GH'))::text;
+   SELECT clock_timestamp() AS tb \\gset
+   INSERT INTO race.outcome VALUES ('tick_b', (SELECT public.run_dating_generation_tick($GEN_AT, 'GH')::text));
+   INSERT INTO race.outcome VALUES ('tick_b_s', round(extract(epoch FROM clock_timestamp() - :'tb'::timestamptz), 2)::text);" \
+  "SELECT CASE WHEN NOT (SELECT is_called FROM race.s1) THEN 'the first tick never reached its run row (no race)'
+               WHEN (SELECT result FROM race.outcome WHERE name = 'tick_b_overlap') IS DISTINCT FROM 'true'
+                 OR coalesce((SELECT result::numeric FROM race.outcome WHERE name = 'tick_b_s'), 0) < 0.5
+               THEN 'the second tick did not run while the first held its claim (no race): held at its start '
+                    || coalesce((SELECT result FROM race.outcome WHERE name = 'tick_b_overlap'), 'none') || ', waited '
+                    || coalesce((SELECT result FROM race.outcome WHERE name = 'tick_b_s'), 'none') || ' s'
+               WHEN (SELECT count(*) FROM public.dating_generation_runs WHERE partition_key = 'GH') <> 1
+                 OR (SELECT attempts FROM public.dating_generation_runs WHERE partition_key = 'GH') <> 1
+                 OR (SELECT state FROM public.dating_generation_runs WHERE partition_key = 'GH') <> 'completed'
+               THEN 'runs: ' || (SELECT string_agg(state || '/' || attempts, ', ') FROM public.dating_generation_runs WHERE partition_key = 'GH')
+               WHEN coalesce((SELECT result FROM race.outcome WHERE name = 'tick_b'), '') NOT LIKE '%partition_unavailable%'
+               THEN 'the second tick answered ' || coalesce((SELECT result FROM race.outcome WHERE name = 'tick_b'), 'nothing')
+               WHEN (SELECT result FROM race.outcome WHERE name = 'tick_a_temp') IS DISTINCT FROM 'gone'
+               THEN 'the decrypted people outlived the tick (mutant 6)'
+               ELSE 'ok' END;" serialised
+
+# Spec 2 W5a (Task 3; Task 2 fix round 2, N-1; R-48): the tick takes no
+# enrolment lock (only the users' rows, KEY SHARE SKIP LOCKED), so while
+# it holds its transaction open (3 s after its run) the woman it
+# introduced pauses and the man it introduced leaves, each at once. His
+# leave cannot see the tick's uncommitted introductions, so they are
+# removed by the hourly sweep (expire_dating_introductions): none left.
+FX_GEN_LEAVE="$FX_GEN
+SELECT race.ready('12', 'woman', ARRAY['man']), race.ready('13', 'man', ARRAY['woman']), race.ready('14', 'woman', ARRAY['man']);"
+run "pause and leave during an open generation tick never wait; the sweep clears the leaver" "$FX_GEN_LEAVE" \
+  "BEGIN;
+   INSERT INTO race.outcome VALUES ('tick', (SELECT public.run_dating_generation_tick($GEN_AT, 'GH')::text));
+   INSERT INTO race.outcome SELECT 'tick_man', count(*)::text FROM public.dating_introductions WHERE race.id('13') IN (user_low_id, user_high_id);
+   SELECT pg_sleep(3);
+   COMMIT;" \
+  "SELECT pg_sleep(1);
+   SELECT clock_timestamp() AS t0 \\gset
+   INSERT INTO race.outcome VALUES ('pause', race.call(race.id('12'), format('SELECT to_jsonb(public.pause_dating_mode(%L))', race.key('pause'))) ->> 'state');
+   INSERT INTO race.outcome VALUES ('pause_s', round(extract(epoch FROM clock_timestamp() - :'t0'::timestamptz), 2)::text);
+   SELECT clock_timestamp() AS t1 \\gset
+   INSERT INTO race.outcome VALUES ('exit', race.call(race.id('13'), format('SELECT to_jsonb(public.exit_dating_mode(%L))', race.key('exit'))) ->> 'state');
+   INSERT INTO race.outcome VALUES ('exit_s', round(extract(epoch FROM clock_timestamp() - :'t1'::timestamptz), 2)::text);
+   INSERT INTO race.outcome SELECT 'tick_open', (NOT EXISTS (SELECT 1 FROM race.outcome WHERE name = 'tick'))::text;" \
+  "SELECT count(*) AS before_sweep FROM public.dating_introductions WHERE race.id('13') IN (user_low_id, user_high_id) \\gset
+   SELECT public.expire_dating_introductions() AS swept \\gset
+   SELECT CASE WHEN coalesce((SELECT result::numeric FROM race.outcome WHERE name = 'pause_s'), 99) >= 1
+                 OR coalesce((SELECT result::numeric FROM race.outcome WHERE name = 'exit_s'), 99) >= 1
+               THEN 'waited on the tick: pause ' || coalesce((SELECT result FROM race.outcome WHERE name = 'pause_s'), 'none')
+                    || ' s, leave ' || coalesce((SELECT result FROM race.outcome WHERE name = 'exit_s'), 'none') || ' s'
+               WHEN (SELECT result FROM race.outcome WHERE name = 'tick_open') IS DISTINCT FROM 'true'
+               THEN 'the tick had committed before the leave answered (no race)'
+               WHEN coalesce((SELECT result::int FROM race.outcome WHERE name = 'tick_man'), 0) < 1
+               THEN 'the tick introduced no one to the man who left (no race): ' || coalesce((SELECT result FROM race.outcome WHERE name = 'tick'), 'nothing')
+               WHEN race.enrol(race.id('12')) IS DISTINCT FROM 'paused/user' THEN 'pause lost: ' || coalesce(race.enrol(race.id('12')), 'none')
+               WHEN race.enrol(race.id('13')) IS DISTINCT FROM 'exited/-' THEN 'exit lost: ' || coalesce(race.enrol(race.id('13')), 'none')
+               WHEN EXISTS (SELECT 1 FROM public.dating_introductions WHERE race.id('13') IN (user_low_id, user_high_id))
+               THEN 'the man who left kept ' || (SELECT count(*) FROM public.dating_introductions WHERE race.id('13') IN (user_low_id, user_high_id))
+                    || ' introduction(s) after the sweep (' || :'before_sweep' || ' before it)'
+               ELSE 'ok' END;" serialised
+
+# Spec 2 W5a (Task 3 fix round 1; Task 2 fix round 2, N-1, the other
+# order): the leave first. The man leaves and holds his transaction open
+# 3 s; 1 s in, the tick runs. It never waits on the leave (no enrolment
+# lock; the users' rows KEY SHARE SKIP LOCKED). The uncommitted leave is
+# invisible to it, so it may still introduce him; the hourly sweep then
+# removes those: none left. B proves the overlap: the leave had answered
+# (race.s1) and had not committed, both before and after the tick.
+run "a generation tick during an open leave never waits; the sweep clears the leaver" "$FX_GEN_LEAVE" \
+  "BEGIN;
+   SELECT clock_timestamp() AS t0 \\gset
+   INSERT INTO race.outcome VALUES ('exit', race.call(race.id('13'), format('SELECT to_jsonb(public.exit_dating_mode(%L))', race.key('exit'))) ->> 'state');
+   INSERT INTO race.outcome VALUES ('exit_s', round(extract(epoch FROM clock_timestamp() - :'t0'::timestamptz), 2)::text);
+   SELECT nextval('race.s1');
+   SELECT pg_sleep(3);
+   COMMIT;" \
+  "SELECT pg_sleep(1);
+   INSERT INTO race.outcome SELECT 'leave_open_before',
+     ((SELECT is_called FROM race.s1) AND NOT EXISTS (SELECT 1 FROM race.outcome WHERE name = 'exit'))::text;
+   SELECT clock_timestamp() AS t1 \\gset
+   INSERT INTO race.outcome VALUES ('tick', (SELECT public.run_dating_generation_tick($GEN_AT, 'GH')::text));
+   INSERT INTO race.outcome VALUES ('tick_s', round(extract(epoch FROM clock_timestamp() - :'t1'::timestamptz), 2)::text);
+   INSERT INTO race.outcome SELECT 'leave_open_after', (NOT EXISTS (SELECT 1 FROM race.outcome WHERE name = 'exit'))::text;
+   INSERT INTO race.outcome SELECT 'tick_man', count(*)::text FROM public.dating_introductions WHERE race.id('13') IN (user_low_id, user_high_id);" \
+  "SELECT count(*) AS before_sweep FROM public.dating_introductions WHERE race.id('13') IN (user_low_id, user_high_id) \\gset
+   SELECT public.expire_dating_introductions() AS swept \\gset
+   SELECT CASE WHEN coalesce((SELECT result::numeric FROM race.outcome WHERE name = 'tick_s'), 99) >= 1
+                 OR coalesce((SELECT result::numeric FROM race.outcome WHERE name = 'exit_s'), 99) >= 1
+               THEN 'waited: the tick ' || coalesce((SELECT result FROM race.outcome WHERE name = 'tick_s'), 'none')
+                    || ' s, the leave ' || coalesce((SELECT result FROM race.outcome WHERE name = 'exit_s'), 'none') || ' s'
+               WHEN (SELECT result FROM race.outcome WHERE name = 'leave_open_before') IS DISTINCT FROM 'true'
+                 OR (SELECT result FROM race.outcome WHERE name = 'leave_open_after') IS DISTINCT FROM 'true'
+               THEN 'the tick did not run inside the open leave (no race): before '
+                    || coalesce((SELECT result FROM race.outcome WHERE name = 'leave_open_before'), 'none') || ', after '
+                    || coalesce((SELECT result FROM race.outcome WHERE name = 'leave_open_after'), 'none')
+               WHEN coalesce((SELECT result::jsonb #> '{runs,0}' ? 'created' FROM race.outcome WHERE name = 'tick'), false) IS NOT TRUE
+               THEN 'the tick did not run Ghana: ' || coalesce((SELECT result FROM race.outcome WHERE name = 'tick'), 'nothing')
+               WHEN race.enrol(race.id('13')) IS DISTINCT FROM 'exited/-' THEN 'exit lost: ' || coalesce(race.enrol(race.id('13')), 'none')
+               WHEN EXISTS (SELECT 1 FROM public.dating_introductions WHERE race.id('13') IN (user_low_id, user_high_id))
+               THEN 'the man who left kept ' || (SELECT count(*) FROM public.dating_introductions WHERE race.id('13') IN (user_low_id, user_high_id))
+                    || ' introduction(s) after the sweep (' || :'before_sweep' || ' before it; the tick made '
+                    || coalesce((SELECT result FROM race.outcome WHERE name = 'tick_man'), 'none') || ')'
+               ELSE 'ok' END;" serialised
+
+# Spec 2 W5b (Task 4, §7.6 1.6/6.3): both interested at once make one
+# match. A's act sleeps in its update of the introduction row (holding it);
+# B's act takes its own setup lock, waits on that row, then reads A's
+# answer and makes the match. B proves the overlap: when it starts, A has
+# reached its hold (race.s1) and its update is not committed, and B's act
+# waits (0.5 s or more). One match, both answers as the app reads them.
+FX_MUTUAL="SELECT race.reset(); ALTER SEQUENCE race.s1 RESTART;
+UPDATE public.feature_flags SET enabled = false WHERE key = 'dating_candidate_generation';
+UPDATE public.dating_algorithm_configs SET state = 'retired', retired_at = now() WHERE state = 'active' AND version <> 'introductions_v2';
+UPDATE public.dating_algorithm_configs SET state = 'active', activated_at = now(), product_review_ref = 'DEV-race',
+       clinical_review_ref = 'DEV-race', fairness_review_ref = 'DEV-race', safety_review_ref = 'DEV-race'
+ WHERE version = 'introductions_v2' AND state <> 'active';
+SELECT race.ready('07', 'woman', ARRAY['man']), race.ready('08', 'man', ARRAY['woman']);
+INSERT INTO public.dating_introductions (pair_key, user_low_id, user_high_id, state, algorithm_version, visible_from_low, visible_from_high)
+VALUES (public.dating_pair_key(race.id('07'), race.id('08')), least(race.id('07'), race.id('08')), greatest(race.id('07'), race.id('08')),
+        'generated', 'introductions_v2', now() - interval '1 hour', now() - interval '1 hour');"
+MUTUAL_ID="(SELECT id FROM public.dating_introductions WHERE pair_key = public.dating_pair_key(race.id('07'), race.id('08')))"
+run "simultaneous mutual interest makes one match" "$FX_MUTUAL" \
+  "SET race.sleep_dating_introductions_update = '2:race.s1';
+   INSERT INTO race.outcome VALUES ('mutual_a',
+     race.call(race.id('07'), format('SELECT public.act_on_dating_introduction(%L, %L, ''interested'')', race.key('mutual-a'), $MUTUAL_ID))::text);" \
+  "SELECT pg_sleep(0.5);
+   INSERT INTO race.outcome SELECT 'mutual_overlap',
+     ((SELECT is_called FROM race.s1) AND (SELECT state FROM public.dating_introductions WHERE id = $MUTUAL_ID) = 'generated')::text;
+   SELECT clock_timestamp() AS tb \\gset
+   INSERT INTO race.outcome VALUES ('mutual_b',
+     race.call(race.id('08'), format('SELECT public.act_on_dating_introduction(%L, %L, ''interested'')', race.key('mutual-b'), $MUTUAL_ID))::text);
+   INSERT INTO race.outcome VALUES ('mutual_b_s', round(extract(epoch FROM clock_timestamp() - :'tb'::timestamptz), 2)::text);" \
+  "SELECT CASE WHEN NOT (SELECT is_called FROM race.s1) THEN 'the first act never reached the row (no race)'
+               WHEN (SELECT result FROM race.outcome WHERE name = 'mutual_overlap') IS DISTINCT FROM 'true'
+                 OR coalesce((SELECT result::numeric FROM race.outcome WHERE name = 'mutual_b_s'), 0) < 0.5
+               THEN 'the second act did not run while the first held the row (no race): held at its start '
+                    || coalesce((SELECT result FROM race.outcome WHERE name = 'mutual_overlap'), 'none') || ', waited '
+                    || coalesce((SELECT result FROM race.outcome WHERE name = 'mutual_b_s'), 'none') || ' s'
+               WHEN (SELECT result::jsonb FROM race.outcome WHERE name = 'mutual_a') IS DISTINCT FROM '{\"ok\": true, \"action\": \"interested\", \"matched\": false}'::jsonb
+                 OR (SELECT result::jsonb FROM race.outcome WHERE name = 'mutual_b') IS DISTINCT FROM '{\"ok\": true, \"action\": \"interested\", \"matched\": true}'::jsonb
+               THEN 'answers: ' || coalesce((SELECT result FROM race.outcome WHERE name = 'mutual_a'), 'none') || ' then '
+                    || coalesce((SELECT result FROM race.outcome WHERE name = 'mutual_b'), 'none')
+               WHEN (SELECT count(*) FROM public.dating_matches WHERE introduction_id = $MUTUAL_ID AND state = 'active') <> 1
+               THEN 'matches: ' || (SELECT count(*) FROM public.dating_matches WHERE introduction_id = $MUTUAL_ID)
+               WHEN (SELECT state || '/' || low_action || '/' || high_action FROM public.dating_introductions WHERE id = $MUTUAL_ID)
+                    IS DISTINCT FROM 'matched/interested/interested'
+               THEN 'introduction: ' || (SELECT state || '/' || coalesce(low_action, '-') || '/' || coalesce(high_action, '-') FROM public.dating_introductions WHERE id = $MUTUAL_ID)
+               WHEN (SELECT count(*) FROM public.dating_interest_actions WHERE introduction_id = $MUTUAL_ID) <> 2
+               THEN 'actions kept: ' || (SELECT count(*) FROM public.dating_interest_actions WHERE introduction_id = $MUTUAL_ID)
+               ELSE 'ok' END;" serialised
+
+# Spec 2 W5b Task 7b (Ruling R-36): a block and the other's Interested at
+# once. A (27) makes the match (B, 28, was already interested) and sleeps in
+# its update of the introduction row, holding it; B blocks it: B's setup
+# lock, then the row, so B waits, then closes the match. B proves the
+# overlap: when it starts, A has reached its hold (race.s1) and its update
+# is not committed, and B's block waits (0.5 s or more).
+FX_BLOCK="SELECT race.reset(); ALTER SEQUENCE race.s1 RESTART;
+UPDATE public.feature_flags SET enabled = false WHERE key = 'dating_candidate_generation';
+UPDATE public.dating_algorithm_configs SET state = 'retired', retired_at = now() WHERE state = 'active' AND version <> 'introductions_v2';
+UPDATE public.dating_algorithm_configs SET state = 'active', activated_at = now(), product_review_ref = 'DEV-race',
+       clinical_review_ref = 'DEV-race', fairness_review_ref = 'DEV-race', safety_review_ref = 'DEV-race'
+ WHERE version = 'introductions_v2' AND state <> 'active';
+SELECT race.ready('27', 'woman', ARRAY['man']), race.ready('28', 'man', ARRAY['woman']);
+DELETE FROM public.dating_block_hmacs
+ WHERE blocker_hmac IN (public.dating_phone_hmac_for_user(race.id('27')), public.dating_phone_hmac_for_user(race.id('28')))
+    OR blocked_hmac IN (public.dating_phone_hmac_for_user(race.id('27')), public.dating_phone_hmac_for_user(race.id('28')));
+INSERT INTO public.dating_introductions (pair_key, user_low_id, user_high_id, state, algorithm_version, visible_from_low, visible_from_high, high_action)
+VALUES (public.dating_pair_key(race.id('27'), race.id('28')), race.id('27'), race.id('28'),
+        'interested', 'introductions_v2', now() - interval '1 hour', now() - interval '1 hour', 'interested');"
+BLOCK_ID="(SELECT id FROM public.dating_introductions WHERE pair_key = public.dating_pair_key(race.id('27'), race.id('28')))"
+BLOCK_PAIR="public.dating_pair_key(race.id('27'), race.id('28'))"
+run "a block and the other's Interested at once: never a live match" "$FX_BLOCK" \
+  "SET race.sleep_dating_introductions_update = '2:race.s1';
+   INSERT INTO race.outcome VALUES ('block_act',
+     race.call(race.id('27'), format('SELECT public.act_on_dating_introduction(%L, %L, ''interested'')', race.key('block-act'), $BLOCK_ID))::text);" \
+  "SELECT pg_sleep(0.5);
+   INSERT INTO race.outcome SELECT 'block_overlap',
+     ((SELECT is_called FROM race.s1) AND (SELECT state FROM public.dating_introductions WHERE id = $BLOCK_ID) = 'interested')::text;
+   SELECT clock_timestamp() AS tb \\gset
+   INSERT INTO race.outcome VALUES ('block_b',
+     race.call(race.id('28'), format('SELECT public.block_dating_introduction(%L, %L)', race.key('block-b'), $BLOCK_ID))::text);
+   INSERT INTO race.outcome VALUES ('block_b_s', round(extract(epoch FROM clock_timestamp() - :'tb'::timestamptz), 2)::text);" \
+  "SELECT CASE WHEN NOT (SELECT is_called FROM race.s1) THEN 'the act never reached the row (no race)'
+               WHEN (SELECT result::jsonb FROM race.outcome WHERE name = 'block_act') IS DISTINCT FROM '{\"ok\": true, \"action\": \"interested\", \"matched\": true}'::jsonb
+                 OR (SELECT result::jsonb FROM race.outcome WHERE name = 'block_b') IS DISTINCT FROM '{\"ok\": true}'::jsonb
+               THEN 'answers: ' || coalesce((SELECT result FROM race.outcome WHERE name = 'block_act'), 'none') || ' then '
+                    || coalesce((SELECT result FROM race.outcome WHERE name = 'block_b'), 'none')
+               WHEN (SELECT string_agg(state || '/' || coalesce(closed_reason, '-'), ',') FROM public.dating_matches WHERE pair_key = $BLOCK_PAIR)
+                    IS DISTINCT FROM 'blocked/blocked'
+               THEN 'matches: ' || coalesce((SELECT string_agg(state || '/' || coalesce(closed_reason, '-'), ',') FROM public.dating_matches WHERE pair_key = $BLOCK_PAIR), 'none')
+               WHEN NOT EXISTS (SELECT 1 FROM public.dating_blocks WHERE blocker_user_id = race.id('28') AND blocked_user_id = race.id('27'))
+               THEN 'no block row'
+               WHEN EXISTS (SELECT 1 FROM public.scheduled_notifications WHERE user_id IN (race.id('27'), race.id('28')))
+               THEN 'a push was queued'
+               WHEN (SELECT result FROM race.outcome WHERE name = 'block_overlap') IS DISTINCT FROM 'true'
+                 OR coalesce((SELECT result::numeric FROM race.outcome WHERE name = 'block_b_s'), 0) < 0.5
+               THEN 'the block did not run while the act held the row (no race): held at its start '
+                    || coalesce((SELECT result FROM race.outcome WHERE name = 'block_overlap'), 'none') || ', waited '
+                    || coalesce((SELECT result FROM race.outcome WHERE name = 'block_b_s'), 'none') || ' s'
+               ELSE 'ok' END;" serialised
+
+# Spec 2 W5 final (final server review M-4): a block on a matched
+# introduction while the other person leaves. B (32) leaves: exit closes
+# the match (and sleeps in that update, holding the match's row), then
+# deletes the introductions. A (31) blocks the matched card: A's setup
+# lock, then the match's row (exit's order), so A waits on the leave, then
+# finds the introduction gone. Before the fix the block took the
+# introduction's row first and the two deadlocked. A proves the overlap:
+# when it starts, the leave has reached its hold (race.s1) and its close is
+# not committed, and A's block waits (0.5 s or more). The leave completes,
+# the match ends closed by the exit, nothing is left of the introduction.
+FX_BLOCK_EXIT="SELECT race.reset(); ALTER SEQUENCE race.s1 RESTART;
+UPDATE public.feature_flags SET enabled = false WHERE key = 'dating_candidate_generation';
+UPDATE public.dating_algorithm_configs SET state = 'retired', retired_at = now() WHERE state = 'active' AND version <> 'introductions_v2';
+UPDATE public.dating_algorithm_configs SET state = 'active', activated_at = now(), product_review_ref = 'DEV-race',
+       clinical_review_ref = 'DEV-race', fairness_review_ref = 'DEV-race', safety_review_ref = 'DEV-race'
+ WHERE version = 'introductions_v2' AND state <> 'active';
+SELECT race.ready('31', 'woman', ARRAY['man']), race.ready('32', 'man', ARRAY['woman']);
+DELETE FROM public.dating_block_hmacs
+ WHERE blocker_hmac IN (public.dating_phone_hmac_for_user(race.id('31')), public.dating_phone_hmac_for_user(race.id('32')))
+    OR blocked_hmac IN (public.dating_phone_hmac_for_user(race.id('31')), public.dating_phone_hmac_for_user(race.id('32')));
+INSERT INTO public.dating_introductions (pair_key, user_low_id, user_high_id, state, algorithm_version, visible_from_low, visible_from_high, low_action, high_action)
+VALUES (public.dating_pair_key(race.id('31'), race.id('32')), race.id('31'), race.id('32'),
+        'matched', 'introductions_v2', now() - interval '1 hour', now() - interval '1 hour', 'interested', 'interested');
+INSERT INTO public.dating_matches (introduction_id, user_low_id, user_high_id, state, matched_at)
+SELECT i.id, i.user_low_id, i.user_high_id, 'active', now() FROM public.dating_introductions AS i
+ WHERE i.pair_key = public.dating_pair_key(race.id('31'), race.id('32'));
+INSERT INTO race.outcome SELECT 'bx_id', i.id::text FROM public.dating_introductions AS i
+ WHERE i.pair_key = public.dating_pair_key(race.id('31'), race.id('32'));"
+BX_ID="(SELECT result::uuid FROM race.outcome WHERE name = 'bx_id')"
+BX_PAIR="public.dating_pair_key(race.id('31'), race.id('32'))"
+run "a block on a matched introduction while the other leaves: no deadlock" "$FX_BLOCK_EXIT" \
+  "SET race.sleep_dating_matches_update = '1.5:race.s1';
+   INSERT INTO race.outcome VALUES ('bx_exit',
+     race.call(race.id('32'), format('SELECT to_jsonb(public.exit_dating_mode(%L))', race.key('bx-exit'))) ->> 'state');" \
+  "SELECT pg_sleep(0.5);
+   INSERT INTO race.outcome SELECT 'bx_overlap',
+     ((SELECT is_called FROM race.s1) AND (SELECT state FROM public.dating_matches WHERE pair_key = $BX_PAIR) = 'active')::text;
+   SELECT clock_timestamp() AS tb \\gset
+   INSERT INTO race.outcome VALUES ('bx_block',
+     race.call(race.id('31'), format('SELECT public.block_dating_introduction(%L, %L)', race.key('bx-block'), $BX_ID))::text);
+   INSERT INTO race.outcome VALUES ('bx_block_s', round(extract(epoch FROM clock_timestamp() - :'tb'::timestamptz), 2)::text);" \
+  "SELECT CASE WHEN NOT (SELECT is_called FROM race.s1) THEN 'the leave never reached the match row (no race)'
+               WHEN (SELECT result FROM race.outcome WHERE name = 'bx_exit') IS DISTINCT FROM 'exited'
+                 OR race.enrol(race.id('32')) IS DISTINCT FROM 'exited/-'
+               THEN 'leave lost: ' || coalesce((SELECT result FROM race.outcome WHERE name = 'bx_exit'), 'none') || ', ' || coalesce(race.enrol(race.id('32')), 'none')
+               WHEN (SELECT result::jsonb FROM race.outcome WHERE name = 'bx_block') IS DISTINCT FROM '{\"ok\": false, \"reason\": \"introduction_unavailable\"}'::jsonb
+               THEN 'the block answered ' || coalesce((SELECT result FROM race.outcome WHERE name = 'bx_block'), 'none')
+               WHEN (SELECT string_agg(state || '/' || coalesce(closed_reason, '-'), ',') FROM public.dating_matches WHERE pair_key = $BX_PAIR)
+                    IS DISTINCT FROM 'closed/exit'
+               THEN 'matches: ' || coalesce((SELECT string_agg(state || '/' || coalesce(closed_reason, '-'), ',') FROM public.dating_matches WHERE pair_key = $BX_PAIR), 'none')
+               WHEN EXISTS (SELECT 1 FROM public.dating_introductions WHERE pair_key = $BX_PAIR)
+               THEN 'the introduction was left: ' || (SELECT state FROM public.dating_introductions WHERE pair_key = $BX_PAIR)
+               WHEN (SELECT result FROM race.outcome WHERE name = 'bx_overlap') IS DISTINCT FROM 'true'
+                 OR coalesce((SELECT result::numeric FROM race.outcome WHERE name = 'bx_block_s'), 0) < 0.5
+               THEN 'the block did not run while the leave held the match (no race): held at its start '
+                    || coalesce((SELECT result FROM race.outcome WHERE name = 'bx_overlap'), 'none') || ', waited '
+                    || coalesce((SELECT result FROM race.outcome WHERE name = 'bx_block_s'), 'none') || ' s'
+               ELSE 'ok' END;" serialised
+
+$P -c "SELECT race.reset(); UPDATE public.feature_flags SET enabled = false WHERE key = 'dating_candidate_generation';" > /dev/null 2>&1
 exit $fail

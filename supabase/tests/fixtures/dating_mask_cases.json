@@ -1,0 +1,765 @@
+{
+  "version": 1,
+  "cases": [
+    {
+      "text": "my snapchat is amab",
+      "masked": true,
+      "note": "platform word + handle (re-review 1)"
+    },
+    {
+      "text": "telegram amab",
+      "masked": true,
+      "note": "platform word + handle (re-review 1)"
+    },
+    {
+      "text": "ama boateng at gmail",
+      "masked": true,
+      "note": "email provider in words (re-review 1)"
+    },
+    {
+      "text": "find me on facebook Ama Boateng",
+      "masked": true,
+      "note": "platform word + name (re-review 1)"
+    },
+    {
+      "text": "WhatsApp me 0244 123 456",
+      "masked": true,
+      "note": "Ghana mobile number"
+    },
+    {
+      "text": "mail me at ama dot boateng at gmail dot com",
+      "masked": true,
+      "note": "email with at/dot"
+    },
+    {
+      "text": "0244 1o3 456",
+      "masked": true,
+      "note": "phone with o as 0"
+    },
+    {
+      "text": "+233 24 412 3456",
+      "masked": true,
+      "note": "international Ghana number"
+    },
+    {
+      "text": "zero two four four one two three",
+      "masked": true,
+      "note": "number in words"
+    },
+    {
+      "text": "zero two four four one two three four",
+      "masked": true,
+      "note": "number in words"
+    },
+    {
+      "text": "ama@x.io",
+      "masked": true,
+      "note": "email"
+    },
+    {
+      "text": "@amab",
+      "masked": true,
+      "note": "handle"
+    },
+    {
+      "text": "amab.com",
+      "masked": true,
+      "note": "bare domain"
+    },
+    {
+      "text": "ama dot com",
+      "masked": true,
+      "note": "dot com spelled out"
+    },
+    {
+      "text": "x: @amab",
+      "masked": true,
+      "note": "platform x + handle"
+    },
+    {
+      "text": "wa: amab",
+      "masked": true,
+      "note": "platform wa + handle"
+    },
+    {
+      "text": "www.ama.gh",
+      "masked": true,
+      "note": "url"
+    },
+    {
+      "text": "0xa1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1",
+      "masked": true,
+      "note": "crypto 0x address"
+    },
+    {
+      "text": "bc1qxy2kgdygjrsqtzq2n0yrf2493p83kkfjhx0wlh",
+      "masked": true,
+      "note": "crypto bc1 address"
+    },
+    {
+      "text": "T999999999999999999999999999999999",
+      "masked": true,
+      "note": "crypto T address"
+    },
+    {
+      "text": "sn@p amab",
+      "masked": true,
+      "note": "re-review 2 probe"
+    },
+    {
+      "text": "SnapChat amab",
+      "masked": true,
+      "note": "re-review 2 probe"
+    },
+    {
+      "text": "snapchat: amab",
+      "masked": true,
+      "note": "re-review 2 probe"
+    },
+    {
+      "text": "my ig handle amab",
+      "masked": true,
+      "note": "re-review 2 probe"
+    },
+    {
+      "text": "insta amab_gh",
+      "masked": true,
+      "note": "re-review 2 probe"
+    },
+    {
+      "text": "add me on snap",
+      "masked": true,
+      "note": "re-review 2 probe"
+    },
+    {
+      "text": "DM me",
+      "masked": true,
+      "note": "re-review 2 probe"
+    },
+    {
+      "text": "ama boateng gmail",
+      "masked": true,
+      "note": "re-review 2 probe"
+    },
+    {
+      "text": "amab at yahoo",
+      "masked": true,
+      "note": "re-review 2 probe"
+    },
+    {
+      "text": "amab @ outlook",
+      "masked": true,
+      "note": "re-review 2 probe"
+    },
+    {
+      "text": "amab(at)gmail(dot)com",
+      "masked": true,
+      "note": "re-review 2 probe"
+    },
+    {
+      "text": "amab at kofimail dot xyz",
+      "masked": true,
+      "note": "email in words, unlisted TLD"
+    },
+    {
+      "text": "0 2 4 4 1 2 3 4 5 6",
+      "masked": true,
+      "note": "re-review 2 probe: spaced digits"
+    },
+    {
+      "text": "024-412-3456",
+      "masked": true,
+      "note": "re-review 2 probe"
+    },
+    {
+      "text": "024.412.3456",
+      "masked": true,
+      "note": "re-review 2 probe"
+    },
+    {
+      "text": "24412345",
+      "masked": true,
+      "note": "re-review 2 probe"
+    },
+    {
+      "text": "+233 (24) 412 3456",
+      "masked": true,
+      "note": "re-review 2 probe"
+    },
+    {
+      "text": "0244 one two three 456",
+      "masked": true,
+      "note": "re-review 2 probe: digits and words mixed"
+    },
+    {
+      "text": "o two four four one two three four",
+      "masked": true,
+      "note": "re-review 2 probe: o as zero in words"
+    },
+    {
+      "text": "zero-two-four-four-one-two-three",
+      "masked": true,
+      "note": "re-review 2 probe"
+    },
+    {
+      "text": "ama.b on IG",
+      "masked": true,
+      "note": "re-review 2 probe"
+    },
+    {
+      "text": "tiktok.com/@ama",
+      "masked": true,
+      "note": "re-review 2 probe"
+    },
+    {
+      "text": "linktr.ee/amab",
+      "masked": true,
+      "note": "re-review 2 probe: link shortener"
+    },
+    {
+      "text": "paypal.me/amab",
+      "masked": true,
+      "note": "re-review 2 probe"
+    },
+    {
+      "text": "024 4l2 3456",
+      "masked": true,
+      "note": "M-9: l as 1"
+    },
+    {
+      "text": "024 4I2 3456",
+      "masked": true,
+      "note": "M-9: I as 1"
+    },
+    {
+      "text": "my sc is amab",
+      "masked": true,
+      "note": "M-9: sc"
+    },
+    {
+      "text": "my handle is ama_b_99",
+      "masked": true,
+      "note": "M-9: handle"
+    },
+    {
+      "text": "s n a p c h a t amab",
+      "masked": true,
+      "note": "M-9: letters spaced out"
+    },
+    {
+      "text": "tele gram amab",
+      "masked": true,
+      "note": "M-9: spaced platform name"
+    },
+    {
+      "text": "whats app me",
+      "masked": true,
+      "note": "M-9: spaced platform name"
+    },
+    {
+      "text": "watsapp me",
+      "masked": true,
+      "note": "M-9: misspelling"
+    },
+    {
+      "text": "wassap me",
+      "masked": true,
+      "note": "M-9: misspelling"
+    },
+    {
+      "text": "hit me up amab",
+      "masked": true,
+      "note": "M-9"
+    },
+    {
+      "text": "slide into my dms",
+      "masked": true,
+      "note": "M-9: dms"
+    },
+    {
+      "text": "cash app $amab",
+      "masked": true,
+      "note": "M-9: cash app + cashtag"
+    },
+    {
+      "text": "$amab",
+      "masked": true,
+      "note": "M-9: cashtag"
+    },
+    {
+      "text": "venmo amab",
+      "masked": true,
+      "note": "M-9"
+    },
+    {
+      "text": "onlyfans amab",
+      "masked": true,
+      "note": "M-9"
+    },
+    {
+      "text": "OF link in bio",
+      "masked": true,
+      "note": "M-9"
+    },
+    {
+      "text": "Me at the beach",
+      "masked": false,
+      "note": "plain"
+    },
+    {
+      "text": "12/06/2026 at the lake",
+      "masked": false,
+      "note": "date"
+    },
+    {
+      "text": "2026-06-12, Labadi",
+      "masked": false,
+      "note": "date"
+    },
+    {
+      "text": "Graduation, 15.06.2019",
+      "masked": false,
+      "note": "date"
+    },
+    {
+      "text": "Sunday at 7:30pm",
+      "masked": false,
+      "note": "time"
+    },
+    {
+      "text": "7:30 at the park",
+      "masked": false,
+      "note": "time"
+    },
+    {
+      "text": "GH₵200 well spent",
+      "masked": false,
+      "note": "price"
+    },
+    {
+      "text": "£1,250 trip",
+      "masked": false,
+      "note": "price"
+    },
+    {
+      "text": "Accra, 2019",
+      "masked": false,
+      "note": "year"
+    },
+    {
+      "text": "Summer 2024 in Cape Coast",
+      "masked": false,
+      "note": "year"
+    },
+    {
+      "text": "Class of 2015",
+      "masked": false,
+      "note": "year"
+    },
+    {
+      "text": "Wa, with my aunt",
+      "masked": false,
+      "note": "the town Wa"
+    },
+    {
+      "text": "In Wa last year",
+      "masked": false,
+      "note": "the town Wa"
+    },
+    {
+      "text": "X marks the spot",
+      "masked": false,
+      "note": "plain x"
+    },
+    {
+      "text": "Room 1204, hotel",
+      "masked": false,
+      "note": "short number"
+    },
+    {
+      "text": "Ghana vs Nigeria 2-1",
+      "masked": false,
+      "note": "score"
+    },
+    {
+      "text": "Running 10k in 52 minutes",
+      "masked": false,
+      "note": "numbers"
+    },
+    {
+      "text": "Mount Afadjato, 885m",
+      "masked": false,
+      "note": "height"
+    },
+    {
+      "text": "Me at 25",
+      "masked": false,
+      "note": "age"
+    },
+    {
+      "text": "Sunset @ Labadi",
+      "masked": false,
+      "note": "M-10: @ with a space"
+    },
+    {
+      "text": "Me @ the beach",
+      "masked": false,
+      "note": "M-10: @ with a space"
+    },
+    {
+      "text": "Kumasi at dusk, dot of light",
+      "masked": false,
+      "note": "M-10: at and dot far apart"
+    },
+    {
+      "text": "Look at that dot on the horizon",
+      "masked": false,
+      "note": "M-10: at and dot, a plain word after"
+    },
+    {
+      "text": "My number one fan",
+      "masked": false,
+      "note": "no contact detail; W5b's interim caption helper (private.dating_caption_has_contact) still drops the label (re-review 2 false positive); the W6a masker must not mask it"
+    },
+    {
+      "text": "Text from mum made my day",
+      "masked": false,
+      "note": "no contact detail; W5b's interim caption helper (private.dating_caption_has_contact) still drops the label (re-review 2 false positive); the W6a masker must not mask it"
+    },
+    {
+      "text": "Mail day!",
+      "masked": false,
+      "note": "no contact detail; W5b's interim caption helper (private.dating_caption_has_contact) still drops the label (re-review 2 false positive); the W6a masker must not mask it"
+    },
+    {
+      "text": "Call of the wild hike",
+      "masked": false,
+      "note": "no contact detail; W5b's interim caption helper (private.dating_caption_has_contact) still drops the label (re-review 2 false positive); the W6a masker must not mask it"
+    },
+    {
+      "text": "Snap peas from the garden",
+      "masked": false,
+      "note": "no contact detail; W5b's interim caption helper (private.dating_caption_has_contact) still drops the label (re-review 2 false positive); the W6a masker must not mask it"
+    },
+    {
+      "text": "Signal hill walk",
+      "masked": false,
+      "note": "no contact detail; W5b's interim caption helper (private.dating_caption_has_contact) still drops the label (re-review 2 false positive); the W6a masker must not mask it"
+    },
+    {
+      "text": "Threads of kente",
+      "masked": false,
+      "note": "no contact detail; W5b's interim caption helper (private.dating_caption_has_contact) still drops the label (re-review 2 false positive); the W6a masker must not mask it"
+    },
+    {
+      "text": "Insta-worthy sunset",
+      "masked": false,
+      "note": "no contact detail; W5b's interim caption helper (private.dating_caption_has_contact) still drops the label (re-review 2 false positive); the W6a masker must not mask it"
+    },
+    {
+      "text": "Messenger bag I made",
+      "masked": false,
+      "note": "no contact detail; W5b's interim caption helper (private.dating_caption_has_contact) still drops the label (re-review 2 false positive); the W6a masker must not mask it"
+    },
+    {
+      "text": "Fb memories",
+      "masked": false,
+      "note": "no contact detail; W5b's interim caption helper (private.dating_caption_has_contact) still drops the label (re-review 2 false positive); the W6a masker must not mask it"
+    },
+    {
+      "text": "Email-free weekend",
+      "masked": false,
+      "note": "no contact detail; W5b's interim caption helper (private.dating_caption_has_contact) still drops the label (re-review 2 false positive); the W6a masker must not mask it"
+    },
+    {
+      "text": "2025-2026 season",
+      "masked": false,
+      "note": "no contact detail; W5b's interim caption helper (private.dating_caption_has_contact) still drops the label (re-review 2 false positive); the W6a masker must not mask it"
+    },
+    {
+      "text": "imo 0244",
+      "masked": true,
+      "note": "I-5: Ghana app / mobile money"
+    },
+    {
+      "text": "botim amab",
+      "masked": true,
+      "note": "I-5: Ghana app / mobile money"
+    },
+    {
+      "text": "viber amab",
+      "masked": true,
+      "note": "I-5: Ghana app / mobile money"
+    },
+    {
+      "text": "wechat amab",
+      "masked": true,
+      "note": "I-5: Ghana app / mobile money"
+    },
+    {
+      "text": "we chat amab",
+      "masked": true,
+      "note": "I-5: Ghana app / mobile money"
+    },
+    {
+      "text": "discord amab",
+      "masked": true,
+      "note": "I-5: Ghana app / mobile money"
+    },
+    {
+      "text": "line id amab",
+      "masked": true,
+      "note": "I-5: Ghana app / mobile money"
+    },
+    {
+      "text": "line: amab",
+      "masked": true,
+      "note": "I-5: Ghana app / mobile money"
+    },
+    {
+      "text": "kik amab",
+      "masked": true,
+      "note": "I-5: Ghana app / mobile money"
+    },
+    {
+      "text": "youtube amab",
+      "masked": true,
+      "note": "I-5: Ghana app / mobile money"
+    },
+    {
+      "text": "amab on yt",
+      "masked": true,
+      "note": "I-5: Ghana app / mobile money"
+    },
+    {
+      "text": "linkedin amab",
+      "masked": true,
+      "note": "I-5: Ghana app / mobile money"
+    },
+    {
+      "text": "reddit u/amab",
+      "masked": true,
+      "note": "I-5: Ghana app / mobile money"
+    },
+    {
+      "text": "u/amab",
+      "masked": true,
+      "note": "I-5: Ghana app / mobile money"
+    },
+    {
+      "text": "momo amab",
+      "masked": true,
+      "note": "I-5: Ghana app / mobile money"
+    },
+    {
+      "text": "the gram: amab",
+      "masked": true,
+      "note": "I-5: Ghana app / mobile money"
+    },
+    {
+      "text": "0244_123_456",
+      "masked": true,
+      "note": "M-12: normalisation / split letters / leetspeak / separator"
+    },
+    {
+      "text": "s.n.a.p amab",
+      "masked": true,
+      "note": "M-12: normalisation / split letters / leetspeak / separator"
+    },
+    {
+      "text": "s-n-a-p-c-h-a-t amab",
+      "masked": true,
+      "note": "M-12: normalisation / split letters / leetspeak / separator"
+    },
+    {
+      "text": "sn4pchat",
+      "masked": true,
+      "note": "M-12: normalisation / split letters / leetspeak / separator"
+    },
+    {
+      "text": "5nap",
+      "masked": true,
+      "note": "M-12: normalisation / split letters / leetspeak / separator"
+    },
+    {
+      "text": "ⓢⓝⓐⓟ amab",
+      "masked": true,
+      "note": "M-12: normalisation / split letters / leetspeak / separator"
+    },
+    {
+      "text": "Snäpchat amab",
+      "masked": true,
+      "note": "M-12: normalisation / split letters / leetspeak / separator"
+    },
+    {
+      "text": "amab at kofimail . xyz",
+      "masked": true,
+      "note": "M-12: normalisation / split letters / leetspeak / separator"
+    },
+    {
+      "text": "amab at kofi site dot xyz",
+      "masked": true,
+      "note": "M-12: normalisation / split letters / leetspeak / separator"
+    },
+    {
+      "text": "amab AT kofimail DOT xyz",
+      "masked": true,
+      "note": "M-12: normalisation / split letters / leetspeak / separator"
+    },
+    {
+      "text": "amab at kofimail dot co dot uk",
+      "masked": true,
+      "note": "M-12: normalisation / split letters / leetspeak / separator"
+    },
+    {
+      "text": "amab @gmail",
+      "masked": true,
+      "note": "M-12: normalisation / split letters / leetspeak / separator"
+    },
+    {
+      "text": "amab@ gmail",
+      "masked": true,
+      "note": "M-12: normalisation / split letters / leetspeak / separator"
+    },
+    {
+      "text": "1nst4gram amab",
+      "masked": true,
+      "note": "M-12: normalisation / split letters / leetspeak / separator"
+    },
+    {
+      "text": "wh4ts4pp me",
+      "masked": true,
+      "note": "M-12: normalisation / split letters / leetspeak / separator"
+    },
+    {
+      "text": "v1ber amab",
+      "masked": true,
+      "note": "M-12: normalisation / split letters / leetspeak / separator"
+    },
+    {
+      "text": "t3l3gram amab",
+      "masked": true,
+      "note": "M-12: normalisation / split letters / leetspeak / separator"
+    },
+    {
+      "text": "d1scord amab",
+      "masked": true,
+      "note": "M-12: normalisation / split letters / leetspeak / separator"
+    },
+    {
+      "text": "in line for jollof",
+      "masked": false,
+      "note": "plain words beside the round-4 rules"
+    },
+    {
+      "text": "Line dancing at the party",
+      "masked": false,
+      "note": "plain words beside the round-4 rules"
+    },
+    {
+      "text": "A long line at the market",
+      "masked": false,
+      "note": "plain words beside the round-4 rules"
+    },
+    {
+      "text": "Imogen and me",
+      "masked": false,
+      "note": "plain words beside the round-4 rules"
+    },
+    {
+      "text": "Kikelomo's wedding",
+      "masked": false,
+      "note": "plain words beside the round-4 rules"
+    },
+    {
+      "text": "Gramma's birthday",
+      "masked": false,
+      "note": "plain words beside the round-4 rules"
+    },
+    {
+      "text": "I am a nurse",
+      "masked": false,
+      "note": "plain words beside the round-4 rules"
+    },
+    {
+      "text": "A day at a park",
+      "masked": false,
+      "note": "plain words beside the round-4 rules"
+    },
+    {
+      "text": "Team photo, 2 0 2 4",
+      "masked": false,
+      "note": "plain words beside the round-4 rules"
+    },
+    {
+      "text": "Price: $20",
+      "masked": false,
+      "note": "plain words beside the round-4 rules"
+    },
+    {
+      "text": "Born 1994 in Ho",
+      "masked": false,
+      "note": "plain words beside the round-4 rules"
+    },
+    {
+      "text": "Me at Kofi's dot party",
+      "masked": false,
+      "note": "plain words beside the round-4 rules"
+    },
+    {
+      "text": "Me at home. Great day",
+      "masked": false,
+      "note": "plain words beside the round-4 rules"
+    },
+    {
+      "text": "Lunch at noon. Fun times",
+      "masked": false,
+      "note": "plain words beside the round-4 rules"
+    },
+    {
+      "text": "Grade 5 class photo",
+      "masked": false,
+      "note": "plain words beside the round-4 rules"
+    },
+    {
+      "text": "Top 3 moments",
+      "masked": false,
+      "note": "plain words beside the round-4 rules"
+    },
+    {
+      "text": "Bus 4 Accra",
+      "masked": false,
+      "note": "plain words beside the round-4 rules"
+    },
+    {
+      "text": "Love it 100%",
+      "masked": false,
+      "note": "plain words beside the round-4 rules"
+    },
+    {
+      "text": "Ghana won 3-0",
+      "masked": false,
+      "note": "plain words beside the round-4 rules"
+    },
+    {
+      "text": "Café at Labadi",
+      "masked": false,
+      "note": "plain words beside the round-4 rules"
+    },
+    {
+      "text": "At home, dot com era tee",
+      "masked": false,
+      "note": "no contact detail; W5b's interim caption helper still drops the label (re-review 3 false positive); the W6a masker must not mask it"
+    },
+    {
+      "text": "Lunch at Kofi dot cafe",
+      "masked": false,
+      "note": "no contact detail; W5b's interim caption helper still drops the label (re-review 3 false positive); the W6a masker must not mask it"
+    },
+    {
+      "text": "Me at the IG office",
+      "masked": false,
+      "note": "no contact detail; W5b's interim caption helper still drops the label (re-review 3 false positive); the W6a masker must not mask it"
+    }
+  ]
+}

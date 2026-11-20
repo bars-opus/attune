@@ -44,7 +44,7 @@ class DatingModeDocs implements DocumentationModule {
           title: 'Up to 3 introductions a day',
           numberPrefix: '1',
           content:
-              'Dating introduces you to up to 3 people a day, at a time you choose. Each introduction says why you two were introduced: what you could do together and what you both say you value. There is no swipe deck, no browsing, no counters and no streaks.',
+              'Dating introduces you to up to 3 people a day, in Today, at a time you choose. Each introduction says why you two were introduced, from what you both said you want and may show, and that Attune can\'t predict chemistry. An introduction waits for you for seven days, with no countdown. If nobody is a good fit, Today says so: Attune never relaxes what you asked for to fill a day, and you can widen who you meet yourself. There is no swipe deck, no browsing, no counters and no streaks. If you turn on the daily note, Attune sends "You have something new in Attune." at your time, only when something is new.',
           type: ManualContentType.text,
         ),
         ManualContent(
@@ -129,7 +129,7 @@ class DatingModeDocs implements DocumentationModule {
           title: 'A match needs both of you',
           numberPrefix: '1',
           content:
-              'You answer each introduction with "Interested" or "Not for me". Nobody is told you passed. A match appears only when you\'re both interested.',
+              'You answer each introduction with "Interested" or "Not for me", and you can undo "Not for me" for a few seconds. Nobody is told you passed or that you\'re interested. A match appears only when you\'re both interested: you each see "You and (the person\'s name) are both interested" once, in Today. Some photos stay hidden until you\'re both interested; you see them once you match. Under "More", "Block" ends an introduction for both of you: the other person isn\'t told, and you\'re never introduced again, even if the other person makes a new account with the same number.',
           type: ManualContentType.text,
         ),
         ManualContent(
@@ -138,6 +138,23 @@ class DatingModeDocs implements DocumentationModule {
           numberPrefix: '2',
           content:
               'A former Attune partner is never introduced to you, even if either of you later makes a new account.',
+          type: ManualContentType.text,
+        ),
+        // Spec 2 W5c (§3.12; carry 15): the list and other countries.
+        ManualContent(
+          id: 'dating_never_introduce',
+          title: 'Never introduce me to these numbers',
+          numberPrefix: '3',
+          content:
+              'In Dating settings you can add up to 50 phone numbers, with a name only you see. Attune will never introduce you to the person who uses one, now or later, and they\'re never told. Attune keeps a code made from each number, not the number. Adding a number always says "Added.", whoever it belongs to. An introduction already made is taken away; a conversation already going is ended with Block.',
+          type: ManualContentType.text,
+        ),
+        ManualContent(
+          id: 'dating_other_countries',
+          title: 'Other countries',
+          numberPrefix: '4',
+          content:
+              'Introductions stay in your country unless you choose another one in Dating settings, once you\'re verified and your account is 14 days old. You\'re only introduced across a border to verified people whose accounts are at least 14 days old and who chose your country too. Scams often start with someone abroad: never send money to someone you haven\'t met.',
           type: ManualContentType.text,
         ),
         ManualContent(

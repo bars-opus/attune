@@ -6,9 +6,15 @@
 import 'package:attune/core/ui/motion/motion_tokens.dart';
 import 'package:attune/features/dating/lock/dating_unlock.dart';
 import 'package:attune/features/dating/not_open/dating_not_open_screen.dart';
+import 'package:attune/features/dating/routes/dating_page_watch.dart';
 import 'package:attune/features/dating/routes/dating_setup_steps.dart';
 import 'package:attune/features/dating/settings/dating_leave_screen.dart';
+import 'package:attune/features/dating/settings/abroad_screen.dart';
 import 'package:attune/features/dating/settings/dating_settings_screen.dart';
+import 'package:attune/features/dating/settings/never_introduce_screen.dart';
+import 'package:attune/features/dating/today/dating_today.dart';
+import 'package:attune/features/dating/today/match_moment_screen.dart';
+import 'package:attune/features/dating/today/today_screen.dart';
 import 'package:attune/features/dating/verify/reverify_route.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
@@ -22,7 +28,21 @@ abstract final class DatingPaths {
   /// Spec 2 W4b (§3.3.4, §3.14): where every reverify_device answer leads.
   static const verify = '/dating/verify';
 
+  /// Spec 2 W5b (§3.4, §3.5): Today and one match's moment.
+  static const today = '/dating/today';
+
+  /// Spec 2 W5c (§3.12): Never introduce me to these numbers.
+  static const neverIntroduce = '/dating/never-introduce';
+
+  /// Spec 2 W5c (§2.6, §3.12): Other countries.
+  static const abroad = '/dating/abroad';
+
+  static String match(String id) => '/dating/match/$id';
+
   static String step(String step) => '/dating/setup/$step';
+
+  /// Spec 2 W5b (§3.4): an editor opened from Widen comes back to Today.
+  static String stepFromToday(String step) => '/dating/setup/$step?from=today';
 
   static String notOpenFor({String? country, String? region}) =>
       Uri(
@@ -126,14 +146,18 @@ GoRoute datingRoute(
   pageBuilder:
       (context, state) => datingPage(
         state,
-        // Fix round 1 (C-1): every page but the unlock is gated.
-        path == DatingPaths.unlock
-            ? screen(state)
-            : DatingLockGate(
-              pageKey: state.pageKey,
-              from: state.uri.toString(),
-              child: screen(state),
-            ),
+        // Spec 2 W5b (§3.4): the photos leave memory with the last page.
+        DatingPageWatch(
+          // Fix round 1 (C-1): every page but the unlock is gated.
+          child:
+              path == DatingPaths.unlock
+                  ? screen(state)
+                  : DatingLockGate(
+                    pageKey: state.pageKey,
+                    from: state.uri.toString(),
+                    child: screen(state),
+                  ),
+        ),
         motion: motion?.call(state) ?? DatingMotion.none,
       ),
 );
@@ -185,5 +209,51 @@ List<RouteBase> datingRoutes({required bool Function() signedIn}) => [
     signedIn,
     (s) => const DatingReverifyRoute(),
     motion: (s) => DatingMotion.none,
+  ),
+  // Spec 2 W5b (§3.4, §3.15): Today slides in; the moment has its own
+  // settle (§3.5), so its page doesn't move.
+  datingRoute(
+    DatingPaths.today,
+    'datingToday',
+    signedIn,
+    (s) => const DatingTodayScreen(),
+    motion: (s) => DatingMotion.sharedAxis,
+  ),
+  datingRoute(
+    '/dating/match/:id',
+    'datingMatch',
+    signedIn,
+    (s) => DatingMatchMomentScreen(
+      matchId: s.pathParameters['id'] ?? '',
+      moment: switch (s.extra) {
+        (final DatingMoment m, _, _) => m,
+        _ => null,
+      },
+      myName: switch (s.extra) {
+        (_, final String name, _) => name,
+        _ => null,
+      },
+      // T7 fix 1 (M-1): the account Today read the moment for.
+      account: switch (s.extra) {
+        (_, _, final String account) => account,
+        _ => null,
+      },
+    ),
+    motion: (s) => DatingMotion.none,
+  ),
+  // Spec 2 W5c (§3.12, §3.15): a standard list.
+  datingRoute(
+    DatingPaths.neverIntroduce,
+    'datingNeverIntroduce',
+    signedIn,
+    (s) => const DatingNeverIntroduceScreen(),
+    motion: (s) => DatingMotion.sharedAxis,
+  ),
+  datingRoute(
+    DatingPaths.abroad,
+    'datingAbroad',
+    signedIn,
+    (s) => const DatingAbroadScreen(),
+    motion: (s) => DatingMotion.sharedAxis,
   ),
 ];

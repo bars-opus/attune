@@ -6,6 +6,7 @@ import 'package:attune/features/dating/data/dating_home_repository.dart';
 import 'package:attune/features/dating/data/dating_lifecycle_repository.dart';
 import 'package:attune/features/dating/data/dating_never_introduce.dart';
 import 'package:attune/features/dating/data/dating_rpc.dart';
+import 'package:attune/features/dating/settings/dating_abroad.dart';
 
 class FakeDatingHomeGateway implements DatingHomeGateway {
   FakeDatingHomeGateway({
@@ -112,6 +113,24 @@ class FakeDatingLifecycleGateway implements DatingLifecycleGateway {
   }
 }
 
+/// Spec 2 W5c: Other countries, answered and recorded.
+class FakeAbroad implements DatingAbroadGateway {
+  FakeAbroad([this.value = const DatingAbroadOptions(ok: true)]);
+
+  DatingAbroadOptions value;
+  DatingWrite answer = const DatingWrite(ok: true);
+  final sets = <List<String>>[];
+
+  @override
+  Future<DatingAbroadOptions> read() async => value;
+
+  @override
+  Future<DatingWrite> set(String key, List<String> countries) async {
+    sets.add(countries);
+    return answer;
+  }
+}
+
 /// Spec 2 W4b: the 'Never introduce me' list as the server shows it.
 class FakeNeverIntroduce implements DatingNeverIntroduceGateway {
   FakeNeverIntroduce([this.value = const DatingNeverIntroduceList(ok: true)]);
@@ -119,10 +138,35 @@ class FakeNeverIntroduce implements DatingNeverIntroduceGateway {
   DatingNeverIntroduceList value;
   int reads = 0;
 
+  /// Task 9 fix 1: while set, a read waits for it (and answers it).
+  Completer<DatingNeverIntroduceList>? hold;
+
+  /// Task 9 fix 1: while set, an add waits for it before answering.
+  Completer<void>? addHold;
+
   @override
   Future<DatingNeverIntroduceList> list() async {
     reads++;
+    if (hold case final h?) return h.future;
     return value;
+  }
+
+  // Spec 2 W5c: the writes, recorded; each answers [answer].
+  DatingWrite answer = const DatingWrite(ok: true);
+  final adds = <(String, String, String?)>[];
+  final removes = <String>[];
+
+  @override
+  Future<DatingWrite> add(String key, String phoneE164, String? label) async {
+    adds.add((key, phoneE164, label));
+    if (addHold case final h?) await h.future;
+    return answer;
+  }
+
+  @override
+  Future<DatingWrite> remove(String id) async {
+    removes.add(id);
+    return answer;
   }
 }
 

@@ -26,10 +26,20 @@ BEGIN
     ('dating_candidate_generation', true),
     ('dating_match_messaging', true),
     ('dating_profile_photos', true),
-    ('dating_alignment_algorithm_v1', true),
     ('dating_same_gender_matching', true),
     ('dating_age_assurance', true) -- Spec 2 W4a
   ON CONFLICT (key) DO UPDATE SET enabled = EXCLUDED.enabled, updated_at = now();
+
+  -- Spec 2 W5a (§4.9): introductions_v2 active with DEV- review references
+  -- Spec 2 W5a (production refuses DEV- references; the owner activates it
+  -- Spec 2 W5a there with real ones, the W5 gate). Any other active config retires.
+  UPDATE public.dating_algorithm_configs SET state = 'retired', retired_at = now() -- Spec 2 W5a
+   WHERE state = 'active' AND version <> 'introductions_v2'; -- Spec 2 W5a
+  UPDATE public.dating_algorithm_configs -- Spec 2 W5a
+     SET state = 'active', activated_at = coalesce(activated_at, now()), -- Spec 2 W5a
+         product_review_ref = coalesce(product_review_ref, 'DEV-product'), clinical_review_ref = coalesce(clinical_review_ref, 'DEV-clinical'), -- Spec 2 W5a
+         fairness_review_ref = coalesce(fairness_review_ref, 'DEV-fairness'), safety_review_ref = coalesce(safety_review_ref, 'DEV-safety') -- Spec 2 W5a
+   WHERE version = 'introductions_v2' AND state <> 'active'; -- Spec 2 W5a
 
   -- Spec 2 W4a (§3.3.5, §4.9): the verification mode, only when none is set
   -- Spec 2 W4a (an owner's 'live' or 'sandbox' is kept): 'fake' on a local

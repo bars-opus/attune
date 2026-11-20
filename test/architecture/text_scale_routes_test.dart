@@ -73,6 +73,12 @@ const _audited = {
   'datingLeave',
   // Spec 2 W4b (§3.3.4): the re-check on a new phone.
   'datingVerify',
+  // Spec 2 W5b (§3.4, §3.5): Today and the match moment.
+  'datingToday',
+  'datingMatch',
+  // Spec 2 W5c (§3.12): the never-introduce list and Other countries.
+  'datingNeverIntroduce',
+  'datingAbroad',
   'aboutUs',
   'addEditReminder',
   'ageStop',

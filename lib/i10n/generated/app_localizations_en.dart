@@ -4473,4 +4473,354 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get dating_verifySessionElsewhere => 'A check is already open on another phone. Finish it there, or try again later.';
+
+  @override
+  String get dating_cardWhyTitle => 'Why you two were introduced';
+
+  @override
+  String get dating_cardChemistry => 'Attune can\'t predict chemistry; meeting is how you find out.';
+
+  @override
+  String get dating_reasonMarriageSoon => 'You both said marriage, in the next year or two.';
+
+  @override
+  String get dating_reasonMarriageFew => 'You both said marriage, in a few years.';
+
+  @override
+  String get dating_reasonMarriageNone => 'You both said marriage, with no set time.';
+
+  @override
+  String get dating_reasonSameMarriage => 'You\'re both looking for marriage.';
+
+  @override
+  String get dating_reasonSameCommitted => 'You\'re both looking for a committed relationship.';
+
+  @override
+  String get dating_reasonSameCompanionship => 'You\'re both looking for companionship, at a comfortable pace.';
+
+  @override
+  String get dating_reasonSameNotSure => 'You\'re both still working out what you\'re looking for.';
+
+  @override
+  String get dating_reasonCompatible => 'You both want something committed.';
+
+  @override
+  String get dating_reasonChildrenYes => 'You both want children.';
+
+  @override
+  String get dating_reasonChildrenNo => 'Neither of you wants children.';
+
+  @override
+  String get dating_reasonChildrenHave => 'You both have children.';
+
+  @override
+  String dating_reasonSameFaith(String faith) {
+    return 'You\'re both $faith.';
+  }
+
+  @override
+  String get dating_reasonFaithMatters => 'Faith matters a lot to you both.';
+
+  @override
+  String get dating_reasonFamilyEarly => 'You both want family involved early.';
+
+  @override
+  String get dating_reasonFamilyWhenSerious => 'You both want family involved once it\'s serious.';
+
+  @override
+  String get dating_reasonFamilyOwn => 'You\'d both make the decision yourselves first.';
+
+  @override
+  String dating_reasonSamePlace(String place) {
+    return 'You\'re both in $place.';
+  }
+
+  @override
+  String get dating_reasonAcrossBorders => 'You\'re both open to meeting across borders.';
+
+  @override
+  String get dating_todayTitle => 'Today';
+
+  @override
+  String dating_todayBeforeDrop(String time) {
+    return 'Your introductions arrive at $time.';
+  }
+
+  @override
+  String dating_todayEmpty(String region) {
+    return 'No good fit today. Attune is still small in $region. We\'ll introduce you when there\'s a good fit.';
+  }
+
+  @override
+  String get dating_todayEmptyNoRegion => 'No good fit today. We\'ll introduce you when there\'s a good fit.';
+
+  @override
+  String get dating_todayQueueFull => 'You have introductions waiting. New ones arrive after you\'ve looked at these.';
+
+  @override
+  String get dating_todayPausedChats => 'You have 3 conversations going. New introductions start again when one ends or you meet.';
+
+  @override
+  String get dating_todayWaiting => 'Still waiting for you';
+
+  @override
+  String get dating_todayWiden => 'Widen who I meet';
+
+  @override
+  String dating_widenAges(int min, int max) {
+    return 'Ages: $min–$max';
+  }
+
+  @override
+  String dating_widenHowFar(String scope) {
+    return 'How far: $scope';
+  }
+
+  @override
+  String get dating_widenCountry => 'Anywhere in my country';
+
+  @override
+  String get dating_cardInterested => 'Interested';
+
+  @override
+  String get dating_cardNotForMe => 'Not for me';
+
+  @override
+  String dating_cardNoted(String name) {
+    return 'Noted. If $name is interested too, you\'ll both see it here.';
+  }
+
+  @override
+  String get dating_cardNotForMeDone => 'Not for me.';
+
+  @override
+  String get dating_cardGone => 'This isn\'t available any more.';
+
+  @override
+  String get dating_familyQuestion => 'One more question, if you like: How involved would you like family to be?';
+
+  @override
+  String get dating_familyEarly => 'Involved early';
+
+  @override
+  String get dating_familyWhenSerious => 'Involved once it\'s serious';
+
+  @override
+  String get dating_familyOwn => 'Our decision first';
+
+  @override
+  String get dating_familySkip => 'Skip';
+
+  @override
+  String dating_quietNote(String region) {
+    return 'It\'s quiet in $region right now. Widening your ages or area can help, or you can pause and come back later.';
+  }
+
+  @override
+  String dating_momentTitle(String name) {
+    return 'You and $name are both interested.';
+  }
+
+  @override
+  String get dating_momentBody => 'There\'s no rush. Say hello when you\'re ready.';
+
+  @override
+  String get dating_momentSayHello => 'Say hello';
+
+  @override
+  String get dating_momentLater => 'Later';
+
+  @override
+  String get dating_sectionOpenToday => 'Open Today';
+
+  @override
+  String get dating_quietNoteNoRegion => 'It\'s quiet right now. Widening your ages or area can help, or you can pause and come back later.';
+
+  @override
+  String get dating_todayLaterNoTime => 'Your next introductions arrive at the time you chose.';
+
+  @override
+  String get dating_todayNothingNew => 'Nothing new right now.';
+
+  @override
+  String get dating_cardNotedNoName => 'Noted. If it\'s mutual, you\'ll both see it here.';
+
+  @override
+  String get dating_momentTitleNoName => 'You\'re both interested.';
+
+  @override
+  String get dating_cardMore => 'More';
+
+  @override
+  String dating_cardMoreLabel(String name) {
+    return 'More for $name';
+  }
+
+  @override
+  String get dating_cardBlock => 'Block';
+
+  @override
+  String dating_blockRow(String name) {
+    return 'Block $name';
+  }
+
+  @override
+  String dating_blockTitle(String name) {
+    return 'Block $name?';
+  }
+
+  @override
+  String dating_blockBody(String name) {
+    return '$name won\'t be told. You won\'t be introduced again, even if $name makes a new account with the same number.';
+  }
+
+  @override
+  String get dating_blockCancel => 'Cancel';
+
+  @override
+  String dating_blockDone(String name) {
+    return 'You\'ve blocked $name. $name won\'t be told, and you won\'t be introduced again.';
+  }
+
+  @override
+  String get dating_cardMoreNoName => 'More options';
+
+  @override
+  String get dating_blockRowNoName => 'Block this person';
+
+  @override
+  String get dating_blockTitleNoName => 'Block this person?';
+
+  @override
+  String get dating_blockBodyNoName => 'This person won\'t be told. You won\'t be introduced again, even if this person makes a new account with the same number.';
+
+  @override
+  String get dating_blockDoneNoName => 'You\'ve blocked this person. This person won\'t be told, and you won\'t be introduced again.';
+
+  @override
+  String get dating_neverTitle => 'Never introduce me to these numbers';
+
+  @override
+  String get dating_neverBody => 'Add a phone number and Attune will never introduce you to the person who uses it, now or later. They\'re never told.';
+
+  @override
+  String get dating_neverCode => 'We keep a code made from the number, not the number itself.';
+
+  @override
+  String get dating_neverNumber => 'Phone number';
+
+  @override
+  String dating_neverCountryCode(String code) {
+    return 'Country code $code';
+  }
+
+  @override
+  String get dating_neverLabel => 'A name only you\'ll see (optional)';
+
+  @override
+  String get dating_neverAdd => 'Add';
+
+  @override
+  String get dating_neverAdded => 'Added.';
+
+  @override
+  String dating_neverRow(String label, String digits) {
+    return '$label · ending $digits';
+  }
+
+  @override
+  String dating_neverRowNoLabel(String digits) {
+    return 'Ending $digits';
+  }
+
+  @override
+  String get dating_neverRemove => 'Remove';
+
+  @override
+  String dating_neverRemoveLabel(String row) {
+    return 'Remove $row';
+  }
+
+  @override
+  String get dating_neverCheckNumber => 'Check the number and try again.';
+
+  @override
+  String get dating_neverCheckLabel => 'Use up to 20 letters, with no numbers.';
+
+  @override
+  String get dating_neverLimit => 'You can add up to 50 numbers.';
+
+  @override
+  String dating_neverRowSpoken(String label, String digits) {
+    return '$label, ending $digits';
+  }
+
+  @override
+  String get dating_neverRemoveTitle => 'Remove this number?';
+
+  @override
+  String get dating_neverRemoveBody => 'You could be introduced to this person again.';
+
+  @override
+  String get dating_neverKeep => 'Keep';
+
+  @override
+  String get dating_neverNotNow => 'Numbers can\'t be added right now.';
+
+  @override
+  String get dating_neverCountryTitle => 'Country code';
+
+  @override
+  String get dating_neverCountrySearch => 'Search by country or code';
+
+  @override
+  String get dating_neverCountryNone => 'No country found.';
+
+  @override
+  String get dating_abroadTitle => 'Other countries';
+
+  @override
+  String get dating_abroadCard => 'Scams often start with someone abroad: a soldier, an oil-rig worker, a crypto \'mentor\'. Never send money to someone you haven\'t met. Cross-border introductions are only with verified people whose accounts are at least 14 days old.';
+
+  @override
+  String dating_abroadTurnOn(String country) {
+    return 'Turn on for $country';
+  }
+
+  @override
+  String get dating_abroadNotNow => 'Not now';
+
+  @override
+  String get dating_abroadNone => 'No other country is open to you yet.';
+
+  @override
+  String get dating_abroadAllOff => 'Turn off every other country';
+
+  @override
+  String get dating_abroadAllOffTitle => 'Turn off every other country?';
+
+  @override
+  String get dating_abroadAllOffBody => 'You\'ll only be introduced to people in your own country. To turn a country on again, use a phone Dating trusts.';
+
+  @override
+  String get dating_abroadAllOffKeep => 'Keep';
+
+  @override
+  String get dating_abroadAllOffConfirm => 'Turn off';
+
+  @override
+  String get dating_abroadAllOffDone => 'Done. Introductions stay in your own country.';
+
+  @override
+  String dating_neverRemoveTitleNamed(String label, String digits) {
+    return 'Remove $label, ending $digits?';
+  }
+
+  @override
+  String dating_neverRemoveTitleNoName(String digits) {
+    return 'Remove the number ending $digits?';
+  }
+
+  @override
+  String get dating_abroadAllOffBodyNotYet => 'You\'ll only be introduced to people in your own country. You can turn a country on again once you\'re verified and your account is 14 days old.';
 }

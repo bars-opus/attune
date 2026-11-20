@@ -19,6 +19,11 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 const datingPhotoBucket = 'dating-profile-photos';
 
+/// Spec 2 W5b Task 6: a Dating photo's Cache-Control max-age, in seconds.
+/// The photos are read through 60-second signed URLs only; no copy may be
+/// kept by a CDN or a browser past that (Storage would keep one an hour).
+const datingPhotoCacheControl = '0';
+
 class DatingPhotoList {
   const DatingPhotoList({
     this.photos = const [],
@@ -103,7 +108,13 @@ class DatingPhotosRepository implements DatingPhotosGateway {
           .uploadBinary(
             key,
             bytes,
-            fileOptions: FileOptions(contentType: mime, upsert: false),
+            // Spec 2 W5b Task 6: never cached (Storage's default is an
+            // hour; its upload sends max-age=<this>, so 0 is the least).
+            fileOptions: FileOptions(
+              contentType: mime,
+              upsert: false,
+              cacheControl: datingPhotoCacheControl,
+            ),
           );
     } catch (_) {
       // An object that landed under an intent never used is swept, CSAM

@@ -453,8 +453,96 @@ INSERT INTO allowed_fn (sig, clients, service) VALUES
   -- Spec 2 W4b (T3 review M-4): where a verification pause's check stands.
   ('private.dating_check_standing(uuid,text)', '', '');
 -- ---------------------------------------------------------------------
+-- W5a (migration 1): the v1 trait objects are gone; the person, the pair
+-- and the filters are the database's own, the service role included
+-- (they decrypt or read who was introduced, S-4, S-5).
+DELETE FROM allowed_rel WHERE name = 'dating_feature_snapshots';
+DELETE FROM allowed_fn WHERE sig IN ('build_dating_feature_snapshot(uuid,text)', 'dating_alignment_reasons(jsonb,jsonb)',
+  'dating_alignment_score(jsonb,jsonb,jsonb)', 'dating_component_similarity(numeric,numeric)', 'dating_set_similarity(jsonb,jsonb)',
+  'dating_normalize_scalar(numeric,numeric,numeric)', 'dating_has_historical_consent(uuid)',
+  'generate_dating_candidates_for_user(uuid,text,text,text)', 'run_dating_candidate_generation(text)', 'get_my_dating_matches(integer)');
+INSERT INTO allowed_fn (sig, clients, service) VALUES
+  ('private.dating_matches_pair_key()', '', ''),
+  ('private.dating_config_review_guard()', '', ''),
+  ('private.dating_intro_config()', '', ''),
+  ('private.dating_cool_off_ends_at(uuid)', '', ''),
+  ('private.dating_last_seen_at(uuid)', '', ''),
+  ('private.dating_pair_is_man_woman(text,text)', '', ''),
+  ('private.dating_person(uuid,timestamp with time zone,jsonb)', '', ''),
+  ('private.dating_person_current(uuid,timestamp with time zone,jsonb)', '', ''),
+  ('private.dating_admits(private.dating_gen_person,private.dating_gen_person,jsonb)', '', ''),
+  ('private.dating_pair_safe(uuid,uuid,text,text)', '', ''),
+  ('private.dating_pair_new(uuid,uuid)', '', '');
+UPDATE allowed_fn SET service = '' WHERE sig IN ('dating_pair_passes_hard_filters(uuid,uuid)', 'get_my_dating_introductions(integer)');
+-- W5b (migration 2): Today, the v2 read, act and the marks are the app's;
+-- the photo keys the service role's; the digest is cron's; the card and
+-- the visible-introductions set are the database's own (S-4, S-5).
+DELETE FROM allowed_fn WHERE sig = 'get_my_dating_introductions(integer)';
+INSERT INTO allowed_fn (sig, clients, service) VALUES
+  ('get_my_dating_today()', 'authenticated', ''),
+  ('get_my_dating_introductions()', 'authenticated', ''),
+  ('mark_dating_match_moment_seen(uuid)', 'authenticated', ''),
+  ('dismiss_dating_today_note(text)', 'authenticated', ''),
+  ('dating_photo_keys_for_viewer(uuid,text,uuid,text)', '', 'service_role'),
+  ('send_dating_digests()', '', ''),
+  ('private.dating_photo_viewable(text,text)', '', ''),
+  ('private.dating_caption_has_contact(text)', '', ''), -- W5b fix round 2 (I-3)
+  ('private.dating_card(uuid,uuid,dating_introductions)', '', ''),
+  ('private.dating_visible_introductions(uuid)', '', '');
+-- W5c (migration 3): the queue and the fairness reports (the console's,
+-- W7b, through the service role; no client); the signals and the fairness
+-- job are the database's own; the Other countries read is the app's.
+INSERT INTO allowed_rel (name, authenticated, service_dml) VALUES
+  ('dating_moderation_cases', '', 'DELETE,INSERT,SELECT,UPDATE'),
+  ('dating_fairness_reports', '', 'DELETE,INSERT,SELECT,UPDATE');
+INSERT INTO allowed_fn (sig, clients, service) VALUES
+  ('get_dating_abroad_options()', 'authenticated', ''),
+  ('dating_fairness_weekly(date)', '', ''),
+  ('private.dating_open_signal_case(uuid,text,text)', '', ''),
+  ('private.dating_first_messages(uuid,timestamp with time zone)', '', ''),
+  ('private.dating_dragnet_holds(uuid,timestamp with time zone,jsonb)', '', ''),
+  ('private.dating_device_accounts_hold(uuid,timestamp with time zone)', '', ''),
+  ('private.dating_run_signals(timestamp with time zone,jsonb)', '', ''),
+  ('private.dating_throttled(uuid)', '', ''),
+  ('private.dating_signal_cleared(uuid,text,timestamp with time zone)', '', ''), -- W5c fix round 1 (I-1)
+  ('private.dating_generation_removed(uuid,timestamp with time zone,jsonb)', '', '');
+-- W5a Task 2: generation is cron's (postgres), no API role's.
+INSERT INTO allowed_fn (sig, clients, service) VALUES
+  ('run_dating_generation_tick(timestamp with time zone,text)', '', ''),
+  ('private.dating_open_chats(uuid,timestamp with time zone)', '', ''),
+  ('private.dating_capacity(uuid,timestamp with time zone,jsonb)', '', ''),
+  ('private.dating_reasons(private.dating_gen_person,private.dating_gen_person)', '', ''),
+  ('private.dating_generation_skip(text)', '', ''),
+  ('private.dating_generate_partition(text,text,text,date,timestamp with time zone,text,jsonb)', '', '');
+-- W5 final (M-7): the frozen-config trigger is the database's own.
+INSERT INTO allowed_fn (sig, clients, service) VALUES
+  ('private.dating_config_active_frozen()', '', '');
+-- ---------------------------------------------------------------------
 -- Checks (every batch adds its rows above this line).
 -- ---------------------------------------------------------------------
+-- W5b Task 7b (fix round 1, M-5): the card's Block is the app's alone (it
+-- acts as the caller). I-4's service pin already leaves it at ''; this
+-- asserts the finished allow-list, so a grant to the service role or anon
+-- can't pass by loosening the list to match it.
+DO $$ BEGIN
+  IF (SELECT string_agg(clients || '|' || coalesce(service, '<unpinned>'), ';') FROM allowed_fn
+       WHERE sig = 'block_dating_introduction(text,uuid)') IS DISTINCT FROM 'authenticated|' THEN
+    RAISE EXCEPTION 'CONTRACT VIOLATED: the allow-list lets more than the app run the card''s Block: %',
+      (SELECT string_agg(clients || '|' || coalesce(service, '<unpinned>'), ';') FROM allowed_fn
+        WHERE sig = 'block_dating_introduction(text,uuid)');
+  END IF;
+END $$;
+-- W5 final (Task 7b fix round 1 deferral): the card's act is the app's
+-- alone too (it acts as the caller). Its pin was a no-op for the same
+-- reason (I-4's pin leaves it at ''); this asserts the finished list.
+DO $$ BEGIN
+  IF (SELECT string_agg(clients || '|' || coalesce(service, '<unpinned>'), ';') FROM allowed_fn
+       WHERE sig = 'act_on_dating_introduction(text,uuid,text)') IS DISTINCT FROM 'authenticated|' THEN
+    RAISE EXCEPTION 'CONTRACT VIOLATED: the allow-list lets more than the app run the card''s act: %',
+      (SELECT string_agg(clients || '|' || coalesce(service, '<unpinned>'), ';') FROM allowed_fn
+        WHERE sig = 'act_on_dating_introduction(text,uuid,text)');
+  END IF;
+END $$;
 CREATE FUNCTION pg_temp.table_privs(p_rel oid, p_role text, p_dml_only boolean) RETURNS text LANGUAGE sql AS $$
   SELECT coalesce(string_agg(x.priv, ',' ORDER BY x.priv), '')
     FROM (SELECT DISTINCT a.privilege_type AS priv
@@ -615,19 +703,23 @@ END $$;
 -- S-4: the only function the service role can execute that decrypts
 -- Dating fields is dating_export_for_job (W9); no column stores routing.
 -- (PF-F13) publish_country_config, the service role's, decrypts transitively
--- through apply_same_gender_switch and returns no plaintext (a count); this
--- scan reads function text only, so W5 revisits it when generation decrypts.
+-- through apply_same_gender_switch and returns no plaintext (a count).
+-- Spec 2 W5a: the scan follows calls (generation decrypts through
+-- dating_person): every function whose body names a decrypting one decrypts.
 DO $$
 DECLARE
   v_bad text;
 BEGIN
-  SELECT string_agg(p.oid::regprocedure::text, ', ') INTO v_bad
-    FROM pg_proc AS p JOIN pg_namespace AS n ON n.oid = p.pronamespace
-   WHERE n.nspname IN ('public', 'private')
-     AND p.prosrc LIKE '%dating_field_decrypt%'
-     AND p.proname IS DISTINCT FROM 'dating_field_decrypt'
-     AND has_function_privilege('service_role', p.oid, 'EXECUTE')
-     AND p.proname IS DISTINCT FROM 'dating_export_for_job';
+  WITH RECURSIVE dec(oid, name) AS (
+    SELECT p.oid, p.proname::text FROM pg_proc AS p WHERE p.proname = 'dating_field_decrypt'
+    UNION
+    SELECT p.oid, p.proname::text
+      FROM pg_proc AS p JOIN pg_namespace AS n ON n.oid = p.pronamespace, dec
+     WHERE n.nspname IN ('public', 'private') AND p.prosrc ~ ('\m' || dec.name || '\M'))
+  SELECT string_agg(d.oid::regprocedure::text, ', ') INTO v_bad
+    FROM dec AS d
+   WHERE d.name NOT IN ('dating_field_decrypt', 'dating_export_for_job', 'publish_country_config')
+     AND has_function_privilege('service_role', d.oid, 'EXECUTE');
   IF v_bad IS NOT NULL THEN
     RAISE EXCEPTION 'CONTRACT VIOLATED: the service role can decrypt Dating fields through %', v_bad;
   END IF;

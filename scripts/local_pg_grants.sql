@@ -326,6 +326,52 @@ GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public
 -- exclusion recorder and backfill stay the service role's.
 \i supabase/migrations/20261106100010_dating_v2_phone_hmac_grants.sql
 
+-- Spec 2 W5 final (final server review M-1): four twins replayed below
+-- (20261106110010, 20261106190010, 20261107120010, 20261119100010) name
+-- objects later migrations dropped: W2's get_dating_eligibility(), W3a's
+-- get_my_dating_matches(integer), W4a's verify_dating_age,
+-- resolve_dating_verification_review and revoke_dating_age_verification,
+-- and W5's v1 trait snapshots and generator and
+-- get_my_dating_introductions(integer). Applied in migration order (CI's
+-- supabase start) each statement is valid; replayed after every migration
+-- it is not, and ON_ERROR_STOP ended the harness here. An applied
+-- migration is never edited, so each missing object gets an empty
+-- stand-in while those twins replay; the block after the last one drops
+-- only the stand-ins made here (an object a later migration re-creates is
+-- its own and stays).
+CREATE TEMP TABLE harness_stubs (kind text NOT NULL, name text NOT NULL);
+DO $$
+DECLARE
+  v_sig text;
+BEGIN
+  IF to_regclass('public.dating_feature_snapshots') IS NULL THEN
+    CREATE TABLE public.dating_feature_snapshots (stub boolean);
+    INSERT INTO pg_temp.harness_stubs (kind, name) VALUES ('table', 'public.dating_feature_snapshots');
+  END IF;
+  FOREACH v_sig IN ARRAY ARRAY[
+    'public.build_dating_feature_snapshot(uuid, text)',
+    'public.dating_alignment_reasons(jsonb, jsonb)',
+    'public.dating_alignment_score(jsonb, jsonb, jsonb)',
+    'public.dating_component_similarity(numeric, numeric)',
+    'public.dating_has_historical_consent(uuid)',
+    'public.dating_healing_gates_hold(uuid)',
+    'public.dating_normalize_scalar(numeric, numeric, numeric)',
+    'public.dating_set_similarity(jsonb, jsonb)',
+    'public.generate_dating_candidates_for_user(uuid, text, text, text)',
+    'public.get_dating_eligibility()',
+    'public.get_my_dating_introductions(integer)',
+    'public.get_my_dating_matches(integer)',
+    'public.resolve_dating_verification_review(uuid, text)',
+    'public.revoke_dating_age_verification(uuid)',
+    'public.run_dating_candidate_generation(text)',
+    'public.verify_dating_age(uuid, date, text, uuid, timestamp with time zone)'] LOOP
+    IF to_regprocedure(v_sig) IS NULL THEN
+      EXECUTE format('CREATE FUNCTION %s RETURNS void LANGUAGE plpgsql AS %L', v_sig, 'BEGIN RETURN; END');
+      INSERT INTO pg_temp.harness_stubs (kind, name) VALUES ('function', v_sig);
+    END IF;
+  END LOOP;
+END $$;
+
 -- Spec 2 W1a: every Dating table's and function's client grants re-asserted;
 -- introductions, interest actions and matches revoked from the service role (S-5).
 \i supabase/migrations/20261106110010_dating_v2_enforcement_survival_grants.sql
@@ -397,3 +443,26 @@ GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public
 
 -- Spec 2 W4b: trusted devices are the service role's to write (trust_dating_device); the device check stays the app's.
 \i supabase/migrations/20261109110010_dating_v2_trusted_devices_grants.sql
+
+-- Spec 2 W5a: matching (twin of 20261119100000)
+\i supabase/migrations/20261119100010_dating_v2_matching_grants.sql
+
+-- Spec 2 W5 final (M-1): the stand-ins made above go (only those).
+DO $$
+DECLARE
+  r record;
+BEGIN
+  FOR r IN SELECT s.kind, s.name FROM pg_temp.harness_stubs AS s LOOP
+    EXECUTE format(CASE r.kind WHEN 'table' THEN 'DROP TABLE %s' ELSE 'DROP FUNCTION %s' END, r.name);
+  END LOOP;
+END $$;
+DROP TABLE pg_temp.harness_stubs;
+
+-- Spec 2 W5b: Today (twin of 20261119110000)
+\i supabase/migrations/20261119110010_dating_v2_today_grants.sql
+
+-- Spec 2 W5b Task 7b: Block on the card (twin of 20261119115000)
+\i supabase/migrations/20261119115010_dating_v2_block_grants.sql
+
+-- Spec 2 W5c: signals (twin of 20261119120000)
+\i supabase/migrations/20261119120010_dating_v2_signals_grants.sql

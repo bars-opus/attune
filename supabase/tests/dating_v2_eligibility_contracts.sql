@@ -641,6 +641,9 @@ BEGIN
   -- never passes.
   UPDATE public.dating_enrollments SET state = 'active' WHERE user_id = v_wait;
   INSERT INTO public.dating_enrollments (user_id, state) VALUES (v_past, 'active');
+  INSERT INTO public.dating_session_context (user_id, effective_tier, dating_allowed_here, same_gender_allowed_here, -- Spec 2 W5a (§2.3): seen in Dating
+                                             away_from_home, ip_resolved) VALUES (v_past, 1, true, false, false, true), -- Spec 2 W5a
+                                             (v_wait, 1, true, false, false, true); -- Spec 2 W5a fix round 1 (I-1): only the wait keeps v_wait out
   v := pg_temp.probe(v_ready, format($q$SELECT (public.dating_candidate_is_current(%L) IS FALSE) || '/' || (public.dating_candidate_is_current(%L) IS TRUE)$q$, v_wait, v_past));
   IF v IS DISTINCT FROM 'true/true' THEN
     RAISE EXCEPTION 'CONTRACT VIOLATED: the candidate check ignores the gentle wait (in the wait not current, after it current: %)', v;

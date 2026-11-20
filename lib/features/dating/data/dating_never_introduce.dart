@@ -76,6 +76,13 @@ class DatingNeverIntroduceList {
 
 abstract class DatingNeverIntroduceGateway {
   Future<DatingNeverIntroduceList> list();
+
+  /// Spec 2 W5c (§3.12): `{ok, message: 'added'}` for any number (it can't
+  /// be used to test whether someone uses Attune), or a refusal.
+  Future<DatingWrite> add(String key, String phoneE164, String? label);
+
+  /// Spec 2 W5c: removes one shown entry (a kept one is never shown).
+  Future<DatingWrite> remove(String id);
 }
 
 class DatingNeverIntroduceRepository implements DatingNeverIntroduceGateway {
@@ -93,6 +100,21 @@ class DatingNeverIntroduceRepository implements DatingNeverIntroduceGateway {
       return const DatingNeverIntroduceList(reason: 'busy');
     }
   }
+
+  @override
+  Future<DatingWrite> add(String key, String phoneE164, String? label) =>
+      datingWrite(
+        () => _rpc.call('add_dating_never_introduce', {
+          'p_idempotency_key': key,
+          'p_phone_e164': phoneE164,
+          'p_label': label,
+        }),
+      );
+
+  @override
+  Future<DatingWrite> remove(String id) => datingWrite(
+    () => _rpc.call('remove_dating_never_introduce', {'p_id': id}),
+  );
 }
 
 final datingNeverIntroduceGatewayProvider =

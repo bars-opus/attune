@@ -16,6 +16,13 @@ const datingBiometricPolicyVersion = 'dating-verify-1';
 /// The human route's private bucket (§3.3.3).
 const datingReviewBucket = 'dating-verification-review';
 
+/// Spec 2 W5b Task 6 fix round 1 (M-5): a review photo's Cache-Control
+/// max-age, in seconds. The two photos are deleted at the decision or after
+/// 72 hours; no copy may stay fresh in a reviewer's browser or a CDN past
+/// that (Storage's default is an hour; its upload sends max-age=N, so
+/// 0 is the least).
+const datingReviewCacheControl = '0';
+
 typedef DatingVerifyInvoke =
     Future<Object?> Function(Map<String, Object?> body);
 typedef DatingReviewUpload = Future<void> Function(String path, Uint8List jpeg);
@@ -54,6 +61,7 @@ class DatingVerificationRepository implements DatingVerificationGateway {
                 fileOptions: const FileOptions(
                   contentType: 'image/jpeg',
                   upsert: false,
+                  cacheControl: datingReviewCacheControl,
                 ),
               );
         },

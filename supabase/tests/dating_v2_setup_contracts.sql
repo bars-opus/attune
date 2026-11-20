@@ -1468,7 +1468,11 @@ BEGIN
   -- Spec 2 W4a count). None returns a photo to anyone else.
   -- Spec 2 W4 final (I-1b): whether every approved photo is newer than the
   -- Spec 2 W4 final age pass (a boolean, the database's own).
-  IF v_got IS DISTINCT FROM 'private.dating_age_recheck_due(uuid):; private.dating_exit_internal(uuid, boolean):; private.dating_has_data(uuid):; private.dating_next_step(uuid):; private.dating_photo_bucket_limits():; public.begin_dating_verification(uuid, text, text, text, text, text):service_role; public.check_dating_photo_strip(uuid, text, text):service_role; public.claim_dating_orphan_uploads(integer):service_role; public.create_dating_photo_upload_intent(text):authenticated; public.dating_photos_queue_media_before_delete():; public.dating_profile_complete(uuid):; public.dating_storage_owns(text):authenticated; public.delete_dating_profile_photo(uuid):authenticated; public.get_dating_operational_health():service_role; public.get_dating_profile_preview():authenticated; public.get_dating_verification_photos(uuid):service_role; public.get_my_dating_verification():authenticated; public.insert_dating_profile_photo(uuid, smallint):authenticated; public.list_dating_profile_photos():authenticated; public.prepare_account_deletion(uuid):service_role; public.record_dating_orphan_scan(uuid, text):service_role; public.record_dating_photo_csam(uuid, text):service_role; public.recover_stale_dating_photo_jobs():service_role; public.reorder_dating_photos(text, uuid[]):authenticated; public.set_dating_photo_caption(uuid, text):authenticated' THEN
+  -- Spec 2 W5b: the card others see (the database's own; none while the
+  -- Spec 2 W5b person keeps photos for mutual interest, never a key) and the
+  -- Spec 2 W5b photo keys for dating-photo-urls (the service role's: the
+  -- Spec 2 W5b phone first, never before mutual interest when chosen).
+  IF v_got IS DISTINCT FROM 'private.dating_age_recheck_due(uuid):; private.dating_card(uuid, uuid, dating_introductions):; private.dating_exit_internal(uuid, boolean):; private.dating_has_data(uuid):; private.dating_next_step(uuid):; private.dating_photo_bucket_limits():; public.begin_dating_verification(uuid, text, text, text, text, text):service_role; public.check_dating_photo_strip(uuid, text, text):service_role; public.claim_dating_orphan_uploads(integer):service_role; public.create_dating_photo_upload_intent(text):authenticated; public.dating_photo_keys_for_viewer(uuid, text, uuid, text):service_role; public.dating_photos_queue_media_before_delete():; public.dating_profile_complete(uuid):; public.dating_storage_owns(text):authenticated; public.delete_dating_profile_photo(uuid):authenticated; public.get_dating_operational_health():service_role; public.get_dating_profile_preview():authenticated; public.get_dating_verification_photos(uuid):service_role; public.get_my_dating_verification():authenticated; public.insert_dating_profile_photo(uuid, smallint):authenticated; public.list_dating_profile_photos():authenticated; public.prepare_account_deletion(uuid):service_role; public.record_dating_orphan_scan(uuid, text):service_role; public.record_dating_photo_csam(uuid, text):service_role; public.recover_stale_dating_photo_jobs():service_role; public.reorder_dating_photos(text, uuid[]):authenticated; public.set_dating_photo_caption(uuid, text):authenticated' THEN
     RAISE EXCEPTION 'CONTRACT VIOLATED: the functions reading Dating photos changed (review photos after mutual interest): %', v_got;
   END IF;
 END $$;
@@ -2616,19 +2620,11 @@ BEGIN
     RETURNING id INTO v_m_xz;
     INSERT INTO public.dating_matches (user_low_id, user_high_id, state) VALUES (least(v_w, v_z2), greatest(v_w, v_z2), 'active')
     RETURNING id INTO v_m_wz;
-    INSERT INTO public.dating_feature_snapshots (user_id, algorithm_version) VALUES (least(v_x, v_y), 'w1final-m2') RETURNING id INTO v_s_low;
-    INSERT INTO public.dating_feature_snapshots (user_id, algorithm_version) VALUES (greatest(v_x, v_y), 'w1final-m2') RETURNING id INTO v_s_high;
-    INSERT INTO public.dating_introductions (pair_key, user_low_id, user_high_id, display_band, state, algorithm_version,
-                                             snapshot_low_id, snapshot_high_id, internal_score)
-    VALUES (public.dating_pair_key(v_x, v_y), least(v_x, v_y), greatest(v_x, v_y), 'some_shared_ground', 'presented', 'w1final-m2',
-            v_s_low, v_s_high, 0.5)
+    INSERT INTO public.dating_introductions (pair_key, user_low_id, user_high_id, state, algorithm_version) -- Spec 2 W5a
+    VALUES (public.dating_pair_key(v_x, v_y), least(v_x, v_y), greatest(v_x, v_y), 'presented', 'w1final-m2') -- Spec 2 W5a
     RETURNING id INTO v_i_xy;
-    INSERT INTO public.dating_feature_snapshots (user_id, algorithm_version) VALUES (least(v_n, v_z2), 'w1final-m2') RETURNING id INTO v_s_low;
-    INSERT INTO public.dating_feature_snapshots (user_id, algorithm_version) VALUES (greatest(v_n, v_z2), 'w1final-m2') RETURNING id INTO v_s_high;
-    INSERT INTO public.dating_introductions (pair_key, user_low_id, user_high_id, display_band, state, algorithm_version,
-                                             snapshot_low_id, snapshot_high_id, internal_score)
-    VALUES (public.dating_pair_key(v_n, v_z2), least(v_n, v_z2), greatest(v_n, v_z2), 'some_shared_ground', 'presented', 'w1final-m2',
-            v_s_low, v_s_high, 0.5)
+    INSERT INTO public.dating_introductions (pair_key, user_low_id, user_high_id, state, algorithm_version) -- Spec 2 W5a
+    VALUES (public.dating_pair_key(v_n, v_z2), least(v_n, v_z2), greatest(v_n, v_z2), 'presented', 'w1final-m2') -- Spec 2 W5a
     RETURNING id INTO v_i_n;
     v_y_before := pg_temp.rows_of(v_y);
     v_sent := (SELECT count(*) FROM public.scheduled_notifications) + (SELECT count(*) FROM public.in_app_notifications);

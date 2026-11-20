@@ -7,6 +7,9 @@ verify_jwt = true
 [functions.dating-verification]
 verify_jwt = true
 
+[functions.dating-photo-urls]
+verify_jwt = true
+
 [functions.accept-invite]
 verify_jwt = true
 

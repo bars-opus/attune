@@ -32,6 +32,7 @@ import '../support/dating_fakes.dart';
 import '../support/dating_photos_fakes.dart';
 import '../support/dating_setup_fakes.dart';
 import '../support/dating_shell.dart';
+import '../support/dating_today_fakes.dart';
 
 void main() {
   setUpAll(() => registerDatingDeviceWipes(DeviceWipeRegistry.instance));
@@ -370,6 +371,19 @@ void main() {
                   home: const DatingHome(state: DatingHomeState.reverifyDevice),
                 )
                 : null,
+        // Spec 2 W5b: Today and the moment read their day from a fake
+        // (T7 fix 1, M-2: the moment's own day still lists it).
+        overrides: datingTodayOverrides(
+          path == '/dating/match/:id'
+              ? FakeDatingToday(
+                today: datingTodayJson({
+                  'moments': [
+                    {'match_id': 'x', 'display_name': 'Kofi'},
+                  ],
+                }),
+              )
+              : FakeDatingToday(),
+        ),
       );
       expect(s.location, location, reason: path);
       s.lock.on = true;

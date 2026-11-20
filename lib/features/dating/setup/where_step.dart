@@ -15,6 +15,7 @@ import 'package:attune/features/dating/gentle_wait/gentle_wait_providers.dart'
     show datingOnlineProvider;
 import 'package:attune/features/dating/routes/dating_routes.dart';
 import 'package:attune/features/dating/routes/dating_setup_steps.dart';
+import 'package:attune/features/dating/settings/dating_abroad.dart';
 import 'package:attune/features/dating/setup/dating_list_names.dart';
 import 'package:attune/features/dating/setup/dating_picker_sheet.dart';
 import 'package:attune/features/dating/setup/dating_setup_models.dart';
@@ -230,6 +231,20 @@ class _DatingWhereStepState extends ConsumerState<DatingWhereStep>
     final online = ref.watch(datingOnlineProvider).valueOrNull ?? true;
     final account = ref.watch(datingAccountProvider);
     final listsRead = ref.watch(datingSetupListsProvider(account));
+    // Spec 2 W5c Task 10 fix round 1 (M-2): opened as an editor (Widen's or
+    // settings' How far), the abroad row says what is true: a link to Other
+    // countries once eligible, W3's disabled line when not, nothing while
+    // unknown. First-run setup keeps W3's row (verification comes later).
+    //
+    // W5 final fix: while that read is under way the row is there, dimmed
+    // and saying so (M-10, T10 N-3: no row popping in late); not eligible
+    // (any more), it still opens the page, whose off-only path never shows
+    // the list (M-11).
+    final abroadRead =
+        widget.nav.from == null
+            ? null
+            : ref.watch(datingAbroadProvider(account));
+    final abroad = abroadRead?.valueOrNull;
     // A failed read shows nothing of an old value (carry B, D8).
     final lists = listsRead.hasError ? null : listsRead.valueOrNull;
     final loadFailed = listsRead.hasError || profileFailed;
@@ -345,12 +360,29 @@ class _DatingWhereStepState extends ConsumerState<DatingWhereStep>
             ),
           ],
           const SizedBox(height: Spacing.md),
-          ListTile(
-            contentPadding: EdgeInsets.zero,
-            enabled: false,
-            title: Text(loc.dating_abroadRow),
-            subtitle: Text(loc.dating_abroadDisabled),
-          ),
+          if (widget.nav.from == null)
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              enabled: false,
+              title: Text(loc.dating_abroadRow),
+              subtitle: Text(loc.dating_abroadDisabled),
+            )
+          else if (abroad == null && abroadRead!.isLoading)
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              enabled: false,
+              title: Text(loc.dating_abroadRow),
+              subtitle: Text(loc.loadingDefaultMessage),
+            )
+          else if (abroad != null && abroad.ok)
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              title: Text(loc.dating_abroadRow),
+              subtitle:
+                  abroad.eligible ? null : Text(loc.dating_abroadDisabled),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: () => context.push(DatingPaths.abroad),
+            ),
           Text(loc.dating_whereHelper, style: theme.textTheme.bodySmall),
           if (refusal != null) ...[
             const SizedBox(height: Spacing.sm),

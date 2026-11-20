@@ -34,6 +34,7 @@ class DatingCard {
     this.prompts = const [],
     this.photosAfterMutual = false,
     this.photoIds = const [],
+    this.captions = const [],
   });
 
   final String? displayName;
@@ -53,6 +54,10 @@ class DatingCard {
   final List<(String, String)> prompts;
   final bool photosAfterMutual;
   final List<String> photoIds;
+
+  /// Spec 2 W5b (carry 13): each photo's caption, in [photoIds] order,
+  /// read as its label (null: none). Never printed on the card.
+  final List<String?> captions;
 
   /// The same card showing only [ids] of its photos (D12: Task 10's photo
   /// rule decides which may show).
@@ -74,7 +79,13 @@ class DatingCard {
     prompts: prompts,
     photosAfterMutual: photosAfterMutual,
     photoIds: ids,
+    captions: [for (final id in ids) _captionOf(id)],
   );
+
+  String? _captionOf(String id) {
+    final i = photoIds.indexOf(id);
+    return i >= 0 && i < captions.length ? captions[i] : null;
+  }
 
   /// Never printed: the card is the person's own answers.
   @override
@@ -119,6 +130,13 @@ class DatingCard {
       photoIds: [
         for (final p in photos)
           if (p['id'] is String) p['id'] as String,
+      ],
+      captions: [
+        for (final p in photos)
+          if (p['id'] is String)
+            p['caption'] is String && (p['caption'] as String).isNotEmpty
+                ? p['caption'] as String
+                : null,
       ],
     );
   }
@@ -314,7 +332,11 @@ class DatingCardView extends StatelessWidget {
           onPressed: onShowPhotos,
         )
       else if (card.photoIds.isNotEmpty)
-        _Photos(count: card.photoIds.length, photos: photos),
+        _Photos(
+          count: card.photoIds.length,
+          photos: photos,
+          captions: card.captions,
+        ),
       if (after('photos') case final w?) w,
     ];
     return Card(
@@ -342,10 +364,15 @@ class DatingCardView extends StatelessWidget {
 /// fix 1, M-6) with each page's own "Photo n of N", and a row of dots
 /// under them (no motion: the dot moves with the page).
 class _Photos extends StatefulWidget {
-  const _Photos({required this.count, required this.photos});
+  const _Photos({
+    required this.count,
+    required this.photos,
+    this.captions = const [],
+  });
 
   final int count;
   final List<Uint8List> photos;
+  final List<String?> captions;
 
   @override
   State<_Photos> createState() => _PhotosState();
@@ -373,7 +400,12 @@ class _PhotosState extends State<_Photos> {
                 for (var i = 0; i < widget.count; i++)
                   Semantics(
                     image: true,
-                    label: loc.dating_cardPhoto(i + 1, widget.count),
+                    label: [
+                      loc.dating_cardPhoto(i + 1, widget.count),
+                      if (i < widget.captions.length &&
+                          widget.captions[i] != null)
+                        widget.captions[i]!,
+                    ].join('. '),
                     child:
                         i < widget.photos.length && widget.photos[i].isNotEmpty
                             ? Image.memory(
