@@ -163,10 +163,11 @@ class _WaitingScreenState extends ConsumerState<WaitingScreen> {
       await ref.read(sendReminderProvider(widget.sessionId).future);
       if (!mounted) return;
       ref.read(hapticsProvider).light();
+      // "Partner" is the router's stand-in for a name it does not know.
+      final partner =
+          widget.partnerName != 'Partner' ? widget.partnerName : 'your partner';
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('A gentle nudge was sent to ${widget.partnerName}.'),
-        ),
+        SnackBar(content: Text('A gentle nudge was sent to $partner.')),
       );
       setState(() => _showRemindButton = false);
       _scheduleReminder(const Duration(hours: 4));

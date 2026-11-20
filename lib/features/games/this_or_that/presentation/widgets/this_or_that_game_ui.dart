@@ -490,6 +490,10 @@ class ThisOrThatPartnerPresence extends StatelessWidget {
   final String partnerName;
   final bool answered;
 
+  /// "Partner" is the router's stand-in for a name it does not know.
+  String get _partner =>
+      partnerName != 'Partner' ? partnerName : 'Your partner';
+
   @override
   Widget build(BuildContext context) {
     final palette = ThisOrThatPalette.of(context);
@@ -522,7 +526,7 @@ class ThisOrThatPartnerPresence extends StatelessWidget {
             const SizedBox(width: 8),
             Flexible(
               child: Text(
-                answered ? '$partnerName picked' : '$partnerName is choosing',
+                answered ? '$_partner picked' : '$_partner is choosing',
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: Theme.of(context).textTheme.labelMedium?.copyWith(

@@ -3,12 +3,14 @@ import 'package:attune/features/games/platform/game_theme.dart';
 import 'package:attune/features/games/platform/shell/game_buttons.dart';
 import 'package:attune/features/games/platform/shell/game_content_width.dart';
 import 'package:attune/features/games/platform/shell/game_coach.dart';
+import 'package:attune/features/games/presentation/providers/game_partner_name_provider.dart';
 import 'package:attune/features/games/presentation/providers/game_session_live_provider.dart';
 import 'package:attune/features/games/this_or_that/data/models/custom_this_or_that_question.dart';
 import 'package:attune/features/games/this_or_that/data/models/this_or_that_session.dart';
 import 'package:attune/features/games/this_or_that/presentation/providers/this_or_that_custom_providers.dart'
     as custom;
 import 'package:attune/features/games/this_or_that/presentation/providers/this_or_that_providers.dart';
+import 'package:attune/features/games/this_or_that/presentation/screens/end_screen.dart';
 import 'package:attune/features/games/this_or_that/presentation/screens/question_screen.dart';
 import 'package:attune/features/games/this_or_that/presentation/screens/question_source_screen.dart';
 import 'package:attune/features/games/this_or_that/presentation/screens/reveal_screen.dart';
@@ -82,10 +84,35 @@ RevealScreen _reveal({required String partner}) => RevealScreen(
   onNext: () {},
 );
 
+/// The end of a game with Ama: [matches] of 10, and the round worth
+/// talking about.
+ShellScreen _end({required int matches}) => (
+  build:
+      () => EndScreen(
+        matchCount: matches,
+        totalRounds: 10,
+        mostInterestingPick: const {
+          'question_text': 'Friday night: stay in or go out?',
+          'answer_a': 'a',
+          'answer_b': 'b',
+          'answer_a_text': 'Stay in',
+          'answer_b_text': 'Go out',
+          'answer_a_emoji': '🛋️',
+          'answer_b_emoji': '✨',
+        },
+        onPlayAgain: () {},
+        onTryAnotherGame: () {},
+      ),
+  overrides:
+      () => [gamePartnerNameProvider.overrideWith((_) async => 'Ama')],
+  then: null,
+);
+
 /// The screens moved onto the shell that have pictures: the question deck
 /// list, the write-a-question form, past games, the next-card chooser, the
-/// invitation decision, waiting for the partner, and the reveal on a match
-/// and on a difference. The reveal's burst is an animation; these are the
+/// invitation decision, waiting for the partner, the reveal on a match
+/// and on a difference, and the end on a high score and a low one. The
+/// reveal's burst and the end's tiles are animations; these are the
 /// settled screens, under reduced motion.
 Map<String, ShellScreen> thisOrThatShellScreens() => {
   'deck_list': (
@@ -219,6 +246,8 @@ Map<String, ShellScreen> thisOrThatShellScreens() => {
     overrides: () => const [],
     then: null,
   ),
+  'end': _end(matches: 7),
+  'end_low': _end(matches: 1),
 };
 
 /// The question screen's pictures: before a choice, with THIS chosen, and

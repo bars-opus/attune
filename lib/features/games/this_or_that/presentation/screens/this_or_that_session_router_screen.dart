@@ -9,6 +9,7 @@ import 'package:attune/features/games/this_or_that/presentation/screens/question
 import 'package:attune/features/games/this_or_that/presentation/screens/question_source_screen.dart';
 import 'package:attune/features/games/this_or_that/presentation/screens/reveal_screen.dart';
 import 'package:attune/features/games/this_or_that/presentation/screens/waiting_screen.dart';
+import 'package:attune/features/games/this_or_that/presentation/start_this_or_that.dart';
 import 'package:attune/features/games/this_or_that/presentation/widgets/this_or_that_game_ui.dart';
 import 'package:attune/features/games/this_or_that/this_or_that_game.dart';
 import 'package:flutter/material.dart';
@@ -60,7 +61,8 @@ class ThisOrThatSessionRouterScreen extends ConsumerWidget {
             message: 'Start a fresh round whenever you are both ready.',
             icon: Icons.hourglass_disabled_rounded,
             actionLabel: 'Back to games',
-            onAction: () => context.pushReplacementNamed('thisOrThatGamesHub'),
+            // Back to the page the game was opened from.
+            onAction: () => Navigator.of(context).maybePop(),
           );
         }
 
@@ -108,7 +110,7 @@ class ThisOrThatSessionRouterScreen extends ConsumerWidget {
                           abandonSessionProvider(session.id).future,
                         );
                         if (!context.mounted) return;
-                        context.pushReplacementNamed('thisOrThatGamesHub');
+                        await Navigator.of(context).maybePop();
                       },
                     );
                   }
@@ -159,9 +161,7 @@ class ThisOrThatSessionRouterScreen extends ConsumerWidget {
                         'No score to settle. Start another whenever the mood is right.',
                     icon: Icons.hourglass_disabled_rounded,
                     actionLabel: 'Back to games',
-                    onAction:
-                        () =>
-                            context.pushReplacementNamed('thisOrThatGamesHub'),
+                    onAction: () => Navigator.of(context).maybePop(),
                   );
                 }
 
@@ -239,16 +239,11 @@ class ThisOrThatSessionRouterScreen extends ConsumerWidget {
         rounds,
         isPartnerA,
       );
-      return EndScreen(
+      return _FinishedGame(
+        tone: session.tone,
         matchCount: matchCount,
         totalRounds: session.totalRounds,
         mostInterestingPick: interestingPick,
-        onPlayAgain: () {
-          context.pushReplacementNamed('thisOrThatToneSelector');
-        },
-        onTryAnotherGame: () {
-          context.pushReplacementNamed('thisOrThatGamesHub');
-        },
       );
     }
 
@@ -500,8 +495,11 @@ class ThisOrThatSessionRouterScreen extends ConsumerWidget {
             .map(
               (round) => {
                 'question_text': round.displayQuestionText,
-                'answer_a': round.answerA,
-                'answer_b': round.answerB,
+                // The viewer's side, then the partner's, like the texts
+                // below: the end screen colours each pick by its side.
+                // The scoring compares them, which does not mind the order.
+                'answer_a': isPartnerA ? round.answerA : round.answerB,
+                'answer_b': isPartnerA ? round.answerB : round.answerA,
                 'answer_a_text':
                     isPartnerA
                         ? (round.answerAText ?? '')
@@ -526,6 +524,57 @@ class ThisOrThatSessionRouterScreen extends ConsumerWidget {
     return mappedRounds.isEmpty
         ? <String, dynamic>{}
         : scoringService.getMostInterestingPick(mappedRounds);
+  }
+}
+
+/// The end of a finished game, and Play again: a new game in the same
+/// tone, in this screen's place.
+class _FinishedGame extends ConsumerStatefulWidget {
+  const _FinishedGame({
+    required this.tone,
+    required this.matchCount,
+    required this.totalRounds,
+    required this.mostInterestingPick,
+  });
+
+  final String tone;
+  final int matchCount;
+  final int totalRounds;
+  final Map<String, dynamic> mostInterestingPick;
+
+  @override
+  ConsumerState<_FinishedGame> createState() => _FinishedGameState();
+}
+
+class _FinishedGameState extends ConsumerState<_FinishedGame> {
+  /// Held from the first tap until the start has finished, so a second
+  /// tap cannot open a second game.
+  bool _starting = false;
+
+  Future<void> _playAgain() async {
+    if (_starting) return;
+    _starting = true;
+    var opened = false;
+    try {
+      final id = await startThisOrThat(context, ref, tone: widget.tone);
+      if (id == null || !mounted) return;
+      opened = true;
+      context.pushReplacementNamed('thisOrThatSessionRouter', extra: id);
+    } finally {
+      // Kept once the new game is opening: this screen is on its way out.
+      if (!opened) _starting = false;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return EndScreen(
+      matchCount: widget.matchCount,
+      totalRounds: widget.totalRounds,
+      mostInterestingPick: widget.mostInterestingPick,
+      onPlayAgain: _playAgain,
+      onTryAnotherGame: () => Navigator.of(context).maybePop(),
+    );
   }
 }
 
