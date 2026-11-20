@@ -29,21 +29,24 @@ void main() {
       'When you have both picked, the two answers turn over together.';
   final seenCoach = {GameCoachStore.key('this_or_that'): true};
 
-  QuestionScreen question({String partnerName = 'Ama', Key? key}) =>
-      QuestionScreen(
-        key: key,
-        roundId: 'round-3',
-        questionText: 'Friday night: stay in or go out?',
-        optionA: 'Stay in',
-        optionB: 'Go out',
-        emojiA: '🛋️',
-        emojiB: '✨',
-        roundNumber: 3,
-        totalRounds: 10,
-        tone: 'playful',
-        isPartnerA: true,
-        partnerName: partnerName,
-      );
+  QuestionScreen question({
+    String partnerName = 'Ama',
+    String questionText = 'Friday night: stay in or go out?',
+    Key? key,
+  }) => QuestionScreen(
+    key: key,
+    roundId: 'round-3',
+    questionText: questionText,
+    optionA: 'Stay in',
+    optionB: 'Go out',
+    emojiA: '🛋️',
+    emojiB: '✨',
+    roundNumber: 3,
+    totalRounds: 10,
+    tone: 'playful',
+    isPartnerA: true,
+    partnerName: partnerName,
+  );
 
   Future<void> pump(
     WidgetTester tester, {
@@ -482,6 +485,9 @@ void main() {
                 ? tester.getRect(find.byType(ThisOrThatPrimaryAction))
                 : tabRow(tester);
         expect(bubble.overlaps(pointed), isFalse);
+        // Whatever the step points at, the tabs stay clear: they are what
+        // the player is being taught to pull.
+        expect(bubble.overlaps(tabRow(tester)), isFalse);
         expect(find.byKey(const ValueKey('game-coach-ring')), findsOneWidget);
 
         // A missed tap fails the test: THAT has to be reachable.
@@ -492,6 +498,102 @@ void main() {
       });
     }
   }
+
+  // Step 2, where the bubble sits next to the lock button below the body:
+  // a longer name wraps the line under the button and lengthens the step,
+  // and a one-line question makes a shorter card, both of which push the
+  // tabs and the bubble together on a small phone.
+  final step2Cases = <(String, String)>[
+    ('Ama', 'Friday night: stay in or go out?'),
+    ('Kwame Mensah', 'Friday night: stay in or go out?'),
+    ('Partner', 'Tea or coffee?'),
+    ('Anastasia-Mariela', 'Tea or coffee?'),
+  ];
+  test('step 2 has cases to check', () {
+    expect(step2Cases, isNotEmpty);
+    expect(step2Cases.last.$1.length, 17);
+  });
+  for (final size in [
+    const Size(320, 568),
+    const Size(360, 640),
+    const Size(375, 667),
+  ]) {
+    for (final (partner, asked) in step2Cases) {
+      testWidgets('step 2 on a ${size.width.toInt()} x ${size.height.toInt()} '
+          'phone, for $partner and "$asked", keeps clear of the tabs', (
+        tester,
+      ) async {
+        await pump(
+          tester,
+          stored: const {},
+          surface: size,
+          screen: question(partnerName: partner, questionText: asked),
+        );
+        await tester.tap(find.text('Next'));
+        await tester.pumpAndSettle();
+        expect(find.textContaining('Then lock it in.'), findsOneWidget);
+
+        final bubble = tester.getRect(find.byType(GameCoachBubble));
+        expect(bubble.overlaps(tabRow(tester)), isFalse);
+
+        await tester.tap(find.text('THAT'));
+        await tester.pump();
+        expect(find.text('Lock in That'), findsOneWidget);
+      });
+    }
+  }
+
+  testWidgets('moving to the next step never shows the bubble anywhere but '
+      'where it lands', (tester) async {
+    for (final size in [const Size(320, 568), phone]) {
+      await pump(
+        tester,
+        stored: const {},
+        surface: size,
+        screen: question(key: ValueKey(size)),
+      );
+      for (var step = 2; step <= 3; step++) {
+        await tester.tap(find.text('Next'));
+        // Exactly one frame: what the player sees first.
+        await tester.pump();
+        final first = find.byType(GameCoachBubble);
+        final firstRect =
+            first.evaluate().isEmpty ? null : tester.getRect(first);
+        if (firstRect != null) {
+          expect(firstRect.overlaps(tabRow(tester)), isFalse);
+        }
+
+        await tester.pumpAndSettle();
+        final settled = tester.getRect(find.byType(GameCoachBubble));
+        if (firstRect != null) expect(firstRect, settled, reason: '$step');
+      }
+    }
+  });
+
+  testWidgets('a replay never shows the bubble anywhere but where it lands', (
+    tester,
+  ) async {
+    for (final size in [const Size(320, 568), phone]) {
+      await pump(tester, surface: size, screen: question(key: ValueKey(size)));
+      await tester.tap(find.bySemanticsLabel('Settings'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.bySemanticsLabel('Support'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('How to play'));
+      await tester.pump();
+
+      final first = find.byType(GameCoachBubble);
+      final firstRect = first.evaluate().isEmpty ? null : tester.getRect(first);
+      if (firstRect != null) {
+        expect(firstRect.overlaps(tabRow(tester)), isFalse);
+      }
+
+      await tester.pumpAndSettle();
+      expect(find.text(firstStep), findsOneWidget);
+      final settled = tester.getRect(find.byType(GameCoachBubble));
+      if (firstRect != null) expect(firstRect, settled);
+    }
+  });
 
   GameTile tab(WidgetTester tester, String label) => tester
       .widgetList<GameTile>(tilesOfCard())

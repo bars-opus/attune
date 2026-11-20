@@ -585,5 +585,89 @@ void main() {
       await tester.pump();
       expect(taps, 1);
     });
+
+    // The bubble's place depends on where its target is, and the target
+    // is only known after layout. The first frame of a step must not show
+    // the bubble somewhere it is about to leave -- for a frame, over the
+    // very thing it points at.
+    Widget twoSteps({int replay = 0}) => Scaffold(
+      body: GameCoach(
+        gameType: 'demo',
+        replay: replay,
+        steps: [
+          GameCoachStep(text: 'Tap this tile.', target: target),
+          GameCoachStep(text: 'And again.', target: target),
+        ],
+        child: Align(
+          alignment: const Alignment(0, -0.8),
+          child: SizedBox(key: target, width: 64, height: 64),
+        ),
+      ),
+    );
+
+    /// The bubble's rect, or null when it is not drawn.
+    Rect? drawn(WidgetTester tester) {
+      final found = find.byType(GameCoachBubble);
+      return found.evaluate().isEmpty ? null : tester.getRect(found);
+    }
+
+    testWidgets('the first frame of the next step shows the bubble where it '
+        'lands, or not at all', (tester) async {
+      useSurface(tester, phone);
+      await tester.pumpWidget(gameHost(twoSteps(), prefs: await testPrefs()));
+      await tester.pump();
+      await tester.pump();
+      final pointed = tester.getRect(find.byKey(target));
+      expect(drawn(tester)!.overlaps(pointed), isFalse);
+
+      await tester.tap(find.text('Next'));
+      await tester.pump();
+      final first = drawn(tester);
+
+      await tester.pumpAndSettle();
+      expect(find.text('And again.'), findsOneWidget);
+      final settled = drawn(tester)!;
+      expect(settled.overlaps(pointed), isFalse);
+      if (first != null) expect(first, settled);
+    });
+
+    testWidgets('the first frame of a replay shows the bubble where it lands, '
+        'or not at all', (tester) async {
+      useSurface(tester, phone);
+      final prefs = await testPrefs({GameCoachStore.key('demo'): true});
+      await tester.pumpWidget(gameHost(twoSteps(), prefs: prefs));
+      await tester.pump();
+      expect(drawn(tester), isNull, reason: 'seen');
+
+      // pumpWidget draws exactly one frame.
+      await tester.pumpWidget(gameHost(twoSteps(replay: 1), prefs: prefs));
+      final first = drawn(tester);
+
+      await tester.pumpAndSettle();
+      expect(find.text('Tap this tile.'), findsOneWidget);
+      final settled = drawn(tester)!;
+      expect(settled.overlaps(tester.getRect(find.byKey(target))), isFalse);
+      if (first != null) expect(first, settled);
+    });
+
+    testWidgets('a step that points at nothing is drawn on its first frame', (
+      tester,
+    ) async {
+      useSurface(tester, phone);
+      await tester.pumpWidget(
+        gameHost(
+          Scaffold(
+            body: GameCoach(
+              gameType: 'demo',
+              steps: steps(),
+              child: const SizedBox.expand(),
+            ),
+          ),
+          prefs: await testPrefs(),
+        ),
+      );
+
+      expect(find.text('Welcome to the game.'), findsOneWidget);
+    });
   });
 }

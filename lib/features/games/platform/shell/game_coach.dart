@@ -87,34 +87,107 @@ class GameCoachBubble extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 14),
-          GamePrimaryButton(label: actionLabel, onTap: onAction),
-          if (onSkip != null) ...[
-            const SizedBox(height: 8),
-            Semantics(
-              button: true,
-              label: GameStrings.skip,
-              container: true,
-              excludeSemantics: true,
-              onTap: onSkip,
-              child: GestureDetector(
-                behavior: HitTestBehavior.opaque,
-                onTap: onSkip,
-                child: const Padding(
-                  padding: EdgeInsets.symmetric(vertical: 10),
-                  child: Text(
-                    GameStrings.skip,
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                      color: GameTheme.mutedOnGround,
-                      fontSize: 15,
-                      fontWeight: FontWeight.w700,
+          // Skip and the action share one row, so the bubble is as short
+          // as it can be: on a small phone every line it saves is game the
+          // player can still see and touch. Where the two do not fit side
+          // by side -- the largest text on the smallest phone -- the action
+          // goes on top and Skip under it, rather than either being cut.
+          OverflowBar(
+            alignment:
+                onSkip == null
+                    ? MainAxisAlignment.end
+                    : MainAxisAlignment.spaceBetween,
+            spacing: 16,
+            overflowSpacing: 4,
+            overflowAlignment: OverflowBarAlignment.center,
+            overflowDirection: VerticalDirection.up,
+            children: [
+              if (onSkip != null)
+                Semantics(
+                  button: true,
+                  label: GameStrings.skip,
+                  container: true,
+                  excludeSemantics: true,
+                  onTap: onSkip,
+                  child: GestureDetector(
+                    behavior: HitTestBehavior.opaque,
+                    onTap: onSkip,
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(
+                        minHeight: 44,
+                        minWidth: 44,
+                      ),
+                      child: const Padding(
+                        padding: EdgeInsets.only(right: 8),
+                        child: Align(
+                          alignment: Alignment.centerLeft,
+                          widthFactor: 1,
+                          heightFactor: 1,
+                          child: Text(
+                            GameStrings.skip,
+                            style: TextStyle(
+                              color: GameTheme.mutedOnGround,
+                              fontSize: 15,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ),
+                      ),
                     ),
                   ),
                 ),
+              _CoachAction(label: actionLabel, onTap: onAction),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// The bubble's own action: a compact white pill, Next or Got it.
+///
+/// Not a [GamePrimaryButton]: that pill fills the width it is given and is
+/// 56 high, and here it shares a row with Skip.
+class _CoachAction extends StatelessWidget {
+  const _CoachAction({required this.label, required this.onTap});
+
+  final String label;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      button: true,
+      label: label,
+      container: true,
+      excludeSemantics: true,
+      onTap: onTap,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: onTap,
+        child: Container(
+          constraints: const BoxConstraints(minHeight: 44),
+          padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 10),
+          decoration: BoxDecoration(
+            color: GameTheme.tile,
+            borderRadius: BorderRadius.circular(999),
+          ),
+          // As wide as its word, centred in the 44 px it is given.
+          child: Align(
+            widthFactor: 1,
+            heightFactor: 1,
+            child: Text(
+              label,
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                color: GameTheme.tileInk,
+                fontSize: 17,
+                fontWeight: FontWeight.w800,
               ),
             ),
-          ],
-        ],
+          ),
+        ),
       ),
     );
   }
@@ -165,6 +238,12 @@ class _GameCoachState extends ConsumerState<GameCoach> {
   int? _index;
   Rect? _targetRect;
 
+  /// The step whose target has been looked for. Until the step showing has
+  /// been, a step with a target draws no bubble: the bubble's side depends
+  /// on where the target is, and drawing it before that is known puts it,
+  /// for a frame, somewhere it is about to leave -- often on the target.
+  int? _measuredStep;
+
   @override
   void initState() {
     super.initState();
@@ -180,7 +259,10 @@ class _GameCoachState extends ConsumerState<GameCoach> {
     super.didUpdateWidget(oldWidget);
     if (widget.replay > oldWidget.replay && widget.steps.isNotEmpty) {
       _index = 0;
-      _targetRect = null;
+      // The game under the tutorial is already laid out, so the first
+      // step's target can be found now, for this frame.
+      _targetRect = _find(0);
+      _measuredStep = 0;
       _watchTarget();
     }
   }
@@ -220,9 +302,13 @@ class _GameCoachState extends ConsumerState<GameCoach> {
     if (index >= widget.steps.length - 1) {
       _finish();
     } else {
+      // The next target is already on screen and laid out: found now,
+      // the bubble is drawn where it belongs on the step's first frame.
+      final rect = _find(index + 1);
       setState(() {
         _index = index + 1;
-        _targetRect = null;
+        _targetRect = rect;
+        _measuredStep = index + 1;
       });
     }
   }
@@ -232,6 +318,7 @@ class _GameCoachState extends ConsumerState<GameCoach> {
     setState(() {
       _index = null;
       _targetRect = null;
+      _measuredStep = null;
     });
     widget.onDone?.call();
   }
@@ -245,22 +332,36 @@ class _GameCoachState extends ConsumerState<GameCoach> {
     final index = _step;
     if (!mounted || index == null) return;
 
+    final rect = _find(index);
+    if (rect != _targetRect || _measuredStep != index) {
+      setState(() {
+        _targetRect = rect;
+        _measuredStep = index;
+      });
+    }
+  }
+
+  /// Where step [index]'s target is, in this widget's coordinates, from the
+  /// last layout; null when it has none or it is not on screen.
+  Rect? _find(int index) {
+    if (index >= widget.steps.length) return null;
     final target =
         widget.steps[index].target?.currentContext?.findRenderObject();
     final stack = _stackKey.currentContext?.findRenderObject();
-    Rect? rect;
-    if (target is RenderBox &&
-        stack is RenderBox &&
-        target.attached &&
-        target.hasSize) {
-      // Through screen coordinates, so the target does not have to be
-      // inside this widget: a tutorial around the board can still point
-      // at a button in the bar under it.
-      final topLeft =
-          target.localToGlobal(Offset.zero) - stack.localToGlobal(Offset.zero);
-      rect = topLeft & target.size;
+    if (target is! RenderBox ||
+        stack is! RenderBox ||
+        !target.attached ||
+        !stack.attached ||
+        !target.hasSize ||
+        !stack.hasSize) {
+      return null;
     }
-    if (rect != _targetRect) setState(() => _targetRect = rect);
+    // Through screen coordinates, so the target does not have to be
+    // inside this widget: a tutorial around the board can still point at
+    // a button in the bar under it.
+    final topLeft =
+        target.localToGlobal(Offset.zero) - stack.localToGlobal(Offset.zero);
+    return topLeft & target.size;
   }
 
   @override
@@ -268,6 +369,12 @@ class _GameCoachState extends ConsumerState<GameCoach> {
     final index = _step;
     final rect = _targetRect;
     final isLast = index != null && index >= widget.steps.length - 1;
+    // A step that points at nothing is drawn at once; one that points at
+    // something waits until its target has been looked for. A target that
+    // cannot be found does not hold the bubble back for longer than that.
+    final placed =
+        index != null &&
+        (widget.steps[index].target == null || _measuredStep == index);
 
     return Stack(
       key: _stackKey,
@@ -300,7 +407,7 @@ class _GameCoachState extends ConsumerState<GameCoach> {
               ),
             ),
           ),
-        if (index != null)
+        if (placed)
           // Never taller than the space it has, and only as tall as it
           // needs; on whichever side leaves the target free. The layout
           // takes no touches of its own, so the game under the rest of
