@@ -27,7 +27,8 @@ BEGIN
     ('dating_match_messaging', true),
     ('dating_profile_photos', true),
     ('dating_same_gender_matching', true),
-    ('dating_age_assurance', true) -- Spec 2 W4a
+    ('dating_age_assurance', true), -- Spec 2 W4a
+    ('support_resources_v2', true) -- Spec 2 W6c (T10 fix 1, I-4): Get help's directory
   ON CONFLICT (key) DO UPDATE SET enabled = EXCLUDED.enabled, updated_at = now();
 
   -- Spec 2 W5a (§4.9): introductions_v2 active with DEV- review references
@@ -40,6 +41,14 @@ BEGIN
          product_review_ref = coalesce(product_review_ref, 'DEV-product'), clinical_review_ref = coalesce(clinical_review_ref, 'DEV-clinical'), -- Spec 2 W5a
          fairness_review_ref = coalesce(fairness_review_ref, 'DEV-fairness'), safety_review_ref = coalesce(safety_review_ref, 'DEV-safety') -- Spec 2 W5a
    WHERE version = 'introductions_v2' AND state <> 'active'; -- Spec 2 W5a
+  -- Spec 2 W6b (§4.9): the chat's v1 lexicon active with a DEV- reference
+  -- Spec 2 W6b (production refuses one; the owner activates it there with
+  -- Spec 2 W6b the reviewers' reference, the W6 gate).
+  IF NOT EXISTS (SELECT 1 FROM public.dating_safety_configs WHERE state = 'active') THEN -- Spec 2 W6b
+    UPDATE public.dating_safety_configs -- Spec 2 W6b
+       SET state = 'active', review_ref = coalesce(review_ref, 'DEV-safety'), activated_at = now() -- Spec 2 W6b
+     WHERE version = 'dating_chat_v1'; -- Spec 2 W6b
+  END IF; -- Spec 2 W6b
 
   -- Spec 2 W4a (§3.3.5, §4.9): the verification mode, only when none is set
   -- Spec 2 W4a (an owner's 'live' or 'sandbox' is kept): 'fake' on a local
@@ -64,5 +73,9 @@ BEGIN
 
   IF private.dating_exclusion_key_ready() IS NOT TRUE THEN
     RAISE WARNING 'dev_enable_spec2_dating_flags: dating_exclusion_key is not set or its fingerprint is not seeded; Dating stays unavailable until both are (owner checklist items 2 and 11)';
+  END IF;
+  -- Spec 2 W6 final server fix: every chat push needs the push key (each one fails, counted, without it).
+  IF coalesce(public.app_setting('dating_push_key'), '') = '' THEN
+    RAISE WARNING 'dev_enable_spec2_dating_flags: dating_push_key is not set; every Dating push (chat, digest, notice) fails until it is';
   END IF;
 END $$;

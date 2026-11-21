@@ -346,8 +346,9 @@ END $$;
 -- ---------------------------------------------------------------------------
 DO $$ BEGIN
   -- B reciprocates → mutual match.
-  IF public.act_on_dating_introduction('w5b-b-likes-a-key0', '00000000-0000-0000-0000-000000ab0000', 'interested') -- Spec 2 W5b
-     IS DISTINCT FROM '{"ok": true, "action": "interested", "matched": true}'::jsonb THEN -- Spec 2 W5b
+  IF (SELECT (x.r - 'match_id') IS DISTINCT FROM '{"ok": true, "action": "interested", "matched": true}'::jsonb -- Spec 2 W6a (carry 7)
+             OR coalesce(x.r ->> 'match_id', '') !~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' -- Spec 2 W6a
+        FROM (SELECT public.act_on_dating_introduction('w5b-b-likes-a-key0', '00000000-0000-0000-0000-000000ab0000', 'interested') AS r) AS x) THEN -- Spec 2 W6a
     RAISE EXCEPTION 'B: the reciprocating interest did not answer matched'; -- Spec 2 W5b
   END IF; -- Spec 2 W5b
 END $$;

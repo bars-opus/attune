@@ -1,5 +1,10 @@
 # Dating Mode Dating Chat Safety Plan
 
+> **Superseded** (2026-11-20, Spec 2 W6c) by `DATING_CHAT_SAFETY_SPEC.md`
+> version 2.0 and the Dating Mode design
+> (`docs/superpowers/specs/2026-10-24-dating-mode-design.md` §8 W6). Kept
+> for history only.
+
 **Purpose:** define what must exist before Dating Mode can ship a real post-match chat experience  
 **Status:** planning document; current implementation intentionally avoids claiming this is production-ready
 

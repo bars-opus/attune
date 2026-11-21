@@ -21,7 +21,7 @@ import 'package:go_router/go_router.dart';
 const kDatingMomentSettle = Duration(milliseconds: 600);
 
 /// W6a flips this when /dating/chat/:matchId exists (Ruling R-11).
-const kDatingChatReady = false;
+const kDatingChatReady = true;
 
 class DatingMatchMomentScreen extends ConsumerStatefulWidget {
   const DatingMatchMomentScreen({
@@ -202,7 +202,11 @@ class _DatingMatchMomentScreenState
                         if (kDatingChatReady) ...[
                           FlowPrimaryButton(
                             label: loc.dating_momentSayHello,
-                            onPressed: _later,
+                            // Spec 2 W6a: the chat, in the moment's place.
+                            onPressed:
+                                () => context.pushReplacement(
+                                  DatingPaths.chat(m.matchId),
+                                ),
                           ),
                           const SizedBox(height: Spacing.sm),
                         ],

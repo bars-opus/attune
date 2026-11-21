@@ -4823,4 +4823,380 @@ class AppLocalizationsPt extends AppLocalizations {
 
   @override
   String get dating_abroadAllOffBodyNotYet => 'You\'ll only be introduced to people in your own country. You can turn a country on again once you\'re verified and your account is 14 days old.';
+
+  @override
+  String get dating_chatsTitle => 'Conversations';
+
+  @override
+  String get dating_chatsEmpty => 'When you and someone are both interested, your conversation appears here.';
+
+  @override
+  String get dating_chatsEnded => 'Ended in the last 30 days';
+
+  @override
+  String get dating_chatsNoMessage => 'No messages yet.';
+
+  @override
+  String dating_chatsYouSaid(String text) {
+    return 'You: $text';
+  }
+
+  @override
+  String get dating_chatsNew => 'new message';
+
+  @override
+  String dating_chatTitle(String name, int age) {
+    return '$name, $age';
+  }
+
+  @override
+  String get dating_chatTitleNoName => 'Your match';
+
+  @override
+  String get dating_chatSafety => 'Safety';
+
+  @override
+  String get dating_chatSafetyLabel => 'Safety options for this conversation';
+
+  @override
+  String get dating_chatSafetyUnmatch => 'Unmatch';
+
+  @override
+  String get dating_chatSafetyResources => 'Safety resources';
+
+  @override
+  String get dating_chatComposerHint => 'Write a message';
+
+  @override
+  String get dating_chatSend => 'Send';
+
+  @override
+  String get dating_chatSending => 'Sending…';
+
+  @override
+  String get dating_chatNotSent => 'Not sent. Tap to try again.';
+
+  @override
+  String get dating_chatOffline => 'You\'re offline. Your message is still here; send it when you\'re back.';
+
+  @override
+  String get dating_chatYou => 'You';
+
+  @override
+  String get dating_chatThem => 'Your match';
+
+  @override
+  String get dating_chatMaskedLabel => 'hidden contact detail';
+
+  @override
+  String get dating_chatMaskedTitle => 'Hidden for now';
+
+  @override
+  String get dating_chatMaskedExplain => 'Hidden until you both tap Swap contacts. This keeps your number private while you get to know each other.';
+
+  @override
+  String get dating_chatOk => 'OK';
+
+  @override
+  String get dating_chatLoadOlder => 'Show earlier messages';
+
+  @override
+  String get dating_chatEnded => 'This conversation has ended.';
+
+  @override
+  String get dating_chatRestricted => 'You can\'t send messages right now.';
+
+  @override
+  String get dating_chatSwap => 'Swap contacts';
+
+  @override
+  String dating_chatSwapFrom(String when) {
+    return 'Swap contacts (from $when)';
+  }
+
+  @override
+  String get dating_chatSwapSheetBody => 'When you both tap Swap, phone numbers, emails and usernames in this chat stop being hidden. You can\'t undo it once you\'ve both swapped.';
+
+  @override
+  String get dating_chatSwapCard => 'On WhatsApp, Attune can\'t help inside the chat. Sextortion often starts with a video call.';
+
+  @override
+  String get dating_chatSwapConfirm => 'Swap';
+
+  @override
+  String get dating_chatSwapNotYet => 'Not yet';
+
+  @override
+  String dating_chatSwapOffered(String name) {
+    return 'You offered to swap. $name hasn\'t yet.';
+  }
+
+  @override
+  String get dating_chatSwapOfferedNoName => 'You offered to swap. Your match hasn\'t yet.';
+
+  @override
+  String get dating_chatSwapCancel => 'Cancel';
+
+  @override
+  String dating_chatSwapTheirs(String name) {
+    return '$name offered to swap contacts.';
+  }
+
+  @override
+  String get dating_chatSwapTheirsNoName => 'Your match offered to swap contacts.';
+
+  @override
+  String get dating_chatSwapDone => 'Contacts are visible now.';
+
+  @override
+  String dating_unmatchTitle(String name) {
+    return 'Unmatch $name?';
+  }
+
+  @override
+  String dating_unmatchBody(String name) {
+    return 'You won\'t be introduced again. $name will see that the conversation has ended.';
+  }
+
+  @override
+  String get dating_unmatchTitleNoName => 'Unmatch this person?';
+
+  @override
+  String get dating_unmatchBodyNoName => 'You won\'t be introduced again. This person will see that the conversation has ended.';
+
+  @override
+  String get dating_unmatchConfirm => 'Unmatch';
+
+  @override
+  String get dating_chatPaused => 'Messages are paused for now. Try again later.';
+
+  @override
+  String get dating_chatNotSentFinal => 'Not sent.';
+
+  @override
+  String dating_chatCounter(int count, int max) {
+    return '$count/$max';
+  }
+
+  @override
+  String get dating_chatTooLong => 'This message is over 1,000 characters. Shorten it to send.';
+
+  @override
+  String dating_safetySexualPressure(String name) {
+    return 'Messages like this can feel like pressure. You don\'t have to reply. You can block or report $name at any time.';
+  }
+
+  @override
+  String dating_safetyHarassment(String name) {
+    return 'Nobody should talk to you like this. You can block or report $name.';
+  }
+
+  @override
+  String get dating_safetyContactMigration => 'It\'s safer to keep talking here until you\'ve met. Your number stays hidden until you both tap Swap contacts.';
+
+  @override
+  String get dating_safetyMeetPrivate => 'For a first meeting, choose a public place and get there and back on your own. Someone who\'s right for you will understand.';
+
+  @override
+  String dating_safetyThreat(String number) {
+    return 'If someone threatens you, your safety comes first. Keep the messages and report here. If you\'re in danger now, call $number.';
+  }
+
+  @override
+  String get dating_safetyThreatNoNumber => 'If someone threatens you, your safety comes first. Keep the messages and report here. If you\'re in danger now, call your local emergency number.';
+
+  @override
+  String get dating_safetyFinancial => 'Asking for money early is the most common scam pattern. You don\'t owe anyone money, airtime or mobile money to meet. Never send money to someone you haven\'t met.';
+
+  @override
+  String dating_safetySextortion(String resource) {
+    return 'If someone threatens to share pictures or videos of you: don\'t pay, keep the messages, and report here. You can also contact $resource. This isn\'t your fault.';
+  }
+
+  @override
+  String get dating_safetySextortionNoResource => 'If someone threatens to share pictures or videos of you: don\'t pay, keep the messages, and report here. Safety resources has people who can help. This isn\'t your fault.';
+
+  @override
+  String get dating_safetyChildAccess => 'Questions about someone\'s children this early can be a warning sign. You don\'t have to share anything about your children.';
+
+  @override
+  String get dating_safetyDismiss => 'Dismiss';
+
+  @override
+  String get dating_cardThisPerson => 'this person';
+
+  @override
+  String get dating_guidedTitle => 'Start with a question?';
+
+  @override
+  String get dating_guidedAnswer => 'Answer';
+
+  @override
+  String get dating_guidedSkip => 'Skip this one';
+
+  @override
+  String dating_guidedWaiting(String name) {
+    return '$name will see your answer once $name answers too.';
+  }
+
+  @override
+  String dating_guidedTip(String name) {
+    return 'Tip: ask a follow-up about something $name said.';
+  }
+
+  @override
+  String get dating_guided_good_saturday => 'What does a good Saturday look like for you?';
+
+  @override
+  String get dating_guided_food_every_week => 'What\'s a food you could eat every week?';
+
+  @override
+  String get dating_guided_looking_forward => 'What are you looking forward to this month?';
+
+  @override
+  String get dating_guided_proud_of => 'What\'s something you\'re proud of that people don\'t usually ask about?';
+
+  @override
+  String get dating_guided_laugh_with => 'Who do you laugh with most?';
+
+  @override
+  String get dating_guided_where_you_grew_up => 'What did you learn from the place you grew up?';
+
+  @override
+  String get dating_guided_good_relationship => 'What does a good relationship look like to you, day to day?';
+
+  @override
+  String get dating_guided_time_with_family => 'How do you like to spend time with family?';
+
+  @override
+  String get dating_guided_before_first_meeting => 'What would you want someone to know before a first meeting?';
+
+  @override
+  String get dating_timeboxDay7 => 'Plan a first meet?';
+
+  @override
+  String get dating_timeboxNotYet => 'Not yet';
+
+  @override
+  String get dating_timeboxDay21 => 'Keep chatting, or close kindly?';
+
+  @override
+  String get dating_timeboxKeep => 'Keep chatting';
+
+  @override
+  String get dating_closeKindly => 'Close kindly';
+
+  @override
+  String get dating_closeKindlyTitle => 'Send this and end the conversation?';
+
+  @override
+  String get dating_closeKindlyMessage => 'Thank you for chatting with me. I don\'t think we\'re a match, and I wish you well.';
+
+  @override
+  String get dating_closeKindlySend => 'Send and end';
+
+  @override
+  String get dating_weMet => 'We met';
+
+  @override
+  String get dating_weMetNoted => 'Noted that you met.';
+
+  @override
+  String get dating_guidedWaitingNoName => 'Your answer will show once you\'ve both answered.';
+
+  @override
+  String get dating_planTitle => 'Plan a meet';
+
+  @override
+  String get dating_planCheck1 => 'Meet in a public place you both know.';
+
+  @override
+  String get dating_planCheck2 => 'Get there and back on your own.';
+
+  @override
+  String get dating_planCheck3 => 'Tell someone you trust where you\'ll be.';
+
+  @override
+  String get dating_planCheck4 => 'Keep chatting here until you\'re sure.';
+
+  @override
+  String get dating_planCheck5 => 'Never send money to someone you haven\'t met.';
+
+  @override
+  String get dating_planWhen => 'When?';
+
+  @override
+  String get dating_planPickWhen => 'Choose a date and time';
+
+  @override
+  String get dating_planWhere => 'Where?';
+
+  @override
+  String get dating_planWhereHint => 'A public place you both know';
+
+  @override
+  String get dating_planShare => 'Share my plan';
+
+  @override
+  String get dating_planSms => 'Send as text message';
+
+  @override
+  String dating_planShareText(String date, String time, String place, String checkin) {
+    return 'I\'m meeting someone from Attune on $date at $time at $place. I\'ll check in by $checkin.';
+  }
+
+  @override
+  String get dating_planCheckOnMe => 'Check on me';
+
+  @override
+  String dating_planCheckinSet(String day, String time) {
+    return 'Attune will check on you on $day at $time.';
+  }
+
+  @override
+  String get dating_planCheckinNoPush => 'Attune can\'t send notifications to this phone, so the check-in won\'t reach you here. Use Share my plan to tell someone you trust.';
+
+  @override
+  String get dating_planCheckOnMeOffline => 'Check on me needs a connection.';
+
+  @override
+  String get dating_planCheckinUnknown => 'Attune couldn\'t check whether a check-in is set. You can still cancel one.';
+
+  @override
+  String get dating_planCheckinCancel => 'Cancel the check-in';
+
+  @override
+  String get dating_planCheckinInvalid => 'Choose a meet time that\'s still ahead, within the next week.';
+
+  @override
+  String get dating_checkinTitle => 'How did it go?';
+
+  @override
+  String get dating_checkinOk => 'I\'m OK';
+
+  @override
+  String get dating_checkinHelp => 'Get help';
+
+  @override
+  String get dating_checkinNotNow => 'Not now';
+
+  @override
+  String get dating_checkinHelpTitle => 'Show emergency numbers?';
+
+  @override
+  String get dating_checkinHelpShow => 'Show';
+
+  @override
+  String get dating_checkinMessageSomeone => 'Message someone you trust';
+
+  @override
+  String dating_checkinHelpText(String place) {
+    return 'I need help. I\'m at $place. Please call me.';
+  }
+
+  @override
+  String get dating_checkinHelpTextNoPlace => 'I need help. Please call me.';
+
+  @override
+  String get dating_guidedAnswerHint => 'Write your answer';
 }

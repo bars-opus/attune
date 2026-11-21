@@ -56,6 +56,15 @@
 #     takes the match's row before the introduction's, exit's order, so it
 #     waits on the leave instead of deadlocking with it; the leave
 #     completes and the block finds the card gone.
+#   the chat's Block vs leaving (Spec 2 W6a, carry 4): the same order from
+#     the chat (the setup lock, the match row, its introduction's); the
+#     block waits on the leave and still lands.
+#   a send vs a block (Spec 2 W6a, §4.4 stale client): the send waits on
+#     the match row the block holds, then answers closed; no message is
+#     stored after a block.
+#   a leave vs the same person's send from another phone (Spec 2 W6 final
+#     server fix, I-5): every closer locks the match before it bumps a
+#     chat signal, send's order, so they serialise: no deadlock.
 #
 # The interleaving is forced by a one-shot BEFORE trigger that sleeps in
 # the session that asks for it (GUC race.sleep_<table>_<op>), so the first
@@ -94,7 +103,8 @@ DO \$\$ BEGIN -- W2 final review M-7: the counters these cases read need their p
   END IF;
 END \$\$;
 SELECT private.seed_dating_exclusion_key_fingerprint(), private.seed_dating_field_key_fingerprint();
-UPDATE public.feature_flags SET enabled = true WHERE key IN ('dating_mode_enabled', 'dating_same_gender_matching');
+UPDATE public.feature_flags SET enabled = true WHERE key IN ('dating_mode_enabled', 'dating_same_gender_matching',
+                                                             'dating_match_messaging'); -- Spec 2 W6a (Task 2 fix round 1, I-2): the chat's flag
 SELECT public.publish_country_config('GH', '{"dating_enabled": true, "same_gender_enabled": true}') ->> 'ok';
 SELECT public.publish_country_config('GB', '{"dating_enabled": true}') ->> 'ok';
 
@@ -115,7 +125,8 @@ BEGIN
                            'dating_introductions', 'dating_matches',
                            'dating_profile_photos', 'dating_photo_upload_intents', -- Spec 2 W3c (Task 8)
                            'dating_trusted_devices', -- Spec 2 W4b (Task 5)
-                           'dating_generation_runs'] LOOP -- Spec 2 W5a (Task 3)
+                           'dating_generation_runs', -- Spec 2 W5a (Task 3)
+                           'dating_opener_hashes'] LOOP -- Spec 2 W6c (Task 8 fix round 1): a purge step that sleeps
     EXECUTE format('DROP TRIGGER IF EXISTS zz_race_delay ON public.%I', t);
     EXECUTE format('CREATE TRIGGER zz_race_delay BEFORE UPDATE OR DELETE ON public.%I FOR EACH ROW EXECUTE FUNCTION race.delay()', t);
   END LOOP;
@@ -223,6 +234,9 @@ BEGIN
   DELETE FROM public.users WHERE id::text LIKE '5e2f%';
   DELETE FROM private.dating_kill_switch_pending;
   DELETE FROM public.dating_rpc_idempotency WHERE user_id::text LIKE '5e2f%';
+  IF to_regclass('public.dating_pair_markers') IS NOT NULL THEN -- Spec 2 W6a: a scratch database's markers (keyed to the race phones)
+    EXECUTE 'DELETE FROM public.dating_pair_markers';
+  END IF;
   DELETE FROM race.outcome; -- Spec 2 W2 Task 3 fix round 1
   IF EXISTS (SELECT 1 FROM race.saved_fn) THEN -- a stubbed completeness check is put back
     EXECUTE (SELECT def FROM race.saved_fn);
@@ -875,7 +889,8 @@ run "simultaneous mutual interest makes one match" "$FX_MUTUAL" \
                     || coalesce((SELECT result FROM race.outcome WHERE name = 'mutual_overlap'), 'none') || ', waited '
                     || coalesce((SELECT result FROM race.outcome WHERE name = 'mutual_b_s'), 'none') || ' s'
                WHEN (SELECT result::jsonb FROM race.outcome WHERE name = 'mutual_a') IS DISTINCT FROM '{\"ok\": true, \"action\": \"interested\", \"matched\": false}'::jsonb
-                 OR (SELECT result::jsonb FROM race.outcome WHERE name = 'mutual_b') IS DISTINCT FROM '{\"ok\": true, \"action\": \"interested\", \"matched\": true}'::jsonb
+                 OR (SELECT result::jsonb - 'match_id' FROM race.outcome WHERE name = 'mutual_b') IS DISTINCT FROM '{\"ok\": true, \"action\": \"interested\", \"matched\": true}'::jsonb -- Spec 2 W6a (carry 7)
+                 OR (SELECT result::jsonb ->> 'match_id' FROM race.outcome WHERE name = 'mutual_b') IS DISTINCT FROM (SELECT id::text FROM public.dating_matches WHERE pair_key = public.dating_pair_key(race.id('07'), race.id('08')))
                THEN 'answers: ' || coalesce((SELECT result FROM race.outcome WHERE name = 'mutual_a'), 'none') || ' then '
                     || coalesce((SELECT result FROM race.outcome WHERE name = 'mutual_b'), 'none')
                WHEN (SELECT count(*) FROM public.dating_matches WHERE introduction_id = $MUTUAL_ID AND state = 'active') <> 1
@@ -920,7 +935,8 @@ run "a block and the other's Interested at once: never a live match" "$FX_BLOCK"
      race.call(race.id('28'), format('SELECT public.block_dating_introduction(%L, %L)', race.key('block-b'), $BLOCK_ID))::text);
    INSERT INTO race.outcome VALUES ('block_b_s', round(extract(epoch FROM clock_timestamp() - :'tb'::timestamptz), 2)::text);" \
   "SELECT CASE WHEN NOT (SELECT is_called FROM race.s1) THEN 'the act never reached the row (no race)'
-               WHEN (SELECT result::jsonb FROM race.outcome WHERE name = 'block_act') IS DISTINCT FROM '{\"ok\": true, \"action\": \"interested\", \"matched\": true}'::jsonb
+               WHEN (SELECT result::jsonb - 'match_id' FROM race.outcome WHERE name = 'block_act') IS DISTINCT FROM '{\"ok\": true, \"action\": \"interested\", \"matched\": true}'::jsonb -- Spec 2 W6a (carry 7)
+                 OR NOT (SELECT result::jsonb ? 'match_id' FROM race.outcome WHERE name = 'block_act')
                  OR (SELECT result::jsonb FROM race.outcome WHERE name = 'block_b') IS DISTINCT FROM '{\"ok\": true}'::jsonb
                THEN 'answers: ' || coalesce((SELECT result FROM race.outcome WHERE name = 'block_act'), 'none') || ' then '
                     || coalesce((SELECT result FROM race.outcome WHERE name = 'block_b'), 'none')
@@ -996,6 +1012,168 @@ run "a block on a matched introduction while the other leaves: no deadlock" "$FX
                     || coalesce((SELECT result FROM race.outcome WHERE name = 'bx_overlap'), 'none') || ', waited '
                     || coalesce((SELECT result FROM race.outcome WHERE name = 'bx_block_s'), 'none') || ' s'
                ELSE 'ok' END;" serialised
+
+# Spec 2 W6a (carry 4): the chat's Block while the other leaves. B (42)
+# leaves: exit closes the match (and sleeps in that update, holding the
+# match's row). A (41) blocks from the chat: A's setup lock, then the
+# match's row, so A waits on the leave, then blocks the person (the match
+# already ended by the leave). No deadlock, the leave completes, the block
+# answers ok and is kept.
+FX_CHAT_BLOCK_EXIT="SELECT race.reset(); ALTER SEQUENCE race.s1 RESTART;
+SELECT race.ready('41', 'woman', ARRAY['man']), race.ready('42', 'man', ARRAY['woman']);
+INSERT INTO public.dating_introductions (pair_key, user_low_id, user_high_id, state, algorithm_version, visible_from_low, visible_from_high, low_action, high_action)
+VALUES (public.dating_pair_key(race.id('41'), race.id('42')), race.id('41'), race.id('42'),
+        'matched', 'introductions_v2', now() - interval '1 hour', now() - interval '1 hour', 'interested', 'interested');
+INSERT INTO public.dating_matches (introduction_id, user_low_id, user_high_id, state, matched_at)
+SELECT i.id, i.user_low_id, i.user_high_id, 'active', now() FROM public.dating_introductions AS i
+ WHERE i.pair_key = public.dating_pair_key(race.id('41'), race.id('42'));
+INSERT INTO race.outcome SELECT 'cb_match', m.id::text FROM public.dating_matches AS m
+ WHERE m.pair_key = public.dating_pair_key(race.id('41'), race.id('42'));"
+CB_MATCH="(SELECT result::uuid FROM race.outcome WHERE name = 'cb_match')"
+run "the chat's Block while the other leaves: no deadlock" "$FX_CHAT_BLOCK_EXIT" \
+  "SET race.sleep_dating_matches_update = '1.5:race.s1';
+   INSERT INTO race.outcome VALUES ('cb_exit',
+     race.call(race.id('42'), format('SELECT to_jsonb(public.exit_dating_mode(%L))', race.key('cb-exit'))) ->> 'state');" \
+  "SELECT pg_sleep(0.5);
+   INSERT INTO race.outcome SELECT 'cb_overlap', ((SELECT is_called FROM race.s1) AND (SELECT state FROM public.dating_matches WHERE id = $CB_MATCH) = 'active')::text;
+   SELECT clock_timestamp() AS tb \\gset
+   INSERT INTO race.outcome VALUES ('cb_block', race.call(race.id('41'), format('SELECT public.block_dating_match(%L, %L)', race.key('cb-block'), $CB_MATCH))::text);
+   INSERT INTO race.outcome VALUES ('cb_block_s', round(extract(epoch FROM clock_timestamp() - :'tb'::timestamptz), 2)::text);" \
+  "SELECT CASE WHEN NOT (SELECT is_called FROM race.s1) THEN 'the leave never reached the match row (no race)'
+               WHEN (SELECT result FROM race.outcome WHERE name = 'cb_exit') IS DISTINCT FROM 'exited' THEN 'leave lost'
+               WHEN (SELECT result::jsonb FROM race.outcome WHERE name = 'cb_block') IS DISTINCT FROM '{\"ok\": true}'::jsonb
+               THEN 'the block answered ' || coalesce((SELECT result FROM race.outcome WHERE name = 'cb_block'), 'none')
+               WHEN NOT EXISTS (SELECT 1 FROM public.dating_blocks WHERE blocker_user_id = race.id('41') AND blocked_user_id = race.id('42'))
+               THEN 'no block row'
+               WHEN (SELECT state || '/' || closed_reason FROM public.dating_matches WHERE id = $CB_MATCH) IS DISTINCT FROM 'closed/exit'
+               THEN 'match: ' || coalesce((SELECT state || '/' || closed_reason FROM public.dating_matches WHERE id = $CB_MATCH), 'none')
+               WHEN (SELECT result FROM race.outcome WHERE name = 'cb_overlap') IS DISTINCT FROM 'true'
+                 OR coalesce((SELECT result::numeric FROM race.outcome WHERE name = 'cb_block_s'), 0) < 0.5
+               THEN 'the block did not wait on the leave (no race)'
+               ELSE 'ok' END;" serialised
+
+# Spec 2 W6a (§4.4, chat spec §4.4): a send while the other blocks. B (44)
+# blocks from the chat and sleeps in the match's update (holding its row);
+# A (43) sends from a stale screen: the send waits on the match's row,
+# then reads it blocked and answers closed. Nothing is stored after the
+# block; no deadlock.
+FX_SEND_BLOCK="SELECT race.reset(); ALTER SEQUENCE race.s1 RESTART;
+SELECT race.ready('43', 'woman', ARRAY['man']), race.ready('44', 'man', ARRAY['woman']);
+INSERT INTO race.outcome SELECT 'sb_match', race.match(race.id('43'), race.id('44'))::text;"
+SB_MATCH="(SELECT result::uuid FROM race.outcome WHERE name = 'sb_match')"
+run "a send while the other blocks: nothing after the block" "$FX_SEND_BLOCK" \
+  "SET race.sleep_dating_matches_update = '1.5:race.s1';
+   INSERT INTO race.outcome VALUES ('sb_block', race.call(race.id('44'), format('SELECT public.block_dating_match(%L, %L)', race.key('sb-block'), $SB_MATCH))::text);" \
+  "SELECT pg_sleep(0.5);
+   INSERT INTO race.outcome SELECT 'sb_overlap', ((SELECT is_called FROM race.s1) AND (SELECT state FROM public.dating_matches WHERE id = $SB_MATCH) = 'active')::text;
+   SELECT clock_timestamp() AS tb \\gset
+   INSERT INTO race.outcome VALUES ('sb_send', race.call(race.id('43'), format('SELECT public.send_dating_message(%L, %L, ''are you there?'')', race.key('sb-send'), $SB_MATCH))::text);
+   INSERT INTO race.outcome VALUES ('sb_send_s', round(extract(epoch FROM clock_timestamp() - :'tb'::timestamptz), 2)::text);" \
+  "SELECT CASE WHEN NOT (SELECT is_called FROM race.s1) THEN 'the block never reached the match row (no race)'
+               WHEN (SELECT result::jsonb FROM race.outcome WHERE name = 'sb_block') IS DISTINCT FROM '{\"ok\": true}'::jsonb
+               THEN 'the block answered ' || coalesce((SELECT result FROM race.outcome WHERE name = 'sb_block'), 'none')
+               WHEN (SELECT result::jsonb FROM race.outcome WHERE name = 'sb_send') IS DISTINCT FROM '{\"ok\": false, \"reason\": \"closed\"}'::jsonb
+               THEN 'the send answered ' || coalesce((SELECT result FROM race.outcome WHERE name = 'sb_send'), 'none')
+               WHEN EXISTS (SELECT 1 FROM public.dating_messages WHERE match_id = $SB_MATCH) THEN 'a message was stored after the block'
+               WHEN (SELECT result FROM race.outcome WHERE name = 'sb_overlap') IS DISTINCT FROM 'true'
+                 OR coalesce((SELECT result::numeric FROM race.outcome WHERE name = 'sb_send_s'), 0) < 0.5
+               THEN 'the send did not wait on the block (no race)'
+               ELSE 'ok' END;" serialised
+
+# Spec 2 W6 final server fix (I-5, W6 T2 N-1): a person leaves while their
+# other phone sends. A (49) sends and sleeps in the match's update (holding
+# the match row, before the send tells B's chat); A leaves 0.5 s in from
+# another connection. Leaving locks and closes the match before it tells
+# B's chat (send's order: the match row, then the signal), so it waits on
+# the send and then closes: no deadlock (before the fix the leave took B's
+# signal row first and the two closed a cycle). The send lands, the leave
+# lands, the match is closed for leaving with its window, B is told.
+FX_EXIT_SEND="SELECT race.reset(); ALTER SEQUENCE race.s1 RESTART;
+SELECT race.ready('49', 'woman', ARRAY['man']), race.ready('50', 'man', ARRAY['woman']);
+INSERT INTO race.outcome SELECT 'es_match', race.match(race.id('49'), race.id('50'))::text;"
+ES_MATCH="(SELECT result::uuid FROM race.outcome WHERE name = 'es_match')"
+run "a leave while the same person's other phone sends: no deadlock" "$FX_EXIT_SEND" \
+  "SET race.sleep_dating_matches_update = '1.5:race.s1';
+   INSERT INTO race.outcome VALUES ('es_send', race.call(race.id('49'), format('SELECT public.send_dating_message(%L, %L, ''see you soon'')', race.key('es-send'), $ES_MATCH))::text);" \
+  "SELECT pg_sleep(0.5);
+   INSERT INTO race.outcome SELECT 'es_overlap', ((SELECT is_called FROM race.s1) AND (SELECT state FROM public.dating_matches WHERE id = $ES_MATCH) = 'active')::text;
+   SELECT clock_timestamp() AS tb \\gset
+   INSERT INTO race.outcome VALUES ('es_exit', race.call(race.id('49'), format('SELECT to_jsonb(public.exit_dating_mode(%L))', race.key('es-exit'))) ->> 'state');
+   INSERT INTO race.outcome VALUES ('es_exit_s', round(extract(epoch FROM clock_timestamp() - :'tb'::timestamptz), 2)::text);" \
+  "SELECT CASE WHEN NOT (SELECT is_called FROM race.s1) THEN 'the send never reached the match row (no race)'
+               WHEN (SELECT result::jsonb ->> 'ok' FROM race.outcome WHERE name = 'es_send') IS DISTINCT FROM 'true'
+               THEN 'the send answered ' || coalesce((SELECT result FROM race.outcome WHERE name = 'es_send'), 'none')
+               WHEN (SELECT result FROM race.outcome WHERE name = 'es_exit') IS DISTINCT FROM 'exited' THEN 'leave lost'
+               WHEN (SELECT state || '/' || closed_reason || '/' || (evidence_until > now() + interval '29 days')::text
+                       FROM public.dating_matches WHERE id = $ES_MATCH) IS DISTINCT FROM 'closed/exit/true'
+               THEN 'match: ' || coalesce((SELECT state || '/' || coalesce(closed_reason, '-') FROM public.dating_matches WHERE id = $ES_MATCH), 'none')
+               WHEN NOT EXISTS (SELECT 1 FROM public.dating_chat_signals WHERE user_id = race.id('50') AND match_id = $ES_MATCH)
+               THEN 'B was not told'
+               WHEN (SELECT count(*) FROM public.dating_messages WHERE match_id = $ES_MATCH) <> 1 THEN 'the message was not stored once'
+               WHEN (SELECT result FROM race.outcome WHERE name = 'es_overlap') IS DISTINCT FROM 'true'
+                 OR coalesce((SELECT result::numeric FROM race.outcome WHERE name = 'es_exit_s'), 0) < 0.5
+               THEN 'the leave did not wait on the send (no race)'
+               ELSE 'ok' END;" serialised
+
+# Spec 2 W6c (Task 8 fix round 1, M-1): a leave while the cron's purge runs
+# a later step. The purge CALLs one transaction per step: step 2 clears the
+# old matched introduction's details and commits; step 5 then sleeps 3 s in
+# an opener hash's delete. A (45) leaves 0.8 s in: the leave deletes that
+# introduction, and waits on nothing (one transaction for the whole purge
+# would hold the introduction's row until the end).
+FX_PURGE_LEAVE="SELECT race.reset(); ALTER SEQUENCE race.s1 RESTART;
+SELECT race.ready('45', 'woman', ARRAY['man']), race.ready('46', 'man', ARRAY['woman']);
+INSERT INTO public.dating_introductions (pair_key, user_low_id, user_high_id, state, algorithm_version, visible_from_low, visible_from_high,
+                                         low_action, high_action, created_at, expires_at)
+VALUES (public.dating_pair_key(race.id('45'), race.id('46')), race.id('45'), race.id('46'), 'matched', 'introductions_v2',
+        now() - interval '60 days', now() - interval '60 days', 'interested', 'interested', now() - interval '60 days', now() - interval '50 days');
+INSERT INTO public.dating_matches (introduction_id, user_low_id, user_high_id, state, matched_at)
+SELECT i.id, i.user_low_id, i.user_high_id, 'active', now() - interval '55 days' FROM public.dating_introductions AS i
+ WHERE i.pair_key = public.dating_pair_key(race.id('45'), race.id('46'));
+INSERT INTO public.dating_opener_hashes (sender_user_id, match_id, hash, created_at)
+SELECT race.id('46'), m.id, repeat('e', 64), now() - interval '31 days' FROM public.dating_matches AS m
+ WHERE m.pair_key = public.dating_pair_key(race.id('45'), race.id('46'));"
+PL_PAIR="public.dating_pair_key(race.id('45'), race.id('46'))"
+run "a leave while the purge runs a later step: no wait on the purge" "$FX_PURGE_LEAVE" \
+  "SET race.sleep_dating_opener_hashes_delete = '3:race.s1';
+   CALL public.run_dating_retention_purge();" \
+  "SELECT pg_sleep(0.8);
+   INSERT INTO race.outcome SELECT 'pl_overlap', (SELECT is_called FROM race.s1)::text;
+   SELECT clock_timestamp() AS tb \\gset
+   INSERT INTO race.outcome VALUES ('pl_exit',
+     race.call(race.id('45'), format('SELECT to_jsonb(public.exit_dating_mode(%L))', race.key('pl-exit'))) ->> 'state');
+   INSERT INTO race.outcome VALUES ('pl_exit_s', round(extract(epoch FROM clock_timestamp() - :'tb'::timestamptz), 2)::text);" \
+  "SELECT CASE WHEN (SELECT result FROM race.outcome WHERE name = 'pl_overlap') IS DISTINCT FROM 'true'
+               THEN 'the purge was not sleeping in its later step (no race)'
+               WHEN (SELECT result FROM race.outcome WHERE name = 'pl_exit') IS DISTINCT FROM 'exited' THEN 'leave lost'
+               WHEN EXISTS (SELECT 1 FROM public.dating_introductions WHERE pair_key = $PL_PAIR) THEN 'the introduction was left'
+               WHEN coalesce((SELECT result::numeric FROM race.outcome WHERE name = 'pl_exit_s'), 99) >= 1.0
+               THEN 'the leave waited ' || (SELECT result FROM race.outcome WHERE name = 'pl_exit_s') || ' s on the purge'
+               WHEN EXISTS (SELECT 1 FROM public.dating_opener_hashes WHERE hash = repeat('e', 64)) THEN 'the purge did not finish its step'
+               ELSE 'ok' END;"
+
+# Spec 2 W6c (Task 8 fix round 1, M-9): a case filed while the purge runs.
+# B (as the database) files an open case on a closed match past its window
+# and holds its transaction 1.5 s (the case's key-share lock on the match);
+# the purge starts 0.4 s in. It skips the held row (or, after waiting,
+# re-tests the holds and sees the case): the match and its case stay.
+FX_PURGE_CASE="SELECT race.reset(); ALTER SEQUENCE race.s1 RESTART;
+SELECT race.ready('47', 'woman', ARRAY['man']), race.ready('48', 'man', ARRAY['woman']);
+WITH m AS (INSERT INTO public.dating_matches (user_low_id, user_high_id, state, closed_reason, closed_at, evidence_until)
+           VALUES (race.id('47'), race.id('48'), 'unmatched', 'unmatched', now() - interval '31 days', now() - interval '1 day') RETURNING id)
+INSERT INTO race.outcome SELECT 'pc_match', m.id::text FROM m;"
+PC_MATCH="(SELECT result::uuid FROM race.outcome WHERE name = 'pc_match')"
+run "a case filed while the purge runs: its match stays" "$FX_PURGE_CASE" \
+  "SELECT pg_sleep(0.4);
+   CALL public.run_dating_retention_purge();" \
+  "BEGIN;
+   INSERT INTO public.dating_moderation_cases (kind, priority, target_user_id, match_id, signal_kind, state)
+   VALUES ('signal', 'P1', race.id('48'), $PC_MATCH, 'money_asks', 'open');
+   SELECT pg_sleep(1.5);
+   COMMIT;" \
+  "SELECT CASE WHEN NOT EXISTS (SELECT 1 FROM public.dating_matches WHERE id = $PC_MATCH) THEN 'the purge deleted a match a case was being filed on'
+               WHEN NOT EXISTS (SELECT 1 FROM public.dating_moderation_cases WHERE match_id = $PC_MATCH) THEN 'the case lost its match'
+               ELSE 'ok' END;"
 
 $P -c "SELECT race.reset(); UPDATE public.feature_flags SET enabled = false WHERE key = 'dating_candidate_generation';" > /dev/null 2>&1
 exit $fail

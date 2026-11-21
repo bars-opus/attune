@@ -5,6 +5,8 @@ import 'package:attune/app/theme/app_theme.dart';
 import 'package:attune/core/utils/screen_util_config.dart';
 import 'package:attune/features/auth/providers/auth_provider.dart'
     show currentUserProvider;
+import 'package:attune/features/dating/chat/plan_meet_screen.dart'
+    show datingNowProvider, datingPushAllowedProvider;
 import 'package:attune/features/dating/data/dating_never_introduce.dart';
 import 'package:attune/features/dating/data/dating_providers.dart';
 import 'package:attune/features/dating/data/dating_supabase_client.dart'
@@ -26,6 +28,7 @@ import 'package:go_router/go_router.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../../helpers/home_harness.dart' show testUser;
+import 'dating_chat_fakes.dart';
 import 'dating_fakes.dart';
 import 'dating_verify_fakes.dart';
 
@@ -86,6 +89,15 @@ class FakeWait implements GentleWaitGateway {
     return result;
   }
 }
+
+/// Spec 2 W6c Task 10 fix round 1: the meeting kit's clock in every Dating
+/// shell (a fixed morning, so a test's afternoon meet is still ahead), and
+/// notifications allowed unless a test says not.
+final datingTestNow = DateTime(2026, 11, 21, 9);
+final datingKitOverrides = <Override>[
+  datingNowProvider.overrideWithValue(() => datingTestNow),
+  datingPushAllowedProvider.overrideWithValue(() => true),
+];
 
 /// The signed-in account in every Dating shell (D8 tests switch it).
 final datingTestAccount = StateProvider<String?>((ref) => 'ama');
@@ -204,6 +216,9 @@ Future<DatingShell> pumpDatingShell(
         ),
         // Spec 2 W5c: not eligible for Other countries unless a test says.
         datingAbroadGatewayProvider.overrideWithValue(FakeAbroad()),
+        // Spec 2 W6a: the chat is faked unless a test says otherwise.
+        ...datingChatOverrides(FakeDatingChat()),
+        ...datingKitOverrides,
         ...overrides,
       ],
       child: ScreenUtilConfig.builder(
@@ -256,6 +271,8 @@ List<Override> datingShellOverrides({
   datingDeviceReadyProvider.overrideWith((ref) async => deviceReady),
   datingNeverIntroduceGatewayProvider.overrideWithValue(FakeNeverIntroduce()),
   datingAbroadGatewayProvider.overrideWithValue(FakeAbroad()),
+  ...datingChatOverrides(FakeDatingChat()),
+  ...datingKitOverrides,
 ];
 
 /// The Dating section's overrides for a Spec 1 test that renders Me on the

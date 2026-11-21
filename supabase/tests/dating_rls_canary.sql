@@ -499,7 +499,7 @@ INSERT INTO allowed_fn (sig, clients, service) VALUES
   ('get_dating_abroad_options()', 'authenticated', ''),
   ('dating_fairness_weekly(date)', '', ''),
   ('private.dating_open_signal_case(uuid,text,text)', '', ''),
-  ('private.dating_first_messages(uuid,timestamp with time zone)', '', ''),
+  ('private.dating_first_messages(uuid,timestamp with time zone,timestamp with time zone)', '', ''), -- Spec 2 W6a (Task 2 fix round 1, M-8): the run's time
   ('private.dating_dragnet_holds(uuid,timestamp with time zone,jsonb)', '', ''),
   ('private.dating_device_accounts_hold(uuid,timestamp with time zone)', '', ''),
   ('private.dating_run_signals(timestamp with time zone,jsonb)', '', ''),
@@ -517,6 +517,106 @@ INSERT INTO allowed_fn (sig, clients, service) VALUES
 -- W5 final (M-7): the frozen-config trigger is the database's own.
 INSERT INTO allowed_fn (sig, clients, service) VALUES
   ('private.dating_config_active_frozen()', '', '');
+-- ---------------------------------------------------------------------
+-- Spec 2 W6a Task 1: the masker, the caption trigger and the pair marker
+-- are the database's own (no API role's, the service role included).
+-- ---------------------------------------------------------------------
+INSERT INTO allowed_rel (name, authenticated, service_dml) VALUES
+  ('dating_pair_markers', '', '');
+INSERT INTO allowed_fn (sig, clients, service) VALUES
+  ('private.dating_mask_fold(text)', '', ''),
+  ('private.dating_mask_leet(text,text)', '', ''),
+  ('private.dating_mask_digits(text)', '', ''),
+  ('private.dating_mask_contacts(text)', '', ''),
+  ('private.dating_mask_contacts_safe(text)', '', ''),
+  ('private.dating_caption_invites(text)', '', ''),
+  ('private.dating_photo_caption_mask()', '', ''),
+  ('private.dating_pair_code(text,text)', '', ''),
+  ('private.dating_mark_pair(uuid,uuid)', '', ''),
+  ('private.dating_pair_new(uuid,uuid,text,text)', '', ''),
+  ('private.dating_backfill_pair_markers()', '', ''); -- fix round 1 (M-4)
+-- Spec 2 W6a Task 2: the chat. Messages are no API role's (S-5); a
+-- signed-in person reads their own chat signals (realtime); the RPCs are
+-- the app's alone (each acts as the caller).
+INSERT INTO allowed_rel (name, authenticated, service_dml) VALUES
+  ('dating_messages', '', ''),
+  ('dating_chat_signals', 'SELECT', '');
+INSERT INTO allowed_fn (sig, clients, service) VALUES
+  ('dating_can_send(uuid)', 'authenticated', ''),
+  ('send_dating_message(text,uuid,text,text,text)', 'authenticated', ''),
+  ('get_dating_messages(uuid,timestamp with time zone,integer)', 'authenticated', ''),
+  ('get_my_dating_matches(boolean)', 'authenticated', ''),
+  ('offer_dating_contact_swap(uuid)', 'authenticated', ''),
+  ('withdraw_dating_contact_swap(uuid)', 'authenticated', ''),
+  ('private.dating_bump_chat(uuid,uuid)', '', ''),
+  ('private.dating_message_json(dating_messages,text,boolean)', '', ''),
+  ('private.dating_key_ok(text)', '', ''),
+  ('private.dating_chat_header(dating_matches,text)', '', ''),
+  ('private.dating_swap_write(uuid,boolean)', '', ''),
+  -- Task 2 fix round 1: the block-either-way check (I-1, M-5) and the blank body (M-1).
+  ('private.dating_pair_blocked(uuid,uuid)', '', ''),
+  ('private.dating_body_blank(text)', '', '');
+UPDATE allowed_fn SET service = '' WHERE sig IN ('block_dating_match(text,uuid)', 'unmatch_dating_match(text,uuid)');
+-- Spec 2 W6b Task 5: the safety pipeline. Its tables are no API role's,
+-- the service role included (S-5): the worker's three calls are its way
+-- in; the cards are the app's.
+INSERT INTO allowed_rel (name, authenticated, service_dml) VALUES
+  ('dating_message_safety_outbox', '', ''),
+  ('dating_safety_configs', '', ''),
+  ('dating_safety_events', '', ''),
+  ('dating_opener_hashes', '', '');
+INSERT INTO allowed_fn (sig, clients, service) VALUES
+  ('get_dating_safety_config()', '', 'service_role'),
+  ('claim_dating_safety_jobs(integer)', '', 'service_role'),
+  ('complete_dating_safety_job(uuid,text,jsonb,text)', '', 'service_role'),
+  ('recover_stale_dating_safety_jobs()', '', ''),
+  ('get_my_dating_safety_cards(uuid)', 'authenticated', ''),
+  ('dismiss_dating_safety_card(uuid)', 'authenticated', ''),
+  ('private.dating_safety_config_guard()', '', ''),
+  ('private.dating_open_chat_case(uuid,uuid,text,text)', '', ''),
+  ('private.dating_card_resource(text,text)', '', ''),
+  ('private.dating_queue_chat_push(uuid)', '', ''),
+  ('private.dating_opener_hash(text)', '', ''),
+  -- Task 5 fix round 1 (M-11): skips a read message push at the claim.
+  ('private.dating_chat_push_read_guard()', '', '');
+-- Spec 2 W6c Task 8: the guided conversation, We met, the timebox cards,
+-- Close kindly and the check-in are the app's; the purge the cron's.
+INSERT INTO allowed_rel (name, authenticated, service_dml) VALUES
+  ('dating_guided_skips', '', '');
+INSERT INTO allowed_fn (sig, clients, service) VALUES
+  ('get_dating_guided_state(uuid)', 'authenticated', ''),
+  ('skip_dating_guided_question(uuid,text)', 'authenticated', ''),
+  ('mark_dating_we_met(uuid)', 'authenticated', ''),
+  ('dismiss_dating_timebox(uuid,text)', 'authenticated', ''),
+  ('close_dating_match_kindly(text,uuid)', 'authenticated', ''),
+  ('schedule_dating_checkin(timestamp with time zone)', 'authenticated', ''),
+  ('cancel_dating_checkin()', 'authenticated', ''),
+  -- Task 10 fix round 1 (I-1, I-3, I-4).
+  ('get_my_dating_checkin()', 'authenticated', ''),
+  ('private.dating_has_push_device(uuid)', '', ''),
+  ('private.guard_dating_chat_needs_directory()', '', ''),
+  ('purge_dating_retention(timestamp with time zone)', '', ''),
+  ('private.dating_guided_questions()', '', ''),
+  ('private.dating_guided_answered(uuid,text,text)', '', ''),
+  ('private.dating_guided_state(uuid,text)', '', ''),
+  ('private.dating_message_visible(dating_messages,text)', '', ''),
+  -- Task 9 fix round 1 (I-2): where a message sits.
+  ('private.dating_message_sort_at(dating_messages)', '', ''),
+  -- Task 8 fix round 1 (M-1): the per-step purge and the cron's procedure.
+  ('private.dating_purge_steps()', '', ''),
+  ('private.dating_purge_step(text,timestamp with time zone)', '', ''),
+  ('run_dating_retention_purge(timestamp with time zone)', '', ''),
+  -- Spec 2 W6 final server fix: the database's own (I-1, I-3, I-4, I-6, I-8, M-8).
+  ('private.dating_chat_on()', '', ''),
+  ('private.dating_matches_seal_window()', '', ''),
+  ('private.dating_mask_fallback(text)', '', ''),
+  ('private.dating_mask_counted(text)', '', ''),
+  ('private.dating_pair_code(text,text,text)', '', ''),
+  ('private.dating_pair_new(uuid,uuid,text,text,text)', '', ''),
+  ('private.dating_me_update_body(text)', '', ''),
+  ('private.dating_queue_me_update(uuid,text,text,timestamp with time zone)', '', ''),
+  ('private.guard_dating_chat_keeps_config()', '', '');
+
 -- ---------------------------------------------------------------------
 -- Checks (every batch adds its rows above this line).
 -- ---------------------------------------------------------------------

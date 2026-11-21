@@ -246,6 +246,7 @@ class DatingActAnswer {
     this.action,
     this.matched = false,
     this.reason,
+    this.matchId,
   });
 
   static const busy = DatingActAnswer(ok: false, reason: 'busy');
@@ -255,6 +256,9 @@ class DatingActAnswer {
   final String? action;
   final bool matched;
   final String? reason;
+
+  /// Spec 2 W6a (carry 7): the match this answer made (or found).
+  final String? matchId;
 
   factory DatingActAnswer.fromJson(Object? raw) {
     if (raw is! Map) return failed;
@@ -269,6 +273,7 @@ class DatingActAnswer {
       ok: true,
       action: action is String ? action : null,
       matched: raw['matched'] == true,
+      matchId: raw['match_id'] is String ? raw['match_id'] as String : null,
     );
   }
 }

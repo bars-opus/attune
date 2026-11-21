@@ -330,6 +330,12 @@ class _DatingSectionState extends ConsumerState<DatingSection>
               label: loc.dating_sectionOpenToday,
               onPressed: () => context.push(DatingPaths.today),
             ),
+            // Spec 2 W6a (§3.1): then Conversations (the card spaces it;
+            // final client fix C-1: no second gap).
+            FlowSecondaryButton(
+              label: loc.dating_chatsTitle,
+              onPressed: () => context.push(DatingPaths.chats),
+            ),
             if (settings != null) settings,
           ],
         );
@@ -533,6 +539,13 @@ class _DatingSectionState extends ConsumerState<DatingSection>
             onPressed: online ? _resume : null,
           ),
         if (_error != null) ..._errorRows(context, loc, _error!),
+        // Spec 2 W6a (§3.8): a pause keeps the conversations open (fix
+        // round 1, M-13: after the primary, as on the active card; the
+        // card spaces it, C-1).
+        FlowSecondaryButton(
+          label: loc.dating_chatsTitle,
+          onPressed: () => context.push(DatingPaths.chats),
+        ),
         if (settings != null) settings,
       ],
     );

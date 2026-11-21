@@ -825,7 +825,7 @@ BEGIN
      OR pg_temp.match_is(v_m_man_woman) IS DISTINCT FROM 'active/-/unsealed'
      OR pg_temp.match_is(v_m_pron_man) IS DISTINCT FROM 'active/-/unsealed'
      OR pg_temp.match_is(v_m_uk) IS DISTINCT FROM 'active/-/unsealed'
-     OR pg_temp.match_is(v_m_old) IS DISTINCT FROM 'unmatched/unmatched/unsealed'
+     OR pg_temp.match_is(v_m_old) IS DISTINCT FROM 'unmatched/unmatched/sealed30' -- Spec 2 W6 final server fix (I-1): sealed at its own close (the fixture's insert), untouched by the switch
      OR pg_temp.match_is(v_m_unreadable) IS DISTINCT FROM 'closed/other/sealed30' THEN
     RAISE EXCEPTION 'CONTRACT VIOLATED: the switch did not close exactly the active not-man-woman matches touching Ghana, as other, sealed 30 days (owner ruling; % % % % % % %)',
       pg_temp.match_is(v_m_nb_woman), pg_temp.match_is(v_m_man_uknb), pg_temp.match_is(v_m_man_woman),

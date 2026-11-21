@@ -1,0 +1,205 @@
+{
+ "version": "dating_chat_v1",
+ "new_match_days": 14,
+ "families": {
+  "financial_request": {
+   "tier": 2,
+   "form": "match",
+   "terms": [
+    "mobile money",
+    "momo number",
+    "send me momo",
+    "credit me",
+    "top me up",
+    "recharge card",
+    "buy me data",
+    "send me small",
+    "money for transport",
+    "customs fee",
+    "clearing fee",
+    "release fee",
+    "gift card",
+    "itunes card",
+    "steam card",
+    "western union",
+    "moneygram",
+    "bitcoin",
+    "btc",
+    "usdt",
+    "crypto",
+    "forex",
+    "investment platform",
+    "trading account",
+    "double your money",
+    "i sent it by mistake",
+    "send it back",
+    "wrong transfer",
+    "reverse the money",
+    "abeg send",
+    "dash me",
+    "help me with small",
+    "my account is blocked",
+    "my card is blocked"
+   ],
+   "new_match_terms": [
+    "momo",
+    "airtime",
+    "data bundle",
+    "small money",
+    "transport fare",
+    "t fare",
+    "school fees",
+    "hospital bill",
+    "on admission",
+    "sika"
+   ]
+  },
+  "sextortion": {
+   "tier": 2,
+   "form": "match",
+   "terms": [
+    "video call naked",
+    "i have your video",
+    "i will post your pictures",
+    "i ll send it to your family",
+    "send to your contacts",
+    "expose you",
+    "make it viral",
+    "leak your",
+    "pay or i",
+    "unless you pay"
+   ],
+   "new_match_terms": []
+  },
+  "contact_migration_pressure": {
+   "tier": 1,
+   "form": "match",
+   "terms": [
+    "add me on whatsapp",
+    "my whatsapp is",
+    "let s move to telegram",
+    "this app is not safe",
+    "i don t use this app much"
+   ],
+   "new_match_terms": [
+    "text me on",
+    "call me on",
+    "snap me",
+    "dm me on ig"
+   ]
+  },
+  "meet_private_pressure": {
+   "tier": 1,
+   "form": "match",
+   "terms": [
+    "come to my place",
+    "come to my house",
+    "i m home alone",
+    "come over tonight",
+    "my room",
+    "i ll send my location",
+    "meet me at my hotel"
+   ],
+   "new_match_terms": []
+  },
+  "child_access": {
+   "tier": 2,
+   "form": "match",
+   "terms": [
+    "send a picture of your daughter",
+    "send a picture of your son",
+    "how old are your kids",
+    "what school do your children attend",
+    "when are the kids alone",
+    "can i meet your children alone",
+    "do you leave them with"
+   ],
+   "new_match_terms": []
+  },
+  "age_signal": {
+   "tier": 3,
+   "form": "base",
+   "terms": [
+    "i m in form 2",
+    "shs",
+    "jhs",
+    "after bece",
+    "my wassce",
+    "housemistress",
+    "my class teacher",
+    "year 10",
+    "year 11",
+    "gcses",
+    "sixth form",
+    "i m 15",
+    "i m 16",
+    "i m 17",
+    "im 15",
+    "im 16",
+    "im 17",
+    "i am 15",
+    "i am 16",
+    "i am 17"
+   ],
+   "new_match_terms": []
+  },
+  "threat_intimidation": {
+   "tier": 2,
+   "form": "match",
+   "terms": [
+    "i will hurt you",
+    "i know where you live",
+    "you will regret this",
+    "i will find you",
+    "watch your back",
+    "i will kill you",
+    "i go deal with you"
+   ],
+   "new_match_terms": [],
+   "draft": true
+  },
+  "sexual_pressure": {
+   "tier": 1,
+   "form": "match",
+   "terms": [
+    "send nudes",
+    "send me nudes",
+    "send me a sexy picture",
+    "show me your body",
+    "take off your clothes",
+    "let s have sex",
+    "i want to sleep with you"
+   ],
+   "new_match_terms": [],
+   "draft": true
+  },
+  "harassment_abuse": {
+   "tier": 1,
+   "form": "match",
+   "terms": [
+    "you are so stupid",
+    "you are ugly",
+    "useless woman",
+    "useless man",
+    "shut up you idiot",
+    "nobody will ever love you"
+   ],
+   "new_match_terms": [],
+   "draft": true
+  },
+  "identity_inconsistency": {
+   "tier": 3,
+   "form": "match",
+   "terms": [
+    "i am a us soldier",
+    "i am on a peacekeeping mission",
+    "i work on an oil rig",
+    "i am a widower raising my child alone",
+    "my late wife",
+    "i am a un doctor"
+   ],
+   "new_match_terms": [],
+   "draft": true
+  }
+ }
+}

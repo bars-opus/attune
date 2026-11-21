@@ -226,6 +226,12 @@ NotificationConfig buildNanoEmbryoNotificationConfig() {
           GoRouter.of(context).go(homeLocation(tab: AppTab.me));
           return;
 
+        // Spec 2 W6c (§3.6 Check on me): the neutral check-in opens the
+        // check-in behind the Dating lock (the route's gate asks first).
+        case 'me_checkin':
+          GoRouter.of(context).go('/dating/checkin');
+          return;
+
         case 'reminder_upcoming':
           // No reminder-specific deep-link route exists (no
           // /timeline/:reminderId) — reminder_id is delivered in

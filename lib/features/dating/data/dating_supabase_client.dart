@@ -9,6 +9,8 @@
 // refreshed first when expired (I-1); the builder is its own function, so
 // its wiring is tested (I-2); datingDeviceReadyProvider says whether the
 // phone has an id at all (I-4).
+import 'dart:async';
+
 import 'package:attune/core/config/env.dart';
 import 'package:attune/core/device/install_id.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -78,19 +80,68 @@ SupabaseClient datingSupabaseClient({
   accessToken: accessToken,
 );
 
+/// Spec 2 W6a Task 3 fix round 1 (I-1): the Dating client as the provider
+/// builds it, signed in with [auth]'s session. With its own accessToken
+/// callback, supabase never hands the client's realtime the session: it
+/// would join every channel with the project key and never refresh. So
+/// the session's token is forwarded to realtime now and on each sign-in,
+/// refresh and sign-out (as supabase does for its own client); RPC, edge
+/// functions and storage are as before. [close] stops the forwarding and
+/// disposes the client.
+({SupabaseClient client, void Function() close}) datingAppClient({
+  required String url,
+  required String key,
+  required Future<String?> Function() deviceId,
+  required GoTrueClient auth,
+  http.Client? inner,
+}) {
+  final client = datingSupabaseClient(
+    url: url,
+    key: key,
+    deviceId: deviceId,
+    accessToken: () => datingAccessToken(auth),
+    inner: inner,
+  );
+  void forward(String? token) {
+    try {
+      unawaited(client.realtime.setAuth(token ?? key).catchError((_) {}));
+    } catch (_) {
+      // the last token stays; the next refresh forwards again
+    }
+  }
+
+  forward(auth.currentSession?.accessToken);
+  final events = auth.onAuthStateChange.listen((state) {
+    if (state.event == AuthChangeEvent.initialSession ||
+        state.event == AuthChangeEvent.signedIn ||
+        state.event == AuthChangeEvent.tokenRefreshed) {
+      forward(state.session?.accessToken);
+    } else if (state.event == AuthChangeEvent.signedOut) {
+      forward(key);
+    }
+  }, onError: (Object _) {});
+  return (
+    client: client,
+    close: () {
+      unawaited(events.cancel());
+      client.dispose();
+    },
+  );
+}
+
 final datingSupabaseClientProvider = Provider<SupabaseClient>((ref) {
   if (Environment.supabaseUrl.isEmpty || Environment.supabaseAnonKey.isEmpty) {
     return Supabase.instance.client;
   }
   final app = Supabase.instance.client;
-  final client = datingSupabaseClient(
+  final built = datingAppClient(
     url: Environment.supabaseUrl,
     key: Environment.supabaseAnonKey,
     deviceId: ref.watch(installIdStoreProvider).ensure,
-    accessToken: () => datingAccessToken(app.auth),
+    auth: app.auth,
   );
-  ref.onDispose(client.dispose);
-  return client;
+  ref.onDispose(built.close);
+  return built.client;
 });
 
 /// Fix round 1 (I-4 ruling): whether this phone has an install id. False

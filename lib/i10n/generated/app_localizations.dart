@@ -8952,6 +8952,690 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'You\'ll only be introduced to people in your own country. You can turn a country on again once you\'re verified and your account is 14 days old.'**
   String get dating_abroadAllOffBodyNotYet;
+
+  /// Spec 2 §3.5 the conversations list's title, and the Dating section's way in (active and paused cards).
+  ///
+  /// In en, this message translates to:
+  /// **'Conversations'**
+  String get dating_chatsTitle;
+
+  /// Spec 2 §3.5 an empty list.
+  ///
+  /// In en, this message translates to:
+  /// **'When you and someone are both interested, your conversation appears here.'**
+  String get dating_chatsEmpty;
+
+  /// Spec 2 §3.5 the ended section's heading (its Report line arrives with W7a's Report).
+  ///
+  /// In en, this message translates to:
+  /// **'Ended in the last 30 days'**
+  String get dating_chatsEnded;
+
+  /// Spec 2 §3.5 a row with no message yet. Plan copy.
+  ///
+  /// In en, this message translates to:
+  /// **'No messages yet.'**
+  String get dating_chatsNoMessage;
+
+  /// Spec 2 §3.5 a row whose last message is the reader's own. Plan copy.
+  ///
+  /// In en, this message translates to:
+  /// **'You: {text}'**
+  String dating_chatsYouSaid(String text);
+
+  /// Spec 2 §3.5 the dot, read by a screen reader (never a count). Plan copy.
+  ///
+  /// In en, this message translates to:
+  /// **'new message'**
+  String get dating_chatsNew;
+
+  /// Spec 2 §3.6 the chat's header and a list row.
+  ///
+  /// In en, this message translates to:
+  /// **'{name}, {age}'**
+  String dating_chatTitle(String name, int age);
+
+  /// Spec 2 §3.6 the header with no name (the other person left). Plan copy.
+  ///
+  /// In en, this message translates to:
+  /// **'Your match'**
+  String get dating_chatTitleNoName;
+
+  /// Spec 2 §3.6 the Safety sheet's title.
+  ///
+  /// In en, this message translates to:
+  /// **'Safety'**
+  String get dating_chatSafety;
+
+  /// Spec 2 §3.6 the shield button's label.
+  ///
+  /// In en, this message translates to:
+  /// **'Safety options for this conversation'**
+  String get dating_chatSafetyLabel;
+
+  /// Spec 2 §3.6 the Safety sheet's row.
+  ///
+  /// In en, this message translates to:
+  /// **'Unmatch'**
+  String get dating_chatSafetyUnmatch;
+
+  /// Spec 2 §3.6 the Safety sheet's row.
+  ///
+  /// In en, this message translates to:
+  /// **'Safety resources'**
+  String get dating_chatSafetyResources;
+
+  /// Spec 2 §3.6 the composer's hint.
+  ///
+  /// In en, this message translates to:
+  /// **'Write a message'**
+  String get dating_chatComposerHint;
+
+  /// Spec 2 §3.6 the send button's label. Plan copy.
+  ///
+  /// In en, this message translates to:
+  /// **'Send'**
+  String get dating_chatSend;
+
+  /// Spec 2 §3.6 an own message on its way.
+  ///
+  /// In en, this message translates to:
+  /// **'Sending…'**
+  String get dating_chatSending;
+
+  /// Spec 2 §3.6 an own message that failed.
+  ///
+  /// In en, this message translates to:
+  /// **'Not sent. Tap to try again.'**
+  String get dating_chatNotSent;
+
+  /// Spec 2 §3.6 sending offline.
+  ///
+  /// In en, this message translates to:
+  /// **'You\'re offline. Your message is still here; send it when you\'re back.'**
+  String get dating_chatOffline;
+
+  /// Spec 2 §3.6 the sender's name a screen reader reads for one's own message. Plan copy.
+  ///
+  /// In en, this message translates to:
+  /// **'You'**
+  String get dating_chatYou;
+
+  /// Spec 2 §3.6 the sender's name read with no name (the other person left). Plan copy.
+  ///
+  /// In en, this message translates to:
+  /// **'Your match'**
+  String get dating_chatThem;
+
+  /// Spec 2 §3.6 a hidden span, read by a screen reader.
+  ///
+  /// In en, this message translates to:
+  /// **'hidden contact detail'**
+  String get dating_chatMaskedLabel;
+
+  /// Spec 2 §3.6 the sheet a hidden span opens. Plan copy.
+  ///
+  /// In en, this message translates to:
+  /// **'Hidden for now'**
+  String get dating_chatMaskedTitle;
+
+  /// Spec 2 §3.6 tapping a hidden span.
+  ///
+  /// In en, this message translates to:
+  /// **'Hidden until you both tap Swap contacts. This keeps your number private while you get to know each other.'**
+  String get dating_chatMaskedExplain;
+
+  /// Spec 2 §3.6 closes the hidden-span sheet. Plan copy.
+  ///
+  /// In en, this message translates to:
+  /// **'OK'**
+  String get dating_chatOk;
+
+  /// Spec 2 §3.6 the older page. Plan copy.
+  ///
+  /// In en, this message translates to:
+  /// **'Show earlier messages'**
+  String get dating_chatLoadOlder;
+
+  /// Spec 2 §3.6 the closed banner.
+  ///
+  /// In en, this message translates to:
+  /// **'This conversation has ended.'**
+  String get dating_chatEnded;
+
+  /// Spec 2 §3.6 a send refused while the account is restricted (W7a adds the reason). Plan copy.
+  ///
+  /// In en, this message translates to:
+  /// **'You can\'t send messages right now.'**
+  String get dating_chatRestricted;
+
+  /// Spec 2 §3.6 the header chip and the sheet's title.
+  ///
+  /// In en, this message translates to:
+  /// **'Swap contacts'**
+  String get dating_chatSwap;
+
+  /// Spec 2 §3.6 the disabled chip before 72 hours.
+  ///
+  /// In en, this message translates to:
+  /// **'Swap contacts (from {when})'**
+  String dating_chatSwapFrom(String when);
+
+  /// Spec 2 §3.6 the swap sheet.
+  ///
+  /// In en, this message translates to:
+  /// **'When you both tap Swap, phone numbers, emails and usernames in this chat stop being hidden. You can\'t undo it once you\'ve both swapped.'**
+  String get dating_chatSwapSheetBody;
+
+  /// Spec 2 §3.6 the one-time card (shown each time the sheet opens). DV specialist sign-off (W6 gate).
+  ///
+  /// In en, this message translates to:
+  /// **'On WhatsApp, Attune can\'t help inside the chat. Sextortion often starts with a video call.'**
+  String get dating_chatSwapCard;
+
+  /// Spec 2 §3.6.
+  ///
+  /// In en, this message translates to:
+  /// **'Swap'**
+  String get dating_chatSwapConfirm;
+
+  /// Spec 2 §3.6.
+  ///
+  /// In en, this message translates to:
+  /// **'Not yet'**
+  String get dating_chatSwapNotYet;
+
+  /// Spec 2 §3.6.
+  ///
+  /// In en, this message translates to:
+  /// **'You offered to swap. {name} hasn\'t yet.'**
+  String dating_chatSwapOffered(String name);
+
+  /// Spec 2 §3.6 with no name. Plan copy.
+  ///
+  /// In en, this message translates to:
+  /// **'You offered to swap. Your match hasn\'t yet.'**
+  String get dating_chatSwapOfferedNoName;
+
+  /// Spec 2 §3.6 withdraws the offer.
+  ///
+  /// In en, this message translates to:
+  /// **'Cancel'**
+  String get dating_chatSwapCancel;
+
+  /// Spec 2 §3.6.
+  ///
+  /// In en, this message translates to:
+  /// **'{name} offered to swap contacts.'**
+  String dating_chatSwapTheirs(String name);
+
+  /// Spec 2 §3.6 with no name. Plan copy.
+  ///
+  /// In en, this message translates to:
+  /// **'Your match offered to swap contacts.'**
+  String get dating_chatSwapTheirsNoName;
+
+  /// Spec 2 §3.6.
+  ///
+  /// In en, this message translates to:
+  /// **'Contacts are visible now.'**
+  String get dating_chatSwapDone;
+
+  /// Spec 2 §3.6.
+  ///
+  /// In en, this message translates to:
+  /// **'Unmatch {name}?'**
+  String dating_unmatchTitle(String name);
+
+  /// Spec 2 §3.6.
+  ///
+  /// In en, this message translates to:
+  /// **'You won\'t be introduced again. {name} will see that the conversation has ended.'**
+  String dating_unmatchBody(String name);
+
+  /// Spec 2 §3.6 with no name. Plan copy.
+  ///
+  /// In en, this message translates to:
+  /// **'Unmatch this person?'**
+  String get dating_unmatchTitleNoName;
+
+  /// Spec 2 §3.6 with no name. Plan copy.
+  ///
+  /// In en, this message translates to:
+  /// **'You won\'t be introduced again. This person will see that the conversation has ended.'**
+  String get dating_unmatchBodyNoName;
+
+  /// Spec 2 §3.6.
+  ///
+  /// In en, this message translates to:
+  /// **'Unmatch'**
+  String get dating_unmatchConfirm;
+
+  /// Spec 2 §3.6 a send or a swap offer refused with unavailable: messages are paused (the chat's flag is off); retryable, the chat has not ended. Task 2 fix round 1b copy.
+  ///
+  /// In en, this message translates to:
+  /// **'Messages are paused for now. Try again later.'**
+  String get dating_chatPaused;
+
+  /// Spec 2 §3.6 (W6a fix round 1, M-6) an own message refused for good (the conversation ended, or the message can't be sent): no retry; the banner or the page says why.
+  ///
+  /// In en, this message translates to:
+  /// **'Not sent.'**
+  String get dating_chatNotSentFinal;
+
+  /// Spec 2 §3.6 (W6a fix round 1, M-10) the composer's counter near the limit, counted as the server counts (code points).
+  ///
+  /// In en, this message translates to:
+  /// **'{count}/{max}'**
+  String dating_chatCounter(int count, int max);
+
+  /// Spec 2 §3.6 (W6a fix round 1, M-10) a message over the limit; Send waits until it is shorter.
+  ///
+  /// In en, this message translates to:
+  /// **'This message is over 1,000 characters. Shorten it to send.'**
+  String get dating_chatTooLong;
+
+  /// Spec 2 §6.1 sexual_pressure card (recipient only).
+  ///
+  /// In en, this message translates to:
+  /// **'Messages like this can feel like pressure. You don\'t have to reply. You can block or report {name} at any time.'**
+  String dating_safetySexualPressure(String name);
+
+  /// Spec 2 §6.1 harassment_abuse card.
+  ///
+  /// In en, this message translates to:
+  /// **'Nobody should talk to you like this. You can block or report {name}.'**
+  String dating_safetyHarassment(String name);
+
+  /// Spec 2 §6.1 contact_migration_pressure card.
+  ///
+  /// In en, this message translates to:
+  /// **'It\'s safer to keep talking here until you\'ve met. Your number stays hidden until you both tap Swap contacts.'**
+  String get dating_safetyContactMigration;
+
+  /// Spec 2 §6.1 meet_private_pressure card (W6c adds Plan a meet). DV specialist sign-off (W6 gate).
+  ///
+  /// In en, this message translates to:
+  /// **'For a first meeting, choose a public place and get there and back on your own. Someone who\'s right for you will understand.'**
+  String get dating_safetyMeetPrivate;
+
+  /// Spec 2 §6.1 threat_intimidation card; {number} from support_resources (the country's emergency entry).
+  ///
+  /// In en, this message translates to:
+  /// **'If someone threatens you, your safety comes first. Keep the messages and report here. If you\'re in danger now, call {number}.'**
+  String dating_safetyThreat(String number);
+
+  /// Spec 2 §6.1 threat_intimidation card with no emergency entry for the country. Plan copy.
+  ///
+  /// In en, this message translates to:
+  /// **'If someone threatens you, your safety comes first. Keep the messages and report here. If you\'re in danger now, call your local emergency number.'**
+  String get dating_safetyThreatNoNumber;
+
+  /// Spec 2 §6.1 financial_request card (W7a adds Report as a scam).
+  ///
+  /// In en, this message translates to:
+  /// **'Asking for money early is the most common scam pattern. You don\'t owe anyone money, airtime or mobile money to meet. Never send money to someone you haven\'t met.'**
+  String get dating_safetyFinancial;
+
+  /// Spec 2 §6.1 sextortion card; {resource} from support_resources. DV specialist sign-off (W6 gate).
+  ///
+  /// In en, this message translates to:
+  /// **'If someone threatens to share pictures or videos of you: don\'t pay, keep the messages, and report here. You can also contact {resource}. This isn\'t your fault.'**
+  String dating_safetySextortion(String resource);
+
+  /// Spec 2 §6.1 sextortion card with no sextortion entry for the country. Plan copy; DV specialist sign-off (W6 gate).
+  ///
+  /// In en, this message translates to:
+  /// **'If someone threatens to share pictures or videos of you: don\'t pay, keep the messages, and report here. Safety resources has people who can help. This isn\'t your fault.'**
+  String get dating_safetySextortionNoResource;
+
+  /// Spec 2 §6.1 child_access card.
+  ///
+  /// In en, this message translates to:
+  /// **'Questions about someone\'s children this early can be a warning sign. You don\'t have to share anything about your children.'**
+  String get dating_safetyChildAccess;
+
+  /// Spec 2 §3.6 hides a safety card (detection unchanged).
+  ///
+  /// In en, this message translates to:
+  /// **'Dismiss'**
+  String get dating_safetyDismiss;
+
+  /// Spec 2 §6.1 the {Name} in a card when there is no name. Plan copy.
+  ///
+  /// In en, this message translates to:
+  /// **'this person'**
+  String get dating_cardThisPerson;
+
+  /// Spec 2 §3.6 the guided card's title.
+  ///
+  /// In en, this message translates to:
+  /// **'Start with a question?'**
+  String get dating_guidedTitle;
+
+  /// Spec 2 §3.6.
+  ///
+  /// In en, this message translates to:
+  /// **'Answer'**
+  String get dating_guidedAnswer;
+
+  /// Spec 2 §3.6: skipped for both.
+  ///
+  /// In en, this message translates to:
+  /// **'Skip this one'**
+  String get dating_guidedSkip;
+
+  /// Spec 2 §3.6 after answering.
+  ///
+  /// In en, this message translates to:
+  /// **'{name} will see your answer once {name} answers too.'**
+  String dating_guidedWaiting(String name);
+
+  /// Spec 2 §3.6 after the first reveal, once.
+  ///
+  /// In en, this message translates to:
+  /// **'Tip: ask a follow-up about something {name} said.'**
+  String dating_guidedTip(String name);
+
+  /// Spec 2 §3.6 guided question 1 (light).
+  ///
+  /// In en, this message translates to:
+  /// **'What does a good Saturday look like for you?'**
+  String get dating_guided_good_saturday;
+
+  /// Spec 2 §3.6 guided question 2 (light).
+  ///
+  /// In en, this message translates to:
+  /// **'What\'s a food you could eat every week?'**
+  String get dating_guided_food_every_week;
+
+  /// Spec 2 §3.6 guided question 3 (light).
+  ///
+  /// In en, this message translates to:
+  /// **'What are you looking forward to this month?'**
+  String get dating_guided_looking_forward;
+
+  /// Spec 2 §3.6 guided question 4 (middle).
+  ///
+  /// In en, this message translates to:
+  /// **'What\'s something you\'re proud of that people don\'t usually ask about?'**
+  String get dating_guided_proud_of;
+
+  /// Spec 2 §3.6 guided question 5 (middle).
+  ///
+  /// In en, this message translates to:
+  /// **'Who do you laugh with most?'**
+  String get dating_guided_laugh_with;
+
+  /// Spec 2 §3.6 guided question 6 (middle).
+  ///
+  /// In en, this message translates to:
+  /// **'What did you learn from the place you grew up?'**
+  String get dating_guided_where_you_grew_up;
+
+  /// Spec 2 §3.6 guided question 7 (deeper).
+  ///
+  /// In en, this message translates to:
+  /// **'What does a good relationship look like to you, day to day?'**
+  String get dating_guided_good_relationship;
+
+  /// Spec 2 §3.6 guided question 8 (deeper).
+  ///
+  /// In en, this message translates to:
+  /// **'How do you like to spend time with family?'**
+  String get dating_guided_time_with_family;
+
+  /// Spec 2 §3.6 guided question 9 (deeper).
+  ///
+  /// In en, this message translates to:
+  /// **'What would you want someone to know before a first meeting?'**
+  String get dating_guided_before_first_meeting;
+
+  /// Spec 2 §3.6 day 7 of the match, once to each person.
+  ///
+  /// In en, this message translates to:
+  /// **'Plan a first meet?'**
+  String get dating_timeboxDay7;
+
+  /// Spec 2 §3.6.
+  ///
+  /// In en, this message translates to:
+  /// **'Not yet'**
+  String get dating_timeboxNotYet;
+
+  /// Spec 2 §3.6 day 21, once, if neither tapped We met.
+  ///
+  /// In en, this message translates to:
+  /// **'Keep chatting, or close kindly?'**
+  String get dating_timeboxDay21;
+
+  /// Spec 2 §3.6.
+  ///
+  /// In en, this message translates to:
+  /// **'Keep chatting'**
+  String get dating_timeboxKeep;
+
+  /// Spec 2 §3.6 the Safety sheet's row and the day-21 button.
+  ///
+  /// In en, this message translates to:
+  /// **'Close kindly'**
+  String get dating_closeKindly;
+
+  /// Spec 2 §3.6.
+  ///
+  /// In en, this message translates to:
+  /// **'Send this and end the conversation?'**
+  String get dating_closeKindlyTitle;
+
+  /// Spec 2 §3.6 the reviewed message (the server sends the same words).
+  ///
+  /// In en, this message translates to:
+  /// **'Thank you for chatting with me. I don\'t think we\'re a match, and I wish you well.'**
+  String get dating_closeKindlyMessage;
+
+  /// Spec 2 §3.6.
+  ///
+  /// In en, this message translates to:
+  /// **'Send and end'**
+  String get dating_closeKindlySend;
+
+  /// Spec 2 §3.6 the Safety sheet's row.
+  ///
+  /// In en, this message translates to:
+  /// **'We met'**
+  String get dating_weMet;
+
+  /// Spec 2 §3.6 Task 9 fix round 1: the calm line after We met. Never says whether the other person is told.
+  ///
+  /// In en, this message translates to:
+  /// **'Noted that you met.'**
+  String get dating_weMetNoted;
+
+  /// Spec 2 §3.6 Task 9 fix round 1: after answering, when the other person has no name.
+  ///
+  /// In en, this message translates to:
+  /// **'Your answer will show once you\'ve both answered.'**
+  String get dating_guidedWaitingNoName;
+
+  /// Spec 2 §3.6 the meeting kit's title, the Safety sheet's row and the cards' button.
+  ///
+  /// In en, this message translates to:
+  /// **'Plan a meet'**
+  String get dating_planTitle;
+
+  /// Spec 2 §3.6 checklist. DV specialist sign-off (W6 gate).
+  ///
+  /// In en, this message translates to:
+  /// **'Meet in a public place you both know.'**
+  String get dating_planCheck1;
+
+  /// Spec 2 §3.6 checklist.
+  ///
+  /// In en, this message translates to:
+  /// **'Get there and back on your own.'**
+  String get dating_planCheck2;
+
+  /// Spec 2 §3.6 checklist.
+  ///
+  /// In en, this message translates to:
+  /// **'Tell someone you trust where you\'ll be.'**
+  String get dating_planCheck3;
+
+  /// Spec 2 §3.6 checklist.
+  ///
+  /// In en, this message translates to:
+  /// **'Keep chatting here until you\'re sure.'**
+  String get dating_planCheck4;
+
+  /// Spec 2 §3.6 checklist.
+  ///
+  /// In en, this message translates to:
+  /// **'Never send money to someone you haven\'t met.'**
+  String get dating_planCheck5;
+
+  /// Spec 2 §3.6.
+  ///
+  /// In en, this message translates to:
+  /// **'When?'**
+  String get dating_planWhen;
+
+  /// Spec 2 §3.6 the When button before a choice. Plan copy.
+  ///
+  /// In en, this message translates to:
+  /// **'Choose a date and time'**
+  String get dating_planPickWhen;
+
+  /// Spec 2 §3.6.
+  ///
+  /// In en, this message translates to:
+  /// **'Where?'**
+  String get dating_planWhere;
+
+  /// Spec 2 §3.6 the Where field's hint.
+  ///
+  /// In en, this message translates to:
+  /// **'A public place you both know'**
+  String get dating_planWhereHint;
+
+  /// Spec 2 §3.6.
+  ///
+  /// In en, this message translates to:
+  /// **'Share my plan'**
+  String get dating_planShare;
+
+  /// Spec 2 §3.6.
+  ///
+  /// In en, this message translates to:
+  /// **'Send as text message'**
+  String get dating_planSms;
+
+  /// Spec 2 §3.6 the shared text: never the match's name or photo. DV specialist sign-off (W6 gate).
+  ///
+  /// In en, this message translates to:
+  /// **'I\'m meeting someone from Attune on {date} at {time} at {place}. I\'ll check in by {checkin}.'**
+  String dating_planShareText(String date, String time, String place, String checkin);
+
+  /// Spec 2 §3.6: one neutral push three hours after the meet.
+  ///
+  /// In en, this message translates to:
+  /// **'Check on me'**
+  String get dating_planCheckOnMe;
+
+  /// Spec 2 §3.6 after Check on me, while the check-in is still ahead (Task 10 fix round 1, I-2: with its day). Plan copy.
+  ///
+  /// In en, this message translates to:
+  /// **'Attune will check on you on {day} at {time}.'**
+  String dating_planCheckinSet(String day, String time);
+
+  /// Spec 2 §3.6 Task 10 fix round 1 (I-3): a check-in is set but no push can arrive (notifications off on this phone, or no device). DV specialist sign-off (W6 gate).
+  ///
+  /// In en, this message translates to:
+  /// **'Attune can\'t send notifications to this phone, so the check-in won\'t reach you here. Use Share my plan to tell someone you trust.'**
+  String get dating_planCheckinNoPush;
+
+  /// Spec 2 §3.6 Task 10 fix round 1 (M-4): under Check on me while offline (Share still works).
+  ///
+  /// In en, this message translates to:
+  /// **'Check on me needs a connection.'**
+  String get dating_planCheckOnMeOffline;
+
+  /// Spec 2 §3.6 Task 10 fix round 2: the kit could not read the person's check-in while online; Cancel and Try again sit with it.
+  ///
+  /// In en, this message translates to:
+  /// **'Attune couldn\'t check whether a check-in is set. You can still cancel one.'**
+  String get dating_planCheckinUnknown;
+
+  /// Spec 2 §3.6. Plan copy.
+  ///
+  /// In en, this message translates to:
+  /// **'Cancel the check-in'**
+  String get dating_planCheckinCancel;
+
+  /// Spec 2 §3.6 a meet whose check-in falls outside the server's window (shown before asking, and on the server's refusal). Task 10 fix round 1 (M-2): reworded, since the date picker now offers only days inside the window and the line mostly means the time has passed. Plan copy.
+  ///
+  /// In en, this message translates to:
+  /// **'Choose a meet time that\'s still ahead, within the next week.'**
+  String get dating_planCheckinInvalid;
+
+  /// Spec 2 §3.6 the check-in.
+  ///
+  /// In en, this message translates to:
+  /// **'How did it go?'**
+  String get dating_checkinTitle;
+
+  /// Spec 2 §3.6.
+  ///
+  /// In en, this message translates to:
+  /// **'I\'m OK'**
+  String get dating_checkinOk;
+
+  /// Spec 2 §3.6. DV specialist sign-off (W6 gate).
+  ///
+  /// In en, this message translates to:
+  /// **'Get help'**
+  String get dating_checkinHelp;
+
+  /// Spec 2 §3.6.
+  ///
+  /// In en, this message translates to:
+  /// **'Not now'**
+  String get dating_checkinNotNow;
+
+  /// Spec 2 §3.6 Get help's confirmation.
+  ///
+  /// In en, this message translates to:
+  /// **'Show emergency numbers?'**
+  String get dating_checkinHelpTitle;
+
+  /// Spec 2 §3.6 Get help's confirmation. Plan copy.
+  ///
+  /// In en, this message translates to:
+  /// **'Show'**
+  String get dating_checkinHelpShow;
+
+  /// Spec 2 §3.6: a text the person sends themselves.
+  ///
+  /// In en, this message translates to:
+  /// **'Message someone you trust'**
+  String get dating_checkinMessageSomeone;
+
+  /// Spec 2 §3.6. DV specialist sign-off (W6 gate).
+  ///
+  /// In en, this message translates to:
+  /// **'I need help. I\'m at {place}. Please call me.'**
+  String dating_checkinHelpText(String place);
+
+  /// Spec 2 §3.6 with no plan in memory. Plan copy; DV specialist sign-off (W6 gate).
+  ///
+  /// In en, this message translates to:
+  /// **'I need help. Please call me.'**
+  String get dating_checkinHelpTextNoPlace;
+
+  /// Spec 2 §3.6 final client fix (C-9, T9 M-8): the guided answer sheet's hint. Plan copy, for the copy reviewer.
+  ///
+  /// In en, this message translates to:
+  /// **'Write your answer'**
+  String get dating_guidedAnswerHint;
 }
 
 class _AppLocalizationsDelegate extends LocalizationsDelegate<AppLocalizations> {

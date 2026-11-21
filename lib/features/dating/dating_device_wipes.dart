@@ -4,6 +4,7 @@
 // adds the caches here; quick_exit_service.dart and auth_provider.dart are
 // never edited. Nothing here is protective: the Dating lock stays.
 import 'package:attune/core/device/device_wipe_registry.dart';
+import 'package:attune/features/dating/chat/plan_meet_screen.dart';
 import 'package:attune/features/dating/lock/dating_unlock.dart';
 import 'package:attune/features/dating/today/dating_photo_memory.dart';
 
@@ -21,6 +22,14 @@ void registerDatingDeviceWipes([DeviceWipeRegistry? registry]) {
       id: 'spec2.dating_photos',
       moments: {WipeMoment.signOut, WipeMoment.quickExit},
       run: DatingPhotoMemory.clear,
+    ),
+  );
+  // Spec 2 W6c (§3.6, D20): the meet plan held in memory.
+  (registry ?? DeviceWipeRegistry.instance).register(
+    const DeviceWipeEntry(
+      id: 'spec2.dating_plan',
+      moments: {WipeMoment.signOut, WipeMoment.quickExit},
+      run: DatingPlanMemory.clear,
     ),
   );
 }

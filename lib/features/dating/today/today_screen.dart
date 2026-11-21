@@ -30,6 +30,7 @@ import 'package:attune/features/dating/data/dating_providers.dart';
 import 'package:attune/features/dating/data/dating_rpc.dart';
 import 'package:attune/features/dating/gentle_wait/gentle_wait_providers.dart'
     show datingOnlineProvider;
+import 'package:attune/features/dating/routes/dating_root_back.dart';
 import 'package:attune/features/dating/routes/dating_routes.dart';
 import 'package:attune/features/dating/section/dating_calm_line.dart';
 import 'package:attune/features/dating/settings/dating_abroad.dart';
@@ -93,6 +94,22 @@ class _DatingTodayScreenState extends ConsumerState<DatingTodayScreen> {
   DatingToday? _ownMatchOn;
   String _ownMatchName = '';
 
+  /// Spec 2 W6a (carry 7): the match act said its answer made.
+  String? _ownMatchId;
+
+  /// Spec 2 W6a fix round 1 (M-3): the moment is out. Say hello puts the
+  /// chat in its place, so its push never completes: Today reads again
+  /// once it is the page on top again (or when the push completes).
+  bool _momentOut = false;
+  bool _momentCovered = false;
+
+  void _momentBack() {
+    if (!_momentOut) return;
+    _momentOut = false;
+    _momentCovered = false;
+    _reread();
+  }
+
   /// Task 7b: cards blocked here (collapsed to a calm line, by first name)
   /// and blocks whose answer is still open (each sent once).
   final _blocked = <String, String>{};
@@ -142,6 +159,7 @@ class _DatingTodayScreenState extends ConsumerState<DatingTodayScreen> {
         _momentsKnown.clear();
         _ownMatchOn = null;
         _ownMatchName = '';
+        _ownMatchId = null;
       });
     });
   }
@@ -242,6 +260,7 @@ class _DatingTodayScreenState extends ConsumerState<DatingTodayScreen> {
         // M-1: the card leaves Today; its moment opens on the next read.
         _ownMatchOn = on ?? DatingToday.failed;
         _ownMatchName = c.card.displayName?.trim() ?? '';
+        _ownMatchId = r.matchId;
         ref.invalidate(datingTodayProvider(account));
       }
     } finally {
@@ -392,9 +411,12 @@ class _DatingTodayScreenState extends ConsumerState<DatingTodayScreen> {
         for (final m in day.moments)
           if (!_momentsKnown.contains(m.matchId)) m,
       ];
+      // Spec 2 W6a (carry 7): the exact match, when act named it.
       own =
+          day.moments.where((m) => m.matchId == _ownMatchId).firstOrNull ??
           arrived.where((m) => m.name.trim() == _ownMatchName).lastOrNull ??
           arrived.lastOrNull;
+      _ownMatchId = null;
     }
     _momentsKnown.addAll([for (final m in day.moments) m.matchId]);
     if (own == null && (_momentOpened || day.moments.isEmpty)) return;
@@ -403,9 +425,10 @@ class _DatingTodayScreenState extends ConsumerState<DatingTodayScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       // T7 fix 1 (M-1): the account rides with the moment.
+      _momentOut = true;
       context
           .push(DatingPaths.match(m.matchId), extra: (m, day.myName, _account))
-          .whenComplete(_reread);
+          .whenComplete(_momentBack);
     });
   }
 
@@ -419,6 +442,13 @@ class _DatingTodayScreenState extends ConsumerState<DatingTodayScreen> {
     // taken down during this build), and the held pass is sent once the
     // frame ends (or by dispose, whichever comes first).
     final current = ModalRoute.isCurrentOf(context) ?? true;
+    if (_momentOut) {
+      if (!current) {
+        _momentCovered = true;
+      } else if (_momentCovered) {
+        WidgetsBinding.instance.addPostFrameCallback((_) => _momentBack());
+      }
+    }
     if (!current && _barUp) {
       _closeBar();
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -440,7 +470,11 @@ class _DatingTodayScreenState extends ConsumerState<DatingTodayScreen> {
       child: ScaffoldMessenger(
         key: _messengerKey,
         child: Scaffold(
-          appBar: AppBar(title: Text(loc.dating_todayTitle)),
+          appBar: AppBar(
+            // Spec 2 W6a fix round 1 (I-3): the only page goes back to Me.
+            leading: datingRootBackButton(context),
+            title: Text(loc.dating_todayTitle),
+          ),
           body: SafeArea(
             child: switch (read) {
               AsyncData(value: final d) when d.ok => _day(

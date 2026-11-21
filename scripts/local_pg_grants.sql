@@ -364,7 +364,12 @@ BEGIN
     'public.resolve_dating_verification_review(uuid, text)',
     'public.revoke_dating_age_verification(uuid)',
     'public.run_dating_candidate_generation(text)',
-    'public.verify_dating_age(uuid, date, text, uuid, timestamp with time zone)'] LOOP
+    'public.verify_dating_age(uuid, date, text, uuid, timestamp with time zone)',
+    -- Spec 2 W6 final server fix (M-10, W6 T2 N-5/O-1): dropped by W6a, named
+    -- by the W5a, W5b and W5c twins (20261119100010, 20261119110010, 20261119120010).
+    'private.dating_pair_new(uuid, uuid)',
+    'private.dating_caption_has_contact(text)',
+    'private.dating_first_messages(uuid, timestamp with time zone)'] LOOP
     IF to_regprocedure(v_sig) IS NULL THEN
       EXECUTE format('CREATE FUNCTION %s RETURNS void LANGUAGE plpgsql AS %L', v_sig, 'BEGIN RETURN; END');
       INSERT INTO pg_temp.harness_stubs (kind, name) VALUES ('function', v_sig);
@@ -447,7 +452,18 @@ END $$;
 -- Spec 2 W5a: matching (twin of 20261119100000)
 \i supabase/migrations/20261119100010_dating_v2_matching_grants.sql
 
+
+-- Spec 2 W5b: Today (twin of 20261119110000)
+\i supabase/migrations/20261119110010_dating_v2_today_grants.sql
+
+-- Spec 2 W5b Task 7b: Block on the card (twin of 20261119115000)
+\i supabase/migrations/20261119115010_dating_v2_block_grants.sql
+
+-- Spec 2 W5c: signals (twin of 20261119120000)
+\i supabase/migrations/20261119120010_dating_v2_signals_grants.sql
+
 -- Spec 2 W5 final (M-1): the stand-ins made above go (only those).
+-- Spec 2 W6 final server fix (M-10): after the last twin that names one (W5c's).
 DO $$
 DECLARE
   r record;
@@ -458,11 +474,11 @@ BEGIN
 END $$;
 DROP TABLE pg_temp.harness_stubs;
 
--- Spec 2 W5b: Today (twin of 20261119110000)
-\i supabase/migrations/20261119110010_dating_v2_today_grants.sql
+-- Spec 2 W6a: the chat (twin of 20261120100000)
+\i supabase/migrations/20261120100010_dating_v2_chat_grants.sql
 
--- Spec 2 W5b Task 7b: Block on the card (twin of 20261119115000)
-\i supabase/migrations/20261119115010_dating_v2_block_grants.sql
+-- Spec 2 W6b: the chat safety pipeline (twin of 20261120110000)
+\i supabase/migrations/20261120110010_dating_v2_chat_safety_grants.sql
 
--- Spec 2 W5c: signals (twin of 20261119120000)
-\i supabase/migrations/20261119120010_dating_v2_signals_grants.sql
+-- Spec 2 W6c: the guided conversation, the check-in, the purge (twin of 20261120120000)
+\i supabase/migrations/20261120120010_dating_v2_chat_guided_grants.sql

@@ -10,6 +10,12 @@ verify_jwt = true
 [functions.dating-photo-urls]
 verify_jwt = true
 
+# Spec 2 W6b (§6.1): the chat safety worker. Called every minute by the cron
+# (public.invoke_edge_function) with the service-role key as its bearer;
+# index.ts checks it with requireServiceRole before any work.
+[functions.process-dating-safety-outbox]
+verify_jwt = true
+
 [functions.accept-invite]
 verify_jwt = true
 

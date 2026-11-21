@@ -157,11 +157,29 @@ class DatingModeDocs implements DocumentationModule {
               'Introductions stay in your country unless you choose another one in Dating settings, once you\'re verified and your account is 14 days old. You\'re only introduced across a border to verified people whose accounts are at least 14 days old and who chose your country too. Scams often start with someone abroad: never send money to someone you haven\'t met.',
           type: ManualContentType.text,
         ),
+        // Spec 2 W6a (§3.6, §6.1): the chat.
+        ManualContent(
+          id: 'dating_chat',
+          title: 'Conversations',
+          numberPrefix: '5',
+          content:
+              'When you match, you can write to each other in Conversations: text only, up to 1,000 characters. Phone numbers, emails, usernames and links show as "•••" until you both tap Swap contacts, which you can offer from three days after you match; once you\'ve both swapped, it can\'t be undone. There are no read receipts, and nobody can see when you\'re online or typing. The shield at the top of a conversation lets you block, unmatch, close kindly, plan a meet, say you\'ve met, or find safety resources. Unmatching ends the conversation for both of you, and you won\'t be introduced again.',
+          type: ManualContentType.text,
+        ),
+        // Spec 2 W6c (§3.6): the guided start, the meeting kit, the check-in.
+        ManualContent(
+          id: 'dating_meet',
+          title: 'Getting to know each other, and meeting',
+          numberPrefix: '6',
+          content:
+              'A new conversation can start with a few questions you both answer; you see each other\'s answer once you\'ve both replied, and you can skip any of them. After a week, and again after three weeks, Attune asks gently how it\'s going. If you\'d like to stop, Close kindly sends a short, kind message and ends the conversation for both of you. Before you meet, Plan a meet has a short safety checklist. Share my plan sends the time and place to someone you trust; it never includes the other person\'s name or photo. Attune never saves where you\'re meeting: your plan stays on your phone only while Attune is open, and quick exit forgets it. Only the check-in time you ask for is kept, so Attune can send it. Check on me sends you one plain notification, "A quick check-in from Attune.", three hours after the meet; it needs notifications on for Attune, and Attune tells you if they\'re off. Get help asks first, then shows your country\'s emergency numbers, and offers a text you send yourself to someone you trust. Tap We met when you have; Attune then stops asking how it\'s going.',
+          type: ManualContentType.text,
+        ),
         ManualContent(
           id: 'dating_money',
           title: '',
           content:
-              'Never send money, account details or mobile money to someone you haven\'t met in person, whatever the story. Report it from the conversation.',
+              'Never send money, account details or mobile money to someone you haven\'t met in person, whatever the story. If someone asks, block them from the shield at the top of the conversation.',
           type: ManualContentType.warning,
         ),
       ],
@@ -179,7 +197,8 @@ class DatingModeDocs implements DocumentationModule {
           title: 'Plain notifications',
           numberPrefix: '1',
           content:
-              'Dating notifications never mention Dating. They show only "Attune" and a short line: "You have something new in Attune." or, for something you asked to be told about, "Something you asked about is ready in Attune." Tapping one opens Me.',
+              // Spec 2 W6c Task 10: the check-in you asked for opens itself.
+              'Dating notifications never mention Dating. They show only "Attune" and a short line: "You have something new in Attune.", "A quick check-in from Attune." for a check-in you asked for, or, for something you asked to be told about, "Something you asked about is ready in Attune." Tapping one opens Me; a check-in opens "How did it go?", after your Safety PIN if Dating is locked.',
           type: ManualContentType.text,
         ),
         ManualContent(

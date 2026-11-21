@@ -29,6 +29,7 @@ import 'package:attune/features/dating/data/dating_providers.dart';
 import 'package:attune/features/dating/data/dating_rpc.dart';
 import 'package:attune/features/dating/gentle_wait/gentle_wait_providers.dart'
     show datingOnlineProvider;
+import 'package:attune/features/dating/routes/dating_root_back.dart';
 import 'package:attune/features/dating/section/dating_calm_line.dart';
 import 'package:attune/features/dating/settings/dating_abroad.dart';
 import 'package:attune/features/dating/settings/never_introduce_sheets.dart';
@@ -236,7 +237,11 @@ class _DatingAbroadScreenState extends ConsumerState<DatingAbroadScreen> {
     final fresh = !read.isLoading;
     return AllowLargeText(
       child: Scaffold(
-        appBar: AppBar(title: Text(loc.dating_abroadTitle)),
+        appBar: AppBar(
+          // Final client fix (C-5): the only page goes back to settings.
+          leading: datingRootBackButton(context),
+          title: Text(loc.dating_abroadTitle),
+        ),
         body: SafeArea(
           child: SingleChildScrollView(
             padding: const EdgeInsets.all(Spacing.md),

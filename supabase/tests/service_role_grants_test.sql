@@ -50,7 +50,20 @@ BEGIN
                           'dating_verification_sessions',
                           -- Spec 2 W4b: device hashes; the device check and the
                           -- trust writer reach them.
-                          'dating_trusted_devices')
+                          'dating_trusted_devices',
+                          -- Spec 2 W6a: the pair markers are keyed codes of two
+                          -- numbers; only definer functions write and read them.
+                          'dating_pair_markers',
+                          -- Spec 2 W6a: the chat signals are a signed-in person's
+                          -- own rows (realtime); the send writes them.
+                          'dating_chat_signals',
+                          -- Spec 2 W6b: the chat's safety outbox, config, events
+                          -- and openers; the worker claims and completes through
+                          -- its three service functions (S-5: no body read directly).
+                          'dating_message_safety_outbox', 'dating_safety_configs',
+                          'dating_safety_events', 'dating_opener_hashes',
+                          -- Spec 2 W6c: the guided skips, written by one definer RPC.
+                          'dating_guided_skips')
     AND NOT has_table_privilege('service_role', c.oid, 'SELECT');
 
   IF v_count > 0 THEN
@@ -89,7 +102,20 @@ BEGIN
                           'dating_verification_sessions',
                           -- Spec 2 W4b: device hashes; the device check and the
                           -- trust writer reach them.
-                          'dating_trusted_devices')
+                          'dating_trusted_devices',
+                          -- Spec 2 W6a: the pair markers are keyed codes of two
+                          -- numbers; only definer functions write and read them.
+                          'dating_pair_markers',
+                          -- Spec 2 W6a: the chat signals are a signed-in person's
+                          -- own rows (realtime); the send writes them.
+                          'dating_chat_signals',
+                          -- Spec 2 W6b: the chat's safety outbox, config, events
+                          -- and openers; the worker claims and completes through
+                          -- its three service functions (S-5: no body read directly).
+                          'dating_message_safety_outbox', 'dating_safety_configs',
+                          'dating_safety_events', 'dating_opener_hashes',
+                          -- Spec 2 W6c: the guided skips, written by one definer RPC.
+                          'dating_guided_skips')
     -- Spec 2 W1b (batch-4 fix round 1, C-1): the service role only reads
     -- country_safety_config (no worker claims rows there); publish_country_config,
     -- a definer, is its one writer, and dating_rls_canary.sql pins SELECT only.

@@ -250,6 +250,10 @@ class OneSignalService implements PushAsker {
     if (!_started.isCompleted) _started.complete(started);
   }
 
+  /// Spec 2 W6c Task 10 fix round 2: whether OneSignal has started (read
+  /// only; before it starts the permission reads false and means nothing).
+  bool get sdkStarted => _sdkStarted;
+
   /// This device's push subscription id once OneSignal has started (I2:
   /// "sign out other devices" keeps this one), else null.
   String? get currentSubscriptionId {

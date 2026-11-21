@@ -19,6 +19,7 @@ import 'package:attune/features/dating/data/dating_providers.dart';
 import 'package:attune/features/dating/data/dating_rpc.dart';
 import 'package:attune/features/dating/gentle_wait/gentle_wait_providers.dart'
     show datingOnlineProvider;
+import 'package:attune/features/dating/routes/dating_root_back.dart';
 import 'package:attune/features/dating/section/dating_lifecycle_errors.dart';
 import 'package:attune/features/onboarding/domain/home_state.dart' show AppTab;
 import 'package:attune/home/home_location.dart';
@@ -135,7 +136,11 @@ class _DatingLeaveScreenState extends ConsumerState<DatingLeaveScreen> {
     );
     return AllowLargeText(
       child: Scaffold(
-        appBar: AppBar(title: Text(loc.dating_leaveTitle)),
+        appBar: AppBar(
+          // Final client fix (C-5): the only page goes back to settings.
+          leading: datingRootBackButton(context),
+          title: Text(loc.dating_leaveTitle),
+        ),
         body: SafeArea(
           // Not a lazy list: both buttons are always built (and reachable).
           child: SingleChildScrollView(

@@ -79,6 +79,12 @@ const _audited = {
   // Spec 2 W5c (§3.12): the never-introduce list and Other countries.
   'datingNeverIntroduce',
   'datingAbroad',
+  // Spec 2 W6a (§3.5, §3.6): the conversations list and the chat.
+  'datingChats',
+  'datingChat',
+  // Spec 2 W6c (§3.6): the meeting kit and the check-in.
+  'datingPlanMeet',
+  'datingCheckin',
   'aboutUs',
   'addEditReminder',
   'ageStop',

@@ -364,7 +364,7 @@ void main() {
       expect(shell.location, isNotNull);
       expect(find.text(loc.dating_momentTitle('Kofi')), findsOneWidget);
       expect(find.text(loc.dating_momentBody), findsOneWidget);
-      expect(find.text(loc.dating_momentSayHello), findsNothing);
+      expect(find.text(loc.dating_momentSayHello), findsOneWidget); // Spec 2 W6a (R-11)
       expect(fake.seen, ['m1']);
       await tap(t, find.text(loc.dating_momentLater));
       await t.pumpAndSettle();

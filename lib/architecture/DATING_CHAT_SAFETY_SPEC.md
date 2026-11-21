@@ -1,14 +1,17 @@
 # ATTUNE — DATING CHAT SAFETY SPECIFICATION
 
-**Status:** Draft for safety-owner review. Nothing in this document is
-approved. Dating chat may not ship until Section 12's blockers are checked.
+**Status:** Version 2.0 (2026-11-20, Spec 2 W6c). The v2.0 amendments
+below were approved by the product owner under Q20 of
+`docs/superpowers/specs/2026-10-24-dating-mode-design.md` (§1.5). The
+safety owner's review is still required: Dating chat may not ship to
+production until Section 12's blockers are checked.
 
 **Supersedes:** the "required decision" in
 `DATING_MODE_DATING_CHAT_SAFETY_PLAN.md` §2. That plan recorded a working
 product-owner decision (July 2026) to write a *separate* dating-chat safety
 specification rather than extend the couples Safety System. This is that
-document. The plan remains the operating checklist; this is the scope it
-was waiting on.
+document. The plan was the operating checklist until version 2.0; it is
+now superseded by this document and kept for history only.
 
 **Reads with:** `SAFETY_SYSTEM_SPEC.md` (couples; the system this one
 deliberately does not reuse), `DATING_MODE_SPEC.md` (§8 messaging, §9
@@ -25,6 +28,48 @@ one — every later decision follows from it.
 Sections 3–7 are the safety contract proper and are what the safety owner is
 being asked to approve. Sections 8–11 are engineering consequences. Section
 12 is the release gate.
+
+---
+
+## Version 2.0 amendments (they override the sections they name)
+
+- **§1.4 and §2.4 — own surface.** Dating chat has its own screen, widgets,
+  table (`dating_messages`), outbox (`dating_message_safety_outbox`) and
+  worker (`process-dating-safety-outbox`). It shares no transport, widget or
+  table with couples chat: dating messages never enter `public.messages`,
+  `relationship_message_counters` or the couples safety outbox. There are no
+  read receipts, typing indicators or presence, and no in-chat Games.
+- **§3.1 — new families.** `sextortion` (tier 2, the country's support
+  resource), `meet_private_pressure` (tier 1, "Plan a meet") and
+  `child_access` (tier 2: a recipient card and a moderation case) join the v1
+  families, with `duplicate_opener` (the same first message to three or
+  more matches) and cross-match `money_asks` as moderation signals. The
+  lexicon is `dating_chat_v1` in `dating_safety_configs`; the Twi, Ga, Ewe
+  and Pidgin entries come from the cultural reviewer.
+- **§3.4 — own normaliser.** Dating uses Spec 1's Unicode-safe normaliser
+  (`_shared/unicode_normaliser.ts`, its fold table and goldens) through
+  `_shared/dating_chat_safety.ts`; the couples `chat_safety.ts` is untouched.
+- **§4.1 — presentation rules.** Contact masking (phone numbers, emails,
+  handles and links shown as "•••" until both people tap Swap contacts,
+  offered from 72 hours after the match) and the swap card are server
+  rules: the server masks a message once, when it is written
+  (`body_masked`), and on every read gives the masked text until both have
+  swapped, then the text as written. Delivery never waits on safety: the
+  message is stored and delivered first, and detection runs after it
+  (fail-open). Masking never lifts by itself.
+- **§5.1 — holds.** A report can lead to an interim hold only for a
+  corroborated P0 (design spec §6.2, to be built in W7a). Phrase triggers still
+  never restrict an account.
+- **§5.2 — categories.** The report categories are the design spec's
+  §3.7 categories (to be built in W7a), replacing the list below.
+- **§7 — 30-day evidence window.** When a match closes (block, unmatch,
+  close kindly, leaving or account deletion), its messages stay sealed for
+  30 days, then the daily purge (`run_dating_retention_purge`, one commit
+  per step) deletes them, unless an open moderation case holds the match or
+  one of its safety events is under 7 days old. Safety events are
+  anonymised at 90 days;
+  moderation cases are kept 2 years; one-way pair markers (no names, no
+  ids) are kept 2 years so a pair is never introduced again.
 
 ---
 
@@ -457,6 +502,10 @@ Stated rather than silently resolved:
 ---
 
 ## Changelog
+
+- **2026-11-20** — Version 2.0: the amendments approved under Q20 of the
+  Dating Mode design (§1.5), recorded at the top of this document (Spec 2
+  W6c). The safety owner's §12 review is still pending.
 
 - **2026-09-04** — Initial draft. Written against
   `DATING_MODE_DATING_CHAT_SAFETY_PLAN.md` §2's recorded option-2 decision.

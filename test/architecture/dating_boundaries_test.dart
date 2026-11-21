@@ -24,7 +24,8 @@ void main() {
         isNot(contains('package:attune/features/games/')),
         reason: f.path,
       );
-      expect(src, isNot(contains('ChatScreen')), reason: f.path);
+      // Spec 2 W6a: the couples ChatScreen; DatingChatScreen is Dating's own.
+      expect(src, isNot(contains(RegExp(r'\bChatScreen\b'))), reason: f.path);
     }
   });
 

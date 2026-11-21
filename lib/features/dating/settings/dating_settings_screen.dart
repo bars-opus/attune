@@ -22,6 +22,7 @@ import 'package:attune/core/utils/date_formatter.dart';
 import 'package:attune/features/dating/data/dating_rpc.dart';
 import 'package:attune/features/dating/data/dating_home.dart';
 import 'package:attune/features/dating/photos/dating_photos_providers.dart';
+import 'package:attune/features/dating/routes/dating_root_back.dart';
 import 'package:attune/features/dating/routes/dating_routes.dart';
 import 'package:attune/features/dating/routes/dating_setup_steps.dart'
     show datingStepLocation;
@@ -298,7 +299,11 @@ class _DatingSettingsScreenState extends ConsumerState<DatingSettingsScreen> {
     );
     return AllowLargeText(
       child: Scaffold(
-        appBar: AppBar(title: Text(loc.dating_settingsTitle)),
+        appBar: AppBar(
+          // Spec 2 W6a fix round 1 (I-3): the only page goes back to Me.
+          leading: datingRootBackButton(context),
+          title: Text(loc.dating_settingsTitle),
+        ),
         body: SafeArea(
           // Not a lazy list: every row is built, so Leave and Clear are
           // always in the tree to scroll to (C-2).

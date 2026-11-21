@@ -22,6 +22,7 @@ import 'package:attune/features/dating/data/dating_providers.dart';
 import 'package:attune/features/dating/data/dating_rpc.dart';
 import 'package:attune/features/dating/gentle_wait/gentle_wait_providers.dart'
     show datingOnlineProvider;
+import 'package:attune/features/dating/routes/dating_root_back.dart';
 import 'package:attune/features/dating/section/dating_calm_line.dart';
 import 'package:attune/features/dating/settings/never_introduce_phone.dart';
 import 'package:attune/features/dating/settings/never_introduce_sheets.dart';
@@ -223,7 +224,8 @@ class _DatingNeverIntroduceScreenState
       child: Scaffold(
         // Ruling 5: the title is long, so it wraps as the page's heading
         // (in the bar it would be cut to "Never introduce me to…").
-        appBar: AppBar(),
+        // Final client fix (C-5): the only page goes back to settings.
+        appBar: AppBar(leading: datingRootBackButton(context)),
         body: SafeArea(
           child: SingleChildScrollView(
             padding: const EdgeInsets.all(Spacing.md),

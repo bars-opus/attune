@@ -3,10 +3,16 @@
 // redirect (signed in, then the Dating lock). A route is added here when
 // its screen lands: W3a the steps and the unlock (Task 4: settings,
 // not-open), W3c leave; W4-W9 theirs.
+import 'package:attune/app/routing/app_router.dart' show RouteNames;
 import 'package:attune/core/ui/motion/motion_tokens.dart';
+import 'package:attune/features/dating/chat/checkin_screen.dart';
+import 'package:attune/features/dating/chat/conversations_screen.dart';
+import 'package:attune/features/dating/chat/dating_chat_screen.dart';
+import 'package:attune/features/dating/chat/plan_meet_screen.dart';
 import 'package:attune/features/dating/lock/dating_unlock.dart';
 import 'package:attune/features/dating/not_open/dating_not_open_screen.dart';
 import 'package:attune/features/dating/routes/dating_page_watch.dart';
+import 'package:attune/features/dating/routes/dating_root_back.dart';
 import 'package:attune/features/dating/routes/dating_setup_steps.dart';
 import 'package:attune/features/dating/settings/dating_leave_screen.dart';
 import 'package:attune/features/dating/settings/abroad_screen.dart';
@@ -38,6 +44,15 @@ abstract final class DatingPaths {
   static const abroad = '/dating/abroad';
 
   static String match(String id) => '/dating/match/$id';
+
+  /// Spec 2 W6a (§3.5, §3.6): the conversations list and one chat.
+  static const chats = '/dating/chats';
+
+  static String chat(String matchId) => '/dating/chat/$matchId';
+
+  /// Spec 2 W6c (§3.6): the meeting kit, and where Check on me's push opens.
+  static String plan(String matchId) => '/dating/chat/$matchId/plan';
+  static const checkin = '/dating/checkin';
 
   static String step(String step) => '/dating/setup/$step';
 
@@ -138,6 +153,8 @@ GoRoute datingRoute(
   bool Function() signedIn,
   Widget Function(GoRouterState state) screen, {
   DatingMotion Function(GoRouterState state)? motion,
+  // Spec 2 W6a fix round 1 (I-3): where back leads when this is the only page.
+  String Function()? back,
 }) => GoRoute(
   path: path,
   name: name,
@@ -155,7 +172,10 @@ GoRoute datingRoute(
                   : DatingLockGate(
                     pageKey: state.pageKey,
                     from: state.uri.toString(),
-                    child: screen(state),
+                    child:
+                        back == null
+                            ? screen(state)
+                            : DatingRootBack(to: back, child: screen(state)),
                   ),
         ),
         motion: motion?.call(state) ?? DatingMotion.none,
@@ -185,7 +205,10 @@ List<RouteBase> datingRoutes({required bool Function() signedIn}) => [
     signedIn,
     (s) => const DatingSettingsScreen(),
     motion: (s) => DatingMotion.sharedAxis,
+    back: datingMeLocation,
   ),
+  // Final client fix (C-5): as the only page (the lock's return, a link),
+  // not-open goes back to Me and leave to Dating settings.
   datingRoute(
     DatingPaths.notOpen,
     'datingNotOpen',
@@ -194,6 +217,7 @@ List<RouteBase> datingRoutes({required bool Function() signedIn}) => [
       country: s.uri.queryParameters['country'],
       region: s.uri.queryParameters['region'],
     ),
+    back: datingMeLocation,
   ),
   datingRoute(
     DatingPaths.leave,
@@ -201,6 +225,7 @@ List<RouteBase> datingRoutes({required bool Function() signedIn}) => [
     signedIn,
     (s) => const DatingLeaveScreen(),
     motion: (s) => DatingMotion.none,
+    back: () => DatingPaths.settings,
   ),
   // Spec 2 W4b: the check's outcomes are never animated (§3.0).
   datingRoute(
@@ -218,6 +243,7 @@ List<RouteBase> datingRoutes({required bool Function() signedIn}) => [
     signedIn,
     (s) => const DatingTodayScreen(),
     motion: (s) => DatingMotion.sharedAxis,
+    back: datingMeLocation,
   ),
   datingRoute(
     '/dating/match/:id',
@@ -241,13 +267,15 @@ List<RouteBase> datingRoutes({required bool Function() signedIn}) => [
     ),
     motion: (s) => DatingMotion.none,
   ),
-  // Spec 2 W5c (§3.12, §3.15): a standard list.
+  // Spec 2 W5c (§3.12, §3.15): a standard list. Final client fix (C-5):
+  // as the only page, both go back to Dating settings.
   datingRoute(
     DatingPaths.neverIntroduce,
     'datingNeverIntroduce',
     signedIn,
     (s) => const DatingNeverIntroduceScreen(),
     motion: (s) => DatingMotion.sharedAxis,
+    back: () => DatingPaths.settings,
   ),
   datingRoute(
     DatingPaths.abroad,
@@ -255,5 +283,41 @@ List<RouteBase> datingRoutes({required bool Function() signedIn}) => [
     signedIn,
     (s) => const DatingAbroadScreen(),
     motion: (s) => DatingMotion.sharedAxis,
+    back: () => DatingPaths.settings,
+  ),
+  // Spec 2 W6a (§3.5, §3.6, §3.15): the list is a standard list; the chat
+  // slides in (its own messages never animate).
+  datingRoute(
+    DatingPaths.chats,
+    'datingChats',
+    signedIn,
+    (s) => const DatingConversationsScreen(),
+    motion: (s) => DatingMotion.sharedAxis,
+    back: datingMeLocation,
+  ),
+  datingRoute(
+    '/dating/chat/:matchId',
+    'datingChat',
+    signedIn,
+    (s) => DatingChatScreen(matchId: s.pathParameters['matchId'] ?? ''),
+    motion: (s) => DatingMotion.sharedAxis,
+    back: () => DatingPaths.chats,
+  ),
+  // Spec 2 W6c (§3.6): nothing here moves. Task 10 ruling: as the only
+  // page (the Dating lock's return, a link), the kit goes back to its chat
+  // and the check-in (the push's go()) to home, as Not now does.
+  datingRoute('/dating/chat/:matchId/plan', 'datingPlanMeet', signedIn, (s) {
+    final id = s.pathParameters['matchId'] ?? '';
+    return DatingRootBack(
+      to: () => DatingPaths.chat(id),
+      child: DatingPlanMeetScreen(matchId: id),
+    );
+  }),
+  datingRoute(
+    DatingPaths.checkin,
+    'datingCheckin',
+    signedIn,
+    (s) => const DatingCheckinScreen(),
+    back: () => RouteNames.home,
   ),
 ];

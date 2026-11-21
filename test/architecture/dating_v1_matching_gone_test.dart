@@ -9,7 +9,8 @@ void main() {
   test('no file under lib/ names a v1 matching object', () {
     final banned = RegExp(
       r'display_band|explanation_features|dating_feature_snapshots|'
-      r'get_my_dating_matches|run_dating_candidate_generation|'
+      // Spec 2 W6a: the v1 match read (p_limit); the v2 one takes p_include_ended.
+      r"'get_my_dating_matches', \{'p_limit'|run_dating_candidate_generation|"
       r'generate_dating_candidates_for_user|dating_alignment|'
       r"'get_my_dating_introductions', \{'p_limit'|class DatingIntroduction\b",
     );

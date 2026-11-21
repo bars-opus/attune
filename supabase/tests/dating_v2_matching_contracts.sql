@@ -182,8 +182,8 @@ BEGIN
      OR EXISTS (SELECT 1 FROM pg_proc AS p JOIN pg_namespace AS n ON n.oid = p.pronamespace
                  WHERE n.nspname = 'public' AND p.proname IN ('build_dating_feature_snapshot', 'dating_has_historical_consent',
                    'dating_normalize_scalar', 'dating_alignment_score', 'dating_alignment_reasons', 'dating_component_similarity',
-                   'dating_set_similarity', 'generate_dating_candidates_for_user', 'run_dating_candidate_generation',
-                   'get_my_dating_matches'))
+                   'dating_set_similarity', 'generate_dating_candidates_for_user', 'run_dating_candidate_generation'))
+     OR to_regprocedure('public.get_my_dating_matches(integer)') IS NOT NULL -- Spec 2 W6a: the v1 read; W6a's takes a boolean
      OR EXISTS (SELECT 1 FROM public.feature_flags WHERE key = 'dating_alignment_algorithm_v1')
      OR EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'dating_introductions'
                   AND column_name IN ('display_band', 'explanation_features', 'low_summary', 'high_summary', 'internal_score',
@@ -591,7 +591,8 @@ BEGIN
     RAISE EXCEPTION 'CONTRACT VIOLATED: the first interest answered %', v;
   END IF;
   v := pg_temp.call(m, pg_temp.dev('42'), format('SELECT public.act_on_dating_introduction(%L, %L, ''interested'')', md5('k-m'), v_wm))::jsonb;
-  IF v IS DISTINCT FROM '{"ok": true, "action": "interested", "matched": true}'
+  IF v - 'match_id' IS DISTINCT FROM '{"ok": true, "action": "interested", "matched": true}' -- Spec 2 W6a (carry 7)
+     OR v ->> 'match_id' IS DISTINCT FROM (SELECT id::text FROM public.dating_matches WHERE introduction_id = v_wm) -- Spec 2 W6a
      OR (SELECT count(*) FROM public.dating_matches WHERE introduction_id = v_wm AND state = 'active') <> 1
      OR (SELECT count(*) FROM public.scheduled_notifications) <> v_pushes THEN
     RAISE EXCEPTION 'CONTRACT VIOLATED: mutual interest answered %, made % match(es), queued % push(es)', v,
@@ -599,7 +600,7 @@ BEGIN
       (SELECT count(*) FROM public.scheduled_notifications) - v_pushes;
   END IF;
   IF pg_temp.call(m, pg_temp.dev('42'), format('SELECT public.act_on_dating_introduction(%L, %L, ''interested'')', md5('k-m'), v_wm))
-       IS DISTINCT FROM '{"action": "interested", "matched": true, "ok": true}'::jsonb::text
+       IS DISTINCT FROM v::text -- Spec 2 W6a (carry 7): the replay names the same match
      OR pg_temp.call(w, pg_temp.dev('41'), format('SELECT public.act_on_dating_introduction(%L, %L, ''passed'')', md5('k-w-again'), v_wm))::jsonb
         ->> 'reason' IS DISTINCT FROM 'introduction_unavailable'
      OR (SELECT state || low_action || high_action FROM public.dating_introductions WHERE id = v_wm) <> 'matchedinterestedinterested' THEN
@@ -677,6 +678,16 @@ BEGIN
   -- Carry 4: w2's kept list names m2.
   INSERT INTO public.dating_never_introduce (owner_user_id, phone_hmac, last_two, kept_at)
   VALUES (w2, public.dating_phone_hmac_for_user(m2), '64', now() - interval '2 days');
+  -- The seed is the cohort date's, so §5.4 1's tie order changes daily: m1
+  -- met someone two days ago (exposure 1), so w1 always takes her turn
+  -- before m1 and the band check below never depends on the day.
+  -- (Spec 2 W6: fixture fix; G2 failed on days m1 sorted before w1.)
+  INSERT INTO public.dating_introductions (pair_key, user_low_id, user_high_id, state, algorithm_version,
+    visible_from_low, visible_from_high, created_at, expires_at)
+  SELECT public.dating_pair_key(m1, o), least(m1, o), greatest(m1, o), 'expired', 'introductions_v2',
+         v_at - interval '2 days', v_at - interval '2 days', v_at - interval '2 days', v_at - interval '1 day'
+    FROM (SELECT pg_temp.ready('a0') AS o) AS x;
+  UPDATE public.dating_enrollments SET state = 'paused', pause_reason = 'user' WHERE user_id = pg_temp.id('a0');
 
   -- G1. Refusals before any work, each counted.
   IF pg_temp.probe(ARRAY['UPDATE public.feature_flags SET enabled = false WHERE key = ''dating_candidate_generation'''],
@@ -1197,7 +1208,7 @@ BEGIN
   END IF;
   UPDATE public.dating_profile_photos SET caption = 'mail me at ama dot boateng at gmail dot com' WHERE user_id = m AND position = 2;
   v_card := pg_temp.call(w, pg_temp.dev('26'), 'SELECT public.get_my_dating_introductions()')::jsonb #> '{cards,0}';
-  IF v_card #> '{photos,1,caption}' IS DISTINCT FROM 'null'::jsonb OR v_card::text ~* 'gmail'
+  IF v_card #>> '{photos,1,caption}' IS DISTINCT FROM 'mail me at •••' OR v_card::text ~* 'gmail' -- Spec 2 W6a (carry 3): masked, shown
      OR v_card #>> '{photos,0,caption}' IS DISTINCT FROM 'Me at the beach' THEN
     RAISE EXCEPTION 'CONTRACT VIOLATED: an email in words reached a stranger''s card, or a plain caption did not: %', v_card -> 'photos';
   END IF;
@@ -1230,8 +1241,11 @@ BEGIN
                                'amab @gmail', 'amab@ gmail', '1nst4gram amab', 'wh4ts4pp me', 'v1ber amab', 't3l3gram amab', 'd1scord amab'] LOOP
     UPDATE public.dating_profile_photos SET caption = v_bad WHERE user_id = m AND position = 2;
     v_card := pg_temp.call(w, pg_temp.dev('26'), 'SELECT public.get_my_dating_introductions()')::jsonb #> '{cards,0}';
-    IF v_card #> '{photos,1,caption}' IS DISTINCT FROM 'null'::jsonb OR jsonb_array_length(v_card -> 'photos') <> 2 THEN
-      RAISE EXCEPTION 'CONTRACT VIOLATED: the caption "%" (contact details) reached a stranger''s card, or its photo was dropped (I-3): %', v_bad, v_card -> 'photos';
+    IF v_card #> '{photos,1,caption}' IS DISTINCT FROM (CASE WHEN private.dating_caption_invites(v_bad) THEN 'null'::jsonb -- Spec 2 W6a (carry 3)
+                                                               ELSE to_jsonb(private.dating_mask_contacts(v_bad)) END) -- Spec 2 W6a: masked
+       OR v_card #>> '{photos,1,caption}' IS NOT DISTINCT FROM v_bad -- Spec 2 W6a: never raw
+       OR jsonb_array_length(v_card -> 'photos') <> 2 THEN
+      RAISE EXCEPTION 'CONTRACT VIOLATED: the caption "%" (contact details) reached a stranger''s card unmasked, or its photo was dropped (I-3): %', v_bad, v_card -> 'photos';
     END IF;
   END LOOP;
   FOREACH v_bad IN ARRAY ARRAY['12/06/2026 at the lake', 'Sunday at 7:30pm', 'GH₵200 well spent', 'Accra, 2019', 'Wa, with my aunt',
@@ -1902,7 +1916,7 @@ DECLARE
   w constant uuid := pg_temp.ready('90');
   v_cfg constant jsonb := (private.dating_intro_config()).o_config;
   v_at constant timestamptz := date_trunc('day', now() AT TIME ZONE 'UTC') AT TIME ZONE 'UTC' + interval '2 days 3 hours 17 minutes';
-  v_stub constant text := 'CREATE OR REPLACE FUNCTION private.dating_first_messages(p_user uuid, p_since timestamptz) RETURNS integer LANGUAGE sql AS $f$ SELECT 0 $f$';
+  v_stub constant text := 'CREATE OR REPLACE FUNCTION private.dating_first_messages(p_user uuid, p_since timestamptz, p_at timestamptz) RETURNS integer LANGUAGE sql AS $f$ SELECT 0 $f$';
   v text;
 BEGIN
   UPDATE public.dating_enrollments SET state = 'paused', pause_reason = 'user' WHERE state = 'active' AND user_id NOT IN (d, q, w);
@@ -1918,10 +1932,22 @@ BEGIN
   INSERT INTO public.dating_matches (introduction_id, user_low_id, user_high_id, state)
   SELECT i.id, i.user_low_id, i.user_high_id, 'closed' FROM public.dating_introductions AS i
    WHERE i.pair_key IN ('w5drag:' || d || ':1', 'w5drag:' || q || ':1');
-  -- W5: the first-message input is unknown, so nothing opens.
+  -- Spec 2 W6a (carry 6): the input is the messages. Both wrote in their
+  -- one match, so nothing opens; with those messages gone, d's case does.
+  -- (The probes below stub the input to none, as W5c did.)
+  INSERT INTO public.dating_messages (match_id, sender_side, sender_user_id, body, body_masked, mask_version, idempotency_key)
+  SELECT m.id, CASE WHEN m.user_low_id = x.who THEN 'low' ELSE 'high' END, x.who, 'hello', 'hello', 1, 'w6-first-' || x.who
+    FROM (VALUES (d), (q)) AS x(who)
+    JOIN public.dating_introductions AS i ON i.pair_key = 'w5drag:' || x.who || ':1'
+    JOIN public.dating_matches AS m ON m.introduction_id = i.id;
+  IF pg_temp.probe(ARRAY['DELETE FROM public.dating_messages WHERE idempotency_key LIKE ''w6-first-%''',
+                         format('SELECT private.dating_run_signals(%L, %L)', v_at, v_cfg)],
+       format('SELECT count(*)::text FROM public.dating_moderation_cases WHERE signal_kind = ''dragnet'' AND target_user_id = %L', d)) <> '1' THEN
+    RAISE EXCEPTION 'CONTRACT VIOLATED: with no first messages the real input did not open d''s dragnet case (carry 6)';
+  END IF;
   PERFORM private.dating_run_signals(v_at, v_cfg);
   IF EXISTS (SELECT 1 FROM public.dating_moderation_cases WHERE signal_kind = 'dragnet') THEN
-    RAISE EXCEPTION 'CONTRACT VIOLATED: the dragnet fired without its first-message input (Ruling R-14)';
+    RAISE EXCEPTION 'CONTRACT VIOLATED: the dragnet fired on people who wrote in their matches (carry 6)';
   END IF;
   -- The tick runs the signals before any partition (here none: 'ZZ' has
   -- no row); a second run opens no second case.
@@ -2165,7 +2191,7 @@ DECLARE
   d constant uuid := pg_temp.id('95');
   v_cfg constant jsonb := (private.dating_intro_config()).o_config;
   v_at constant timestamptz := date_trunc('day', now() AT TIME ZONE 'UTC') AT TIME ZONE 'UTC' + interval '2 days 3 hours 17 minutes';
-  v_stub constant text := 'CREATE OR REPLACE FUNCTION private.dating_first_messages(p_user uuid, p_since timestamptz) RETURNS integer LANGUAGE sql AS $f$ SELECT 0 $f$';
+  v_stub constant text := 'CREATE OR REPLACE FUNCTION private.dating_first_messages(p_user uuid, p_since timestamptz, p_at timestamptz) RETURNS integer LANGUAGE sql AS $f$ SELECT 0 $f$';
   v text;
 BEGIN
   UPDATE public.users SET phone = '+4477009000' || right(id::text, 2), display_name = 'Oliver ' || right(id::text, 2) WHERE id IN (x1, x2, d2);
