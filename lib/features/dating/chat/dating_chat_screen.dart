@@ -31,6 +31,12 @@
 // in (C-8, §3.15); the top cards take the safety card's surface (M-6); no
 // second Block (M-7); the guided state is read only while a question is
 // open (M-8); a guided answer survives the sheet's swipe (M-9).
+//
+// Owner follow-up (fallback poll): while the signal channel is not joined
+// (some networks block WebSockets), the chat reads again on the signals'
+// slow poll, only while it is the page shown and no read is on its way,
+// and never for another account; the connection's return does not read
+// again when a rejoin already has (N-1).
 import 'dart:async';
 import 'dart:math' as math;
 
@@ -268,6 +274,11 @@ class _DatingChatScreenState extends ConsumerState<DatingChatScreen>
   String? _readReason;
   int _reads = 0;
 
+  /// Fallback poll: reads on their way (a poll never overlaps one), and
+  /// the chat's route (a poll reads only while it is on top).
+  int _inFlight = 0;
+  ModalRoute<Object?>? _route;
+
   /// Spec 2 W6b (§3.6): this person's safety cards by id, each shown under
   /// its message. A read only adds to them (a failed or empty read never
   /// hides one); Dismiss takes one away here for good.
@@ -326,6 +337,10 @@ class _DatingChatScreenState extends ConsumerState<DatingChatScreen>
 
   bool get _online => ref.read(datingOnlineProvider).valueOrNull ?? true;
 
+  /// Fallback poll: the chat is the page shown and no read is on its way.
+  bool get _pollDue =>
+      mounted && _inFlight == 0 && (_route?.isCurrent ?? true);
+
   @override
   void initState() {
     super.initState();
@@ -370,6 +385,8 @@ class _DatingChatScreenState extends ConsumerState<DatingChatScreen>
     // Final client fix (I-1): realtime never replays what changed while the
     // connection was down, so its return reads again (as the kit does).
     ref.listenManual<AsyncValue<bool>>(datingOnlineProvider, (previous, next) {
+      // N-1: a rejoin since the phone went offline has already read again.
+      if (ref.read(datingChatSignalsProvider(_account)).rejoined) return;
       if (previous?.valueOrNull == false && next.valueOrNull == true) {
         unawaited(_read());
       }
@@ -395,13 +412,18 @@ class _DatingChatScreenState extends ConsumerState<DatingChatScreen>
     final account = _account;
     final n = ++_reads;
     if (account == null) return;
+    // Fix round 1 (M-3): every read here pushes the next poll a full wait
+    // out (the signals exist once the chat has built).
+    if (ref.exists(datingChatSignalsProvider(account))) {
+      ref.read(datingChatSignalsProvider(account).notifier).readStarted();
+    }
     // The cards never hold the messages up (fail-open: none on a failure).
     unawaited(_readCards(account));
     // M-8: once the questions are done (a good read with none open) they
     // stay done (answers and skips only add up), so the state is read
     // only while one is open or not yet known.
     if (_guidedDue) unawaited(_readGuided(account));
-    final page = await _gateway.messages(widget.matchId);
+    final page = await _counted(() => _gateway.messages(widget.matchId));
     if (!mounted || _account != account || n != _reads) return;
     setState(() {
       if (page.ok) {
@@ -433,6 +455,17 @@ class _DatingChatScreenState extends ConsumerState<DatingChatScreen>
     if (page.ok && _online) unawaited(_sendTimeboxes(account));
   }
 
+  /// Fallback poll: a read the poll never overlaps (fix round 1, M-4: the
+  /// cards' and the guided state's reads too, so a poll waits for them).
+  Future<T> _counted<T>(Future<T> Function() read) async {
+    _inFlight++;
+    try {
+      return await read();
+    } finally {
+      _inFlight--;
+    }
+  }
+
   /// M-1: [account]'s dismissals the server has not confirmed (memory).
   Set<String> _pendingDismissals(String account) =>
       ref.read(datingPendingCardDismissalsProvider(account));
@@ -441,7 +474,7 @@ class _DatingChatScreenState extends ConsumerState<DatingChatScreen>
   /// dismissed here or waiting to be). The first read since the chat
   /// opened finds what was already there: shown as it is (I-1).
   Future<void> _readCards(String account) async {
-    final cards = await _gateway.cards(widget.matchId);
+    final cards = await _counted(() => _gateway.cards(widget.matchId));
     if (!mounted || _account != account) return;
     final first = !_cardsBaselined;
     _cardsBaselined = true;
@@ -477,7 +510,7 @@ class _DatingChatScreenState extends ConsumerState<DatingChatScreen>
   /// the answer as given (the waiting line).
   Future<void> _readGuided(String account) async {
     final n = ++_guidedReads;
-    final guided = await _gateway.guided(widget.matchId);
+    final guided = await _counted(() => _gateway.guided(widget.matchId));
     if (!mounted || _account != account || n != _guidedReads) return;
     final first = !_guidedBaselined;
     _guidedBaselined = true;
@@ -1202,9 +1235,19 @@ class _DatingChatScreenState extends ConsumerState<DatingChatScreen>
   @override
   Widget build(BuildContext context) {
     final loc = AppLocalizations.of(context)!;
-    // A chat signal: read again (the other person wrote, swapped, or ended it).
-    ref.listen(datingChatSignalsProvider(_account), (previous, next) {
-      if (next.hasValue && next.value != previous?.value) unawaited(_read());
+    // A chat signal: read again (the other person wrote, swapped, or ended
+    // it). Fallback poll: only while this chat is on top and not already
+    // reading. Either, only for the account it was listened for (D8: the
+    // last account's entry never reads as the next one).
+    _route = ModalRoute.of(context);
+    final listened = _account;
+    ref.listen(datingChatSignalsProvider(listened), (previous, next) {
+      if (listened != _account) return;
+      if (next.reads != previous?.reads) {
+        unawaited(_read());
+      } else if (next.polls != previous?.polls && _pollDue) {
+        unawaited(_read());
+      }
     });
     final online = ref.watch(datingOnlineProvider).valueOrNull ?? true;
     final page = _page;

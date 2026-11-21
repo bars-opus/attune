@@ -9,12 +9,17 @@
 // both swapped already_swapped; and any call can be refused with a reason.
 // Final client fix (M-10): a Block or an Unmatch that succeeds ends the
 // chat, so the next read answers ended, as the server does.
+// Owner follow-up (fallback poll): each signal channel joins as it opens
+// unless [FakeDatingChat.joins] is false (a network that blocks
+// WebSockets); [FakeDatingChat.channelStatus] drives it as realtime does.
 import 'dart:async';
 
 import 'package:attune/features/dating/chat/dating_chat.dart';
 import 'package:attune/features/dating/chat/dating_chat_providers.dart';
 import 'package:attune/features/dating/chat/dating_chat_repository.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:supabase_flutter/supabase_flutter.dart'
+    show RealtimeSubscribeStatus;
 
 final datingChatT0 = DateTime.utc(2026, 11, 20, 18);
 
@@ -149,6 +154,23 @@ class FakeDatingChat implements DatingChatGateway {
   /// The signals of the account that subscribed last ('ama' before any).
   StreamController<void> get signalEvents =>
       signalsFor(signalAccounts.isEmpty ? 'ama' : signalAccounts.last);
+
+  /// Fallback poll: whether a channel joins as soon as it opens (false: it
+  /// never reports until [channelStatus] says so).
+  bool joins = true;
+
+  final _channels = <String, StreamController<DatingChatSignal>>{};
+
+  StreamController<DatingChatSignal> _channelFor(String account) => _channels
+      .putIfAbsent(account, StreamController<DatingChatSignal>.broadcast);
+
+  /// [account]'s channel (the last subscribed by default) reports [status],
+  /// as realtime's subscribe callback would: subscribed, channelError,
+  /// timedOut or closed.
+  void channelStatus(RealtimeSubscribeStatus status, {String? account}) =>
+      _channelFor(
+        account ?? (signalAccounts.isEmpty ? 'ama' : signalAccounts.last),
+      ).add(datingChannelSignal(status));
 
   final reads = <(String, DateTime?)>[];
   int listReads = 0;
@@ -438,9 +460,27 @@ class FakeDatingChat implements DatingChatGateway {
   }
 
   @override
-  Stream<void> signals(String account) {
+  Stream<DatingChatSignal> signals(String account) {
     signalAccounts.add(account);
-    return signalsFor(account).stream;
+    final out = StreamController<DatingChatSignal>();
+    final subscriptions = <StreamSubscription<Object?>>[];
+    out
+      ..onListen = () {
+        if (joins) out.add(DatingChatSignal.live);
+        subscriptions
+          ..add(
+            signalsFor(
+              account,
+            ).stream.listen((_) => out.add(DatingChatSignal.changed)),
+          )
+          ..add(_channelFor(account).stream.listen(out.add));
+      }
+      ..onCancel = () async {
+        for (final s in subscriptions) {
+          await s.cancel();
+        }
+      };
+    return out.stream;
   }
 
   Map<String, Object?>? _refusal(String call) {

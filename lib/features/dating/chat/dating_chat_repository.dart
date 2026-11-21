@@ -10,6 +10,29 @@ import 'package:attune/features/dating/data/dating_rpc.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:uuid/uuid.dart';
 
+/// Owner follow-up to W6 (fallback poll): what the chat's signal channel
+/// says. Some networks block WebSockets, so the channel may never join;
+/// the providers decide what to read again (datingChatSignalsProvider).
+enum DatingChatSignal {
+  /// Something changed in one of this person's chats.
+  changed,
+
+  /// The channel joined (the first time or again).
+  live,
+
+  /// The channel failed, timed out or closed: realtime may not reach here.
+  down,
+}
+
+/// The channel's [status] as a [DatingChatSignal].
+DatingChatSignal datingChannelSignal(RealtimeSubscribeStatus status) =>
+    switch (status) {
+      RealtimeSubscribeStatus.subscribed => DatingChatSignal.live,
+      RealtimeSubscribeStatus.channelError ||
+      RealtimeSubscribeStatus.timedOut ||
+      RealtimeSubscribeStatus.closed => DatingChatSignal.down,
+    };
+
 abstract class DatingChatGateway {
   /// The conversations list; with [ended], the last 30 days' ended ones.
   Future<DatingConversations> conversations({bool ended = false});
@@ -27,8 +50,11 @@ abstract class DatingChatGateway {
 
   Future<DatingChatAnswer> unmatch(String key, String matchId);
 
-  /// One event each time something changed in one of [account]'s chats.
-  Stream<void> signals(String account);
+  /// One [DatingChatSignal.changed] each time something changed in one of
+  /// [account]'s chats, and the channel's state as it moves (owner
+  /// follow-up, fallback poll): [DatingChatSignal.live] on every join,
+  /// [DatingChatSignal.down] on an error, a timeout or a close.
+  Stream<DatingChatSignal> signals(String account);
 
   /// Spec 2 W6b: this person's safety cards in [matchId] (none on any
   /// failure: the chat never waits on them).
@@ -76,11 +102,22 @@ abstract class DatingChatGateway {
   Future<DatingCheckin> checkin();
 }
 
+/// Fix round 1 (M-8): a channel the server closed is never rejoined by
+/// realtime, so the signals make a new one after this pause.
+const kDatingChatReopenAfter = Duration(seconds: 5);
+
 class DatingChatRepository implements DatingChatGateway {
-  DatingChatRepository(this._rpc, this._client);
+  DatingChatRepository(
+    this._rpc,
+    this._client, {
+    this.reopenAfter = kDatingChatReopenAfter,
+  });
 
   final DatingRpc _rpc;
   final SupabaseClient? _client;
+
+  /// How long after a close the channel is made again (tests shorten it).
+  final Duration reopenAfter;
 
   Future<T> _guard<T>(
     Future<dynamic> Function() call,
@@ -263,43 +300,65 @@ class DatingChatRepository implements DatingChatGateway {
   }
 
   @override
-  Stream<void> signals(String account) {
+  Stream<DatingChatSignal> signals(String account) {
     final client = _client;
     if (client == null) return const Stream.empty();
-    late final RealtimeChannel channel;
-    final events = StreamController<void>(
-      onCancel: () => unawaited(client.removeChannel(channel)),
+    RealtimeChannel? channel;
+    Timer? reopen;
+    var cancelled = false;
+    final events = StreamController<DatingChatSignal>(
+      onCancel: () {
+        cancelled = true;
+        reopen?.cancel();
+        final last = channel;
+        channel = null;
+        if (last != null) unawaited(client.removeChannel(last));
+      },
     );
-    // INSERT and UPDATE only: a DELETE frame carries only the row's opaque
-    // id (never user_id), so it could never match this filter.
-    var listening = client.channel('dating-chat:${const Uuid().v4()}');
-    for (final event in [
-      PostgresChangeEvent.insert,
-      PostgresChangeEvent.update,
-    ]) {
-      listening = listening.onPostgresChanges(
-        event: event,
-        schema: 'public',
-        table: 'dating_chat_signals',
-        filter: PostgresChangeFilter(
-          type: PostgresChangeFilterType.eq,
-          column: 'user_id',
-          value: account,
-        ),
-        callback: (_) {
-          if (!events.isClosed) events.add(null);
-        },
-      );
+    void open() {
+      // INSERT and UPDATE only: a DELETE frame carries only the row's opaque
+      // id (never user_id), so it could never match this filter.
+      var listening = client.channel('dating-chat:${const Uuid().v4()}');
+      for (final event in [
+        PostgresChangeEvent.insert,
+        PostgresChangeEvent.update,
+      ]) {
+        listening = listening.onPostgresChanges(
+          event: event,
+          schema: 'public',
+          table: 'dating_chat_signals',
+          filter: PostgresChangeFilter(
+            type: PostgresChangeFilterType.eq,
+            column: 'user_id',
+            value: account,
+          ),
+          callback: (_) {
+            if (!cancelled) events.add(DatingChatSignal.changed);
+          },
+        );
+      }
+      final made = listening;
+      channel = made;
+      // Owner follow-up (fallback poll): every status goes up as it comes;
+      // the provider turns a rejoin into a read again (final client fix
+      // I-1) and polls while the channel is not joined. Fix round 1 (M-8):
+      // realtime never rejoins a closed channel, so a new one is made
+      // after a pause (the old one's own close is not heard again).
+      made.subscribe((status, _) {
+        if (cancelled || !identical(channel, made)) return;
+        events.add(datingChannelSignal(status));
+        if (status != RealtimeSubscribeStatus.closed) return;
+        reopen?.cancel();
+        reopen = Timer(reopenAfter, () {
+          if (cancelled || !identical(channel, made)) return;
+          channel = null;
+          unawaited(client.removeChannel(made));
+          open();
+        });
+      });
     }
-    // Final client fix (I-1): a rejoin (the socket came back, maybe without
-    // the phone's connection ever reporting it) is one more "read again":
-    // realtime never replays what changed while it was away.
-    var joined = false;
-    channel = listening.subscribe((status, _) {
-      if (status != RealtimeSubscribeStatus.subscribed) return;
-      if (joined && !events.isClosed) events.add(null);
-      joined = true;
-    });
+
+    open();
     return events.stream;
   }
 }

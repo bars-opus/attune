@@ -12,6 +12,8 @@ import 'package:attune/features/dating/chat/dating_chat.dart';
 import 'package:attune/features/dating/chat/dating_chat_providers.dart';
 import 'package:attune/features/dating/chat/dating_chat_repository.dart';
 import 'package:attune/features/dating/data/dating_rpc.dart';
+import 'package:attune/features/dating/gentle_wait/gentle_wait_providers.dart'
+    show datingOnlineProvider;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -252,13 +254,23 @@ void main() {
   test(
     'each chat signal is a new count; nothing listens while signed out',
     () async {
+      // Fallback poll: the signals now also watch the app's lifecycle and
+      // the connection (pinned online here).
+      TestWidgetsFlutterBinding.ensureInitialized();
       final fake = FakeDatingChat();
-      final container = ProviderContainer(overrides: datingChatOverrides(fake));
+      final container = ProviderContainer(
+        overrides: [
+          ...datingChatOverrides(fake),
+          datingOnlineProvider.overrideWith((ref) => Stream.value(true)),
+        ],
+      );
       addTearDown(container.dispose);
       final seen = <int>[];
       final sub = container.listen(
         datingChatSignalsProvider('ama'),
-        (_, next) => next.whenData(seen.add),
+        (previous, next) {
+          if (next.reads != previous?.reads) seen.add(next.reads);
+        },
       );
       addTearDown(sub.close);
       await Future<void>.delayed(Duration.zero);
@@ -380,8 +392,13 @@ void main() {
     // Each account its own signals.
     final ama = <int>[];
     final esi = <int>[];
-    final a = fake.signals('ama').listen((_) => ama.add(1));
-    final e = fake.signals('esi').listen((_) => esi.add(1));
+    // Fallback poll: the changes (the channel's own join is not one).
+    final a = fake.signals('ama').listen((s) {
+      if (s == DatingChatSignal.changed) ama.add(1);
+    });
+    final e = fake.signals('esi').listen((s) {
+      if (s == DatingChatSignal.changed) esi.add(1);
+    });
     addTearDown(a.cancel);
     addTearDown(e.cancel);
     fake.signalsFor('ama').add(null);

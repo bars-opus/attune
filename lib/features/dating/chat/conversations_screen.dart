@@ -8,6 +8,18 @@
 // Final client fix wave: it reads again when the connection comes back
 // (I-1); covered by a chat, it waits for the way back, which reads it
 // anyway (M-8).
+//
+// Owner follow-up (fallback poll): while the signal channel is not joined
+// (some networks block WebSockets), the list reads again on the signals'
+// slow poll, only while it is the page shown and no read is on its way,
+// and never for another account; the connection's return does not read
+// again when a rejoin already has (N-1).
+//
+// Poll fix round 1 (poll-review.md): a background read that fails or is
+// busy keeps the last good list, under a line that is never read out
+// unless Try again asked for it; only a first load shows the refusal
+// (I-1). The list reads again on resume (M-2), and each of its own reads
+// pushes the next poll a full wait out (M-3).
 import 'dart:async';
 
 import 'package:attune/app/theme/design_tokens.dart';
@@ -30,39 +42,103 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
-class DatingConversationsScreen extends ConsumerWidget {
+class DatingConversationsScreen extends ConsumerStatefulWidget {
   const DatingConversationsScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<DatingConversationsScreen> createState() =>
+      _DatingConversationsScreenState();
+}
+
+class _DatingConversationsScreenState
+    extends ConsumerState<DatingConversationsScreen>
+    with WidgetsBindingObserver {
+  /// I-1: the last good list and the account it is for (D8: another
+  /// account never sees it; memory only).
+  DatingConversations? _kept;
+  String? _keptFor;
+
+  /// I-1: Try again asked for the read on its way, so its answer may be
+  /// read out; a read the person didn't ask for never is.
+  bool _asked = false;
+
+  /// M-8: the list's route (a read only while it is the page shown).
+  ModalRoute<Object?>? _route;
+
+  bool get _shown => mounted && (_route?.isCurrent ?? true);
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  /// M-2: realtime never replays what changed while the app was away.
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed && _shown) {
+      _reread(ref.read(datingAccountProvider));
+    }
+  }
+
+  /// The list read again: [asked] when the person tapped Try again. M-3:
+  /// the next poll waits a full interval from here.
+  void _reread(String? account, {bool asked = false}) {
+    if (!mounted) return;
+    _asked = asked;
+    if (account != null && ref.exists(datingChatSignalsProvider(account))) {
+      ref.read(datingChatSignalsProvider(account).notifier).readStarted();
+    }
+    ref.invalidate(datingConversationsProvider(account));
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final loc = AppLocalizations.of(context)!;
     final account = ref.watch(datingAccountProvider);
     // M-8: only while the list is the page shown (the way back from a chat
     // reads it again).
-    final route = ModalRoute.of(context);
-    bool shown() => context.mounted && (route?.isCurrent ?? true);
+    _route = ModalRoute.of(context);
+    bool shown() => _shown;
     ref.listen(datingChatSignalsProvider(account), (previous, next) {
-      if (next.hasValue && next.value != previous?.value && shown()) {
-        ref.invalidate(datingConversationsProvider(account));
+      final again =
+          next.reads != previous?.reads ||
+          (next.polls != previous?.polls &&
+              !ref.read(datingConversationsProvider(account)).isLoading);
+      if (again && shown() && account == ref.read(datingAccountProvider)) {
+        _reread(account);
       }
     });
     // I-1: realtime never replays what changed while the connection was
     // down: its return reads again.
     ref.listen<AsyncValue<bool>>(datingOnlineProvider, (previous, next) {
+      // N-1: a rejoin since the phone went offline has already read again.
+      if (ref.read(datingChatSignalsProvider(account)).rejoined) return;
       if (previous?.valueOrNull == false &&
           next.valueOrNull == true &&
           shown()) {
-        ref.invalidate(datingConversationsProvider(account));
+        _reread(account);
       }
     });
     final read = ref.watch(datingConversationsProvider(account));
     final online = ref.watch(datingOnlineProvider).valueOrNull ?? true;
-    // Fix round 1: never after the list has gone (a read on the way back).
-    void reread() {
-      if (context.mounted) {
-        ref.invalidate(datingConversationsProvider(account));
-      }
+    // I-1: the last good list, for this account only.
+    if (_keptFor != account) {
+      _kept = null;
+      _keptFor = account;
     }
+    final now = read.valueOrNull;
+    if (now != null && now.ok) _kept = now;
+    final kept = _kept;
+    // Fix round 1: never after the list has gone (a read on the way back).
+    void reread() => _reread(account);
+    void retry() => _reread(account, asked: true);
 
     return AllowLargeText(
       child: Scaffold(
@@ -79,19 +155,34 @@ class DatingConversationsScreen extends ConsumerWidget {
               d,
               reread,
             ),
+            // I-1: a background read refused: the list stays.
+            AsyncData(value: final d) when kept != null => _list(
+              context,
+              loc,
+              kept,
+              reread,
+              line: _keptLine(context, loc, d.reason, online, retry),
+            ),
+            AsyncError() when kept != null => _list(
+              context,
+              loc,
+              kept,
+              reread,
+              line: _keptLine(context, loc, 'failed', online, retry),
+            ),
             AsyncData(value: final d) => ListView(
               padding: AppContentWidth.padded(
                 context,
                 const EdgeInsets.all(Spacing.md),
               ),
-              children: [_refusal(loc, d.reason, online, reread)],
+              children: [_refusal(loc, d.reason, online, retry)],
             ),
             AsyncError() => ListView(
               padding: AppContentWidth.padded(
                 context,
                 const EdgeInsets.all(Spacing.md),
               ),
-              children: [_refusal(loc, 'failed', online, reread)],
+              children: [_refusal(loc, 'failed', online, retry)],
             ),
             _ => const Center(child: CircularProgressIndicator()),
           },
@@ -124,6 +215,47 @@ class DatingConversationsScreen extends ConsumerWidget {
     );
   }
 
+  /// I-1: why the list shown is the last good one, read out only when Try
+  /// again asked (reverify_device keeps its own line: it needs the
+  /// person, as in the chat).
+  Widget _keptLine(
+    BuildContext context,
+    AppLocalizations loc,
+    String? reason,
+    bool online,
+    VoidCallback retry,
+  ) {
+    final text =
+        !online
+            ? loc.dating_offline
+            : reason == 'busy'
+            ? loc.dating_busy
+            : loc.dating_errorGeneric;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(
+        Spacing.md,
+        Spacing.sm,
+        Spacing.md,
+        0,
+      ),
+      child:
+          online && reason == 'reverify_device'
+              ? const DatingReverifyLine()
+              : Semantics(
+                container: true,
+                liveRegion: _asked,
+                child: Wrap(
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  spacing: Spacing.sm,
+                  children: [
+                    Text(text, style: Theme.of(context).textTheme.bodyMedium),
+                    FlowTextLink(label: loc.dating_tryAgain, onPressed: retry),
+                  ],
+                ),
+              ),
+    );
+  }
+
   String _spoken(AppLocalizations loc, String text) =>
       [
         for (final (part, masked) in datingMaskedParts(text))
@@ -134,8 +266,9 @@ class DatingConversationsScreen extends ConsumerWidget {
     BuildContext context,
     AppLocalizations loc,
     DatingConversations d,
-    VoidCallback reread,
-  ) {
+    VoidCallback reread, {
+    Widget? line,
+  }) {
     final theme = Theme.of(context);
     void open(String matchId) =>
         unawaited(context.push(DatingPaths.chat(matchId)).whenComplete(reread));
@@ -152,6 +285,7 @@ class DatingConversationsScreen extends ConsumerWidget {
         const EdgeInsets.symmetric(vertical: Spacing.sm),
       ),
       children: [
+        if (line != null) line,
         if (d.conversations.isEmpty)
           Padding(
             padding: const EdgeInsets.all(Spacing.md),

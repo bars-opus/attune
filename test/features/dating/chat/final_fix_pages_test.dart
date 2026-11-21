@@ -245,30 +245,122 @@ void main() {
     expect(DatingPlanMemory.at, isNull);
   });
 
-  test('I-1: a realtime rejoin is one more "read again" (the first join '
-      'is not)', () async {
+  test('I-1, fallback poll: every join goes up as live, the first one '
+      'too (the provider reads again only on a rejoin); a refused or '
+      'timed-out join goes up as down', () async {
     final client = SupabaseClient('http://127.0.0.1:9', 'anon');
     addTearDown(client.dispose);
     final repo = DatingChatRepository(
       DatingRpc.withCall((fn, params) async => null),
       client,
     );
-    var events = 0;
-    final listening = repo.signals('ama').listen((_) => events++);
+    final events = <DatingChatSignal>[];
+    final listening = repo.signals('ama').listen(events.add);
     addTearDown(listening.cancel);
     final channel = client.getChannels().single;
-    Future<void> joined() async {
-      // ignore: invalid_use_of_internal_member
-      channel.joinPush.trigger('ok', <String, dynamic>{});
+    // No server here, so the socket's own failures also go up as down:
+    // count, never match the whole list.
+    int count(DatingChatSignal s) => events.where((e) => e == s).length;
+    Future<void> settle() async {
       await Future<void>.delayed(Duration.zero);
       await Future<void>.delayed(Duration.zero);
     }
 
+    Future<void> joined() async {
+      // ignore: invalid_use_of_internal_member
+      channel.joinPush.trigger('ok', <String, dynamic>{});
+      await settle();
+    }
+
+    // Fix round 1 (M-7): the socket's own first failure lands first; its
+    // next try is a second away, so each count below is exact.
+    for (var i = 0; i < 200 && count(DatingChatSignal.down) == 0; i++) {
+      await Future<void>.delayed(const Duration(milliseconds: 10));
+    }
     await joined();
-    expect(events, 0);
+    expect(count(DatingChatSignal.live), 1);
     // ignore: invalid_use_of_internal_member
     channel.joinPush.resend(const Duration(seconds: 1));
     await joined();
-    expect(events, 1);
+    expect(count(DatingChatSignal.live), 2);
+    for (final failure in ['error', 'timeout']) {
+      // A join on its way (each answer ends one).
+      // ignore: invalid_use_of_internal_member
+      channel.joinPush.resend(const Duration(seconds: 1));
+      await settle();
+      final downs = count(DatingChatSignal.down);
+      // ignore: invalid_use_of_internal_member
+      channel.joinPush.trigger(failure, <String, dynamic>{'reason': 'x'});
+      await settle();
+      expect(count(DatingChatSignal.down), downs + 1, reason: failure);
+    }
+    expect(count(DatingChatSignal.live), 2);
+    expect(count(DatingChatSignal.changed), 0);
+    // A row change for this person goes up as changed, once per change.
+    for (final type in ['INSERT', 'UPDATE']) {
+      channel.trigger('postgres_changes', <String, dynamic>{
+        'event': type,
+        'eventType': type,
+        'schema': 'public',
+        'table': 'dating_chat_signals',
+        'new': <String, dynamic>{},
+        'old': <String, dynamic>{},
+      });
+    }
+    await settle();
+    expect(count(DatingChatSignal.changed), 2);
+  });
+
+  test('fix round 1 (M-8): a closed channel is made again (and joins as '
+      'before); a cancelled stream makes none', () async {
+    final client = SupabaseClient('http://127.0.0.1:9', 'anon');
+    addTearDown(client.dispose);
+    final repo = DatingChatRepository(
+      DatingRpc.withCall((fn, params) async => null),
+      client,
+      reopenAfter: const Duration(milliseconds: 20),
+    );
+    final events = <DatingChatSignal>[];
+    final listening = repo.signals('ama').listen(events.add);
+    final first = client.getChannels().single;
+    // The server closes the channel: realtime never rejoins a closed one.
+    first.trigger('phx_close', 'leave');
+    await Future<void>.delayed(Duration.zero);
+    expect(events, contains(DatingChatSignal.down));
+    await Future<void>.delayed(const Duration(milliseconds: 100));
+    final second = client.getChannels().single;
+    expect(identical(second, first), isFalse);
+    // ignore: invalid_use_of_internal_member
+    expect(second.topic, startsWith('realtime:dating-chat:'));
+    // ignore: invalid_use_of_internal_member
+    final config = second.joinPush.payload['config'] as Map;
+    expect(
+      (config['postgres_changes'] as List).map((c) => (c as Map)['filter']),
+      ['user_id=eq.ama', 'user_id=eq.ama'],
+    );
+    // ignore: invalid_use_of_internal_member
+    second.joinPush.trigger('ok', <String, dynamic>{});
+    await Future<void>.delayed(Duration.zero);
+    await Future<void>.delayed(Duration.zero);
+    expect(events.last, DatingChatSignal.live);
+    // Cancelled, a close makes nothing more.
+    await listening.cancel();
+    await Future<void>.delayed(const Duration(milliseconds: 100));
+    expect(client.getChannels(), isEmpty);
+  });
+
+  test('fallback poll: each realtime status maps to live or down', () {
+    expect(
+      {
+        for (final s in RealtimeSubscribeStatus.values)
+          s: datingChannelSignal(s),
+      },
+      {
+        RealtimeSubscribeStatus.subscribed: DatingChatSignal.live,
+        RealtimeSubscribeStatus.channelError: DatingChatSignal.down,
+        RealtimeSubscribeStatus.timedOut: DatingChatSignal.down,
+        RealtimeSubscribeStatus.closed: DatingChatSignal.down,
+      },
+    );
   });
 }
