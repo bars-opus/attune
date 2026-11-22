@@ -11,7 +11,6 @@ import 'package:attune/core/ui/motion/motion_tokens.dart';
 import 'package:attune/core/ui/motion/reduce_motion.dart';
 import 'package:attune/core/utils/constants.dart';
 import 'package:attune/core/utils/date_formatter.dart';
-import 'package:attune/core/utils/url_launcher_utils.dart';
 import 'package:attune/features/auth/sign_up/presentation/widgets/flow_buttons.dart';
 import 'package:attune/features/auth/sign_up/presentation/widgets/flow_text_field.dart'
     show FlowErrorLine;
@@ -22,6 +21,8 @@ import 'package:attune/features/dating/data/dating_providers.dart';
 import 'package:attune/features/dating/data/dating_rpc.dart';
 import 'package:attune/features/dating/gentle_wait/gentle_wait_providers.dart'
     show datingOnlineProvider;
+import 'package:attune/features/dating/report/restricted_screen.dart'
+    show datingSupportContactProvider, datingSupportMail;
 import 'package:attune/features/dating/routes/dating_routes.dart';
 import 'package:attune/features/dating/routes/dating_setup_steps.dart'
     show datingStepLocation;
@@ -53,6 +54,10 @@ class _DatingSectionState extends ConsumerState<DatingSection>
   DatingLifecycleError? _error;
   DatingNoticeResult? _notice;
 
+  /// Final client fix (M-4): the account whose email app didn't open from
+  /// Contact support here (said in the app's own words, with the address).
+  String? _noMailFor;
+
   @override
   void initState() {
     super.initState();
@@ -63,8 +68,24 @@ class _DatingSectionState extends ConsumerState<DatingSection>
         _busy = false;
         _error = null;
         _notice = null;
+        _noMailFor = null;
       });
     });
+  }
+
+  /// M-4 (W4b carry): support's email, as the restricted screen opens it;
+  /// no email app is said here, never the shared util's English snackbar.
+  Future<void> _contactSupport() async {
+    final account = ref.read(datingAccountProvider);
+    try {
+      await ref.read(datingSupportContactProvider)(
+        context,
+        datingSupportMail(),
+      );
+    } catch (_) {
+      if (!mounted || ref.read(datingAccountProvider) != account) return;
+      setState(() => _noMailFor = account);
+    }
   }
 
   @override
@@ -323,7 +344,11 @@ class _DatingSectionState extends ConsumerState<DatingSection>
       case DatingHomeState.active:
         return _SectionCard(
           title: loc.flow_slotDatingTitle,
-          lines: [loc.dating_sectionActive],
+          lines: [
+            // Spec 2 W7a (§3.7): for 7 days after an accepted appeal.
+            if (h.appealAccepted) loc.dating_appealAccepted,
+            loc.dating_sectionActive,
+          ],
           children: [
             // Spec 2 W5b (§3.1, §3.4): the day's introductions.
             FlowPrimaryButton(
@@ -382,16 +407,59 @@ class _DatingSectionState extends ConsumerState<DatingSection>
             if (settings != null) settings,
           ],
         );
+      // Spec 2 W7a (§3.7): each leads to the screen with its category.
       case DatingHomeState.restricted:
-        return _plain(loc, loc.dating_sectionRestricted, settings);
+        return _restricted(
+          context,
+          loc,
+          loc.dating_sectionRestricted,
+          settings,
+        );
       case DatingHomeState.hold:
-        return _plain(loc, loc.dating_sectionHold, settings);
+        return _restricted(
+          context,
+          loc,
+          loc.dating_sectionHold,
+          settings,
+          // Fix round 1 (K-2, R-53): a hold leaves the chats open.
+          chats: true,
+        );
       case DatingHomeState.ageReview:
-        return _plain(loc, loc.dating_sectionAgeReview, settings);
+        return _restricted(
+          context,
+          loc,
+          loc.dating_sectionAgeReview,
+          settings,
+        );
       case DatingHomeState.unavailable:
         return _plain(loc, loc.dating_sectionUnavailable, settings);
     }
   }
+
+  Widget _restricted(
+    BuildContext context,
+    AppLocalizations loc,
+    String line,
+    Widget? settings, {
+    bool chats = false,
+  }) => _SectionCard(
+    title: loc.flow_slotDatingTitle,
+    lines: [line],
+    children: [
+      FlowSecondaryButton(
+        key: const ValueKey('dating_section_restricted'),
+        label: loc.dating_restrictedSeeWhy,
+        onPressed: () => context.push(DatingPaths.restricted),
+      ),
+      if (chats)
+        FlowSecondaryButton(
+          key: const ValueKey('dating_section_hold_chats'),
+          label: loc.dating_chatsTitle,
+          onPressed: () => context.push(DatingPaths.chats),
+        ),
+      if (settings != null) settings,
+    ],
+  );
 
   Widget _plain(AppLocalizations loc, String line, Widget? settings) =>
       _SectionCard(
@@ -479,7 +547,12 @@ class _DatingSectionState extends ConsumerState<DatingSection>
     final ended = check == DatingPauseCheck.ended;
     return _SectionCard(
       title: loc.flow_slotDatingTitle,
-      lines: [if (!ended) line],
+      lines: [
+        // Spec 2 W7a (§3.7): an accepted appeal leaves Dating paused
+        // (R-53); fix round 1 (M-6): said without "open again".
+        if (h.appealAccepted) loc.dating_appealAcceptedPaused,
+        if (!ended) line,
+      ],
       children: [
         // Final fix (M-10): the one final ending is D11's error row (the
         // icon, then the support copy at full contrast).
@@ -522,16 +595,26 @@ class _DatingSectionState extends ConsumerState<DatingSection>
             onPressed:
                 () => context.push(datingStepLocation('verify?from=section')!),
           ),
-        if (check == DatingPauseCheck.ended)
+        if (check == DatingPauseCheck.ended) ...[
           FlowTextLink(
+            key: const ValueKey('dating_section_contact'),
             label: loc.flow_holdContact,
             alignment: AlignmentDirectional.centerStart,
-            onPressed:
-                () => UrlLauncherUtils.launchEmail(
-                  context: context,
-                  email: AppConstants.supportEmail,
-                ),
+            onPressed: _contactSupport,
           ),
+          if (_noMailFor != null &&
+              _noMailFor == ref.watch(datingAccountProvider))
+            Semantics(
+              liveRegion: true,
+              child: SelectableText(
+                loc.dating_restrictedNoMail(AppConstants.supportEmail),
+                key: const ValueKey('dating_section_no_mail'),
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                  color: Theme.of(context).colorScheme.onSurface,
+                ),
+              ),
+            ),
+        ],
         if (canResume)
           FlowPrimaryButton(
             label: loc.dating_resume,

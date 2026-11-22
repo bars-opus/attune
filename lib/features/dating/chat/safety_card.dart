@@ -3,7 +3,7 @@
 // words describe the pattern, never the person; the threat card names the
 // country's emergency number and the sextortion card its resource (S1 W7a's
 // support_resources), or a plain line when there is none. Every card has
-// Block and Dismiss (Report arrives with W7a's report sheet); the
+// Report (Spec 2 W7a's report sheet), Block and Dismiss; the
 // meet-in-private card also has Plan a meet (W6c Task 10's meeting kit).
 // Dismissing never weakens later detection. It
 // slides in at 150 ms, and not at all under reduce motion.
@@ -59,6 +59,7 @@ class DatingSafetyCardView extends StatefulWidget {
     required this.name,
     required this.onBlock,
     required this.onDismiss,
+    this.onReport,
     this.ended = false,
     this.shown,
     this.onCall,
@@ -70,6 +71,9 @@ class DatingSafetyCardView extends StatefulWidget {
   final String name;
   final VoidCallback onBlock;
   final VoidCallback onDismiss;
+
+  /// Spec 2 W7a (§3.6, R-43): the card's Report (null: none offered).
+  final VoidCallback? onReport;
 
   /// The conversation has ended (Block is already done or can't help).
   final bool ended;
@@ -227,6 +231,13 @@ class _DatingSafetyCardViewState extends State<DatingSafetyCardView>
                       icon: const Icon(Icons.event_note_outlined, size: 18),
                       onPressed: onPlanMeet,
                       label: Text(loc.dating_planTitle),
+                    ),
+                  if (widget.onReport case final onReport?)
+                    TextButton(
+                      key: const ValueKey('dating_card_report'),
+                      style: plain,
+                      onPressed: onReport,
+                      child: Text(loc.dating_report),
                     ),
                   if (!widget.ended)
                     TextButton(

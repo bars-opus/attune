@@ -1161,7 +1161,9 @@ BEGIN
 
   INSERT INTO public.dating_reports (reporter_user_id, target_user_id, category) VALUES (v_r_reporter, v_r_fail, 'spam');
   ALTER TABLE public.dating_reports ADD CONSTRAINT spec2_w1_c2_fail CHECK (false) NOT VALID;
-  v_before := pg_temp.metric_count('dating.deletion.prepare_carry_failed');
+  -- Spec 2 W7a Task 2 fix round 1 (M-10): the report step fails in its own
+  -- block, counted as dating.deletion.stamp_failed; the rest of the carry stands.
+  v_before := pg_temp.metric_count('dating.deletion.stamp_failed');
   BEGIN
     PERFORM public.prepare_account_deletion(v_r_fail);
     v_got := 'completed';
@@ -1170,7 +1172,7 @@ BEGIN
   END;
   ALTER TABLE public.dating_reports DROP CONSTRAINT spec2_w1_c2_fail;
   IF v_got IS DISTINCT FROM 'completed'
-     OR pg_temp.metric_count('dating.deletion.prepare_carry_failed') IS DISTINCT FROM v_before + 1 THEN
+     OR pg_temp.metric_count('dating.deletion.stamp_failed') IS DISTINCT FROM v_before + 1 THEN -- Spec 2 W7a Task 2 fix round 1 (M-10)
     RAISE EXCEPTION 'CONTRACT VIOLATED: a failed report step refused the deletion or was not counted (%)', v_got;
   END IF;
 

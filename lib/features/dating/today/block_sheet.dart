@@ -1,10 +1,11 @@
 // Spec 2 W5b Task 7b (§3.4 the card's "More", §3.6 Block; D8; Ruling
 // R-36): the card's overflow and the Block confirm. The overflow offers
-// Block (W7a adds Report). The confirm names the person, says the person
-// won't be told and won't be introduced again, and answers once: a second
-// tap does nothing. Offline, Block waits (nothing is queued). Either sheet
-// shows nothing of the last account once the signed-in account changes,
-// and closes choosing nothing. Today sends the block.
+// Report (Spec 2 W7a, §3.7) and Block. The confirm names the person, says
+// the person won't be told and won't be introduced again, and answers
+// once: a second tap does nothing. Offline, Block waits (nothing is
+// queued). Either sheet shows nothing of the last account once the
+// signed-in account changes, and closes choosing nothing. Today sends the
+// block (and the report sheet sends a report).
 import 'package:attune/app/theme/design_tokens.dart';
 import 'package:attune/core/ui/text/allow_large_text.dart';
 import 'package:attune/core/widgets/info_row_widget.dart';
@@ -18,18 +19,31 @@ import 'package:attune/i10n/generated/app_localizations.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-/// The overflow on [name]'s card, opened as [account]: true when Block was
-/// chosen.
-Future<bool> showDatingCardMoreSheet(
+/// What the card's overflow chose (Spec 2 W7a).
+enum DatingCardMore { report, block }
+
+/// The overflow on [name]'s card, opened as [account]: Report, Block, or
+/// null for nothing.
+Future<DatingCardMore?> showDatingCardMoreSheet(
   BuildContext context, {
   required String? account,
   required String name,
-}) => _show(
-  context,
-  'card-more',
-  account,
-  (context, close) => _MoreSheet(name: name, close: close),
-);
+}) async {
+  DatingCardMore? chosen;
+  final picked = await _show(
+    context,
+    'card-more',
+    account,
+    (context, close) => _MoreSheet(
+      name: name,
+      close: close,
+      // Task 3 ruling: the first row tapped is the answer (a second tap
+      // while the sheet closes never turns Report into Block).
+      choose: (c) => chosen ??= c,
+    ),
+  );
+  return picked ? chosen : null;
+}
 
 /// §3.6 Block's confirm for [name], opened as [account]: true when the
 /// person chose Block.
@@ -118,10 +132,15 @@ String _row(AppLocalizations loc, String name) =>
     name.isEmpty ? loc.dating_blockRowNoName : loc.dating_blockRow(name);
 
 class _MoreSheet extends StatelessWidget {
-  const _MoreSheet({required this.name, required this.close});
+  const _MoreSheet({
+    required this.name,
+    required this.close,
+    required this.choose,
+  });
 
   final String name;
   final void Function(bool) close;
+  final void Function(DatingCardMore) choose;
 
   @override
   Widget build(BuildContext context) {
@@ -142,6 +161,21 @@ class _MoreSheet extends StatelessWidget {
             ),
             const SizedBox(height: Spacing.sm),
             InfoRowWidget(
+              title:
+                  name.isEmpty
+                      ? loc.dating_reportTitleNoName
+                      : loc.dating_reportTitle(name),
+              subtitle: '',
+              icon: Icons.flag_outlined,
+              showAvatar: false,
+              disableTrailing: true,
+              padding: const EdgeInsets.symmetric(vertical: Spacing.xs),
+              onTap: () {
+                choose(DatingCardMore.report);
+                close(true);
+              },
+            ),
+            InfoRowWidget(
               title: _row(loc, name),
               subtitle: '',
               icon: Icons.block,
@@ -149,7 +183,10 @@ class _MoreSheet extends StatelessWidget {
               // T7b fix 1 (M-6): Block stays here; no "open in new" icon.
               disableTrailing: true,
               padding: const EdgeInsets.symmetric(vertical: Spacing.xs),
-              onTap: () => close(true),
+              onTap: () {
+                choose(DatingCardMore.block);
+                close(true);
+              },
             ),
           ],
         ),

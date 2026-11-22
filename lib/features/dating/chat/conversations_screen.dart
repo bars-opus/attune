@@ -33,6 +33,8 @@ import 'package:attune/features/dating/chat/dating_chat_providers.dart';
 import 'package:attune/features/dating/data/dating_providers.dart';
 import 'package:attune/features/dating/gentle_wait/gentle_wait_providers.dart'
     show datingOnlineProvider;
+import 'package:attune/features/dating/report/dating_report.dart';
+import 'package:attune/features/dating/report/report_sheet.dart';
 import 'package:attune/features/dating/routes/dating_root_back.dart';
 import 'package:attune/features/dating/routes/dating_routes.dart';
 import 'package:attune/features/dating/section/dating_calm_line.dart';
@@ -367,21 +369,87 @@ class _DatingConversationsScreenState
               ),
             ),
           ),
+          // Spec 2 W7a (§3.5): the ended section's line, and only Report.
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: Spacing.md),
+            child: Text(
+              loc.dating_endedReportLine,
+              style: theme.textTheme.bodyMedium,
+            ),
+          ),
           for (final e in d.ended)
-            Semantics(
-              container: true,
-              child: ListTile(
-                key: ValueKey('dating_chats_ended_${e.matchId}'),
-                title: Text(
-                  e.displayName.isEmpty
-                      ? loc.dating_chatTitleNoName
-                      : e.displayName,
+            _endedRow(
+              key: ValueKey('dating_chats_ended_${e.matchId}'),
+              title: Text(
+                e.displayName.isEmpty
+                    ? loc.dating_chatTitleNoName
+                    : e.displayName,
+              ),
+              subtitle: Text(loc.dating_chatEnded),
+              report: TextButton(
+                key: ValueKey('dating_chats_report_${e.matchId}'),
+                style: TextButton.styleFrom(minimumSize: const Size(48, 48)),
+                onPressed: () async {
+                  final account = ref.read(datingAccountProvider);
+                  final outcome = await showDatingReportSheet(
+                    context,
+                    account: account,
+                    name: e.displayName,
+                    target: DatingReportMatch(e.matchId),
+                    // Fix round 1 (M-2): no Block here to try again.
+                    canBlockLater: false,
+                  );
+                  if (outcome != null) reread();
+                },
+                child: Text(
+                  loc.dating_report,
+                  semanticsLabel:
+                      e.displayName.isEmpty
+                          ? loc.dating_reportTitleNoName
+                          : loc.dating_reportTitle(e.displayName),
                 ),
-                subtitle: Text(loc.dating_chatEnded),
               ),
             ),
         ],
       ],
     );
   }
+
+  /// W7 final client fix (M-14): an ended row. At large text Report goes
+  /// under the name and line (a trailing button there squeezes them into
+  /// a narrow column); otherwise it trails.
+  Widget _endedRow({
+    required Key key,
+    required Widget title,
+    required Widget subtitle,
+    required Widget report,
+  }) => Builder(
+    // The scale AllowLargeText gives this subtree (the screen's own
+    // context sits above it).
+    builder: (context) => Semantics(
+      container: true,
+      child:
+          MediaQuery.textScalerOf(context).scale(10) > 15
+              ? ListTile(
+                key: key,
+                title: title,
+                subtitle: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    subtitle,
+                    Align(
+                      alignment: AlignmentDirectional.centerStart,
+                      child: report,
+                    ),
+                  ],
+                ),
+              )
+              : ListTile(
+                key: key,
+                title: title,
+                subtitle: subtitle,
+                trailing: report,
+              ),
+    ),
+  );
 }

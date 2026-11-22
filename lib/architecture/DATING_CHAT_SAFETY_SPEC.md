@@ -1,6 +1,6 @@
 # ATTUNE — DATING CHAT SAFETY SPECIFICATION
 
-**Status:** Version 2.0 (2026-11-20, Spec 2 W6c). The v2.0 amendments
+**Status:** Version 2.1 (2026-11-21, Spec 2 W7c: §5.1, §5.2 and §5.3). The v2.0 amendments
 below were approved by the product owner under Q20 of
 `docs/superpowers/specs/2026-10-24-dating-mode-design.md` (§1.5). The
 safety owner's review is still required: Dating chat may not ship to
@@ -307,17 +307,39 @@ recorded in `dating_account_restrictions`, whose existing types
 (`suspended`, `under_review`, `age_review`, `moderation_hold`) are the
 enforcement vocabulary.
 
+**Version 2.1 (Spec 2 W7):** reports, not phrases, may place one interim
+step before a person decides: a `moderation_hold` (hidden from
+introductions, no sending; conversations stay open) only when a P0 report
+is corroborated (two independent P0 reports, or an `underage_risk` report
+with the person's own tier-3 `age_signal` in that conversation, which
+places an `age_review` instead). A phrase trigger still never restricts
+anyone. A reporter whose own messages tripped `sexual_pressure` or
+`financial_request` in that conversation (judged when the report is filed,
+again when a later trip arrives, and again at corroboration) never
+triggers a step against the other person and never counts towards a hold;
+a P0 report still closes the reporter's own conversation.
+
 This preserves the useful half of the couples system's no-punishment
 posture — an automated phrase match must never suspend a person — while
 rejecting the half that would leave a reported predator in the pool.
 
 ### 5.2 Report categories
 
-The categories already exist in `dating_reports` and are unchanged:
-`harassment`, `impersonation`, `romance_scam`, `spam`, `underage_risk`,
-`other`. `romance_scam` is the dedicated scam category the plan requires.
+**Version 2.1 (Spec 2 W7):** the design spec's 14 categories replace the
+v1 list (old `safety_concern` and `sexual_content` rows became `other` and
+`explicit_content`): P0 `underage_risk`, `csam`, `child_safety`,
+`threat_to_life`; P1 `sextortion`, `romance_scam`, `threats`, `entrapment`;
+P2 `harassment`, `explicit_content`, `impersonation`, `hiding_relationship`;
+P3 `spam`, `other`. `romance_scam` stays the dedicated scam category.
 
 ### 5.3 Runbook ownership
+
+**Version 2.1 (Spec 2 W7c):** the runbook is
+`DATING_MODERATION_RUNBOOK.md` (draft 1, owned by the safety owner; in
+force once the design spec's W7 production gate is met). It covers each
+item below: the review times per priority, triage per category, the
+evidence and the console's access, the appeal, and escalation as a
+person's recorded decision.
 
 Required before launch, owned by the safety owner, not by engineering:
 
@@ -502,6 +524,10 @@ Stated rather than silently resolved:
 ---
 
 ## Changelog
+
+- **2026-11-21** — Version 2.1: §5.1 (report-driven interim holds for
+  corroborated P0 only), §5.2 (the 14 categories) and §5.3 (the runbook),
+  Spec 2 W7c.
 
 - **2026-11-20** — Version 2.0: the amendments approved under Q20 of the
   Dating Mode design (§1.5), recorded at the top of this document (Spec 2

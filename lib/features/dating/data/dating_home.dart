@@ -126,6 +126,7 @@ class DatingHome {
     this.notice = const DatingNotice(),
     this.reverifyVariant = DatingReverifyVariant.verified,
     this.check = DatingPauseCheck.unknown,
+    this.appealAccepted = false,
   });
 
   final DatingHomeState state;
@@ -155,6 +156,9 @@ class DatingHome {
   /// A verification pause only (Spec 2 W4b, Task 3 M-4).
   final DatingPauseCheck check;
 
+  /// Spec 2 W7a (§3.7): an appeal was accepted in the last 7 days.
+  final bool appealAccepted;
+
   factory DatingHome.fromJson(Map<String, dynamic> json) {
     DateTime? at(String key) {
       final value = json[key];
@@ -181,6 +185,7 @@ class DatingHome {
       notice: DatingNotice.fromJson(json['notify']),
       reverifyVariant: DatingReverifyVariant.fromWire(json['variant']),
       check: DatingPauseCheck.fromWire(json['check']),
+      appealAccepted: json['appeal_accepted'] == true,
     );
   }
 

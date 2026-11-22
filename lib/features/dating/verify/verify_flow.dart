@@ -23,7 +23,6 @@ import 'dart:io';
 import 'package:attune/app/routing/app_router.dart' show RouteNames;
 import 'package:attune/app/theme/design_tokens.dart';
 import 'package:attune/core/utils/constants.dart';
-import 'package:attune/core/utils/url_launcher_utils.dart';
 import 'package:attune/features/auth/sign_up/presentation/widgets/flow_buttons.dart';
 import 'package:attune/features/auth/sign_up/presentation/widgets/flow_text_field.dart'
     show FlowErrorLine;
@@ -31,6 +30,8 @@ import 'package:attune/features/dating/data/dating_providers.dart';
 import 'package:attune/features/dating/data/dating_rpc.dart';
 import 'package:attune/features/dating/gentle_wait/gentle_wait_providers.dart'
     show datingOnlineProvider;
+import 'package:attune/features/dating/report/restricted_screen.dart'
+    show datingSupportContactProvider, datingSupportMail;
 import 'package:attune/features/dating/photos/dating_photos_providers.dart'
     show datingImagePreparerProvider;
 import 'package:attune/features/dating/routes/dating_routes.dart'
@@ -158,6 +159,11 @@ class _DatingVerifyFlowState extends ConsumerState<DatingVerifyFlow> {
   int? _position;
   bool _consent = false;
   bool _consentRecorded = false;
+
+  /// Final client fix (M-4, W4b carry): no email app opened from Contact
+  /// support, said here with the address (never the shared util's English
+  /// snackbar).
+  bool _noMail = false;
   bool _resumed = false;
   bool _busy = false;
   bool _readFailed = false;
@@ -220,6 +226,7 @@ class _DatingVerifyFlowState extends ConsumerState<DatingVerifyFlow> {
     _position = null;
     _consent = false;
     _consentRecorded = false;
+    _noMail = false;
     _resumed = false;
     _busy = false;
     _readFailed = false;
@@ -954,13 +961,23 @@ class _DatingVerifyFlowState extends ConsumerState<DatingVerifyFlow> {
   }
 
   Widget _contactSupport(AppLocalizations loc) => FlowPrimaryButton(
+    key: const ValueKey('dating_verify_contact'),
     label: loc.flow_holdContact,
-    onPressed:
-        () => UrlLauncherUtils.launchEmail(
-          context: context,
-          email: AppConstants.supportEmail,
-        ),
+    onPressed: _mailSupport,
   );
+
+  Future<void> _mailSupport() async {
+    final account = ref.read(datingAccountProvider);
+    try {
+      await ref.read(datingSupportContactProvider)(
+        context,
+        datingSupportMail(),
+      );
+    } catch (_) {
+      if (!mounted || ref.read(datingAccountProvider) != account) return;
+      setState(() => _noMail = true);
+    }
+  }
 
   Widget _outcomeScreen(AppLocalizations loc, bool online) {
     final refusal = _refusalLine(loc);
@@ -1173,6 +1190,18 @@ class _DatingVerifyFlowState extends ConsumerState<DatingVerifyFlow> {
             ),
           ),
           if (refusal != null) refusal,
+          // M-4: the address, selectable, in the app's own words.
+          if (_noMail) ...[
+            const SizedBox(height: Spacing.sm),
+            Semantics(
+              liveRegion: true,
+              child: SelectableText(
+                loc.dating_restrictedNoMail(AppConstants.supportEmail),
+                key: const ValueKey('dating_verify_no_mail'),
+                style: Theme.of(context).textTheme.bodyLarge,
+              ),
+            ),
+          ],
         ],
       ),
       primary: primary,

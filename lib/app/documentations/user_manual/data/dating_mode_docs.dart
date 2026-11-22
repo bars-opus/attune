@@ -163,7 +163,7 @@ class DatingModeDocs implements DocumentationModule {
           title: 'Conversations',
           numberPrefix: '5',
           content:
-              'When you match, you can write to each other in Conversations: text only, up to 1,000 characters. Phone numbers, emails, usernames and links show as "•••" until you both tap Swap contacts, which you can offer from three days after you match; once you\'ve both swapped, it can\'t be undone. There are no read receipts, and nobody can see when you\'re online or typing. The shield at the top of a conversation lets you block, unmatch, close kindly, plan a meet, say you\'ve met, or find safety resources. Unmatching ends the conversation for both of you, and you won\'t be introduced again.',
+              'When you match, you can write to each other in Conversations: text only, up to 1,000 characters. Phone numbers, emails, usernames and links show as "•••" until you both tap Swap contacts, which you can offer from three days after you match; once you\'ve both swapped, it can\'t be undone. There are no read receipts, and nobody can see when you\'re online or typing. The shield at the top of a conversation lets you report, block, unmatch, close kindly, plan a meet, say you\'ve met, or find safety resources. Unmatching ends the conversation for both of you, and you won\'t be introduced again.',
           type: ManualContentType.text,
         ),
         // Spec 2 W6c (§3.6): the guided start, the meeting kit, the check-in.
@@ -179,8 +179,17 @@ class DatingModeDocs implements DocumentationModule {
           id: 'dating_money',
           title: '',
           content:
-              'Never send money, account details or mobile money to someone you haven\'t met in person, whatever the story. If someone asks, block them from the shield at the top of the conversation.',
+              'Never send money, account details or mobile money to someone you haven\'t met in person, whatever the story. If someone asks, report them from the shield at the top of the conversation.',
           type: ManualContentType.warning,
+        ),
+        // Spec 2 W7a (§3.7, §6.2, §6.3): reporting, and restrictions.
+        ManualContent(
+          id: 'dating_report',
+          title: 'Reporting, and if your account is restricted',
+          numberPrefix: '7',
+          content:
+              'Report someone from the shield in a conversation, from a safety card, from a card on Today, or from a conversation that ended in the last 30 days. Choose what happened and, if you like, tell us more. A person reviews every report. The other person is never told who reported them or what you wrote. Reporting never bans anyone by itself: for the most serious reports, a profile is paused straight away only when separate reports, or a report and another safety signal, point the same way, and a person then looks into it. If your Dating account is restricted, Dating shows why. If your Dating account is suspended, you can appeal once; a different person from the one who made the decision looks at your appeal, usually within 7 days. A pause while we look into a report has no appeal unless it was carried over from an earlier account: it ends with a decision. An age check has no appeal either: it ends when you verify your age with support. The rest of Attune works as usual.',
+          type: ManualContentType.text,
         ),
       ],
     ),

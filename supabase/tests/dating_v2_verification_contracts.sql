@@ -602,7 +602,8 @@ BEGIN
   SELECT string_agg(p.oid::regprocedure::text, ', ' ORDER BY p.oid::regprocedure::text) INTO v_got
     FROM pg_proc AS p
    WHERE p.prosrc ~ 'place_account_hold\(' AND p.proname <> 'place_account_hold';
-  IF v_got IS DISTINCT FROM 'consume_fresh_start(text,text), correct_my_birth_date(date), private.handle_csam_match(text,text,uuid,text,text,boolean,text), record_dating_age_far_below(uuid,uuid,text), set_my_birth_date(date)' THEN
+  -- Spec 2 W7b (§6.3): a moderator confirming a minor is the other Dating caller.
+  IF v_got IS DISTINCT FROM 'consume_fresh_start(text,text), correct_my_birth_date(date), moderation_confirm_minor(uuid,uuid), private.handle_csam_match(text,text,uuid,text,text,boolean,text), record_dating_age_far_below(uuid,uuid,text), set_my_birth_date(date)' THEN
     RAISE EXCEPTION 'CONTRACT VIOLATED: the callers of place_account_hold changed (R8): %', v_got;
   END IF;
   -- The hold is Spec 1's: Dating reads it as account_unavailable / age_review.

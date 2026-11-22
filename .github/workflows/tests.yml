@@ -37,6 +37,31 @@ jobs:
       - name: Run tests
         run: flutter test
 
+  console-web:
+    # Spec 2 W7b (§6.4, F-6): the moderation console is a separate web entry
+    # point that imports only lib/console and the Supabase client
+    # (test/console/console_test.dart pins that). It must build for the web
+    # on every push; the project's URL and key are --dart-define values the
+    # owner passes at a real build, never committed. No service worker
+    # cache: a moderator never runs a stale console. No CDN: CanvasKit is
+    # served with the site (a private console behind an access gate).
+    name: Moderation console web build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: 3.29.1
+          channel: stable
+          cache: true
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Build the console
+        run: flutter build web -t lib/console/main_console.dart -o "$PWD/build/console" --pwa-strategy=none --no-web-resources-cdn --no-pub
+
   deno-w9:
     # Spec 1 W9 final M-3: the TypeScript side of the normaliser parity pin
     # and the journal crisis-check ordering tests (the SQL side runs in
@@ -56,14 +81,15 @@ jobs:
 
       - name: Run Deno tests
         working-directory: supabase/functions
-        run: deno test --allow-read --allow-env --lock=../../.github/deno-w9.lock --frozen _shared/unicode_normaliser.test.ts _shared/writer_crisis_check.test.ts _shared/healing_ai_gate.test.ts process-dating-photo/handler.test.ts process-dating-photo/worker.test.ts _shared/google_vision.test.ts analyse-journal-entry/ generate-healing-portrait/ generate-healing-post-mortem/ process-scheduled-notifications/privacy_allowlist.test.ts dating-verification/handler.test.ts _shared/age_assurance/providers.test.ts dating-photo-urls/handler.test.ts _shared/dating_mask.test.ts _shared/dating_chat_safety.test.ts process-dating-safety-outbox/handler.test.ts
+        run: deno test --allow-read --allow-env --lock=../../.github/deno-w9.lock --frozen _shared/unicode_normaliser.test.ts _shared/writer_crisis_check.test.ts _shared/healing_ai_gate.test.ts process-dating-photo/handler.test.ts process-dating-photo/worker.test.ts _shared/google_vision.test.ts analyse-journal-entry/ generate-healing-portrait/ generate-healing-post-mortem/ process-scheduled-notifications/privacy_allowlist.test.ts dating-verification/handler.test.ts _shared/age_assurance/providers.test.ts dating-photo-urls/handler.test.ts _shared/dating_mask.test.ts _shared/dating_chat_safety.test.ts process-dating-safety-outbox/handler.test.ts dating-moderation/handler.test.ts
 
       # Spec 2 W4 final (M-12): the dating-verification wiring (index.ts and
       # its std http import) is type-checked under the same frozen lock;
-      # Spec 2 W5b adds dating-photo-urls.
-      - name: Type-check dating-verification and dating-photo-urls
+      # Spec 2 W5b adds dating-photo-urls; W6 the safety outbox; W7b
+      # dating-moderation (Task 7, Task 6 M-8: the step's name).
+      - name: Type-check the Dating edge functions' wiring
         working-directory: supabase/functions
-        run: deno check --lock=../../.github/deno-w9.lock --frozen dating-verification/index.ts dating-photo-urls/index.ts process-dating-safety-outbox/index.ts
+        run: deno check --lock=../../.github/deno-w9.lock --frozen dating-verification/index.ts dating-photo-urls/index.ts process-dating-safety-outbox/index.ts dating-moderation/index.ts
 
   repo-guards:
     # Spec 2 W1a (§4.5, §7.6 items 2.7 and 7.3): fail on a committed secret

@@ -16,6 +16,13 @@ verify_jwt = true
 [functions.process-dating-safety-outbox]
 verify_jwt = true
 
+# Spec 2 W7b (§6.4): the moderation console's API. A browser's CORS preflight
+# carries no token, so the gateway's check is off; request.ts checks every
+# caller's token with requireUser and needs aal2 (TOTP), and every
+# moderation_* function refuses anyone who is not an active moderator.
+[functions.dating-moderation]
+verify_jwt = false
+
 [functions.accept-invite]
 verify_jwt = true
 

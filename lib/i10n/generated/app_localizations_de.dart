@@ -3233,7 +3233,7 @@ class AppLocalizationsDe extends AppLocalizations {
   String get dating_sectionRestricted => 'Your Dating account is restricted. The rest of Attune works as usual.';
 
   @override
-  String get dating_sectionHold => 'Your Dating profile is paused while we look into something. This isn\'t a decision yet.';
+  String get dating_sectionHold => 'Your Dating profile is paused while we look into something.';
 
   @override
   String get dating_sectionAgeReview => 'We need to confirm your age before you can use Dating.';
@@ -5199,4 +5199,283 @@ class AppLocalizationsDe extends AppLocalizations {
 
   @override
   String get dating_guidedAnswerHint => 'Write your answer';
+
+  @override
+  String dating_reportTitle(String name) {
+    return 'Report $name';
+  }
+
+  @override
+  String get dating_reportTitleNoName => 'Report this person';
+
+  @override
+  String get dating_report => 'Report';
+
+  @override
+  String get dating_reportWhat => 'What happened?';
+
+  @override
+  String get dating_reportUnderage => 'They might be under 18';
+
+  @override
+  String get dating_reportCsam => 'Sexual content involving a child';
+
+  @override
+  String get dating_reportChildSafety => 'Asked about or for access to children';
+
+  @override
+  String get dating_reportThreatToLife => 'Threatened to kill or seriously hurt someone';
+
+  @override
+  String get dating_reportSextortion => 'Threatening to share images of me';
+
+  @override
+  String get dating_reportMoney => 'Asked me for money';
+
+  @override
+  String get dating_reportThreats => 'Threatened me';
+
+  @override
+  String get dating_reportEntrapment => 'I think it\'s a fake profile set up to trap people';
+
+  @override
+  String get dating_reportHarassment => 'Harassing me';
+
+  @override
+  String get dating_reportExplicit => 'Sent sexual messages I didn\'t want';
+
+  @override
+  String get dating_reportImpersonation => 'Using someone else\'s photos or identity';
+
+  @override
+  String get dating_reportMarried => 'Married or in a relationship';
+
+  @override
+  String get dating_reportSpam => 'Spam or selling something';
+
+  @override
+  String get dating_reportOther => 'Something else';
+
+  @override
+  String get dating_reportMore => 'Tell us more (optional)';
+
+  @override
+  String dating_reportBlock(String name) {
+    return 'Also block $name';
+  }
+
+  @override
+  String get dating_reportBlockNoName => 'Also block this person';
+
+  @override
+  String get dating_reportSend => 'Send report';
+
+  @override
+  String get dating_reportOffline => 'You\'re offline. Your report will need a connection; nothing has been sent.';
+
+  @override
+  String get dating_reportSentTitle => 'Thanks for telling us';
+
+  @override
+  String dating_reportSent(String within, String number) {
+    return 'A person reviews every report, and we aim to look at reports like this within $within. If you\'re in danger now, call $number.';
+  }
+
+  @override
+  String dating_reportSentNoNumber(String within) {
+    return 'A person reviews every report, and we aim to look at reports like this within $within. If you\'re in danger now, call your local emergency number.';
+  }
+
+  @override
+  String dating_reportSentTesting(String number) {
+    return 'In testing, reports go to the test review queue. If you\'re in danger now, call $number.';
+  }
+
+  @override
+  String get dating_reportSentTestingNoNumber => 'In testing, reports go to the test review queue. If you\'re in danger now, call your local emergency number.';
+
+  @override
+  String dating_reportHours(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count hours',
+      one: '1 hour',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String dating_reportDays(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count days',
+      one: '1 day',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get dating_reportScam => 'You did the right thing. Scammers are skilled; this isn\'t on you.';
+
+  @override
+  String get dating_endedReportLine => 'You can still report a problem for 30 days.';
+
+  @override
+  String dating_reportNotBlocked(String name) {
+    return 'Your report was sent, but blocking $name didn\'t go through. You can try again later.';
+  }
+
+  @override
+  String get dating_reportNotBlockedNoName => 'Your report was sent, but blocking this person didn\'t go through. You can try again later.';
+
+  @override
+  String dating_reportSentNoTime(String number) {
+    return 'Your report is in the review queue. If you\'re in danger now, call $number.';
+  }
+
+  @override
+  String get dating_reportSentNoTimeNoNumber => 'Your report is in the review queue. If you\'re in danger now, call your local emergency number.';
+
+  @override
+  String dating_reportNotBlockedEnded(String name) {
+    return 'Your report was sent, but blocking $name didn\'t go through.';
+  }
+
+  @override
+  String get dating_reportNotBlockedEndedNoName => 'Your report was sent, but blocking this person didn\'t go through.';
+
+  @override
+  String dating_reportDanger(String number) {
+    return 'If you\'re in danger now, call $number.';
+  }
+
+  @override
+  String get dating_reportDangerNoNumber => 'If you\'re in danger now, call your local emergency number.';
+
+  @override
+  String get dating_restrictedSeeWhy => 'See why';
+
+  @override
+  String get dating_restrictedLoading => 'Checking your Dating account.';
+
+  @override
+  String get dating_restrictedNone => 'Nothing is restricting your Dating account.';
+
+  @override
+  String dating_restrictedAbout(String label) {
+    return 'About: $label';
+  }
+
+  @override
+  String dating_restrictedReason(String label) {
+    return 'Reason: $label.';
+  }
+
+  @override
+  String get dating_restrictedHold => 'Your Dating profile is paused while we look into a report. This isn\'t a decision yet. We aim to finish within 24 hours.';
+
+  @override
+  String get dating_restrictedVerifyId => 'Verify with ID';
+
+  @override
+  String dating_restrictedUntil(String date) {
+    return 'Your Dating account is restricted until $date.';
+  }
+
+  @override
+  String get dating_restrictedMeans => 'What this means: you can\'t be introduced or send Dating messages until then. The rest of Attune works as usual.';
+
+  @override
+  String get dating_restrictedClosed => 'Your Dating account has been closed.';
+
+  @override
+  String get dating_appeal => 'Appeal';
+
+  @override
+  String get dating_appealHint => 'Tell us what happened';
+
+  @override
+  String get dating_appealSend => 'Send appeal';
+
+  @override
+  String get dating_appealSent => 'Appeal sent. A different person from the one who made the first decision will look at it within 7 days.';
+
+  @override
+  String get dating_appealAccepted => 'Your appeal was accepted. Dating is open again.';
+
+  @override
+  String get dating_appealRejected => 'We looked again and the decision stands.';
+
+  @override
+  String get dating_reasonUnderage => 'Concerns about age';
+
+  @override
+  String get dating_reasonCsam => 'Sexual content involving a child';
+
+  @override
+  String get dating_reasonChildSafety => 'The safety of children';
+
+  @override
+  String get dating_reasonThreatToLife => 'Threatening to kill or seriously hurt someone';
+
+  @override
+  String get dating_reasonSextortion => 'Threatening to share someone\'s images';
+
+  @override
+  String get dating_reasonMoney => 'Asking for money';
+
+  @override
+  String get dating_reasonThreats => 'Threatening someone';
+
+  @override
+  String get dating_reasonEntrapment => 'A profile set up to trap people';
+
+  @override
+  String get dating_reasonHarassment => 'Harassment';
+
+  @override
+  String get dating_reasonExplicit => 'Sexual messages someone didn\'t want';
+
+  @override
+  String get dating_reasonImpersonation => 'Using someone else\'s photos or identity';
+
+  @override
+  String get dating_reasonMarried => 'Being married or in a relationship';
+
+  @override
+  String get dating_reasonSpam => 'Spam or selling';
+
+  @override
+  String get dating_reasonOther => 'Breaking Dating\'s rules';
+
+  @override
+  String get dating_appealOnce => 'You can appeal once. Add anything you\'d like us to know before you send it.';
+
+  @override
+  String dating_appealCount(int count, int max) {
+    return 'Optional. $count of $max characters';
+  }
+
+  @override
+  String get dating_appealAcceptedPaused => 'Your appeal was accepted. Resume Dating when you\'re ready.';
+
+  @override
+  String dating_restrictedVerifyHelp(String email) {
+    return 'Verify with ID opens an email to our support team at $email. Attach a photo of an official ID that shows your date of birth.';
+  }
+
+  @override
+  String dating_restrictedNoMail(String email) {
+    return 'No email app opened. You can write to $email.';
+  }
+
+  @override
+  String get dating_restrictedHoldPlain => 'Your Dating profile is paused while we look into something.';
+
+  @override
+  String dating_restrictedIdCode(String code) {
+    return 'Include this code in your email: $code';
+  }
 }

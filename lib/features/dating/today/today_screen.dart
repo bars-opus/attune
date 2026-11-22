@@ -26,10 +26,14 @@ import 'package:attune/features/auth/sign_up/presentation/widgets/flow_buttons.d
 import 'package:attune/features/auth/sign_up/presentation/widgets/flow_text_field.dart'
     show FlowErrorLine;
 import 'package:attune/features/dating/card/dating_card.dart';
+import 'package:attune/features/dating/data/dating_home.dart'
+    show DatingHomeState;
 import 'package:attune/features/dating/data/dating_providers.dart';
 import 'package:attune/features/dating/data/dating_rpc.dart';
 import 'package:attune/features/dating/gentle_wait/gentle_wait_providers.dart'
     show datingOnlineProvider;
+import 'package:attune/features/dating/report/dating_report.dart';
+import 'package:attune/features/dating/report/report_sheet.dart';
 import 'package:attune/features/dating/routes/dating_root_back.dart';
 import 'package:attune/features/dating/routes/dating_routes.dart';
 import 'package:attune/features/dating/section/dating_calm_line.dart';
@@ -330,7 +334,40 @@ class _DatingTodayScreenState extends ConsumerState<DatingTodayScreen> {
       account: account,
       name: name,
     );
-    if (!more || !mounted || _account != account) return;
+    if (more == null || !mounted || _account != account) return;
+    // Spec 2 W7a (§3.7): Report from the card; with "Also block" the card
+    // is blocked by the report itself, so it collapses as a block does
+    // (only when the block went through: "blocked": false leaves it).
+    // Fix round 1 (I-2; R-63): a P0 report takes the card away (the server
+    // invalidates it; final client fix I-1: whatever "Also block" did): it
+    // folds as Not for me does, its photos leave the device's memory, and
+    // Today reads again.
+    if (more == DatingCardMore.report) {
+      final outcome = await showDatingReportSheet(
+        context,
+        account: account,
+        name: name,
+        target: DatingReportCard(c.id),
+      );
+      if (outcome == null || !mounted || _account != account) return;
+      setState(() {
+        if (outcome.blocked) {
+          _blocked[c.id] = name;
+          _photos.remove(c.id);
+          DatingPhotoMemory.forget('introduction', c.id);
+        } else if (outcome.takesCardAway) {
+          _hidden.add(c.id);
+          _answers.remove(c.id);
+          _photos.remove(c.id);
+          DatingPhotoMemory.forget('introduction', c.id);
+        }
+      });
+      if (outcome.takesCardAway && !outcome.blocked) _reread();
+      // Final client fix (I-2): a pause from the sheet reads Today again
+      // from the sheet itself (it may be gone by then: the lock, quick
+      // exit), so Today shows the paused line.
+      return;
+    }
     final block = await showDatingBlockSheet(
       context,
       account: account,
@@ -509,7 +546,18 @@ class _DatingTodayScreenState extends ConsumerState<DatingTodayScreen> {
       children: switch (reason) {
         _ when !online => [DatingCalmLine(loc.dating_offline), retry],
         'reverify_device' => [const DatingReverifyLine()],
-        'not_eligible' => [DatingCalmLine(loc.dating_sectionUnavailable)],
+        'not_eligible' => [
+          DatingCalmLine(loc.dating_sectionUnavailable),
+          // Final client fix (M-12): a held or restricted person (a push,
+          // a deep link, a stale page) gets the way to why.
+          if (_restrictedHome)
+            FlowTextLink(
+              key: const ValueKey('dating_today_see_why'),
+              label: loc.dating_restrictedSeeWhy,
+              alignment: AlignmentDirectional.centerStart,
+              onPressed: () => _open(DatingPaths.restricted),
+            ),
+        ],
         'busy' => [DatingCalmLine(loc.dating_busy), retry],
         // Task 7 ruling (Task 4 M-8): a paused person reads the home's
         // paused line, calm, with no retry; Resume is in Dating settings.
@@ -527,6 +575,18 @@ class _DatingTodayScreenState extends ConsumerState<DatingTodayScreen> {
         ],
       },
     );
+  }
+
+  /// M-12: the home (this account's) reads a hold, a restriction or an
+  /// age check, so the restricted screen has something to say.
+  bool get _restrictedHome {
+    final read = ref.watch(datingHomeProvider(_account));
+    return !read.hasError &&
+        const {
+          DatingHomeState.hold,
+          DatingHomeState.restricted,
+          DatingHomeState.ageReview,
+        }.contains(read.valueOrNull?.state);
   }
 
   String? _region(AppLocalizations loc, DatingToday d) =>

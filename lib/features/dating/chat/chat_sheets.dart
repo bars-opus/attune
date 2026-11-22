@@ -1,5 +1,5 @@
-// Spec 2 W6a (§3.6; D8): the chat's sheets. The Safety sheet (Block,
-// Unmatch, Safety resources; W6c and W7a add their rows), Unmatch's
+// Spec 2 W6a (§3.6; D8): the chat's sheets. The Safety sheet (Report
+// first since W7a; Block, Unmatch, Safety resources; W6c's rows), Unmatch's
 // confirm, Swap contacts with its one-time card, and what a hidden span
 // means. Each answers once (a second tap does nothing), shows nothing of
 // the last account once the signed-in account changes and then closes
@@ -28,6 +28,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 /// What the Safety sheet's person chose.
 enum DatingSafetyChoice {
+  // Spec 2 W7a (§3.6, R-43): Report, first; open for 30 days after the end.
+  report,
   block,
   unmatch,
   closeKindly,
@@ -141,6 +143,13 @@ Future<DatingSafetyChoice?> showDatingSafetySheet(
         onTap: () => close(choice),
       );
   return _frame(context, loc.dating_chatSafety, [
+    row(
+      name.isEmpty
+          ? loc.dating_reportTitleNoName
+          : loc.dating_reportTitle(name),
+      Icons.flag_outlined,
+      DatingSafetyChoice.report,
+    ),
     if (!blocked)
       row(
         name.isEmpty ? loc.dating_blockRowNoName : loc.dating_blockRow(name),

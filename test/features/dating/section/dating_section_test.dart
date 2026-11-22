@@ -121,10 +121,9 @@ void main() {
     ),
     'hold': (
       const DatingHome(state: DatingHomeState.hold),
-      [
-        "Your Dating profile is paused while we look into something. This "
-            "isn't a decision yet.",
-      ],
+      // W7 final client fix (final minor 1): neutral; a carried hold may
+      // already be decided.
+      ['Your Dating profile is paused while we look into something.'],
     ),
     'age_review': (
       const DatingHome(state: DatingHomeState.ageReview),

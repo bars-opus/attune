@@ -6007,16 +6007,16 @@ abstract class AppLocalizations {
   /// **'Dating is hidden while you\'re away.'**
   String get dating_sectionAway;
 
-  /// Spec 2 §3.1 restricted, before W7a's category and date (plan R-29). For the DV reviewer.
+  /// Spec 2 §3.1 restricted (plan R-29); See why opens the restricted screen with the category and the date (W7a Task 4). For the DV reviewer.
   ///
   /// In en, this message translates to:
   /// **'Your Dating account is restricted. The rest of Attune works as usual.'**
   String get dating_sectionRestricted;
 
-  /// Spec 2 §3.1 hold, before W7a (plan R-29). For the DV reviewer.
+  /// Spec 2 §3.1 hold (plan R-29); See why opens the restricted screen with the category (W7a Task 4). W7 final client fix (final minor): neutral, the same line as dating_restrictedHoldPlain, because the home read doesn't say where a hold came from and a carried hold may already be decided ('This isn't a decision yet.' dropped). For the DV reviewer.
   ///
   /// In en, this message translates to:
-  /// **'Your Dating profile is paused while we look into something. This isn\'t a decision yet.'**
+  /// **'Your Dating profile is paused while we look into something.'**
   String get dating_sectionHold;
 
   /// Spec 2 §3.7 age check copy.
@@ -8653,7 +8653,7 @@ abstract class AppLocalizations {
   /// **'You\'re both interested.'**
   String get dating_momentTitleNoName;
 
-  /// Spec 2 §3.4 the card's overflow (Block now; Report joins it in W7a).
+  /// Spec 2 §3.4 the card's overflow: Report (W7a) and Block.
   ///
   /// In en, this message translates to:
   /// **'More'**
@@ -8965,7 +8965,7 @@ abstract class AppLocalizations {
   /// **'When you and someone are both interested, your conversation appears here.'**
   String get dating_chatsEmpty;
 
-  /// Spec 2 §3.5 the ended section's heading (its Report line arrives with W7a's Report).
+  /// Spec 2 §3.5 the ended section's heading (dating_endedReportLine under it; each row has Report).
   ///
   /// In en, this message translates to:
   /// **'Ended in the last 30 days'**
@@ -9103,7 +9103,7 @@ abstract class AppLocalizations {
   /// **'This conversation has ended.'**
   String get dating_chatEnded;
 
-  /// Spec 2 §3.6 a send refused while the account is restricted (W7a adds the reason). Plan copy.
+  /// Spec 2 §3.6 a send refused while the account is restricted; a 'See why' link under it leads to the restricted screen, which gives the reason (W7 final client fix, M-13). Plan copy.
   ///
   /// In en, this message translates to:
   /// **'You can\'t send messages right now.'**
@@ -9271,7 +9271,7 @@ abstract class AppLocalizations {
   /// **'If someone threatens you, your safety comes first. Keep the messages and report here. If you\'re in danger now, call your local emergency number.'**
   String get dating_safetyThreatNoNumber;
 
-  /// Spec 2 §6.1 financial_request card (W7a adds Report as a scam).
+  /// Spec 2 §6.1 financial_request card (its Report opens the report sheet, where 'Asked me for money' is the scam category).
   ///
   /// In en, this message translates to:
   /// **'Asking for money early is the most common scam pattern. You don\'t owe anyone money, airtime or mobile money to meet. Never send money to someone you haven\'t met.'**
@@ -9636,6 +9636,468 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Write your answer'**
   String get dating_guidedAnswerHint;
+
+  /// Spec 2 §3.7 the report sheet's title, the Safety sheet's row, the card's and the ended row's button label. Plan copy.
+  ///
+  /// In en, this message translates to:
+  /// **'Report {name}'**
+  String dating_reportTitle(String name);
+
+  /// Spec 2 §3.7 the report sheet's title with no name. Plan copy.
+  ///
+  /// In en, this message translates to:
+  /// **'Report this person'**
+  String get dating_reportTitleNoName;
+
+  /// Spec 2 §3.5, §3.6 a safety card's and an ended conversation's Report button (spoken as dating_reportTitle on the ended row).
+  ///
+  /// In en, this message translates to:
+  /// **'Report'**
+  String get dating_report;
+
+  /// Spec 2 §3.7 the categories' group label. Plan copy.
+  ///
+  /// In en, this message translates to:
+  /// **'What happened?'**
+  String get dating_reportWhat;
+
+  /// Spec 2 §3.7 underage_risk (P0).
+  ///
+  /// In en, this message translates to:
+  /// **'They might be under 18'**
+  String get dating_reportUnderage;
+
+  /// Spec 2 §3.7 csam (P0).
+  ///
+  /// In en, this message translates to:
+  /// **'Sexual content involving a child'**
+  String get dating_reportCsam;
+
+  /// Spec 2 §3.7 child_safety (P0).
+  ///
+  /// In en, this message translates to:
+  /// **'Asked about or for access to children'**
+  String get dating_reportChildSafety;
+
+  /// Spec 2 §3.7 threat_to_life (P0).
+  ///
+  /// In en, this message translates to:
+  /// **'Threatened to kill or seriously hurt someone'**
+  String get dating_reportThreatToLife;
+
+  /// Spec 2 §3.7 sextortion (P1).
+  ///
+  /// In en, this message translates to:
+  /// **'Threatening to share images of me'**
+  String get dating_reportSextortion;
+
+  /// Spec 2 §3.7 romance_scam (P1).
+  ///
+  /// In en, this message translates to:
+  /// **'Asked me for money'**
+  String get dating_reportMoney;
+
+  /// Spec 2 §3.7 threats (P1).
+  ///
+  /// In en, this message translates to:
+  /// **'Threatened me'**
+  String get dating_reportThreats;
+
+  /// Spec 2 §3.7 entrapment (P1).
+  ///
+  /// In en, this message translates to:
+  /// **'I think it\'s a fake profile set up to trap people'**
+  String get dating_reportEntrapment;
+
+  /// Spec 2 §3.7 harassment (P2).
+  ///
+  /// In en, this message translates to:
+  /// **'Harassing me'**
+  String get dating_reportHarassment;
+
+  /// Spec 2 §3.7 explicit_content (P2).
+  ///
+  /// In en, this message translates to:
+  /// **'Sent sexual messages I didn\'t want'**
+  String get dating_reportExplicit;
+
+  /// Spec 2 §3.7 impersonation (P2).
+  ///
+  /// In en, this message translates to:
+  /// **'Using someone else\'s photos or identity'**
+  String get dating_reportImpersonation;
+
+  /// Spec 2 §3.7 hiding_relationship (P2).
+  ///
+  /// In en, this message translates to:
+  /// **'Married or in a relationship'**
+  String get dating_reportMarried;
+
+  /// Spec 2 §3.7 spam (P3).
+  ///
+  /// In en, this message translates to:
+  /// **'Spam or selling something'**
+  String get dating_reportSpam;
+
+  /// Spec 2 §3.7 other (P3).
+  ///
+  /// In en, this message translates to:
+  /// **'Something else'**
+  String get dating_reportOther;
+
+  /// Spec 2 §3.7 the 500-character field.
+  ///
+  /// In en, this message translates to:
+  /// **'Tell us more (optional)'**
+  String get dating_reportMore;
+
+  /// Spec 2 §3.7 the toggle (on for P0-P2).
+  ///
+  /// In en, this message translates to:
+  /// **'Also block {name}'**
+  String dating_reportBlock(String name);
+
+  /// Spec 2 §3.7 the toggle with no name. Plan copy.
+  ///
+  /// In en, this message translates to:
+  /// **'Also block this person'**
+  String get dating_reportBlockNoName;
+
+  /// Spec 2 §3.7 the button.
+  ///
+  /// In en, this message translates to:
+  /// **'Send report'**
+  String get dating_reportSend;
+
+  /// Spec 2 §3.15 Report sheet offline.
+  ///
+  /// In en, this message translates to:
+  /// **'You\'re offline. Your report will need a connection; nothing has been sent.'**
+  String get dating_reportOffline;
+
+  /// Spec 2 §3.7 the sent state's heading. Plan copy (the spec's first sentence, without its full stop).
+  ///
+  /// In en, this message translates to:
+  /// **'Thanks for telling us'**
+  String get dating_reportSentTitle;
+
+  /// Spec 2 §3.7 sent, once the moderator is named (W7 gate: matches the staffed hours). {within} is dating_reportHours or dating_reportDays; {number} the country's emergency number (S1 W7a).
+  ///
+  /// In en, this message translates to:
+  /// **'A person reviews every report, and we aim to look at reports like this within {within}. If you\'re in danger now, call {number}.'**
+  String dating_reportSent(String within, String number);
+
+  /// Spec 2 §3.7 sent, with no emergency entry for the country. Plan copy.
+  ///
+  /// In en, this message translates to:
+  /// **'A person reviews every report, and we aim to look at reports like this within {within}. If you\'re in danger now, call your local emergency number.'**
+  String dating_reportSentNoNumber(String within);
+
+  /// Spec 2 §3.7 sent, until the moderator is named (development).
+  ///
+  /// In en, this message translates to:
+  /// **'In testing, reports go to the test review queue. If you\'re in danger now, call {number}.'**
+  String dating_reportSentTesting(String number);
+
+  /// Spec 2 §3.7 sent in testing, with no emergency entry. Plan copy.
+  ///
+  /// In en, this message translates to:
+  /// **'In testing, reports go to the test review queue. If you\'re in danger now, call your local emergency number.'**
+  String get dating_reportSentTestingNoNumber;
+
+  /// Spec 2 §3.7 {SLA in words}, under 48 hours. Plan copy.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =1{1 hour} other{{count} hours}}'**
+  String dating_reportHours(int count);
+
+  /// Spec 2 §3.7 {SLA in words}, 48 hours or more. Plan copy.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =1{1 day} other{{count} days}}'**
+  String dating_reportDays(int count);
+
+  /// Spec 2 §3.7 after romance_scam (09 P7 fix 3).
+  ///
+  /// In en, this message translates to:
+  /// **'You did the right thing. Scammers are skilled; this isn\'t on you.'**
+  String get dating_reportScam;
+
+  /// Spec 2 §3.5 the ended section's line.
+  ///
+  /// In en, this message translates to:
+  /// **'You can still report a problem for 30 days.'**
+  String get dating_endedReportLine;
+
+  /// Spec 2 §3.7 sent, when "Also block" was on and the block didn't go through (the server's "blocked": false; say the day's block limit, or busy). Plan copy (W7a Task 3 Ruling).
+  ///
+  /// In en, this message translates to:
+  /// **'Your report was sent, but blocking {name} didn\'t go through. You can try again later.'**
+  String dating_reportNotBlocked(String name);
+
+  /// Spec 2 §3.7 dating_reportNotBlocked with no name. Plan copy (W7a Task 3 Ruling).
+  ///
+  /// In en, this message translates to:
+  /// **'Your report was sent, but blocking this person didn\'t go through. You can try again later.'**
+  String get dating_reportNotBlockedNoName;
+
+  /// Spec 2 §3.7 sent, when the answer has no review time (a replay, or staffed without its hours): neutral, so true in testing mode too, where no named moderator reads reports yet (R-50). Plan copy (W7a Task 3 fix round 1, M-1; Task 4, Task 3 re-review N-1: no longer 'A person reviews every report.').
+  ///
+  /// In en, this message translates to:
+  /// **'Your report is in the review queue. If you\'re in danger now, call {number}.'**
+  String dating_reportSentNoTime(String number);
+
+  /// Spec 2 §3.7 dating_reportSentNoTime with no emergency entry for the country. Plan copy (W7a Task 3 fix round 1, M-1; Task 4 N-1).
+  ///
+  /// In en, this message translates to:
+  /// **'Your report is in the review queue. If you\'re in danger now, call your local emergency number.'**
+  String get dating_reportSentNoTimeNoNumber;
+
+  /// Spec 2 §3.5, §3.7 sent from the ended list (no Block offered there) when "Also block" didn't go through: no retry promised. Plan copy (W7a Task 3 fix round 1, M-2).
+  ///
+  /// In en, this message translates to:
+  /// **'Your report was sent, but blocking {name} didn\'t go through.'**
+  String dating_reportNotBlockedEnded(String name);
+
+  /// Spec 2 §3.7 dating_reportNotBlockedEnded with no name. Plan copy (W7a Task 3 fix round 1, M-2).
+  ///
+  /// In en, this message translates to:
+  /// **'Your report was sent, but blocking this person didn\'t go through.'**
+  String get dating_reportNotBlockedEndedNoName;
+
+  /// Spec 2 §3.7 under a report the sheet couldn't send (offline, busy, refused): the sent line's danger sentence. Plan copy (W7a Task 3 fix round 1, M-5).
+  ///
+  /// In en, this message translates to:
+  /// **'If you\'re in danger now, call {number}.'**
+  String dating_reportDanger(String number);
+
+  /// Spec 2 §3.7 dating_reportDanger with no emergency entry for the country. Plan copy (W7a Task 3 fix round 1, M-5).
+  ///
+  /// In en, this message translates to:
+  /// **'If you\'re in danger now, call your local emergency number.'**
+  String get dating_reportDangerNoNumber;
+
+  /// Spec 2 §3.7 the section's restricted, hold and age-check cards open the restricted screen. Plan copy.
+  ///
+  /// In en, this message translates to:
+  /// **'See why'**
+  String get dating_restrictedSeeWhy;
+
+  /// Spec 2 §3.7 the restricted screen while it reads (never animated). Plan copy.
+  ///
+  /// In en, this message translates to:
+  /// **'Checking your Dating account.'**
+  String get dating_restrictedLoading;
+
+  /// Spec 2 §3.7 the restricted screen when nothing is restricted any more. Plan copy.
+  ///
+  /// In en, this message translates to:
+  /// **'Nothing is restricting your Dating account.'**
+  String get dating_restrictedNone;
+
+  /// Spec 2 §3.7 the hold's category line (read first).
+  ///
+  /// In en, this message translates to:
+  /// **'About: {label}'**
+  String dating_restrictedAbout(String label);
+
+  /// Spec 2 §3.7 a suspension's category line (read first).
+  ///
+  /// In en, this message translates to:
+  /// **'Reason: {label}.'**
+  String dating_restrictedReason(String label);
+
+  /// Spec 2 §3.7 interim hold (P0, corroborated).
+  ///
+  /// In en, this message translates to:
+  /// **'Your Dating profile is paused while we look into a report. This isn\'t a decision yet. We aim to finish within 24 hours.'**
+  String get dating_restrictedHold;
+
+  /// Spec 2 §3.7 the age check's button (Ruling R-56: through support).
+  ///
+  /// In en, this message translates to:
+  /// **'Verify with ID'**
+  String get dating_restrictedVerifyId;
+
+  /// Spec 2 §3.7 suspended (temporary); {date} through MyDateFormat.
+  ///
+  /// In en, this message translates to:
+  /// **'Your Dating account is restricted until {date}.'**
+  String dating_restrictedUntil(String date);
+
+  /// Spec 2 §3.7 suspended (temporary).
+  ///
+  /// In en, this message translates to:
+  /// **'What this means: you can\'t be introduced or send Dating messages until then. The rest of Attune works as usual.'**
+  String get dating_restrictedMeans;
+
+  /// Spec 2 §3.7 suspended (permanent).
+  ///
+  /// In en, this message translates to:
+  /// **'Your Dating account has been closed.'**
+  String get dating_restrictedClosed;
+
+  /// Spec 2 §3.7 [Appeal] (once) and the appeal sheet's title.
+  ///
+  /// In en, this message translates to:
+  /// **'Appeal'**
+  String get dating_appeal;
+
+  /// Spec 2 §3.7 the appeal's field label: the spec's 'Tell us what happened (optional, 500 characters)', split so it never clips at large text; '(optional, 500 characters)' is dating_appealCount under the field (W7a Task 4 fix round 1, M-1). Copy reviewer.
+  ///
+  /// In en, this message translates to:
+  /// **'Tell us what happened'**
+  String get dating_appealHint;
+
+  /// Spec 2 §3.7 the appeal's button.
+  ///
+  /// In en, this message translates to:
+  /// **'Send appeal'**
+  String get dating_appealSend;
+
+  /// Spec 2 §3.7 after the appeal (shown while it is open).
+  ///
+  /// In en, this message translates to:
+  /// **'Appeal sent. A different person from the one who made the first decision will look at it within 7 days.'**
+  String get dating_appealSent;
+
+  /// Spec 2 §3.7 outcome in-app (the section, 7 days).
+  ///
+  /// In en, this message translates to:
+  /// **'Your appeal was accepted. Dating is open again.'**
+  String get dating_appealAccepted;
+
+  /// Spec 2 §3.7 outcome in-app (with the category above it).
+  ///
+  /// In en, this message translates to:
+  /// **'We looked again and the decision stands.'**
+  String get dating_appealRejected;
+
+  /// Spec 2 §6.3 underage_risk, as the restricted person reads it. Plan copy for the reviewers.
+  ///
+  /// In en, this message translates to:
+  /// **'Concerns about age'**
+  String get dating_reasonUnderage;
+
+  /// Spec 2 §6.3 csam. Plan copy.
+  ///
+  /// In en, this message translates to:
+  /// **'Sexual content involving a child'**
+  String get dating_reasonCsam;
+
+  /// Spec 2 §6.3 child_safety. Plan copy.
+  ///
+  /// In en, this message translates to:
+  /// **'The safety of children'**
+  String get dating_reasonChildSafety;
+
+  /// Spec 2 §6.3 threat_to_life. Plan copy.
+  ///
+  /// In en, this message translates to:
+  /// **'Threatening to kill or seriously hurt someone'**
+  String get dating_reasonThreatToLife;
+
+  /// Spec 2 §6.3 sextortion. Plan copy.
+  ///
+  /// In en, this message translates to:
+  /// **'Threatening to share someone\'s images'**
+  String get dating_reasonSextortion;
+
+  /// Spec 2 §6.3 romance_scam. Plan copy.
+  ///
+  /// In en, this message translates to:
+  /// **'Asking for money'**
+  String get dating_reasonMoney;
+
+  /// Spec 2 §6.3 threats. Plan copy.
+  ///
+  /// In en, this message translates to:
+  /// **'Threatening someone'**
+  String get dating_reasonThreats;
+
+  /// Spec 2 §6.3 entrapment. Plan copy.
+  ///
+  /// In en, this message translates to:
+  /// **'A profile set up to trap people'**
+  String get dating_reasonEntrapment;
+
+  /// Spec 2 §6.3 harassment. Plan copy.
+  ///
+  /// In en, this message translates to:
+  /// **'Harassment'**
+  String get dating_reasonHarassment;
+
+  /// Spec 2 §6.3 explicit_content. Plan copy.
+  ///
+  /// In en, this message translates to:
+  /// **'Sexual messages someone didn\'t want'**
+  String get dating_reasonExplicit;
+
+  /// Spec 2 §6.3 impersonation. Plan copy.
+  ///
+  /// In en, this message translates to:
+  /// **'Using someone else\'s photos or identity'**
+  String get dating_reasonImpersonation;
+
+  /// Spec 2 §6.3 hiding_relationship. Plan copy.
+  ///
+  /// In en, this message translates to:
+  /// **'Being married or in a relationship'**
+  String get dating_reasonMarried;
+
+  /// Spec 2 §6.3 spam. Plan copy.
+  ///
+  /// In en, this message translates to:
+  /// **'Spam or selling'**
+  String get dating_reasonSpam;
+
+  /// Spec 2 §6.3 other, or no category. Plan copy.
+  ///
+  /// In en, this message translates to:
+  /// **'Breaking Dating\'s rules'**
+  String get dating_reasonOther;
+
+  /// Spec 2 §3.7 the appeal sheet, above the field: the appeal is the one appeal (W7a Task 4 fix round 1, M-5; the text stays optional, §3.7). Plan copy. Copy reviewer.
+  ///
+  /// In en, this message translates to:
+  /// **'You can appeal once. Add anything you\'d like us to know before you send it.'**
+  String get dating_appealOnce;
+
+  /// Spec 2 §3.7 under the appeal's field, wrapping at large text: the rest of the spec's '(optional, 500 characters)' and the count in code points (W7a Task 4 fix round 1, M-1). Plan copy. Copy reviewer.
+  ///
+  /// In en, this message translates to:
+  /// **'Optional. {count} of {max} characters'**
+  String dating_appealCount(int count, int max);
+
+  /// Spec 2 §3.7 the accepted outcome on the section's paused card (R-53: Dating stays paused until Resume), so it never says 'open again' above 'Dating is paused' (W7a Task 4 fix round 1, M-6). Plan copy. Copy and DV reviewers.
+  ///
+  /// In en, this message translates to:
+  /// **'Your appeal was accepted. Resume Dating when you\'re ready.'**
+  String get dating_appealAcceptedPaused;
+
+  /// Spec 2 §3.7 the age check, under Verify with ID (R-56: through support, a moderator lifts it); the address is shown so it works without a mail app (W7a Task 4 fix round 1, M-3). W7 final client fix (I-6): the ID check's reference code (dating_restrictedIdCode, and the email's subject) matches the email to the case, so the phone number is no longer asked for (a DPIA item with no purpose left). Plan copy. DV and copy reviewers.
+  ///
+  /// In en, this message translates to:
+  /// **'Verify with ID opens an email to our support team at {email}. Attach a photo of an official ID that shows your date of birth.'**
+  String dating_restrictedVerifyHelp(String email);
+
+  /// Spec 2 §3.7 when Verify with ID or Contact support can't open an email app (W7a Task 4 fix round 1, M-3; never the shared util's English snackbar). W7 final client fix (M-4): also the paused card's and the ID check's Contact support. Plan copy. Copy reviewer.
+  ///
+  /// In en, this message translates to:
+  /// **'No email app opened. You can write to {email}.'**
+  String dating_restrictedNoMail(String email);
+
+  /// Spec 2 §3.7 the restricted screen's hold line for every hold but a P0 report's interim hold (a moderator's hold, a CSAM hold, a carried hold, or one whose appeal was rejected): no time and no 'not a decision yet' (W7 final client fix, I-3). The first sentence of dating_sectionHold. Plan copy. DV and copy reviewers.
+  ///
+  /// In en, this message translates to:
+  /// **'Your Dating profile is paused while we look into something.'**
+  String get dating_restrictedHoldPlain;
+
+  /// Spec 2 §3.7 the age check that a moderator asked for: its reference code (8 letters and digits; it names neither Dating nor the person), also in the email's subject, so support finds the case without a phone number (W7 final client fix, I-6). Plan copy. DV and copy reviewers.
+  ///
+  /// In en, this message translates to:
+  /// **'Include this code in your email: {code}'**
+  String dating_restrictedIdCode(String code);
 }
 
 class _AppLocalizationsDelegate extends LocalizationsDelegate<AppLocalizations> {

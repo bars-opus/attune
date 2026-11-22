@@ -11,6 +11,7 @@ import 'package:attune/features/dating/chat/dating_chat_screen.dart';
 import 'package:attune/features/dating/chat/plan_meet_screen.dart';
 import 'package:attune/features/dating/lock/dating_unlock.dart';
 import 'package:attune/features/dating/not_open/dating_not_open_screen.dart';
+import 'package:attune/features/dating/report/restricted_screen.dart';
 import 'package:attune/features/dating/routes/dating_page_watch.dart';
 import 'package:attune/features/dating/routes/dating_root_back.dart';
 import 'package:attune/features/dating/routes/dating_setup_steps.dart';
@@ -53,6 +54,9 @@ abstract final class DatingPaths {
   /// Spec 2 W6c (§3.6): the meeting kit, and where Check on me's push opens.
   static String plan(String matchId) => '/dating/chat/$matchId/plan';
   static const checkin = '/dating/checkin';
+
+  /// Spec 2 W7a (§3.7): the restricted, hold and age-check screen.
+  static const restricted = '/dating/restricted';
 
   static String step(String step) => '/dating/setup/$step';
 
@@ -319,5 +323,13 @@ List<RouteBase> datingRoutes({required bool Function() signedIn}) => [
     signedIn,
     (s) => const DatingCheckinScreen(),
     back: () => RouteNames.home,
+  ),
+  // Spec 2 W7a (§3.7, §3.15): nothing here moves; alone, back is Me.
+  datingRoute(
+    DatingPaths.restricted,
+    'datingRestricted',
+    signedIn,
+    (s) => const DatingRestrictedScreen(),
+    back: datingMeLocation,
   ),
 ];

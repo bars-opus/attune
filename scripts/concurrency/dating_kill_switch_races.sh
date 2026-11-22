@@ -65,6 +65,29 @@
 #   a leave vs the same person's send from another phone (Spec 2 W6 final
 #     server fix, I-5): every closer locks the match before it bumps a
 #     chat signal, send's order, so they serialise: no deadlock.
+#   a corroborated hold vs the target's Unmatch or Block of the
+#     reporter's match, and vs the global kill switch (Spec 2 W7a Task 1
+#     fix round 2, N-1): the report takes both people's setup and country
+#     locks in one sorted call before the match row, so the other side
+#     waits at its first lock: no deadlock, no wait beyond the report.
+#   two P0 reports about one person at once (Spec 2 W7a Task 2, §6.2): the
+#     second waits on the target's setup lock the first holds, then sees
+#     the first: one case, one hold, both answered.
+#   a report while the reported person leaves (Spec 2 W7a Task 2): the
+#     report waits on the leaver's setup lock, then finds the conversation
+#     ended within its 30 days: both land, no deadlock.
+#   a reporter's own trip vs the report, both orders (Spec 2 W7a Task 2,
+#     Task 1 fix round 1 I-1): the event's key-share on the match row and
+#     the report's FOR UPDATE serialise them; the report never counts.
+#   a corroborated hold vs the target's exit (Spec 2 W7a Task 2 fix round
+#     1, M-8): as Unmatch and Block, the exit waits at its setup lock.
+#   a report whose window opens while it waits (Spec 2 W7a Task 2 fix
+#     round 1, M-7): it re-locks, the target's lock first, and files.
+#   a console dismissal vs the person's Block or exit (Spec 2 W7b Task 5
+#     fix round 1): the console takes the person's setup lock before the
+#     case row, so the person waits at their first lock; both land.
+#   a report that routes a case while a console dismissal waits (Spec 2
+#     W7b Task 5 fix round 1, M-1): routing is asked again under the lock.
 #
 # The interleaving is forced by a one-shot BEFORE trigger that sleeps in
 # the session that asks for it (GUC race.sleep_<table>_<op>), so the first
@@ -126,7 +149,9 @@ BEGIN
                            'dating_profile_photos', 'dating_photo_upload_intents', -- Spec 2 W3c (Task 8)
                            'dating_trusted_devices', -- Spec 2 W4b (Task 5)
                            'dating_generation_runs', -- Spec 2 W5a (Task 3)
-                           'dating_opener_hashes'] LOOP -- Spec 2 W6c (Task 8 fix round 1): a purge step that sleeps
+                           'dating_opener_hashes', -- Spec 2 W6c (Task 8 fix round 1): a purge step that sleeps
+                           'dating_reports', -- Spec 2 W7a (Task 1 fix round 2): a report that sleeps after its first locks
+                           'dating_moderation_cases'] LOOP -- Spec 2 W7b (Task 5 fix round 1): a console decision that sleeps
     EXECUTE format('DROP TRIGGER IF EXISTS zz_race_delay ON public.%I', t);
     EXECUTE format('CREATE TRIGGER zz_race_delay BEFORE UPDATE OR DELETE ON public.%I FOR EACH ROW EXECUTE FUNCTION race.delay()', t);
   END LOOP;
@@ -227,10 +252,21 @@ CREATE OR REPLACE FUNCTION race.enrol(p_u uuid) RETURNS text LANGUAGE sql AS \$\
   SELECT e.state || '/' || coalesce(e.pause_reason, '-') FROM public.dating_enrollments AS e WHERE e.user_id = p_u;
 \$\$;
 CREATE OR REPLACE FUNCTION race.reset() RETURNS void LANGUAGE plpgsql AS \$\$
+DECLARE -- Spec 2 W7a (Task 1 fix round 2)
+  v_h text[]; -- Spec 2 W7a: the race people's numbers' codes
 BEGIN
+  -- Spec 2 W7a (Task 1 fix round 2): the race people's reports and cases go
+  -- Spec 2 W7a first (a case is found by the number's code too), their
+  -- Spec 2 W7a carried records after the delete (the carry writes them).
+  v_h := ARRAY(SELECT public.dating_phone_hmac_for_user(u.id) FROM public.users AS u WHERE u.id::text LIKE '5e2f%'); -- Spec 2 W7a
+  DELETE FROM public.dating_moderation_cases WHERE target_user_id::text LIKE '5e2f%' OR target_phone_hmac = ANY (v_h); -- Spec 2 W7a
+  DELETE FROM public.dating_reports WHERE reporter_user_id::text LIKE '5e2f%' OR target_user_id::text LIKE '5e2f%' -- Spec 2 W7a
+                                       OR target_phone_hmac = ANY (v_h); -- Spec 2 W7a
   DELETE FROM public.dating_matches WHERE user_low_id::text LIKE '5e2f%' OR user_high_id::text LIKE '5e2f%';
   DELETE FROM public.dating_introductions WHERE user_low_id::text LIKE '5e2f%' OR user_high_id::text LIKE '5e2f%';
   DELETE FROM auth.users WHERE id::text LIKE '5e2f%';
+  DELETE FROM public.enforcement_records WHERE phone_hmac = ANY (v_h); -- Spec 2 W7a (Task 1 fix round 2)
+  DELETE FROM public.dating_block_hmacs WHERE blocker_hmac = ANY (v_h) OR blocked_hmac = ANY (v_h); -- Spec 2 W7a (Task 2 fix round 1): the carry's number blocks
   DELETE FROM public.users WHERE id::text LIKE '5e2f%';
   DELETE FROM private.dating_kill_switch_pending;
   DELETE FROM public.dating_rpc_idempotency WHERE user_id::text LIKE '5e2f%';
@@ -689,15 +725,18 @@ UPDATE public.dating_photo_upload_intents SET expires_at = now() - interval '1 h
 
 # Spec 2 W3c (Task 9, B; R-25): a gone hit's Dating hold
 # (record_dating_csam_hold, the photo row deleted mid-scan) takes the
-# person's setup lock before the enrolment and profile its hold suspends
-# (it sleeps holding the enrolment), as exit does: the two serialise, exit
-# completes and the hold is kept.
-run "a gone hit's Dating hold vs exit (the hold first)" "$FX_PHOTO" \
-  "SET race.sleep_dating_profiles_update = '2:race.s1';
+# person's setup lock before the rows its hold changes, as exit does: the
+# two serialise, exit completes and the hold is kept. Spec 2 W7a (§6.3,
+# R-53): a hold no longer suspends the enrolment or pauses the profile; it
+# takes the person's introductions away, so it sleeps holding one of those.
+run "a gone hit's Dating hold vs exit (the hold first)" "$FX_PHOTO
+SELECT race.person('06', 'GB', 'TLI', 'man', ARRAY['woman']);
+SELECT race.intro(race.id('04'), race.id('06'));" \
+  "SET race.sleep_dating_introductions_update = '2:race.s1';
    SELECT public.record_dating_csam_hold(race.id('04')) ->> 'ok';" \
   "SELECT pg_sleep(0.5);
    SELECT race.call(race.id('04'), format('SELECT to_jsonb(public.exit_dating_mode(%L))', race.key('exit'))) ->> 'state';" \
-  "SELECT CASE WHEN NOT (SELECT is_called FROM race.s1) THEN 'the hold never reached the profile (no race)'
+  "SELECT CASE WHEN NOT (SELECT is_called FROM race.s1) THEN 'the hold never reached the introductions (no race)'
                WHEN $LEFT_04 IS NOT TRUE THEN 'exit lost: ' || coalesce(race.enrol(race.id('04')), 'none')
                WHEN $PHOTO_LEFT <> 0 THEN 'a photo or upload was left after leaving'
                WHEN NOT EXISTS (SELECT 1 FROM public.dating_account_restrictions
@@ -1174,6 +1213,446 @@ run "a case filed while the purge runs: its match stays" "$FX_PURGE_CASE" \
   "SELECT CASE WHEN NOT EXISTS (SELECT 1 FROM public.dating_matches WHERE id = $PC_MATCH) THEN 'the purge deleted a match a case was being filed on'
                WHEN NOT EXISTS (SELECT 1 FROM public.dating_moderation_cases WHERE match_id = $PC_MATCH) THEN 'the case lost its match'
                ELSE 'ok' END;"
+
+# Spec 2 W7a (Task 1 fix round 2, N-1): a report whose corroborated hold
+# meets the target's own exposure-reducing write on the reporter's match,
+# or the global kill switch. The report takes both people's setup locks
+# and their countries' same-gender locks in one sorted call before the
+# match row, so the other side waits for it at its first lock instead of
+# closing a cycle (before the fix: the hold took the target's setup lock
+# last, after the match row, and its countries in a second sorted batch).
+# T (51) is reported by R1 (52, a counting P0 already in) and then by R2
+# (53, P0, corroborates: a hold); R2's report sleeps 2 s on its first
+# report-row update (after the match row in the old order), and the other
+# side starts 0.5 s in. The report checks for a cycle after 100 ms, so a
+# cycle is counted before the other side's own 2 s lock_timeout would
+# hide it. The other side never meets a deadlock, never waits beyond the
+# report itself (under its lock_timeout: no retry), and still lands; the
+# hold is placed.
+FX_HOLD="SELECT race.reset(); ALTER SEQUENCE race.s1 RESTART;
+SELECT race.ready('51', 'man', ARRAY['woman']), race.ready('52', 'woman', ARRAY['man']), race.ready('53', 'woman', ARRAY['man']);
+UPDATE public.dating_trusted_devices SET device_hash = encode(extensions.digest('race-w7-r1-phone', 'sha256'), 'hex') WHERE user_id = race.id('52');
+INSERT INTO race.outcome SELECT 'h_m1', race.match(race.id('51'), race.id('52'))::text;
+INSERT INTO race.outcome SELECT 'h_m2', race.match(race.id('51'), race.id('53'))::text;
+INSERT INTO race.outcome SELECT 'h_r1', race.call(race.id('52'), format('SELECT public.report_dating_match(%L, %L, ''csam'', NULL, false)',
+                                          race.key('h-r1'), (SELECT result::uuid FROM race.outcome WHERE name = 'h_m1')))::text;"
+H_M2="(SELECT result::uuid FROM race.outcome WHERE name = 'h_m2')"
+HOLD_A="SET race.sleep_dating_reports_update = '2:race.s1';
+   SET deadlock_timeout = '100ms'; -- a cycle through the report is found while the other side still waits (its lock_timeout is 2 s)
+   INSERT INTO race.outcome SELECT 'h_report', race.call(race.id('53'), format('SELECT public.report_dating_match(%L, %L, ''threat_to_life'', NULL, false)',
+                                                race.key('h-r2'), $H_M2))::text;"
+HOLD_PLACED="(SELECT result::jsonb ->> 'ok' FROM race.outcome WHERE name = 'h_r1') = 'true'
+             AND (SELECT result::jsonb ->> 'ok' FROM race.outcome WHERE name = 'h_report') = 'true'
+             AND EXISTS (SELECT 1 FROM public.dating_account_restrictions WHERE user_id = race.id('51')
+                          AND restriction_type = 'moderation_hold' AND source = 'report' AND lifted_at IS NULL)"
+HOLD_RACED="(SELECT is_called FROM race.s1)"
+HOLD_FAST="coalesce((SELECT result::numeric FROM race.outcome WHERE name = 'h_b_s'), 99) < 1.9" # Spec 2 W7a Task 2 (N2-2): under its 2 s lock_timeout less the 0.5 s start, so a retry fails it
+
+run "a corroborated hold while the target unmatches the reporter: no deadlock" "$FX_HOLD" "$HOLD_A" \
+  "SELECT pg_sleep(0.5);
+   SELECT clock_timestamp() AS tb \\gset
+   INSERT INTO race.outcome SELECT 'h_b', race.call(race.id('51'), format('SELECT public.unmatch_dating_match(%L, %L)', race.key('h-um'), $H_M2))::text;
+   INSERT INTO race.outcome VALUES ('h_b_s', round(extract(epoch FROM clock_timestamp() - :'tb'::timestamptz), 2)::text);" \
+  "SELECT CASE WHEN NOT $HOLD_RACED THEN 'the report never slept (no race)'
+               WHEN NOT ($HOLD_PLACED) THEN 'no hold: ' || coalesce((SELECT string_agg(name || '=' || result, ' ') FROM race.outcome), '-')
+               WHEN (SELECT state FROM public.dating_matches WHERE id = $H_M2) = 'active' THEN 'the unmatch did not land'
+               WHEN NOT $HOLD_FAST THEN 'the unmatch waited ' || (SELECT result FROM race.outcome WHERE name = 'h_b_s') || ' s'
+               ELSE 'ok' END;" serialised
+
+run "a corroborated hold while the target blocks the reporter: no deadlock" "$FX_HOLD" "$HOLD_A" \
+  "SELECT pg_sleep(0.5);
+   SELECT clock_timestamp() AS tb \\gset
+   INSERT INTO race.outcome SELECT 'h_b', race.call(race.id('51'), format('SELECT public.block_dating_match(%L, %L)', race.key('h-bl'), $H_M2))::text;
+   INSERT INTO race.outcome VALUES ('h_b_s', round(extract(epoch FROM clock_timestamp() - :'tb'::timestamptz), 2)::text);" \
+  "SELECT CASE WHEN NOT $HOLD_RACED THEN 'the report never slept (no race)'
+               WHEN NOT ($HOLD_PLACED) THEN 'no hold: ' || coalesce((SELECT string_agg(name || '=' || result, ' ') FROM race.outcome), '-')
+               WHEN NOT EXISTS (SELECT 1 FROM public.dating_blocks WHERE blocker_user_id = race.id('51') AND blocked_user_id = race.id('53'))
+               THEN 'the block did not land: ' || coalesce((SELECT result FROM race.outcome WHERE name = 'h_b'), '-')
+               WHEN NOT $HOLD_FAST THEN 'the block waited ' || (SELECT result FROM race.outcome WHERE name = 'h_b_s') || ' s'
+               ELSE 'ok' END;" serialised
+
+# Spec 2 W7a Task 2 fix round 1 (M-8): the same hold while the target leaves.
+run "a corroborated hold while the target leaves: no deadlock" "$FX_HOLD" "$HOLD_A" \
+  "SELECT pg_sleep(0.5);
+   SELECT clock_timestamp() AS tb \\gset
+   INSERT INTO race.outcome SELECT 'h_b', race.call(race.id('51'), format('SELECT to_jsonb(public.exit_dating_mode(%L))', race.key('h-ex'))) ->> 'state';
+   INSERT INTO race.outcome VALUES ('h_b_s', round(extract(epoch FROM clock_timestamp() - :'tb'::timestamptz), 2)::text);" \
+  "SELECT CASE WHEN NOT $HOLD_RACED THEN 'the report never slept (no race)'
+               WHEN NOT ($HOLD_PLACED) THEN 'no hold: ' || coalesce((SELECT string_agg(name || '=' || result, ' ') FROM race.outcome), '-')
+               WHEN (SELECT result FROM race.outcome WHERE name = 'h_b') IS DISTINCT FROM 'exited'
+               THEN 'the exit did not land: ' || coalesce((SELECT result FROM race.outcome WHERE name = 'h_b'), '-')
+               WHEN NOT $HOLD_FAST THEN 'the exit waited ' || (SELECT result FROM race.outcome WHERE name = 'h_b_s') || ' s'
+               ELSE 'ok' END;" serialised
+
+# The kill switch: T in the UK, R2 in Ghana (two countries; the global
+# switch takes GB then GH exclusive, the old report GH then GB shared).
+run "a corroborated hold across a border while the global flag goes off: no deadlock" \
+  "$FX_HOLD
+   UPDATE public.dating_profiles SET country_code = 'GB', region_code = 'TLI' WHERE user_id = race.id('51');" "$HOLD_A" \
+  "SELECT pg_sleep(0.5);
+   SELECT clock_timestamp() AS tb \\gset
+   UPDATE public.feature_flags SET enabled = false WHERE key = 'dating_same_gender_matching';
+   INSERT INTO race.outcome VALUES ('h_b_s', round(extract(epoch FROM clock_timestamp() - :'tb'::timestamptz), 2)::text);" \
+  "SELECT CASE WHEN NOT $HOLD_RACED THEN 'the report never slept (no race)'
+               WHEN NOT ($HOLD_PLACED) THEN 'no hold: ' || coalesce((SELECT string_agg(name || '=' || result, ' ') FROM race.outcome), '-')
+               WHEN (SELECT enabled FROM public.feature_flags WHERE key = 'dating_same_gender_matching') THEN 'the switch did not land'
+               WHEN EXISTS (SELECT 1 FROM private.dating_kill_switch_pending) THEN 'the switch was left pending'
+               WHEN NOT $HOLD_FAST THEN 'the switch waited ' || (SELECT result FROM race.outcome WHERE name = 'h_b_s') || ' s'
+               ELSE 'ok' END;" serialised
+
+# Spec 2 W7a Task 2 (§6.2): two P0 reports about one person at once. B
+# (51) reports csam and sleeps in the P0 close's match update, holding the
+# target's setup lock (taken with its own before any row); C (52, its own
+# phone) reports threat_to_life 0.5 s in: it waits on that lock, then sees
+# B's counting report: one case with both reports, one moderation_hold,
+# both answered ok, no deadlock.
+FX_TWO_P0="SELECT race.reset(); ALTER SEQUENCE race.s1 RESTART;
+SELECT race.ready('51', 'woman', ARRAY['man']), race.ready('52', 'woman', ARRAY['man']), race.ready('53', 'man', ARRAY['woman']);
+UPDATE public.dating_trusted_devices SET device_hash = encode(extensions.digest('race-device-52', 'sha256'), 'hex')
+ WHERE user_id = race.id('52');
+INSERT INTO race.outcome SELECT 'p0_m1', race.match(race.id('51'), race.id('53'))::text;
+INSERT INTO race.outcome SELECT 'p0_m2', race.match(race.id('52'), race.id('53'))::text;"
+P0_M1="(SELECT result::uuid FROM race.outcome WHERE name = 'p0_m1')"
+P0_M2="(SELECT result::uuid FROM race.outcome WHERE name = 'p0_m2')"
+run "two P0 reports about one person at once: one case, one hold" "$FX_TWO_P0" \
+  "SET race.sleep_dating_matches_update = '1.5:race.s1';
+   INSERT INTO race.outcome VALUES ('p0_a', race.call(race.id('51'), format('SELECT public.report_dating_match(%L, %L, ''csam'', NULL, false)', race.key('p0a'), $P0_M1))::text);" \
+  "SELECT pg_sleep(0.5);
+   INSERT INTO race.outcome SELECT 'p0_overlap', (SELECT is_called FROM race.s1)::text;
+   SELECT clock_timestamp() AS tb \\gset
+   INSERT INTO race.outcome VALUES ('p0_b', race.call(race.id('52'), format('SELECT public.report_dating_match(%L, %L, ''threat_to_life'', NULL, false)', race.key('p0b'), $P0_M2))::text);
+   INSERT INTO race.outcome VALUES ('p0_b_s', round(extract(epoch FROM clock_timestamp() - :'tb'::timestamptz), 2)::text);" \
+  "SELECT CASE WHEN (SELECT result::jsonb ->> 'ok' FROM race.outcome WHERE name = 'p0_a') IS DISTINCT FROM 'true'
+                 OR (SELECT result::jsonb ->> 'ok' FROM race.outcome WHERE name = 'p0_b') IS DISTINCT FROM 'true'
+               THEN 'a report answered ' || coalesce((SELECT string_agg(result, ' | ') FROM race.outcome WHERE name IN ('p0_a', 'p0_b')), 'none')
+               WHEN (SELECT count(*) FROM public.dating_account_restrictions WHERE user_id = race.id('53')
+                       AND restriction_type = 'moderation_hold' AND lifted_at IS NULL) <> 1 THEN 'not exactly one hold'
+               WHEN (SELECT count(*) FROM public.dating_moderation_cases WHERE target_user_id = race.id('53') AND kind = 'report'
+                       AND state IN ('open', 'in_review')) <> 1 THEN 'not exactly one open case'
+               WHEN (SELECT count(*) FROM public.dating_reports AS r JOIN public.dating_moderation_cases AS c ON c.id = r.case_id
+                      WHERE c.target_user_id = race.id('53')) <> 2 THEN 'the case does not hold both reports'
+               WHEN (SELECT result FROM race.outcome WHERE name = 'p0_overlap') IS DISTINCT FROM 'true'
+                 OR coalesce((SELECT result::numeric FROM race.outcome WHERE name = 'p0_b_s'), 0) < 0.5
+               THEN 'the second report did not wait on the first (no race)'
+               ELSE 'ok' END;" serialised
+
+# Spec 2 W7a Task 2: a report while the reported person leaves. T (55)
+# leaves and sleeps in exit's match update (holding its setup lock and the
+# match row); R (54) reports with the block 0.5 s in: the report waits on
+# T's setup lock, then reads the conversation ended (exit, its 30-day
+# window), files the report and the block. No deadlock; the leave lands.
+FX_REPORT_EXIT="SELECT race.reset(); ALTER SEQUENCE race.s1 RESTART;
+SELECT race.ready('54', 'woman', ARRAY['man']), race.ready('55', 'man', ARRAY['woman']);
+INSERT INTO race.outcome SELECT 're_match', race.match(race.id('54'), race.id('55'))::text;"
+RE_MATCH="(SELECT result::uuid FROM race.outcome WHERE name = 're_match')"
+run "a report while the reported person leaves: no deadlock" "$FX_REPORT_EXIT" \
+  "SET race.sleep_dating_matches_update = '1.5:race.s1';
+   INSERT INTO race.outcome VALUES ('re_exit', race.call(race.id('55'), format('SELECT to_jsonb(public.exit_dating_mode(%L))', race.key('re-exit'))) ->> 'state');" \
+  "SELECT pg_sleep(0.5);
+   INSERT INTO race.outcome SELECT 're_overlap', (SELECT is_called FROM race.s1)::text;
+   INSERT INTO race.outcome VALUES ('re_report', race.call(race.id('54'), format('SELECT public.report_dating_match(%L, %L, ''threats'', NULL, true)', race.key('re-report'), $RE_MATCH))::text);" \
+  "SELECT CASE WHEN (SELECT result FROM race.outcome WHERE name = 're_exit') IS DISTINCT FROM 'exited' THEN 'leave lost'
+               WHEN (SELECT result::jsonb ->> 'ok' FROM race.outcome WHERE name = 're_report') IS DISTINCT FROM 'true'
+               THEN 'the report answered ' || coalesce((SELECT result FROM race.outcome WHERE name = 're_report'), 'none')
+               WHEN NOT EXISTS (SELECT 1 FROM public.dating_reports WHERE reporter_user_id = race.id('54') AND match_id = $RE_MATCH)
+               THEN 'no report was filed'
+               WHEN NOT EXISTS (SELECT 1 FROM public.dating_blocks WHERE blocker_user_id = race.id('54') AND blocked_user_id = race.id('55'))
+               THEN 'the block was lost'
+               WHEN (SELECT result FROM race.outcome WHERE name = 're_overlap') IS DISTINCT FROM 'true'
+               THEN 'the leave was not holding the match (no race)'
+               ELSE 'ok' END;" serialised
+
+# Spec 2 W7a Task 2 (Task 1 fix round 1, I-1): a reporter's own money ask
+# and the report meet on the match row. The safety worker's event for R's
+# (51) message takes a key-share on the match (its foreign key); R's
+# report of T (53) holds the row FOR UPDATE. Report first: it sleeps in
+# its first report-row update (after the match row), the worker's
+# completion 0.5 s in waits, then re-flags the report. Trip first: the
+# completion holds its transaction 1.2 s, the report 0.5 s in waits on the
+# row, then reads the trip as it files. Either way the report is marked
+# financial_request and neither counts nor steps; no deadlock.
+FX_TRIP="SELECT race.reset(); ALTER SEQUENCE race.s1 RESTART;
+SELECT race.ready('51', 'woman', ARRAY['man']), race.ready('53', 'man', ARRAY['woman']);
+INSERT INTO race.outcome SELECT 'tr_match', race.match(race.id('51'), race.id('53'))::text;
+WITH m AS (SELECT result::uuid AS id FROM race.outcome WHERE name = 'tr_match'),
+     d AS (INSERT INTO public.dating_messages (match_id, sender_side, sender_user_id, body, body_masked, mask_version, idempotency_key)
+           SELECT m.id, CASE WHEN x.user_low_id = race.id('51') THEN 'low' ELSE 'high' END, race.id('51'), 'race-trip', 'race-trip', 1,
+                  race.key('tr-msg')
+             FROM m JOIN public.dating_matches AS x ON x.id = m.id RETURNING id)
+INSERT INTO race.outcome SELECT 'tr_msg', d.id::text FROM d;
+INSERT INTO public.dating_message_safety_outbox (message_id, state, attempts, processing_started_at)
+SELECT result::uuid, 'processing', 1, now() FROM race.outcome WHERE name = 'tr_msg'
+ON CONFLICT (message_id) DO UPDATE SET state = 'processing', attempts = 1, processing_started_at = now();
+INSERT INTO race.outcome SELECT 'tr_hits', jsonb_build_array(jsonb_build_object('family', 'financial_request',
+         'tier', (c.config #>> '{families,financial_request,tier}')::int,
+         'rule_id', 'financial_request:' || (c.config #>> '{families,financial_request,terms,0}')))::text
+  FROM public.dating_safety_configs AS c WHERE c.version = 'dating_chat_v1';"
+TR_MATCH="(SELECT result::uuid FROM race.outcome WHERE name = 'tr_match')"
+TR_JOB="public.complete_dating_safety_job((SELECT result::uuid FROM race.outcome WHERE name = 'tr_msg'), 'dating_chat_v1',
+                                          (SELECT result::jsonb FROM race.outcome WHERE name = 'tr_hits'))"
+TR_REPORT="race.call(race.id('51'), format('SELECT public.report_dating_match(%L, %L, ''child_safety'', NULL, false)', race.key('tr-r'), $TR_MATCH))"
+TR_CHECK="WHEN (SELECT result::jsonb ->> 'ok' FROM race.outcome WHERE name = 'tr_report') IS DISTINCT FROM 'true'
+               THEN 'the report answered ' || coalesce((SELECT result FROM race.outcome WHERE name = 'tr_report'), 'none')
+               WHEN (SELECT result::jsonb ->> 'events' FROM race.outcome WHERE name = 'tr_job') IS DISTINCT FROM '1'
+               THEN 'the worker answered ' || coalesce((SELECT result FROM race.outcome WHERE name = 'tr_job'), 'none')
+               WHEN (SELECT coalesce(reporter_tripped_family, '-') || '/' || counts_for_corroboration || '/' || auto_step
+                       FROM public.dating_reports WHERE reporter_user_id = race.id('51') AND match_id = $TR_MATCH)
+                    IS DISTINCT FROM 'financial_request/false/false'
+               THEN 'the report still counts: ' || coalesce((SELECT coalesce(reporter_tripped_family, '-') || '/' || counts_for_corroboration
+                                                               || '/' || auto_step FROM public.dating_reports
+                                                              WHERE reporter_user_id = race.id('51') AND match_id = $TR_MATCH), 'none')"
+run "a reporter's own trip that lands while the report files (the report first)" "$FX_TRIP" \
+  "SET race.sleep_dating_reports_update = '1.5:race.s1';
+   INSERT INTO race.outcome VALUES ('tr_report', $TR_REPORT::text);" \
+  "SELECT pg_sleep(0.5);
+   INSERT INTO race.outcome SELECT 'tr_overlap', (SELECT is_called FROM race.s1)::text;
+   SELECT clock_timestamp() AS tb \\gset
+   INSERT INTO race.outcome VALUES ('tr_job', $TR_JOB::text);
+   INSERT INTO race.outcome VALUES ('tr_wait', round(extract(epoch FROM clock_timestamp() - :'tb'::timestamptz), 2)::text);" \
+  "SELECT CASE $TR_CHECK
+               WHEN (SELECT result FROM race.outcome WHERE name = 'tr_overlap') IS DISTINCT FROM 'true'
+                 OR coalesce((SELECT result::numeric FROM race.outcome WHERE name = 'tr_wait'), 0) < 0.5
+               THEN 'the worker did not wait on the report (no race)'
+               ELSE 'ok' END;" serialised
+
+run "a reporter's own trip that lands while the report files (the trip first)" "$FX_TRIP" \
+  "BEGIN;
+   INSERT INTO race.outcome VALUES ('tr_job', $TR_JOB::text);
+   SELECT pg_sleep(1.2);
+   COMMIT;" \
+  "SELECT pg_sleep(0.5);
+   SELECT clock_timestamp() AS tb \\gset
+   INSERT INTO race.outcome VALUES ('tr_report', $TR_REPORT::text);
+   INSERT INTO race.outcome VALUES ('tr_wait', round(extract(epoch FROM clock_timestamp() - :'tb'::timestamptz), 2)::text);" \
+  "SELECT CASE $TR_CHECK
+               WHEN coalesce((SELECT result::numeric FROM race.outcome WHERE name = 'tr_wait'), 0) < 0.5
+               THEN 'the report did not wait on the trip (no race)'
+               ELSE 'ok' END;" serialised
+
+# Spec 2 W7a Task 2 fix round 1 (M-7): the N2-1 re-lock in two sessions.
+# R (51) and T (53) have a chat only the numbers' block ended, 31 days
+# ago: still active, no longer reportable. R leaves (exit sleeps in its
+# match update, holding R's setup lock); R's report of that chat starts
+# 0.5 s in. Its first read finds it out of its window, so it waits on R's
+# lock alone; the leave then closes the chat (a fresh 30 days), the
+# report's checks find it reportable, and it starts again with T's lock
+# first: it files, the re-lock is counted once, no deadlock.
+FX_RELOCK="SELECT race.reset(); ALTER SEQUENCE race.s1 RESTART;
+SELECT race.ready('51', 'woman', ARRAY['man']), race.ready('53', 'man', ARRAY['woman']);
+INSERT INTO race.outcome SELECT 'rl_match', race.match(race.id('51'), race.id('53'))::text;
+INSERT INTO public.dating_block_hmacs (blocker_hmac, blocked_hmac, created_at, purge_after)
+VALUES (public.dating_phone_hmac_for_user(race.id('51')), public.dating_phone_hmac_for_user(race.id('53')),
+        now() - interval '31 days', now() + interval '1 year');
+INSERT INTO race.outcome SELECT 'rl_before', coalesce(sum(c.count), 0)::text FROM public.metric_counters AS c
+ WHERE c.day = (now() AT TIME ZONE 'utc')::date AND c.key = 'dating.report.relock';"
+RL_MATCH="(SELECT result::uuid FROM race.outcome WHERE name = 'rl_match')"
+run "a report whose window opens while it waits: it re-locks and files" "$FX_RELOCK" \
+  "SET race.sleep_dating_matches_update = '1.5:race.s1';
+   INSERT INTO race.outcome VALUES ('rl_exit', race.call(race.id('51'), format('SELECT to_jsonb(public.exit_dating_mode(%L))', race.key('rl-exit'))) ->> 'state');" \
+  "SELECT pg_sleep(0.5);
+   INSERT INTO race.outcome SELECT 'rl_overlap', (SELECT is_called FROM race.s1)::text;
+   SELECT clock_timestamp() AS tb \\gset
+   INSERT INTO race.outcome VALUES ('rl_report', race.call(race.id('51'), format('SELECT public.report_dating_match(%L, %L, ''spam'', NULL, false)', race.key('rl-r'), $RL_MATCH))::text);
+   INSERT INTO race.outcome VALUES ('rl_wait', round(extract(epoch FROM clock_timestamp() - :'tb'::timestamptz), 2)::text);" \
+  "SELECT CASE WHEN (SELECT result FROM race.outcome WHERE name = 'rl_exit') IS DISTINCT FROM 'exited' THEN 'leave lost'
+               WHEN (SELECT result::jsonb ->> 'ok' FROM race.outcome WHERE name = 'rl_report') IS DISTINCT FROM 'true'
+               THEN 'the report answered ' || coalesce((SELECT result FROM race.outcome WHERE name = 'rl_report'), 'none')
+               WHEN NOT EXISTS (SELECT 1 FROM public.dating_reports WHERE reporter_user_id = race.id('51') AND match_id = $RL_MATCH)
+               THEN 'no report was filed'
+               WHEN (SELECT result FROM race.outcome WHERE name = 'rl_overlap') IS DISTINCT FROM 'true'
+                 OR coalesce((SELECT result::numeric FROM race.outcome WHERE name = 'rl_wait'), 0) < 0.5
+               THEN 'the report did not wait on the leave (no race)'
+               WHEN (SELECT coalesce(sum(c.count), 0) FROM public.metric_counters AS c
+                      WHERE c.day = (now() AT TIME ZONE 'utc')::date AND c.key = 'dating.report.relock')
+                    - (SELECT result::bigint FROM race.outcome WHERE name = 'rl_before') <> 1
+               THEN 'the report did not re-lock once (it filed without the target''s lock first)'
+               ELSE 'ok' END;" serialised
+
+# Spec 2 W7b Task 5 fix round 1: the console's writes meet the person's
+# own. A console dismiss takes the person's setup lock, then the case row
+# (the order every Dating writer keeps); it sleeps in its case-row update,
+# holding both, and the person's Block (or exit) starts 0.5 s in: it waits
+# at its own first lock, then lands; the dismissal lands and lifts the
+# moderator's hold; no deadlock.
+FX_CONSOLE="SELECT race.reset(); ALTER SEQUENCE race.s1 RESTART;
+SELECT race.ready('51', 'man', ARRAY['woman']), race.ready('52', 'woman', ARRAY['man']), race.ready('53', 'woman', ARRAY['man']);
+INSERT INTO public.dating_moderators (user_id, role) VALUES (race.id('53'), 'moderator');
+INSERT INTO race.outcome SELECT 'cd_match', race.match(race.id('51'), race.id('52'))::text;
+WITH c AS (INSERT INTO public.dating_moderation_cases (kind, priority, target_user_id, sla_due_at)
+           VALUES ('report', 'P1', race.id('51'), now() + interval '1 day') RETURNING id)
+INSERT INTO race.outcome SELECT 'cd_case', c.id::text FROM c;
+INSERT INTO public.dating_reports (reporter_user_id, target_user_id, category, case_id)
+SELECT race.id('52'), race.id('51'), 'harassment', result::uuid FROM race.outcome WHERE name = 'cd_case';
+INSERT INTO public.dating_account_restrictions (user_id, restriction_type, category, source, case_id, decided_by, appealable)
+SELECT race.id('51'), 'moderation_hold', 'harassment', 'moderator', result::uuid, race.id('53'), false FROM race.outcome WHERE name = 'cd_case';"
+CD_CASE="(SELECT result::uuid FROM race.outcome WHERE name = 'cd_case')"
+CD_MATCH="(SELECT result::uuid FROM race.outcome WHERE name = 'cd_match')"
+CD_A="SET race.sleep_dating_moderation_cases_update = '1.5:race.s1';
+   SET deadlock_timeout = '100ms'; -- a cycle through the dismissal is found while the other side still waits
+   INSERT INTO race.outcome SELECT 'cd_dismiss', public.moderation_dismiss(race.id('53'), $CD_CASE)::text;"
+CD_DONE="(SELECT result::jsonb ->> 'ok' FROM race.outcome WHERE name = 'cd_dismiss') = 'true'
+         AND (SELECT state FROM public.dating_moderation_cases WHERE id = $CD_CASE) = 'decided'
+         AND NOT EXISTS (SELECT 1 FROM public.dating_account_restrictions WHERE case_id = $CD_CASE AND lifted_at IS NULL)"
+CD_RACED="(SELECT is_called FROM race.s1)"
+CD_WAITED="coalesce((SELECT result::numeric FROM race.outcome WHERE name = 'cd_b_s'), 0) BETWEEN 0.5 AND 1.9"
+
+run "a console dismiss while the person blocks: both land, no deadlock" "$FX_CONSOLE" "$CD_A" \
+  "SELECT pg_sleep(0.5);
+   SELECT clock_timestamp() AS tb \\gset
+   INSERT INTO race.outcome SELECT 'cd_b', race.call(race.id('51'), format('SELECT public.block_dating_match(%L, %L)', race.key('cd-bl'), $CD_MATCH))::text;
+   INSERT INTO race.outcome VALUES ('cd_b_s', round(extract(epoch FROM clock_timestamp() - :'tb'::timestamptz), 2)::text);" \
+  "SELECT CASE WHEN NOT $CD_RACED THEN 'the dismissal never slept (no race)'
+               WHEN NOT ($CD_DONE) THEN 'the dismissal did not land: ' || coalesce((SELECT result FROM race.outcome WHERE name = 'cd_dismiss'), '-')
+               WHEN NOT EXISTS (SELECT 1 FROM public.dating_blocks WHERE blocker_user_id = race.id('51') AND blocked_user_id = race.id('52'))
+               THEN 'the block did not land: ' || coalesce((SELECT result FROM race.outcome WHERE name = 'cd_b'), '-')
+               WHEN NOT $CD_WAITED THEN 'the block did not wait at its first lock (or past its lock_timeout): '
+                                        || coalesce((SELECT result FROM race.outcome WHERE name = 'cd_b_s'), '-') || ' s'
+               ELSE 'ok' END;" serialised
+
+run "a console dismiss while the person leaves: both land, no deadlock" "$FX_CONSOLE" "$CD_A" \
+  "SELECT pg_sleep(0.5);
+   SELECT clock_timestamp() AS tb \\gset
+   INSERT INTO race.outcome SELECT 'cd_b', race.call(race.id('51'), format('SELECT to_jsonb(public.exit_dating_mode(%L))', race.key('cd-ex'))) ->> 'state';
+   INSERT INTO race.outcome VALUES ('cd_b_s', round(extract(epoch FROM clock_timestamp() - :'tb'::timestamptz), 2)::text);" \
+  "SELECT CASE WHEN NOT $CD_RACED THEN 'the dismissal never slept (no race)'
+               WHEN NOT ($CD_DONE) THEN 'the dismissal did not land: ' || coalesce((SELECT result FROM race.outcome WHERE name = 'cd_dismiss'), '-')
+               WHEN (SELECT result FROM race.outcome WHERE name = 'cd_b') IS DISTINCT FROM 'exited'
+               THEN 'the exit did not land: ' || coalesce((SELECT result FROM race.outcome WHERE name = 'cd_b'), '-')
+               WHEN NOT $CD_WAITED THEN 'the exit did not wait at its first lock (or past its lock_timeout): '
+                                        || coalesce((SELECT result FROM race.outcome WHERE name = 'cd_b_s'), '-') || ' s'
+               ELSE 'ok' END;" serialised
+
+# Spec 2 W7b Task 5 fix round 1 (M-1): routing is asked again under the
+# lock. A man (54) reports the man T (51) and sleeps as his report joins
+# T's open case (it holds T's setup lock and the case row); a moderator
+# without routing (53) dismisses that case 0.5 s in: before the report
+# lands the case is a woman's report about a man, so the dismissal waits
+# on T's lock, then finds the case needs routing and answers
+# case_unavailable. The case stays open with both reports; no deadlock.
+FX_ROUTE="SELECT race.reset(); ALTER SEQUENCE race.s1 RESTART;
+SELECT race.ready('51', 'man', ARRAY['woman']), race.ready('52', 'woman', ARRAY['man']), race.ready('53', 'woman', ARRAY['man']),
+       race.ready('54', 'man', ARRAY['man']);
+INSERT INTO public.dating_moderators (user_id, role) VALUES (race.id('53'), 'moderator');
+INSERT INTO race.outcome SELECT 'cr_match', race.match(race.id('51'), race.id('54'))::text;
+WITH c AS (INSERT INTO public.dating_moderation_cases (kind, priority, target_user_id, sla_due_at)
+           VALUES ('report', 'P1', race.id('51'), now() + interval '1 day') RETURNING id)
+INSERT INTO race.outcome SELECT 'cr_case', c.id::text FROM c;
+INSERT INTO public.dating_reports (reporter_user_id, target_user_id, category, case_id)
+SELECT race.id('52'), race.id('51'), 'harassment', result::uuid FROM race.outcome WHERE name = 'cr_case';"
+CR_CASE="(SELECT result::uuid FROM race.outcome WHERE name = 'cr_case')"
+CR_MATCH="(SELECT result::uuid FROM race.outcome WHERE name = 'cr_match')"
+run "a report that routes a case while a console dismissal waits: refused, the case kept" "$FX_ROUTE" \
+  "SET race.sleep_dating_reports_update = '1.5:race.s1';
+   INSERT INTO race.outcome SELECT 'cr_report', race.call(race.id('54'), format('SELECT public.report_dating_match(%L, %L, ''harassment'', NULL, false)',
+                                                race.key('cr-r'), $CR_MATCH))::text;" \
+  "SELECT pg_sleep(0.5);
+   INSERT INTO race.outcome SELECT 'cr_overlap', (SELECT is_called FROM race.s1)::text;
+   SELECT clock_timestamp() AS tb \\gset
+   INSERT INTO race.outcome SELECT 'cr_dismiss', public.moderation_dismiss(race.id('53'), $CR_CASE)::text;
+   INSERT INTO race.outcome VALUES ('cr_b_s', round(extract(epoch FROM clock_timestamp() - :'tb'::timestamptz), 2)::text);" \
+  "SELECT CASE WHEN (SELECT result FROM race.outcome WHERE name = 'cr_overlap') IS DISTINCT FROM 'true'
+                 OR coalesce((SELECT result::numeric FROM race.outcome WHERE name = 'cr_b_s'), 0) < 0.5
+               THEN 'the dismissal did not wait on the report (no race)'
+               WHEN (SELECT result::jsonb ->> 'ok' FROM race.outcome WHERE name = 'cr_report') IS DISTINCT FROM 'true'
+               THEN 'the report answered ' || coalesce((SELECT result FROM race.outcome WHERE name = 'cr_report'), '-')
+               WHEN (SELECT result::jsonb ->> 'reason' FROM race.outcome WHERE name = 'cr_dismiss') IS DISTINCT FROM 'case_unavailable'
+               THEN 'a moderator without routing acted on a case that came to need it: '
+                    || coalesce((SELECT result FROM race.outcome WHERE name = 'cr_dismiss'), '-')
+               WHEN (SELECT state FROM public.dating_moderation_cases WHERE id = $CR_CASE) <> 'open'
+                 OR (SELECT count(*) FROM public.dating_reports WHERE case_id = $CR_CASE) <> 2
+               THEN 'the case was not kept open with both reports'
+               ELSE 'ok' END;" serialised
+
+# Spec 2 W7 final server fix (I-5): an orphaned case's dismissal and the
+# number's return meet at the number's report-target lock. T (51) had a
+# P0 hold on case C and deleted; the safety owner (53) dismisses C and
+# sleeps in its case-row update, holding the number's lock; 0.5 s in, the
+# same number's new account (55) opens its restriction read, whose carry
+# waits at that lock, then reads the records the dismissal ended: nothing
+# is carried and the person is in good standing. (Without the lock the
+# carry copies the live hold first and the dismissal never sees it.)
+FX_ORPHAN="SELECT race.reset(); ALTER SEQUENCE race.s1 RESTART;
+SELECT race.ready('51', 'man', ARRAY['woman']), race.ready('52', 'woman', ARRAY['man']), race.ready('53', 'woman', ARRAY['man']);
+INSERT INTO public.dating_moderators (user_id, role, sensitive_routing_allowed) VALUES (race.id('53'), 'safety_owner', true);
+WITH c AS (INSERT INTO public.dating_moderation_cases (kind, priority, target_user_id, target_phone_hmac, sla_due_at)
+           VALUES ('report', 'P0', race.id('51'), public.dating_phone_hmac_for_user(race.id('51')), now() + interval '4 hours') RETURNING id)
+INSERT INTO race.outcome SELECT 'or_case', c.id::text FROM c;
+INSERT INTO public.dating_reports (reporter_user_id, target_user_id, category, case_id)
+SELECT race.id('52'), race.id('51'), 'threat_to_life', result::uuid FROM race.outcome WHERE name = 'or_case';
+SELECT private.dating_place_restriction(race.id('51'), 'moderation_hold', 'threat_to_life', 'report', result::uuid, NULL, NULL, false)
+  FROM race.outcome WHERE name = 'or_case';
+INSERT INTO race.outcome SELECT 'or_hmac', public.dating_phone_hmac_for_user(race.id('51'));
+SET ROLE service_role;
+SELECT public.prepare_account_deletion('5e2f0000-0000-0000-0000-000000000051'); -- race.id('51'): the race schema is not the service role's
+RESET ROLE;
+DELETE FROM auth.users WHERE id = race.id('51');
+DELETE FROM public.users WHERE id = race.id('51');
+SELECT race.ready('55', 'man', ARRAY['woman']);
+UPDATE auth.users SET phone = '1555871951' WHERE id = race.id('55');
+UPDATE public.users SET phone = '+1555871951' WHERE id = race.id('55');"
+OR_CASE="(SELECT result::uuid FROM race.outcome WHERE name = 'or_case')"
+OR_HMAC="(SELECT result FROM race.outcome WHERE name = 'or_hmac')"
+run "an orphaned case's dismissal while the number comes back: nothing carried, no deadlock" "$FX_ORPHAN" \
+  "SET race.sleep_dating_moderation_cases_update = '1.5:race.s1';
+   INSERT INTO race.outcome SELECT 'or_dismiss', public.moderation_dismiss(race.id('53'), $OR_CASE)::text;" \
+  "SELECT pg_sleep(0.5);
+   INSERT INTO race.outcome SELECT 'or_overlap', (SELECT is_called FROM race.s1)::text;
+   SELECT clock_timestamp() AS tb \\gset
+   INSERT INTO race.outcome SELECT 'or_read', race.call(race.id('55'), 'SELECT public.get_my_dating_restriction()')::text;
+   INSERT INTO race.outcome VALUES ('or_wait', round(extract(epoch FROM clock_timestamp() - :'tb'::timestamptz), 2)::text);" \
+  "SELECT CASE WHEN (SELECT result FROM race.outcome WHERE name = 'or_overlap') IS DISTINCT FROM 'true'
+                 OR coalesce((SELECT result::numeric FROM race.outcome WHERE name = 'or_wait'), 0) < 0.5
+               THEN 'the read did not wait on the dismissal (no race)'
+               WHEN (SELECT result::jsonb ->> 'ok' FROM race.outcome WHERE name = 'or_dismiss') IS DISTINCT FROM 'true'
+               THEN 'the dismissal answered ' || coalesce((SELECT result FROM race.outcome WHERE name = 'or_dismiss'), '-')
+               WHEN (SELECT result::jsonb ->> 'ok' FROM race.outcome WHERE name = 'or_read') IS DISTINCT FROM 'true'
+               THEN 'the read answered ' || coalesce((SELECT result FROM race.outcome WHERE name = 'or_read'), '-')
+               WHEN EXISTS (SELECT 1 FROM public.dating_account_restrictions WHERE user_id = race.id('55') AND lifted_at IS NULL)
+                 OR NOT public.dating_account_in_good_standing(race.id('55'))
+                 OR EXISTS (SELECT 1 FROM public.enforcement_records WHERE phone_hmac = $OR_HMAC AND scope = 'dating'
+                               AND (effect_until IS NULL OR effect_until > now()))
+               THEN 'the dismissed case''s hold followed the number back (carried past the dismissal)'
+               ELSE 'ok' END;" serialised
+
+# Spec 2 W7 final server fix (M-3): the release sweep never undoes a
+# suspension that lands while it runs. P (51)'s last suspension ran out
+# with Dating still suspended; a moderator suspends P again and sleeps in
+# the enrolment update, holding P's setup lock; 0.5 s in, the sweep finds
+# P (its snapshot has no live suspension), cannot take P's setup lock,
+# skips P and counts it: P stays suspended. (Without the check the sweep
+# waits on the enrolment row and then pauses P under a live suspension.)
+FX_RELEASE="SELECT race.reset(); ALTER SEQUENCE race.s1 RESTART;
+SELECT race.ready('51', 'man', ARRAY['woman']), race.ready('52', 'woman', ARRAY['man']), race.ready('53', 'woman', ARRAY['man']);
+INSERT INTO public.dating_moderators (user_id, role) VALUES (race.id('53'), 'moderator');
+WITH c AS (INSERT INTO public.dating_moderation_cases (kind, priority, target_user_id, sla_due_at)
+           VALUES ('report', 'P1', race.id('51'), now() + interval '1 day') RETURNING id)
+INSERT INTO race.outcome SELECT 'rs_case', c.id::text FROM c;
+INSERT INTO public.dating_reports (reporter_user_id, target_user_id, category, case_id)
+SELECT race.id('52'), race.id('51'), 'harassment', result::uuid FROM race.outcome WHERE name = 'rs_case';
+INSERT INTO public.dating_account_restrictions (user_id, restriction_type, category, source, starts_at, ends_at)
+VALUES (race.id('51'), 'suspended', 'spam', 'moderator', now() - interval '8 days', now() - interval '1 day');
+UPDATE public.dating_enrollments SET state = 'suspended' WHERE user_id = race.id('51');
+INSERT INTO race.outcome SELECT 'rs_before', coalesce(sum(c.count), 0)::text FROM public.metric_counters AS c
+ WHERE c.day = (now() AT TIME ZONE 'utc')::date AND c.key = 'dating.release.busy';"
+RS_CASE="(SELECT result::uuid FROM race.outcome WHERE name = 'rs_case')"
+run "a suspension placed while the release sweep runs: the sweep skips, the person stays suspended" "$FX_RELEASE" \
+  "SET race.sleep_dating_enrollments_update = '1.5:race.s1';
+   INSERT INTO race.outcome SELECT 'rs_restrict', public.moderation_restrict(race.id('53'), $RS_CASE, 'suspended', NULL, 'harassment')::text;" \
+  "SELECT pg_sleep(0.5);
+   INSERT INTO race.outcome SELECT 'rs_overlap', (SELECT is_called FROM race.s1)::text;
+   INSERT INTO race.outcome SELECT 'rs_sweep', private.dating_release_expired_suspensions()::text;" \
+  "SELECT CASE WHEN (SELECT result FROM race.outcome WHERE name = 'rs_overlap') IS DISTINCT FROM 'true'
+               THEN 'the sweep did not run while the restriction slept (no race)'
+               WHEN (SELECT result::jsonb ->> 'ok' FROM race.outcome WHERE name = 'rs_restrict') IS DISTINCT FROM 'true'
+               THEN 'the restriction answered ' || coalesce((SELECT result FROM race.outcome WHERE name = 'rs_restrict'), '-')
+               WHEN (SELECT state FROM public.dating_enrollments WHERE user_id = race.id('51')) <> 'suspended'
+               THEN 'the sweep released the person under a live suspension: '
+                    || (SELECT state || '/' || coalesce(pause_reason, '-') FROM public.dating_enrollments WHERE user_id = race.id('51'))
+               WHEN (SELECT coalesce(sum(c.count), 0) FROM public.metric_counters AS c
+                      WHERE c.day = (now() AT TIME ZONE 'utc')::date AND c.key = 'dating.release.busy')
+                    - (SELECT result::bigint FROM race.outcome WHERE name = 'rs_before') < 1
+               THEN 'the sweep did not skip and count the person'
+               ELSE 'ok' END;" serialised
 
 $P -c "SELECT race.reset(); UPDATE public.feature_flags SET enabled = false WHERE key = 'dating_candidate_generation';" > /dev/null 2>&1
 exit $fail

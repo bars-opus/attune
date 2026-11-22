@@ -1,6 +1,6 @@
 # ATTUNE - DATING MODE SPECIFICATION
 
-**Version:** 1.4 (Spec 2 W2 amended §2, §2.1, §3.1 and §3.2; the rest of the Spec 2 §1.5 amendments follow in W3–W7, then 2.0)  
+**Version:** 1.5 (Spec 2 W2 amended §2, §2.1, §3.1 and §3.2; Spec 2 W7c amended §8 and §12's list; the rest of the Spec 2 §1.5 amendments follow, then 2.0)  
 **Created:** July 2026  
 **Updated:** November 2026  
 **Status:** Implementation-ready after the production gates in Section 16  
@@ -375,6 +375,17 @@ Dating-specific trust and safety must include:
 
 Safety events, dismissals, reports, and blocks never improve or reduce an Alignment score. Blocks are exclusion controls; reports are moderation inputs, not psychological traits.
 
+### 8.1 Reports, restrictions and appeals (Spec 2 W7, approved under Q20)
+
+The design spec (`docs/superpowers/specs/2026-10-24-dating-mode-design.md` §3.7, §6.2–§6.6) governs; in short:
+
+- **Fourteen report categories in four priorities** (P0 `underage_risk`, `csam`, `child_safety`, `threat_to_life`; P1 `sextortion`, `romance_scam`, `threats`, `entrapment`; P2 `harassment`, `explicit_content`, `impersonation`, `hiding_relationship`; P3 `spam`, `other`), each with a human review time (P0 within four staffed hours, 08:00–22:00 GMT, and never more than 24; P1 24 hours; P2 48; P3 72). Every report snapshots the last 50 messages, encrypted; reports stay open for 30 days after a conversation ends, the other's deletion included.
+- **No automatic ban.** One P0 report closes the reporter's conversation and removes the person from new introductions while the case is open; P1 removes from new introductions; P2's step is the reporter's own block. An **interim hold only when corroborated**: two independent P0 reports (different people, numbers and phones, each account at least 72 hours old), or an `underage_risk` report with the person's own age cue in that conversation (then an age check). A hold hides the person from introductions and stops their sending; it closes no conversation. A reporter whose own messages raised sexual pressure or a money ask takes no step against the other person and never counts; a P0 report from them still closes their own conversation.
+- **The category is shown; the reporter never is.** A restricted person reads the category in plain words, never who reported, what they wrote or the evidence, and can **appeal once**, to a different person from the one who decided (the safety owner, working alone, only 24 hours after the appeal; a restriction with no recorded decider is the safety owner's alone, on the same terms). When a suspension ends, Dating stays paused until the person resumes it.
+- **Restrictions survive deletion** as phone-number codes for 2 years and come back, with their category and their one appeal, on a new account on the same number (at the person's first restriction read): a rejected appeal stays used; an appeal still open at deletion is owed again, on a fresh 7-day clock. A carried interim hold becomes appealable (the original was not); a carried CSAM hold never is.
+- **A CSAM hold** (any hold with category `csam`) is lifted only by the safety owner, with a written, audited reason; case decisions never end it.
+- **Moderation** happens in a separate console (TOTP, an audited log, read-time sensitive routing); escalations to police, NCMEC, the IWF or Ghana's CSA are always a person's recorded decision, never automatic (`DATING_MODERATION_RUNBOOK.md`, `DATING_LAW_ENFORCEMENT_POLICY.md`).
+
 ---
 
 ## 9. Guided first-date support
@@ -573,7 +584,7 @@ Required operations include:
 - `get_my_dating_matches(cursor, limit)`
 - `unmatch_dating_match(idempotency_key, match_id)`
 - `block_dating_user(idempotency_key, target_user_id)`
-- `submit_dating_report(idempotency_key, target_id, category, details)`
+- ~~`submit_dating_report(idempotency_key, target_id, category, details)`~~ removed in Spec 2 W7a: `report_dating_match(idempotency_key, match_id, category, details, also_block)` and `report_dating_introduction(idempotency_key, introduction_id, category, details, also_block)`; the restricted person's `get_my_dating_restriction()` and `submit_dating_appeal(idempotency_key, restriction_id, text)` (§8.1)
 - `save_private_date_reflection(idempotency_key, match_id, response, note)`
 - `delete_private_date_reflection(idempotency_key, match_id)`
 - ~~`delete_dating_profile(idempotency_key)`~~ removed in Spec 2 W1d: leaving is `exit_dating_mode(idempotency_key, keep_never_introduce)` (Spec 2 W3 final, M-9)

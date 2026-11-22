@@ -11,12 +11,15 @@ import 'package:attune/app/routing/app_router.dart' show RouteNames;
 import 'package:attune/app/theme/app_theme.dart';
 import 'package:attune/core/device/device_wipe_registry.dart';
 import 'package:attune/core/ui/text/allow_large_text.dart';
+import 'package:attune/core/utils/constants.dart';
 import 'package:attune/features/auth/sign_up/presentation/widgets/flow_text_field.dart'
     show FlowErrorLine;
 import 'package:attune/features/dating/data/dating_rpc.dart';
 import 'package:attune/features/dating/dating_device_wipes.dart';
 import 'package:attune/features/dating/domain/services/dating_image_preparer.dart';
 import 'package:attune/features/dating/photos/dating_photos_providers.dart';
+import 'package:attune/features/dating/report/restricted_screen.dart'
+    show datingSupportContactProvider;
 import 'package:attune/features/dating/routes/dating_routes.dart';
 import 'package:attune/features/dating/verify/dating_capture.dart';
 import 'package:attune/features/dating/verify/dating_verification.dart';
@@ -643,6 +646,50 @@ void main() {
       ]) {
         expect(find.text(none), findsNothing, reason: none);
       }
+    });
+
+    // Spec 2 W7 final client fix (M-4, W4b carry): Contact support opens
+    // support's email as the restricted screen does; no email app is said
+    // here with the address, never the shared util's English snackbar.
+    testWidgets('final fix M-4: Contact support with no email app says so '
+        'in the app\'s own words, with the address', (t) async {
+      final mails = <Uri>[];
+      final r = await _open(
+        t,
+        more: [
+          datingSupportContactProvider.overrideWithValue((context, mail) async {
+            mails.add(mail);
+            throw StateError('no email app');
+          }),
+        ],
+      );
+      r.gateway.answers['start_id'] = [datingStarted()];
+      r.gateway.answers['complete_id'] = [
+        datingOutcome(DatingVerifyOutcome.ageNotConfirmed),
+      ];
+      await tapInReach(t, find.byKey(const ValueKey('dating_verify_consent')));
+      await t.pump();
+      await tapInReach(t, find.text('Check another way'));
+      await t.pumpAndSettle();
+      await tapInReach(t, find.text('Check with my ID'));
+      await t.pumpAndSettle();
+      await tapInReach(t, find.text('Passport'));
+      await t.pump();
+      await tapInReach(t, find.text('Continue'));
+      await t.pumpAndSettle();
+      expect(find.text('Contact support'), findsOneWidget);
+      await tapInReach(t, find.byKey(const ValueKey('dating_verify_contact')));
+      await t.pumpAndSettle();
+      expect(mails.single.toString(), 'mailto:${AppConstants.supportEmail}');
+      expect(find.byType(SnackBar), findsNothing);
+      expect(
+        t
+            .widget<SelectableText>(
+              find.byKey(const ValueKey('dating_verify_no_mail')),
+            )
+            .data,
+        'No email app opened. You can write to ${AppConstants.supportEmail}.',
+      );
     });
   });
 

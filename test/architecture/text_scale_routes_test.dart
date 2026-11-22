@@ -85,6 +85,8 @@ const _audited = {
   // Spec 2 W6c (§3.6): the meeting kit and the check-in.
   'datingPlanMeet',
   'datingCheckin',
+  // Spec 2 W7a (§3.7): the restricted screen.
+  'datingRestricted',
   'aboutUs',
   'addEditReminder',
   'ageStop',

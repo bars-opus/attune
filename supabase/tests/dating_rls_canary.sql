@@ -617,6 +617,130 @@ INSERT INTO allowed_fn (sig, clients, service) VALUES
   ('private.dating_queue_me_update(uuid,text,text,timestamp with time zone)', '', ''),
   ('private.guard_dating_chat_keeps_config()', '', '');
 
+-- Spec 2 W7a Task 1: reports v2. The evidence, the case links and the
+-- appeals are no API role's, the service role included (the console's
+-- definer functions read them, W7b); the report RPCs v2 are the app's; the
+-- v1 report RPCs and submit_dating_report are gone (§4.10).
+DELETE FROM allowed_fn WHERE sig IN ('report_dating_introduction(text,uuid,text,text)',
+                                     'report_dating_match(text,uuid,text,text)',
+                                     'submit_dating_report(text,uuid,text,text)');
+INSERT INTO allowed_rel (name, authenticated, service_dml) VALUES
+  ('dating_report_evidence', '', ''),
+  ('dating_case_matches', '', ''),
+  ('dating_appeals', '', '');
+INSERT INTO allowed_fn (sig, clients, service) VALUES
+  ('report_dating_match(text,uuid,text,text,boolean)', 'authenticated', ''),
+  ('report_dating_introduction(text,uuid,text,text,boolean)', 'authenticated', ''),
+  ('private.dating_report_priority(text)', '', ''),
+  ('private.dating_report_sla_due(text,timestamp with time zone)', '', ''),
+  ('private.dating_report_defaults()', '', ''),
+  ('private.dating_restriction_defaults()', '', ''),
+  ('private.dating_reporter_tripped(uuid,uuid)', '', ''),
+  ('private.dating_report_excluded(uuid)', '', ''),
+  ('private.dating_snapshot_evidence(uuid,uuid,text)', '', ''),
+  ('private.dating_report_case(uuid)', '', ''),
+  ('private.dating_report_corroborated(uuid)', '', ''),
+  ('private.dating_place_restriction(uuid,text,text,text,uuid,uuid,timestamp with time zone,boolean)', '', ''),
+  ('private.dating_file_report(uuid,uuid,text,uuid,uuid,text,text,text,text)', '', ''),
+  ('private.dating_report_answer(uuid)', '', ''),
+  ('private.dating_release_suspension(uuid)', '', ''),
+  ('private.dating_close_case(uuid,uuid,text)', '', '');
+-- Spec 2 W7a Task 1 fix round 1 (I-1, M-1, M-8): the database's own.
+INSERT INTO allowed_fn (sig, clients, service) VALUES
+  ('private.dating_report_retrip(uuid,uuid,text)', '', ''),
+  ('private.dating_report_reply(uuid,boolean)', '', ''),
+  ('private.dating_pair_blocked_since(uuid,uuid)', '', '');
+-- Spec 2 W7a Task 1 fix round 2 (N-1): the database's own.
+INSERT INTO allowed_fn (sig, clients, service) VALUES
+  ('private.dating_lock_setup_pair(uuid,uuid)', '', '');
+-- Spec 2 W7a Task 2: the restricted person's read and the appeal are the
+-- app's; the rest is the database's own.
+INSERT INTO allowed_fn (sig, clients, service) VALUES
+  ('get_my_dating_restriction()', 'authenticated', ''),
+  ('submit_dating_appeal(text,uuid,text)', 'authenticated', ''),
+  ('private.dating_carry_over(uuid)', '', ''),
+  ('private.dating_release_expired_suspensions()', '', ''),
+  ('private.dating_appeal_accepted(uuid)', '', ''),
+  ('private.dating_decide_appeal(uuid,uuid,boolean,boolean)', '', ''),
+  ('private.dating_report_limited(uuid)', '', '');
+
+-- Spec 2 W7b Task 5: the console. The moderators and the audit are no API
+-- role's; the moderation_* functions are the service role's alone (the
+-- dating-moderation edge function's); the rest is the database's own.
+INSERT INTO allowed_rel (name, authenticated, service_dml) VALUES
+  ('dating_moderators', '', ''),
+  ('dating_moderation_actions', '', '');
+INSERT INTO allowed_fn (sig, clients, service) VALUES
+  ('moderation_whoami(uuid)', '', 'service_role'),
+  ('moderation_queue(uuid,integer,text)', '', 'service_role'), -- W7 final server fix (I-3): the queue by kind
+  ('moderation_case(uuid,uuid)', '', 'service_role'),
+  ('moderation_claim(uuid,uuid)', '', 'service_role'),
+  ('moderation_dismiss(uuid,uuid)', '', 'service_role'),
+  ('moderation_place_hold(uuid,uuid,text)', '', 'service_role'),
+  ('moderation_lift_hold(uuid,uuid)', '', 'service_role'),
+  ('moderation_restrict(uuid,uuid,text,timestamp with time zone,text)', '', 'service_role'),
+  ('moderation_ask_for_id(uuid,uuid)', '', 'service_role'),
+  ('moderation_confirm_minor(uuid,uuid)', '', 'service_role'),
+  ('moderation_note(uuid,uuid,text)', '', 'service_role'),
+  ('moderation_decide_appeal(uuid,uuid,boolean)', '', 'service_role'),
+  ('moderation_photos(uuid)', '', 'service_role'),
+  ('moderation_photo_decide(uuid,uuid,boolean,text)', '', 'service_role'),
+  ('moderation_verifications(uuid)', '', 'service_role'),
+  ('moderation_verification_decide(uuid,uuid,text)', '', 'service_role'),
+  ('moderation_countries(uuid)', '', 'service_role'),
+  ('moderation_publish_country(uuid,text,jsonb)', '', 'service_role'),
+  ('moderation_opinions_queue(uuid,integer)', '', 'service_role'),
+  ('moderation_opinions_remove(uuid,text,uuid)', '', 'service_role'),
+  ('moderation_audit_log(uuid,integer)', '', 'service_role'),
+  ('dating_moderation_sla_check(timestamp with time zone)', '', ''),
+  ('private.dating_moderation_actions_guard()', '', ''),
+  ('private.dating_audit(uuid,uuid,text,uuid,jsonb)', '', ''),
+  ('private.dating_moderator(uuid)', '', ''),
+  ('private.dating_identity_of(uuid)', '', ''),
+  ('private.dating_case_needs_sensitive_routing(uuid)', '', ''),
+  ('private.dating_case_for(dating_moderators,uuid)', '', ''),
+  ('private.dating_evidence_messages(uuid)', '', ''),
+  ('private.dating_lift_case_holds(uuid)', '', ''),
+  -- Task 5: the replay check and the locked case read (the database's own).
+  ('private.dating_moderation_replayed(uuid,uuid,text,jsonb)', '', ''),
+  ('private.dating_case_lock(dating_moderators,uuid)', '', ''),
+  -- Task 5 fix round 1 (I-2): who is a party to a case.
+  ('private.dating_case_party(uuid,uuid)', '', '');
+-- Spec 2 W7c Task 8: escalations and the law-enforcement log.
+INSERT INTO allowed_rel (name, authenticated, service_dml) VALUES
+  ('dating_escalations', '', ''),
+  ('law_enforcement_requests', '', '');
+INSERT INTO allowed_fn (sig, clients, service) VALUES
+  ('moderation_record_escalation(uuid,uuid,text,text)', '', 'service_role'),
+  ('moderation_le_requests(uuid)', '', 'service_role'),
+  ('moderation_record_le_request(uuid,uuid,jsonb)', '', 'service_role'),
+  ('moderation_transparency_summary(uuid,date,date)', '', 'service_role'),
+  ('private.dating_transparency_summary(date,date)', '', ''),
+  -- Task 8 (owner 2026-11-22): the CSAM hold lift (the service role's
+  -- alone); the purge's case check (the database's own).
+  ('moderation_csam_holds(uuid)', '', 'service_role'),
+  ('moderation_lift_csam_hold(uuid,uuid,text)', '', 'service_role'),
+  ('private.dating_case_needed(uuid,timestamp with time zone)', '', ''),
+  -- Task 8 fix round 1 ((b)): a case's escalations (the service role's alone).
+  ('moderation_case_escalations(uuid,uuid)', '', 'service_role'),
+  -- Task 8 fix round 5: Close, no ID came (the service role's alone); the
+  -- awaiting test (the database's own).
+  ('moderation_close_no_id(uuid,uuid)', '', 'service_role'),
+  ('private.dating_case_awaiting_id(text,timestamp with time zone)', '', ''),
+  -- W7 final server fix (I-1, M-5): the ID check's helpers and the
+  -- pre-W7 backfill (the database's own).
+  ('private.dating_id_check_code()', '', ''),
+  ('private.dating_case_id_check(uuid)', '', ''),
+  ('private.dating_case_id_check_json(uuid)', '', ''),
+  ('private.dating_end_id_check(uuid)', '', ''),
+  ('private.dating_place_id_check(uuid,uuid,uuid)', '', ''),
+  ('private.dating_backfill_report_cases()', '', ''),
+  ('private.dating_closer_look_carried(uuid,timestamp with time zone)', '', ''),
+  -- Round 2 (N-1): Lift the case's holds (the service role's alone).
+  ('moderation_lift_case_holds(uuid,uuid)', '', 'service_role'),
+  -- Round 4 (N3-1): the orphaned ID check's record test.
+  ('private.dating_case_id_record_live(uuid)', '', '');
+
 -- ---------------------------------------------------------------------
 -- Checks (every batch adds its rows above this line).
 -- ---------------------------------------------------------------------
@@ -819,6 +943,8 @@ BEGIN
   SELECT string_agg(d.oid::regprocedure::text, ', ') INTO v_bad
     FROM dec AS d
    WHERE d.name NOT IN ('dating_field_decrypt', 'dating_export_for_job', 'publish_country_config')
+     -- Spec 2 W7b (§6.4, S-5): the console's functions; pinned below.
+     AND d.name NOT LIKE 'moderation\_%'
      AND has_function_privilege('service_role', d.oid, 'EXECUTE');
   IF v_bad IS NOT NULL THEN
     RAISE EXCEPTION 'CONTRACT VIOLATED: the service role can decrypt Dating fields through %', v_bad;
@@ -826,6 +952,20 @@ BEGIN
   IF to_regprocedure('private.dating_field_decrypt(bytea)') IS NOT NULL
      AND has_function_privilege('service_role', 'private.dating_field_decrypt(bytea)', 'EXECUTE') THEN
     RAISE EXCEPTION 'CONTRACT VIOLATED: the service role can call dating_field_decrypt';
+  END IF;
+  -- Spec 2 W7b (§6.4, S-5): a moderation_* function never names the
+  -- decrypter or the sensitive table itself; it reaches a decrypted value
+  -- only through the routing check (a boolean) or the evidence (messages).
+  SELECT string_agg(p.oid::regprocedure::text, ', ') INTO v_bad
+    FROM pg_proc AS p JOIN pg_namespace AS n ON n.oid = p.pronamespace
+   WHERE n.nspname = 'public' AND p.proname LIKE 'moderation\_%'
+     AND (p.prosrc ~ '(dating_field_decrypt|dating_profile_sensitive|dating_identity_of)'
+          OR (p.prosrc ~ 'private\.dating_\w+_decrypt'));
+  IF v_bad IS NOT NULL THEN
+    RAISE EXCEPTION 'CONTRACT VIOLATED: a console function reads a sensitive value directly: %', v_bad;
+  END IF;
+  IF pg_get_function_result('private.dating_case_needs_sensitive_routing(uuid)'::regprocedure) <> 'boolean' THEN
+    RAISE EXCEPTION 'CONTRACT VIOLATED: the routing check answers more than true or false';
   END IF;
   SELECT string_agg(c.table_name || '.' || c.column_name, ', ') INTO v_bad
     FROM information_schema.columns AS c

@@ -58,6 +58,8 @@ import 'package:attune/features/dating/data/dating_providers.dart';
 import 'package:attune/features/dating/data/dating_rpc.dart';
 import 'package:attune/features/dating/gentle_wait/gentle_wait_providers.dart'
     show datingOnlineProvider;
+import 'package:attune/features/dating/report/dating_report.dart';
+import 'package:attune/features/dating/report/report_sheet.dart';
 import 'package:attune/features/dating/routes/dating_root_back.dart';
 import 'package:attune/features/dating/routes/dating_routes.dart';
 import 'package:attune/features/dating/section/dating_calm_line.dart';
@@ -712,6 +714,37 @@ class _DatingChatScreenState extends ConsumerState<DatingChatScreen>
     if (r.reason != 'unavailable') unawaited(_read());
   }
 
+  /// Spec 2 W7a (§3.7): the report sheet sends it. Reported from a [card],
+  /// the card goes from this chat at once, by id (W6 carry T4: a re-read
+  /// only adds cards, so a reported one is removed here). With "Also
+  /// block", this side has blocked: as Block.
+  Future<void> _report(String name, {DatingSafetyCard? card}) async {
+    final account = _account;
+    final outcome = await showDatingReportSheet(
+      context,
+      account: account,
+      name: name,
+      target: DatingReportMatch(widget.matchId),
+    );
+    if (outcome == null || !mounted || _account != account) return;
+    setState(() {
+      if (card != null) {
+        _dismissedCards.add(card.id);
+        _cards.remove(card.id);
+      }
+      if (outcome.blocked) {
+        _blockedName = name;
+        _composer.clear();
+        _outgoing.clear();
+      }
+    });
+    if (card != null && account != null) {
+      _pendingDismissals(account).add(card.id);
+      if (_online) unawaited(_sendDismissals(account));
+    }
+    unawaited(_read());
+  }
+
   /// §3.6 Block: confirmed, then sent once (from the Safety sheet or a
   /// card).
   Future<void> _block(String name) async {
@@ -783,6 +816,8 @@ class _DatingChatScreenState extends ConsumerState<DatingChatScreen>
     );
     if (!mounted || _account != account || choice == null) return;
     switch (choice) {
+      case DatingSafetyChoice.report:
+        await _report(name);
       case DatingSafetyChoice.block:
         await _block(name);
       case DatingSafetyChoice.unmatch:
@@ -1375,8 +1410,22 @@ class _DatingChatScreenState extends ConsumerState<DatingChatScreen>
           padding: const EdgeInsets.all(Spacing.md),
           child: DatingCalmLine(loc.dating_chatEnded),
         )
-      else
+      else ...[
+        // Final client fix (M-13): a send or an action refused as
+        // restricted leads to why (the restricted screen).
+        if (actionReason == 'restricted' ||
+            _outgoing.any((o) => o.failed && o.reason == 'restricted'))
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: Spacing.md),
+            child: FlowTextLink(
+              key: const ValueKey('dating_chat_see_why'),
+              label: loc.dating_restrictedSeeWhy,
+              alignment: AlignmentDirectional.centerStart,
+              onPressed: () => context.push(DatingPaths.restricted),
+            ),
+          ),
         _composerRow(context, loc, online),
+      ],
     ];
     // M-12: at large text with the keyboard up, the swap row and the lines
     // under the chat each take at most a share of the height and scroll
@@ -1448,6 +1497,7 @@ class _DatingChatScreenState extends ConsumerState<DatingChatScreen>
                               // I-1: new to this open chat only once.
                               shown: _shownCards,
                               onBlock: () => _block(name),
+                              onReport: () => _report(name, card: c),
                               onDismiss: () => _dismiss(c),
                               onCall: _call,
                               onPlanMeet: _planMeet,

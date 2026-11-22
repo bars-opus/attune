@@ -464,8 +464,10 @@ BEGIN
   IF has_function_privilege('authenticated','public.block_dating_user(text,uuid)','EXECUTE') THEN
     RAISE EXCEPTION 'authenticated can execute raw-target block RPC';
   END IF;
-  IF has_function_privilege('authenticated','public.submit_dating_report(text,uuid,text,text)','EXECUTE') THEN
-    RAISE EXCEPTION 'authenticated can execute raw-target report RPC';
+  -- Spec 2 W7a (§4.10, Fable M1): the raw-target report RPC is gone; the
+  -- v2 report RPCs resolve the target from the caller's own match or card.
+  IF to_regprocedure('public.submit_dating_report(text,uuid,text,text)') IS NOT NULL THEN
+    RAISE EXCEPTION 'the raw-target report RPC still exists';
   END IF;
   IF has_function_privilege('authenticated','public.get_dating_operational_health()','EXECUTE') THEN
     RAISE EXCEPTION 'authenticated can read backend operational health';

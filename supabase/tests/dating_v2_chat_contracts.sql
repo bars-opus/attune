@@ -4040,7 +4040,8 @@ DECLARE
   v_setup constant text[] := ARRAY[
     'CREATE SEQUENCE public.w6_ff17_seq',
     'CREATE FUNCTION public.w6_ff17_dead() RETURNS trigger LANGUAGE plpgsql AS $f$ BEGIN IF nextval(''public.w6_ff17_seq'') <= current_setting(''w6.ff17_n'')::int THEN RAISE EXCEPTION ''deadlock detected'' USING ERRCODE = ''deadlock_detected''; END IF; RETURN NEW; END $f$',
-    'CREATE TRIGGER w6_ff17_dead BEFORE UPDATE ON public.dating_matches FOR EACH ROW EXECUTE FUNCTION public.w6_ff17_dead()'];
+    -- Spec 2 W7a Task 1 fix round 1: on the close only (W7a's number stamp updates the match first).
+    'CREATE TRIGGER w6_ff17_dead BEFORE UPDATE ON public.dating_matches FOR EACH ROW WHEN (OLD.state IS DISTINCT FROM NEW.state) EXECUTE FUNCTION public.w6_ff17_dead()'];
   v1 text;
   v2 text;
 BEGIN

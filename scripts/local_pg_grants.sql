@@ -369,7 +369,13 @@ BEGIN
     -- by the W5a, W5b and W5c twins (20261119100010, 20261119110010, 20261119120010).
     'private.dating_pair_new(uuid, uuid)',
     'private.dating_caption_has_contact(text)',
-    'private.dating_first_messages(uuid, timestamp with time zone)'] LOOP
+    'private.dating_first_messages(uuid, timestamp with time zone)',
+    -- Spec 2 W7 final server fix (final server review I-8): dropped by W7a
+    -- (20261121100000, the v2 report RPCs take p_also_block), named by the
+    -- W1a twin (20261106110010).
+    'public.report_dating_match(text, uuid, text, text)',
+    'public.report_dating_introduction(text, uuid, text, text)',
+    'public.submit_dating_report(text, uuid, text, text)'] LOOP
     IF to_regprocedure(v_sig) IS NULL THEN
       EXECUTE format('CREATE FUNCTION %s RETURNS void LANGUAGE plpgsql AS %L', v_sig, 'BEGIN RETURN; END');
       INSERT INTO pg_temp.harness_stubs (kind, name) VALUES ('function', v_sig);
@@ -482,3 +488,12 @@ DROP TABLE pg_temp.harness_stubs;
 
 -- Spec 2 W6c: the guided conversation, the check-in, the purge (twin of 20261120120000)
 \i supabase/migrations/20261120120010_dating_v2_chat_guided_grants.sql
+
+-- Spec 2 W7a: reports, restrictions, appeals (twin of 20261121100000)
+\i supabase/migrations/20261121100010_dating_v2_reports_grants.sql
+
+-- Spec 2 W7b: the moderation console (twin of 20261121110000)
+\i supabase/migrations/20261121110010_dating_v2_moderation_console_grants.sql
+
+-- Spec 2 W7c: escalations, the law-enforcement log (twin of 20261121120000)
+\i supabase/migrations/20261121120010_dating_v2_escalations_grants.sql

@@ -63,7 +63,16 @@ BEGIN
                           'dating_message_safety_outbox', 'dating_safety_configs',
                           'dating_safety_events', 'dating_opener_hashes',
                           -- Spec 2 W6c: the guided skips, written by one definer RPC.
-                          'dating_guided_skips')
+                          'dating_guided_skips',
+                          -- Spec 2 W7a: the report evidence (encrypted), the case
+                          -- links and the appeals; W7b's console reaches them
+                          -- through its definer functions only.
+                          'dating_report_evidence', 'dating_case_matches', 'dating_appeals',
+                          -- Spec 2 W7b: the moderators and the audit; the console's
+                          -- functions read and write them.
+                          'dating_moderators', 'dating_moderation_actions',
+                          -- Spec 2 W7c: escalations and the law-enforcement log.
+                          'dating_escalations', 'law_enforcement_requests')
     AND NOT has_table_privilege('service_role', c.oid, 'SELECT');
 
   IF v_count > 0 THEN
@@ -115,7 +124,16 @@ BEGIN
                           'dating_message_safety_outbox', 'dating_safety_configs',
                           'dating_safety_events', 'dating_opener_hashes',
                           -- Spec 2 W6c: the guided skips, written by one definer RPC.
-                          'dating_guided_skips')
+                          'dating_guided_skips',
+                          -- Spec 2 W7a: the report evidence (encrypted), the case
+                          -- links and the appeals; W7b's console reaches them
+                          -- through its definer functions only.
+                          'dating_report_evidence', 'dating_case_matches', 'dating_appeals',
+                          -- Spec 2 W7b: the moderators and the audit; the console's
+                          -- functions read and write them.
+                          'dating_moderators', 'dating_moderation_actions',
+                          -- Spec 2 W7c: escalations and the law-enforcement log.
+                          'dating_escalations', 'law_enforcement_requests')
     -- Spec 2 W1b (batch-4 fix round 1, C-1): the service role only reads
     -- country_safety_config (no worker claims rows there); publish_country_config,
     -- a definer, is its one writer, and dating_rls_canary.sql pins SELECT only.
