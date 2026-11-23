@@ -89,6 +89,18 @@ abstract final class DatingPhotoMemory {
     _generations.update('$kind:$id', (n) => n + 1, ifAbsent: () => 1);
   }
 
+  /// Spec 2 W8b (Task 5 review carry a): every [kind] but [ids] goes, its
+  /// photos and decoded copies with it (a read no longer lists it).
+  static void keepOnly(String kind, Set<String> ids) {
+    final gone = {
+      for (final k in [..._bytes.keys, ..._misses.keys])
+        if (k.startsWith('$kind:')) k.split(':')[1],
+    }..removeAll(ids);
+    for (final id in gone) {
+      forget(kind, id);
+    }
+  }
+
   /// An ok Today read: every introduction and match may be asked again.
   static void resetMisses() => _misses.clear();
 

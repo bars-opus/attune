@@ -7,6 +7,7 @@ import 'dart:async';
 
 import 'package:attune/features/dating/chat/dating_chat.dart';
 import 'package:attune/features/dating/data/dating_rpc.dart';
+import 'package:attune/features/dating/device/trip_phone.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:uuid/uuid.dart';
 
@@ -111,10 +112,15 @@ class DatingChatRepository implements DatingChatGateway {
     this._rpc,
     this._client, {
     this.reopenAfter = kDatingChatReopenAfter,
-  });
+    Future<bool> Function()? showSameGender,
+  }) : _showSameGender = showSameGender;
 
   final DatingRpc _rpc;
   final SupabaseClient? _client;
+
+  /// Spec 2 W8b (R-T5-1): this phone's "Show it on this phone anyway" for
+  /// the signed-in account, sent with the conversations and the messages.
+  final Future<bool> Function()? _showSameGender;
 
   /// How long after a close the channel is made again (tests shorten it).
   final Duration reopenAfter;
@@ -136,7 +142,10 @@ class DatingChatRepository implements DatingChatGateway {
 
   @override
   Future<DatingConversations> conversations({bool ended = false}) => _guard(
-    () => _rpc.call('get_my_dating_matches', {'p_include_ended': ended}),
+    () async => _rpc.call(
+      'get_my_dating_matches',
+      await datingShowSameGender(_showSameGender, {'p_include_ended': ended}),
+    ),
     DatingConversations.fromJson,
     DatingConversations.busy,
     DatingConversations.failed,
@@ -144,11 +153,14 @@ class DatingChatRepository implements DatingChatGateway {
 
   @override
   Future<DatingChatPage> messages(String matchId, {DateTime? before}) => _guard(
-    () => _rpc.call('get_dating_messages', {
-      'p_match_id': matchId,
-      'p_before': before?.toUtc().toIso8601String(),
-      'p_limit': 50,
-    }),
+    () async => _rpc.call(
+      'get_dating_messages',
+      await datingShowSameGender(_showSameGender, {
+        'p_match_id': matchId,
+        'p_before': before?.toUtc().toIso8601String(),
+        'p_limit': 50,
+      }),
+    ),
     DatingChatPage.fromJson,
     DatingChatPage.busy,
     DatingChatPage.failed,

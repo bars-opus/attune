@@ -18,7 +18,10 @@ enum DatingHomeState {
   active('active'),
   gentleWait('gentle_wait'),
   notStarted('not_started'),
-  setupInProgress('setup_in_progress');
+  setupInProgress('setup_in_progress'),
+  // Spec 2 W8b (§2.1 gate 7, §3.1): Dating isn't allowed where the person
+  // is (also during the gentle wait: carry 4).
+  away('away');
 
   const DatingHomeState(this.wire);
 
@@ -109,6 +112,40 @@ class DatingNotice {
           : const DatingNotice();
 }
 
+/// Spec 2 W8b (§2.5, §3.11): what a trip hides, from get_dating_home.
+enum DatingTripKind { away, sameGender }
+
+/// Spec 2 W8b (§3.11): the trip the home names: its kind, whether its
+/// note is still unanswered (the note is only on /dating/away, Task 7 fix
+/// round 1 I-2; Me shows a neutral line and the link; never a push), and the
+/// person's own "Show it on this phone anyway". Null: no trip. An away
+/// trip's note and choice are the server's; a same-gender trip is its
+/// kind alone (R-T4-9) and takes both from this phone (trip_phone.dart).
+class DatingTrip {
+  const DatingTrip({
+    required this.kind,
+    this.note = false,
+    this.showHere = false,
+  });
+
+  final DatingTripKind kind;
+  final bool note;
+  final bool showHere;
+
+  static DatingTrip? fromJson(Object? raw) {
+    if (raw is! Map) return null;
+    return switch (raw['kind']) {
+      'away' => DatingTrip(
+        kind: DatingTripKind.away,
+        note: raw['note'] == true,
+        showHere: raw['show_here'] == true,
+      ),
+      'same_gender' => const DatingTrip(kind: DatingTripKind.sameGender),
+      _ => null,
+    };
+  }
+}
+
 class DatingHome {
   const DatingHome({
     required this.state,
@@ -127,6 +164,8 @@ class DatingHome {
     this.reverifyVariant = DatingReverifyVariant.verified,
     this.check = DatingPauseCheck.unknown,
     this.appealAccepted = false,
+    this.trip,
+    this.offerPlainIcon = false,
   });
 
   final DatingHomeState state;
@@ -159,6 +198,35 @@ class DatingHome {
   /// Spec 2 W7a (§3.7): an appeal was accepted in the last 7 days.
   final bool appealAccepted;
 
+  /// Spec 2 W8b (§3.11): the trip, when the place restricts.
+  final DatingTrip? trip;
+
+  /// Spec 2 W8b (§3.2 D13, A-11): the effective tier is 1 or 2.
+  final bool offerPlainIcon;
+
+  /// Spec 2 W8b (R-T4-9): this home with [trip] (a same-gender trip's
+  /// note and choice, from this phone); everything else as read.
+  DatingHome withTrip(DatingTrip? trip) => DatingHome(
+    state: state,
+    country: country,
+    region: region,
+    openRegions: openRegions,
+    pauseReason: pauseReason,
+    firstDropAt: firstDropAt,
+    endedAt: endedAt,
+    opensAt: opensAt,
+    canShorten: canShorten,
+    canResume: canResume,
+    hasData: hasData,
+    nextStep: nextStep,
+    notice: notice,
+    reverifyVariant: reverifyVariant,
+    check: check,
+    appealAccepted: appealAccepted,
+    trip: trip,
+    offerPlainIcon: offerPlainIcon,
+  );
+
   factory DatingHome.fromJson(Map<String, dynamic> json) {
     DateTime? at(String key) {
       final value = json[key];
@@ -186,6 +254,8 @@ class DatingHome {
       reverifyVariant: DatingReverifyVariant.fromWire(json['variant']),
       check: DatingPauseCheck.fromWire(json['check']),
       appealAccepted: json['appeal_accepted'] == true,
+      trip: DatingTrip.fromJson(json['trip']),
+      offerPlainIcon: json['offer_plain_icon'] == true,
     );
   }
 

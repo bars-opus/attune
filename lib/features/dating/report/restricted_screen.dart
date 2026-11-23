@@ -247,8 +247,9 @@ class _DatingRestrictedScreenState
           // yet, 24 hours) only for a P0 report's interim hold; any other
           // hold (a moderator's, CSAM, carried, or rejected on appeal)
           // makes no time promise.
+          // Spec 2 W8b (W7 carry M-6): and only while a person reviews.
           _Para(
-            r.interimHold
+            r.interimHold && read.staffed
                 ? loc.dating_restrictedHold
                 : loc.dating_restrictedHoldPlain,
             key: const ValueKey('dating_restricted_hold_line'),
@@ -300,8 +301,9 @@ class _DatingRestrictedScreenState
         ],
       },
       if (appeal?.state == DatingAppealState.open)
+        // Spec 2 W8b (W7 carry M-6): no review time in testing.
         _Para(
-          loc.dating_appealSent,
+          read.staffed ? loc.dating_appealSent : loc.dating_appealSentTesting,
           key: const ValueKey('dating_restricted_appeal_state'),
           live: _sentBy != null && _sentBy == account,
         )

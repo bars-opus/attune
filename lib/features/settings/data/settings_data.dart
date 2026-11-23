@@ -21,6 +21,7 @@ class SettingsDataSource {
     SettingsConfig? childReport,
     SettingsConfig? childReportSupport,
     SettingsConfig? supportResources,
+    SettingsConfig? appIcon,
   }) {
     // Access localization for language prefence
     final loc = AppLocalizations.of(context)!;
@@ -266,6 +267,8 @@ SettingsConfig(
               },
             ),
           ),
+// Spec 2 W8b (R-80): App icon, for everyone (built by the screen).
+if (appIcon != null) appIcon,
         ],
       ),
       SettingsSection(

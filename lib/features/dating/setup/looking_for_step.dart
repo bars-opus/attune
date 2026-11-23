@@ -11,6 +11,7 @@ import 'package:attune/features/auth/sign_up/presentation/widgets/flow_text_fiel
     show FlowErrorLine;
 import 'package:attune/features/dating/gentle_wait/gentle_wait_providers.dart'
     show datingOnlineProvider;
+import 'package:attune/features/dating/lock/dating_sheets.dart';
 import 'package:attune/features/dating/routes/dating_setup_steps.dart';
 import 'package:attune/features/dating/setup/dating_setup_models.dart';
 import 'package:attune/features/dating/setup/dating_setup_providers.dart';
@@ -101,39 +102,46 @@ class _DatingLookingForStepState extends ConsumerState<DatingLookingForStep>
     );
   }
 
-  Future<void> _separated() => showModalBottomSheet<void>(
-    context: context,
-    showDragHandle: true,
-    builder:
-        (sheet) => AllowLargeText(
-          child: SafeArea(
-            // Scrolls at large text sizes (§3.0).
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.fromLTRB(
-                Spacing.lg,
-                0,
-                Spacing.lg,
-                Spacing.lg,
-              ),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Text(
-                    AppLocalizations.of(sheet)!.dating_separatedSheet,
-                    style: Theme.of(sheet).textTheme.bodyLarge,
+  Future<void> _separated() {
+    // Spec 2 W8a round 2 (Re-1-M2): nothing opens once Dating is blank.
+    if (datingSheetRefused) return Future<void>.value();
+    return showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      // Spec 2 W8a fix round 1 (I-1): blank once quick exit runs.
+      builder:
+          (sheet) => DatingSheetTracker(
+            child: AllowLargeText(
+              child: SafeArea(
+                // Scrolls at large text sizes (§3.0).
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.fromLTRB(
+                    Spacing.lg,
+                    0,
+                    Spacing.lg,
+                    Spacing.lg,
                   ),
-                  const SizedBox(height: Spacing.lg),
-                  FlowSecondaryButton(
-                    label: AppLocalizations.of(sheet)!.dating_close,
-                    onPressed: () => Navigator.of(sheet).pop(),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Text(
+                        AppLocalizations.of(sheet)!.dating_separatedSheet,
+                        style: Theme.of(sheet).textTheme.bodyLarge,
+                      ),
+                      const SizedBox(height: Spacing.lg),
+                      FlowSecondaryButton(
+                        label: AppLocalizations.of(sheet)!.dating_close,
+                        onPressed: () => Navigator.of(sheet).pop(),
+                      ),
+                    ],
                   ),
-                ],
+                ),
               ),
             ),
           ),
-        ),
-  );
+    );
+  }
 
   @override
   Widget build(BuildContext context) {

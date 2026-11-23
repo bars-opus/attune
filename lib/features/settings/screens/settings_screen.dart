@@ -6,6 +6,7 @@ import 'package:attune/features/appreciation/data/thankful_phrasing_preference.d
 import 'package:attune/features/me/presentation/widgets/dating_lock_setting.dart';
 import 'package:attune/features/me/presentation/widgets/journal_reminder_row.dart';
 import 'package:attune/features/settings/presentation/screens/how_you_use_attune_screen.dart';
+import 'package:attune/features/settings/presentation/screens/app_icon_screen.dart';
 import 'package:attune/features/settings/presentation/screens/birth_date_settings_screen.dart';
 import 'package:attune/features/couple_profile/presentation/about_us_entry.dart';
 import 'package:attune/features/settings/data/chat_feel_preference.dart';
@@ -201,6 +202,8 @@ class SettingsScreen extends ConsumerWidget {
           ref.watch(supportResourcesV2Provider)
               ? supportResourcesSetting(context)
               : null,
+      // Spec 2 W8b (R-80): the plain app icon, for everyone.
+      appIcon: appIconSetting(context, ref),
     );
 
     // Access localization for language prefence

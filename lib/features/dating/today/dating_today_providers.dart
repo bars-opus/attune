@@ -8,6 +8,8 @@ import 'dart:typed_data';
 
 import 'package:attune/features/dating/data/dating_providers.dart';
 import 'package:attune/features/dating/data/dating_supabase_client.dart';
+import 'package:attune/features/dating/device/dating_device_check.dart';
+import 'package:attune/features/dating/device/trip_phone.dart';
 import 'package:attune/features/dating/today/dating_photo_memory.dart';
 import 'package:attune/features/dating/today/dating_today.dart';
 import 'package:attune/features/dating/today/dating_today_repository.dart';
@@ -18,6 +20,9 @@ final datingTodayGatewayProvider = Provider<DatingTodayGateway>(
   (ref) => DatingTodayRepository.of(
     ref.watch(datingRpcProvider),
     ref.watch(datingSupabaseClientProvider),
+    // Spec 2 W8b (R-T4-9): the account signed in at each call (D8).
+    showSameGender:
+        () => DatingTripPhone.showFor(ref.read(datingAccountProvider)),
   ),
 );
 
@@ -28,8 +33,25 @@ final datingTodayGatewayProvider = Provider<DatingTodayGateway>(
 final datingTodayProvider = FutureProvider.autoDispose
     .family<DatingToday, String?>((ref, account) async {
       if (account == null) return DatingToday.failed;
+      // Final client fix (I-1): a device check due or under way is waited
+      // for (at most 3 s), so a trip that began is hidden from this read.
+      // An answer that changed what the phone knew has asked Today again:
+      // this read is then not sent. (Read, not watched: the checker asks
+      // Today again itself; Today's page keeps it alive.)
+      final checker = ref.read(datingDeviceCheckerProvider.notifier);
+      final asked = checker.changesFor(account);
+      await checker.settled(account);
+      if (checker.changesFor(account) != asked) return DatingToday.failed;
       final today = await ref.read(datingTodayGatewayProvider).today();
-      if (today.ok) DatingPhotoMemory.resetMisses();
+      if (today.ok) {
+        DatingPhotoMemory.resetMisses();
+        // Spec 2 W8b (Task 5 review carry a): an introduction this read no
+        // longer lists (a trip hides it, on either phone) leaves memory
+        // with its photos.
+        DatingPhotoMemory.keepOnly('introduction', {
+          for (final c in [...today.cards, ...today.waiting]) c.id,
+        });
+      }
       return today;
     });
 

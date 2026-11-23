@@ -1621,7 +1621,7 @@ BEGIN
       pg_temp.call(p, pg_temp.dev('15'), 'SELECT public.get_my_dating_introductions()');
   END IF;
   -- M-6: act gives up a lock wait in 2 s (its retry then answers busy).
-  IF NOT EXISTS (SELECT 1 FROM pg_proc WHERE oid = 'public.act_on_dating_introduction(text,uuid,text)'::regprocedure
+  IF NOT EXISTS (SELECT 1 FROM pg_proc WHERE oid = 'public.act_on_dating_introduction(text,uuid,text,boolean)'::regprocedure -- Spec 2 W8b (R-T5-1)
                     AND 'lock_timeout=2s' = ANY (proconfig)) THEN
     RAISE EXCEPTION 'CONTRACT VIOLATED: act waits on a lock without a bound (M-6)';
   END IF;
@@ -2387,7 +2387,7 @@ DECLARE
   v_seen timestamptz;
   v_bad text[] := '{}';
 BEGIN
-  FOREACH v_fn IN ARRAY ARRAY['public.get_my_dating_today()', 'public.get_my_dating_introductions()',
+  FOREACH v_fn IN ARRAY ARRAY['public.get_my_dating_today(boolean)', 'public.get_my_dating_introductions(boolean)', -- Spec 2 W8b (R-T5-1)
                               'public.get_dating_abroad_options()'] LOOP
     UPDATE public.dating_trusted_devices SET last_seen_at = now() - interval '2 days' WHERE user_id = u;
     SELECT p.provolatile <> 'v' INTO v_ro FROM pg_catalog.pg_proc AS p WHERE p.oid = v_fn::regprocedure;
@@ -2396,7 +2396,7 @@ BEGIN
       IF v_ro THEN
         PERFORM set_config('transaction_read_only', 'on', true); -- as PostgREST runs a STABLE or IMMUTABLE RPC
       END IF;
-      PERFORM pg_temp.call(u, pg_temp.dev('b1'), 'SELECT ' || v_fn || '::text');
+      PERFORM pg_temp.call(u, pg_temp.dev('b1'), 'SELECT ' || split_part(v_fn, '(', 1) || '()::text'); -- Spec 2 W8b (R-T5-1): as the app calls it
       SELECT d.last_seen_at INTO v_seen FROM public.dating_trusted_devices AS d WHERE d.user_id = u;
       RAISE EXCEPTION 'w5:postgrest_undo';
     EXCEPTION WHEN raise_exception THEN

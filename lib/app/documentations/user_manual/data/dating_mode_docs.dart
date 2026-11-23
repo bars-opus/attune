@@ -230,6 +230,36 @@ class DatingModeDocs implements DocumentationModule {
               'On a new phone, a phone restored from a backup, or after a problem with your phone or the app, Dating asks you to check it\'s you before it shows anything: a short video check, or a person looks at two quick photos. It never asks for your ID again. Dating keeps working on up to three of your phones, and a phone you haven\'t used for Dating in 180 days needs the check again. If you started setting up Dating on another phone and hadn\'t passed the check yet, you start again on this one, so your answers stay private. Starting again keeps your "Never introduce me" list, and you can still delete it from Leave Dating and delete my data. People kept on your list from before stay protected but aren\'t shown, and can\'t be removed one at a time: to remove them, leave Dating and delete your data. If Attune can\'t check your phone at all, close Attune and open it again; if that keeps happening, contact support.',
           type: ManualContentType.text,
         ),
+        ManualContent(
+          id: 'dating_screen',
+          title: 'Screenshots and quick exit',
+          numberPrefix: '4',
+          content:
+              // Spec 2 W8a (§6.7; Plan copy): the screen protection and
+              // what quick exit keeps.
+              'On Android, a screenshot or a screen recording of Dating\'s pages comes out blank. An iPhone or iPad can\'t block a screenshot, so Attune hides its screen in the app switcher and blurs Dating\'s pages while the screen is being recorded or shared. Dating\'s photos are never saved to your phone or your gallery. Quick exit forgets everything Dating was showing; your Dating lock and your Safety PIN stay as they are.',
+          type: ManualContentType.text,
+        ),
+        ManualContent(
+          id: 'dating_app_icon',
+          title: 'A plain app icon',
+          numberPrefix: '5',
+          content:
+              // Spec 2 W8b (§6.7; R-80; Plan copy): Settings' row and
+              // Dating settings' open the same page.
+              'App icon, in Settings or in Dating settings, changes Attune\'s icon on your home screen to a plain one; its name stays the same. An iPhone or iPad shows a message when it changes; on Android your phone may close Attune while it changes, and the icon may move or leave your home screen (it stays in your app list). Quick exit and signing out never change it back: only you do, in App icon.',
+          type: ManualContentType.text,
+        ),
+        ManualContent(
+          id: 'dating_away',
+          title: 'When you travel',
+          numberPrefix: '6',
+          content:
+              // Spec 2 W8b (§2.5, §3.11; Task 7 fix round 1 R-T7-14; Plan
+              // copy): the note and its choices live only on their own page.
+              'If you\'re in a country where Dating isn\'t open, or where some introductions aren\'t allowed, Attune hides Dating, or those introductions, on this phone while you\'re there and makes no new ones. Your conversations are safe and come back when you leave. Me shows only a short line and "What this means": the note and its choices (keep it hidden, show it on this phone anyway, pause Dating, set a PIN) are on their own page, behind your Dating lock if it\'s on. It never comes as a notification.',
+          type: ManualContentType.text,
+        ),
       ],
     ),
     ManualSection(

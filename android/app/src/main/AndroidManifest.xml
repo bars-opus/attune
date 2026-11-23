@@ -92,9 +92,15 @@
               android:name="io.flutter.embedding.android.NormalTheme"
               android:resource="@style/NormalTheme"
               />
+            <!-- Spec 2 W8b (§6.7): the launcher entry is one of the two
+                 aliases below (the plain icon). This filter names a scheme
+                 no launcher sends, so no launcher lists MainActivity, but
+                 the Flutter tool (which looks for MAIN and LAUNCHER on an
+                 activity) still starts it explicitly. -->
             <intent-filter>
                 <action android:name="android.intent.action.MAIN"/>
                 <category android:name="android.intent.category.LAUNCHER"/>
+                <data android:scheme="attune-tool-launch"/>
             </intent-filter>
             <!-- Custom scheme (attune://invite?code=..., attune://auth/callback) —
                  opened directly by anything that already has the raw link
@@ -122,6 +128,50 @@
                     android:host="invite.attune.barsopus.com"/>
             </intent-filter>
         </activity>
+        <!-- Spec 2 W8b (§6.7): Settings > App icon. Exactly one of these is
+             on (MainActivity's attune/safety setAppIcon switches them); neutral
+             names only; the plain one carries the app's own label.
+             Never rename these two: the phone keeps each one's on/off by its
+             name, so a renamed alias would start at its manifest default and
+             could leave no launcher entry at all. -->
+        <activity-alias
+            android:name=".IconDefault"
+            android:targetActivity=".MainActivity"
+            android:enabled="true"
+            android:exported="true"
+            android:icon="@mipmap/ic_launcher"
+            android:label="attune">
+            <!-- An alias carries none of MainActivity's meta-data, and
+                 FlutterActivity reads it from the component that started
+                 it: without this the launch theme stays the window's. -->
+            <meta-data
+                android:name="io.flutter.embedding.android.NormalTheme"
+                android:resource="@style/NormalTheme"
+                />
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN"/>
+                <category android:name="android.intent.category.LAUNCHER"/>
+            </intent-filter>
+        </activity-alias>
+        <activity-alias
+            android:name=".IconPlain"
+            android:targetActivity=".MainActivity"
+            android:enabled="false"
+            android:exported="true"
+            android:icon="@mipmap/ic_launcher_plain"
+            android:label="attune">
+            <!-- An alias carries none of MainActivity's meta-data, and
+                 FlutterActivity reads it from the component that started
+                 it: without this the launch theme stays the window's. -->
+            <meta-data
+                android:name="io.flutter.embedding.android.NormalTheme"
+                android:resource="@style/NormalTheme"
+                />
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN"/>
+                <category android:name="android.intent.category.LAUNCHER"/>
+            </intent-filter>
+        </activity-alias>
         <!-- The photo crop screen (image_cropper; Spec 2 W3c T10). -->
         <activity
             android:name="com.yalantis.ucrop.UCropActivity"

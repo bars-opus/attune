@@ -158,9 +158,10 @@ void main() {
     expect(
       [for (final (fn, params) in calls) '$fn ${jsonEncode(params)}'],
       [
-        'get_my_dating_matches {"p_include_ended":true}',
-        'get_dating_messages {"p_match_id":"m1","p_before":null,"p_limit":50}',
-        'get_dating_messages {"p_match_id":"m1","p_before":"2026-11-20T18:00:00.000Z","p_limit":50}',
+        // Spec 2 W8b (R-T5-1): the phone's choice, always explicit.
+        'get_my_dating_matches {"p_include_ended":true,"p_show_same_gender":false}',
+        'get_dating_messages {"p_match_id":"m1","p_before":null,"p_limit":50,"p_show_same_gender":false}',
+        'get_dating_messages {"p_match_id":"m1","p_before":"2026-11-20T18:00:00.000Z","p_limit":50,"p_show_same_gender":false}',
         'send_dating_message {"p_idempotency_key":"key-0123456789abcdef","p_match_id":"m1","p_body":"Hi"}',
         'offer_dating_contact_swap {"p_match_id":"m1"}',
         'withdraw_dating_contact_swap {"p_match_id":"m1"}',

@@ -978,13 +978,13 @@ BEGIN
   -- A closer look is never shown, leaves the person's standing alone, and
   -- keeps them out of new generation.
   IF pg_temp.j(v_u, '64', 'SELECT public.get_my_dating_restriction()') IS DISTINCT FROM
-       '{"ok": true, "restriction": null, "appeal_accepted": false}'::jsonb
+       '{"ok": true, "review": "testing", "restriction": null, "appeal_accepted": false}'::jsonb -- Spec 2 W8b (M-6)
      OR NOT public.dating_account_in_good_standing(v_u) OR NOT pg_temp.excluded(v_u)
      OR (SELECT state FROM public.dating_enrollments WHERE user_id = v_u) <> 'active' THEN
     RAISE EXCEPTION 'CONTRACT VIOLATED: a closer look showed, changed standing, or left the person in generation';
   END IF;
   IF pg_temp.j(v_n, '65', 'SELECT public.get_my_dating_restriction()') IS DISTINCT FROM
-       '{"ok": true, "restriction": null, "appeal_accepted": false}'::jsonb THEN
+       '{"ok": true, "review": "testing", "restriction": null, "appeal_accepted": false}'::jsonb THEN -- Spec 2 W8b (M-6)
     RAISE EXCEPTION 'CONTRACT VIOLATED: someone with no restriction reads one';
   END IF;
 END $e$;
@@ -1022,7 +1022,7 @@ BEGIN
   END IF;
   v := pg_temp.j(v_x, '67', format('SELECT public.submit_dating_appeal(%L, %L, %L)', v_key, v_r, '  I didn''t do this.  '));
   SELECT id INTO v_a FROM public.dating_appeals WHERE restriction_id = v_r;
-  IF v IS DISTINCT FROM '{"ok": true}'::jsonb
+  IF v IS DISTINCT FROM '{"ok": true, "review": "testing"}'::jsonb -- Spec 2 W8b (M-6)
      OR (SELECT text || '/' || state FROM public.dating_appeals WHERE id = v_a) IS DISTINCT FROM 'I didn''t do this./open'
      OR (SELECT kind || '/' || priority || '/' || state || '/' || (sla_due_at BETWEEN now() + interval '6 days 23 hours' AND now() + interval '7 days 1 hour')
            FROM public.dating_moderation_cases WHERE appeal_id = v_a) IS DISTINCT FROM 'appeal/P2/open/true' THEN
@@ -1062,7 +1062,7 @@ BEGIN
   END IF;
   v := pg_temp.j(v_x, '67', 'SELECT public.get_my_dating_restriction()');
   v_got := private.dating_decide_appeal(v_a, v_mod2, false, false) ->> 'reason';
-  IF v IS DISTINCT FROM '{"ok": true, "restriction": null, "appeal_accepted": true}'::jsonb
+  IF v IS DISTINCT FROM '{"ok": true, "review": "testing", "restriction": null, "appeal_accepted": true}'::jsonb -- Spec 2 W8b (M-6)
      OR NOT coalesce((pg_temp.j(v_x, '67', 'SELECT public.get_dating_home()') ->> 'appeal_accepted')::boolean, false)
      OR v_got IS DISTINCT FROM 'appeal_unavailable' THEN
     RAISE EXCEPTION 'CONTRACT VIOLATED: the accepted appeal reads % (and on the section), or was decided twice', v;

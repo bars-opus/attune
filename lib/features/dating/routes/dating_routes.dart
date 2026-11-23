@@ -9,6 +9,7 @@ import 'package:attune/features/dating/chat/checkin_screen.dart';
 import 'package:attune/features/dating/chat/conversations_screen.dart';
 import 'package:attune/features/dating/chat/dating_chat_screen.dart';
 import 'package:attune/features/dating/chat/plan_meet_screen.dart';
+import 'package:attune/features/dating/device/trip_note.dart';
 import 'package:attune/features/dating/lock/dating_unlock.dart';
 import 'package:attune/features/dating/not_open/dating_not_open_screen.dart';
 import 'package:attune/features/dating/report/restricted_screen.dart';
@@ -17,6 +18,7 @@ import 'package:attune/features/dating/routes/dating_root_back.dart';
 import 'package:attune/features/dating/routes/dating_setup_steps.dart';
 import 'package:attune/features/dating/settings/dating_leave_screen.dart';
 import 'package:attune/features/dating/settings/abroad_screen.dart';
+import 'package:attune/features/dating/settings/app_icon_screen.dart';
 import 'package:attune/features/dating/settings/dating_settings_screen.dart';
 import 'package:attune/features/dating/settings/never_introduce_screen.dart';
 import 'package:attune/features/dating/today/dating_today.dart';
@@ -57,6 +59,13 @@ abstract final class DatingPaths {
 
   /// Spec 2 W7a (§3.7): the restricted, hold and age-check screen.
   static const restricted = '/dating/restricted';
+
+  /// Spec 2 W8b (§3.11, §3.14): the traveller's note and choices.
+  static const away = '/dating/away';
+
+  /// Spec 2 W8b (§3.12, §6.7): Settings -> App icon, inside Dating (Settings'
+  /// own is RouteNames.appIcon, R-80).
+  static const appIcon = '/dating/app-icon';
 
   static String step(String step) => '/dating/setup/$step';
 
@@ -331,5 +340,22 @@ List<RouteBase> datingRoutes({required bool Function() signedIn}) => [
     signedIn,
     (s) => const DatingRestrictedScreen(),
     back: datingMeLocation,
+  ),
+  // Spec 2 W8b (§3.11, §3.15): nothing here moves; alone, back is Me.
+  datingRoute(
+    DatingPaths.away,
+    'datingAway',
+    signedIn,
+    (s) => const DatingAwayScreen(),
+    back: datingMeLocation,
+  ),
+  // Spec 2 W8b (§3.12, §3.15): a standard list; alone, back is settings.
+  datingRoute(
+    DatingPaths.appIcon,
+    'datingAppIcon',
+    signedIn,
+    (s) => const DatingAppIconScreen(),
+    motion: (s) => DatingMotion.sharedAxis,
+    back: () => DatingPaths.settings,
   ),
 ];

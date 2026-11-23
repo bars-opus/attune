@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Spec 2 W8b (§6.7): the plain app icon's slate. -->
+<resources>
+    <color name="ic_launcher_plain_background">#56616B</color>
+</resources>

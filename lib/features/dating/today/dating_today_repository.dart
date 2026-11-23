@@ -6,6 +6,7 @@
 import 'dart:async';
 
 import 'package:attune/features/dating/data/dating_rpc.dart';
+import 'package:attune/features/dating/device/trip_phone.dart';
 import 'package:attune/features/dating/today/dating_today.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
@@ -37,26 +38,43 @@ abstract class DatingTodayGateway {
 }
 
 class DatingTodayRepository implements DatingTodayGateway {
-  DatingTodayRepository(this._rpc, this._invoke);
+  DatingTodayRepository(
+    this._rpc,
+    this._invoke, {
+    Future<bool> Function()? showSameGender,
+  }) : _showSameGender = showSameGender;
 
   /// Through the Dating-scoped client (its edge calls carry the device
   /// header, as its RPCs do).
-  factory DatingTodayRepository.of(DatingRpc rpc, SupabaseClient c) =>
-      DatingTodayRepository(
-        rpc,
-        (body) async =>
-            (await c.functions.invoke('dating-photo-urls', body: body)).data,
-      );
+  factory DatingTodayRepository.of(
+    DatingRpc rpc,
+    SupabaseClient c, {
+    Future<bool> Function()? showSameGender,
+  }) => DatingTodayRepository(
+    rpc,
+    (body) async =>
+        (await c.functions.invoke('dating-photo-urls', body: body)).data,
+    showSameGender: showSameGender,
+  );
 
   final DatingRpc _rpc;
   final DatingPhotoUrlsInvoke _invoke;
+
+  /// Spec 2 W8b (R-T5-1): this phone's "Show it on this phone anyway" for
+  /// the signed-in account, sent with Today and act.
+  final Future<bool> Function()? _showSameGender;
 
   static const timeout = Duration(seconds: 30);
 
   @override
   Future<DatingToday> today() async {
     try {
-      return DatingToday.fromJson(await _rpc.call('get_my_dating_today'));
+      return DatingToday.fromJson(
+        await _rpc.call(
+          'get_my_dating_today',
+          await datingShowSameGender(_showSameGender),
+        ),
+      );
     } on DatingBusy {
       return DatingToday.busy;
     } catch (_) {
@@ -68,11 +86,14 @@ class DatingTodayRepository implements DatingTodayGateway {
   Future<DatingActAnswer> act(String key, String id, String action) async {
     try {
       return DatingActAnswer.fromJson(
-        await _rpc.call('act_on_dating_introduction', {
-          'p_idempotency_key': key,
-          'p_introduction_id': id,
-          'p_action': action,
-        }),
+        await _rpc.call(
+          'act_on_dating_introduction',
+          await datingShowSameGender(_showSameGender, {
+            'p_idempotency_key': key,
+            'p_introduction_id': id,
+            'p_action': action,
+          }),
+        ),
       );
     } on DatingBusy {
       return DatingActAnswer.busy;

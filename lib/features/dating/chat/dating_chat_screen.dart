@@ -56,6 +56,7 @@ import 'package:attune/features/dating/chat/dating_chat_repository.dart';
 import 'package:attune/features/dating/chat/safety_card.dart';
 import 'package:attune/features/dating/data/dating_providers.dart';
 import 'package:attune/features/dating/data/dating_rpc.dart';
+import 'package:attune/features/dating/device/dating_device_check.dart';
 import 'package:attune/features/dating/gentle_wait/gentle_wait_providers.dart'
     show datingOnlineProvider;
 import 'package:attune/features/dating/report/dating_report.dart';
@@ -384,6 +385,14 @@ class _DatingChatScreenState extends ConsumerState<DatingChatScreen>
       });
       unawaited(_read());
     });
+    // Spec 2 W8 final client fix (I-1): a device check whose answer changed
+    // what the phone knew (a trip began or ended) reads the chat again.
+    ref.listenManual<int>(
+      datingDeviceCheckerProvider.select((s) => s.changes),
+      (previous, next) {
+        if (previous != next && mounted) unawaited(_read());
+      },
+    );
     // Final client fix (I-1): realtime never replays what changed while the
     // connection was down, so its return reads again (as the kit does).
     ref.listenManual<AsyncValue<bool>>(datingOnlineProvider, (previous, next) {
@@ -406,11 +415,11 @@ class _DatingChatScreenState extends ConsumerState<DatingChatScreen>
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed) unawaited(_read());
+    if (state == AppLifecycleState.resumed) unawaited(_read(resumed: true));
   }
 
   /// The newest page, read again (a signal, resume, a sheet closing).
-  Future<void> _read() async {
+  Future<void> _read({bool resumed = false}) async {
     final account = _account;
     final n = ++_reads;
     if (account == null) return;
@@ -425,7 +434,15 @@ class _DatingChatScreenState extends ConsumerState<DatingChatScreen>
     // stay done (answers and skips only add up), so the state is read
     // only while one is open or not yet known.
     if (_guidedDue) unawaited(_readGuided(account));
-    final page = await _counted(() => _gateway.messages(widget.matchId));
+    // Spec 2 W8 final client fix (I-1): after a device check under way (at
+    // most 3 s; on resume one is started when due), so a trip that began is
+    // hidden from this read. With none, the read goes in this same turn.
+    final checker = ref.read(datingDeviceCheckerProvider.notifier);
+    final check = resumed ? checker.ensure(account) : checker.running(account);
+    final page = await _counted(() async {
+      if (check != null) await DatingDeviceChecker.wait(check);
+      return _gateway.messages(widget.matchId);
+    });
     if (!mounted || _account != account || n != _reads) return;
     setState(() {
       if (page.ok) {

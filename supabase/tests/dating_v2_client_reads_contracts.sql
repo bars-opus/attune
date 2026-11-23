@@ -235,7 +235,7 @@ BEGIN
     (v_undated_new, v_ex3, 'ended', NULL), (v_undated_setup, v_ex4, 'ended', NULL);
   INSERT INTO public.dating_profiles (user_id, display_name, country_code, region_code) VALUES (v_undated_setup, 'Undated setup', 'GH', 'AA');
   IF pg_temp.home(v_undated_new) IS DISTINCT FROM '{"state": "not_started", "first_drop_at": null}'::jsonb
-     OR pg_temp.home(v_undated_setup) IS DISTINCT FROM '{"state": "setup_in_progress", "next_step": "looking-for", "first_drop_at": null}'::jsonb THEN
+     OR pg_temp.home(v_undated_setup) IS DISTINCT FROM '{"state": "setup_in_progress", "next_step": "looking-for", "first_drop_at": null, "offer_plain_icon": true}'::jsonb THEN -- Spec 2 W8b: Ghana is Tier 1 (D13's offer)
     RAISE EXCEPTION 'CONTRACT VIOLATED: an undated ending reads % / % (no first drop expected)',
       pg_temp.home(v_undated_new), pg_temp.home(v_undated_setup);
   END IF;

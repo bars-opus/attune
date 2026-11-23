@@ -82,6 +82,8 @@ void main() {
         'Notifications',
         // Spec 2 W5c (§3.12, Ruling 1): in the spec's order.
         'Never introduce me to these numbers',
+        // Spec 2 W8b (§3.12): App icon, for everyone.
+        'App icon',
         'Dating lock',
         'Pause Dating',
         'Leave Dating and delete my data',
@@ -98,7 +100,7 @@ void main() {
       expect(find.text('25 to 35'), findsOneWidget);
       // Spec 2 W5c (§3.12): the list's row is in now.
       expect(find.text('Never introduce me to these numbers'), findsOneWidget);
-      expect(find.textContaining('App icon'), findsNothing);
+      expect(find.text('App icon'), findsOneWidget); // Spec 2 W8b
     },
   );
 

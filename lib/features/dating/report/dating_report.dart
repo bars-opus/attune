@@ -249,6 +249,7 @@ class DatingRestrictionRead {
     this.reason,
     this.restriction,
     this.appealAccepted = false,
+    this.staffed = false,
   });
 
   static const none = DatingRestrictionRead(ok: true);
@@ -260,6 +261,13 @@ class DatingRestrictionRead {
   final DatingRestriction? restriction;
   final bool appealAccepted;
 
+  /// Spec 2 W8b (W7 carry M-6): a person reviews now (the server's
+  /// `review: staffed`). Read from the server, anything else (testing, or
+  /// no answer) is false and the screen makes no review-time promise.
+  /// Fix round 1 (M-2): a read built in code is not staffed unless it says
+  /// so (the safe default: no promise).
+  final bool staffed;
+
   /// Task 2 fix round: `{ok: false, reason: busy}` is busy (retryable);
   /// any other refusal is failed.
   factory DatingRestrictionRead.fromJson(Object? raw) {
@@ -269,6 +277,7 @@ class DatingRestrictionRead {
       ok: true,
       restriction: DatingRestriction.fromJson(raw['restriction']),
       appealAccepted: raw['appeal_accepted'] == true,
+      staffed: raw['review'] == 'staffed',
     );
   }
 }

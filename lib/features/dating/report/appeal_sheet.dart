@@ -40,6 +40,8 @@ Future<bool> showDatingAppealSheet(
   required String? account,
   required String restrictionId,
 }) async {
+  // Spec 2 W8a round 2 (Re-1-M2): nothing opens once Dating is blank.
+  if (datingSheetRefused) return false;
   Future<bool>? sending;
   // A sheet removed from outside (closeDatingSheets: the lock, quick exit)
   // never completes its own future (Navigator.removeRoute), so its going

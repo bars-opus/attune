@@ -28,6 +28,7 @@ BEGIN
     ('dating_profile_photos', true),
     ('dating_same_gender_matching', true),
     ('dating_age_assurance', true), -- Spec 2 W4a
+    ('dating_traveller_detection', true), -- Spec 2 W8b
     ('support_resources_v2', true) -- Spec 2 W6c (T10 fix 1, I-4): Get help's directory
   ON CONFLICT (key) DO UPDATE SET enabled = EXCLUDED.enabled, updated_at = now();
 

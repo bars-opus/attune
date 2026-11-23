@@ -167,10 +167,13 @@ void main() {
         'dismiss_dating_today_note',
         'save_dating_family_involvement',
       ]);
+      // Spec 2 W8b (R-T5-1): the phone's choice, always explicit.
+      expect(calls[0].$2, {'p_show_same_gender': false});
       expect(calls[1].$2, {
         'p_idempotency_key': 'k' * 20,
         'p_introduction_id': 'i1',
         'p_action': 'interested',
+        'p_show_same_gender': false,
       });
       expect(calls[4].$2, {'p_idempotency_key': 'f' * 20, 'p_value': 'early'});
       expect((await repo.photoUrls('introduction', 'i1'))!.map((u) => u.url), [

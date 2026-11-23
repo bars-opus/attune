@@ -169,4 +169,7 @@ class DatingActionKeys {
     }
     _held.remove(action);
   }
+
+  /// Spec 2 W8a (§6.7): every held key goes (quick exit, sign-out).
+  void clear() => _held.clear();
 }

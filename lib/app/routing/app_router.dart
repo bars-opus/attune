@@ -143,6 +143,7 @@ import 'package:attune/features/settings/screens/settings_screen.dart';
 import 'package:attune/features/settings/screens/theme_screen.dart';
 import 'package:attune/features/settings/presentation/screens/how_you_use_attune_screen.dart';
 import 'package:attune/features/settings/presentation/screens/birth_date_settings_screen.dart';
+import 'package:attune/features/settings/presentation/screens/app_icon_screen.dart';
 import 'package:attune/features/safety/presentation/screens/report_child_concern_screen.dart';
 import 'package:attune/features/couple_profile/data/couple_profile_service.dart';
 import 'package:attune/features/couple_profile/presentation/about_us_entry.dart'
@@ -192,6 +193,9 @@ class RouteNames {
   /// before linking (aboutUsLocation builds it).
   static const String aboutUs = '/about-us/:relationshipId';
   static const String signedInDevices = '/settings/signed-in-devices';
+
+  /// Spec 2 W8b (R-80): App icon, for everyone (no lock).
+  static const String appIcon = '/settings/app-icon';
   static const String dataExport = DataExportScreen.routeName;
   static const String quietStates = QuietStatesScreen.routeName;
   static const String hiddenPeriods = HiddenPeriodsScreen.routeName;
@@ -1714,6 +1718,12 @@ GoRouter createAppRouter(RoutingNotifier routingNotifier) {
         path: RouteNames.signedInDevices,
         name: 'signedInDevices',
         builder: (context, state) => const SignedInDevicesScreen(),
+      ),
+      // Spec 2 W8b (R-80): App icon, for everyone; the phone's own setting.
+      GoRoute(
+        path: RouteNames.appIcon,
+        name: 'appIcon',
+        builder: (context, state) => const AppIconScreen(),
       ),
       GoRoute(
         path: RouteNames.dataExport,

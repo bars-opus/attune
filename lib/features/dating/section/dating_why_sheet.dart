@@ -13,6 +13,8 @@ Future<void> showDatingWhySheet(
   BuildContext context, {
   required String country,
 }) {
+  // Spec 2 W8a round 2 (Re-1-M2): nothing opens once Dating is blank.
+  if (datingSheetRefused) return Future<void>.value();
   final loc = AppLocalizations.of(context)!;
   final name = datingCountryName(loc, country);
   return showModalBottomSheet<void>(

@@ -151,7 +151,8 @@ BEGIN
                            'dating_generation_runs', -- Spec 2 W5a (Task 3)
                            'dating_opener_hashes', -- Spec 2 W6c (Task 8 fix round 1): a purge step that sleeps
                            'dating_reports', -- Spec 2 W7a (Task 1 fix round 2): a report that sleeps after its first locks
-                           'dating_moderation_cases'] LOOP -- Spec 2 W7b (Task 5 fix round 1): a console decision that sleeps
+                           'dating_moderation_cases', -- Spec 2 W7b (Task 5 fix round 1): a console decision that sleeps
+                           'dating_session_context'] LOOP -- Spec 2 W8b (Task 4 fix round 1, M-5): a device check that sleeps
     EXECUTE format('DROP TRIGGER IF EXISTS zz_race_delay ON public.%I', t);
     EXECUTE format('CREATE TRIGGER zz_race_delay BEFORE UPDATE OR DELETE ON public.%I FOR EACH ROW EXECUTE FUNCTION race.delay()', t);
   END LOOP;
@@ -1654,5 +1655,120 @@ run "a suspension placed while the release sweep runs: the sweep skips, the pers
                THEN 'the sweep did not skip and count the person'
                ELSE 'ok' END;" serialised
 
-$P -c "SELECT race.reset(); UPDATE public.feature_flags SET enabled = false WHERE key = 'dating_candidate_generation';" > /dev/null 2>&1
+# Spec 2 W8b (Task 4 fix round 1, M-5): the trip choice reads the trip under
+# the context row's lock. P (60), a Ghana person whose last check was in the
+# UAE (a trip), comes home: the device check sleeps inside its upsert,
+# holding the row; 0.5 s in, P chooses "Show it on this phone anyway". The
+# choice waits on the row, then finds no trip: no_trip, its key unspent
+# (Task 4 fix round 4: no_trip answers before the claim), nothing written,
+# and a replay of its key answers no_trip too.
+FX_TRIPCHOICE="SELECT race.reset(); ALTER SEQUENCE race.s1 RESTART;
+SELECT race.ready('60', 'woman', ARRAY['man']);
+UPDATE public.feature_flags SET enabled = true WHERE key = 'dating_traveller_detection';
+INSERT INTO public.dating_session_context (user_id, effective_tier, dating_allowed_here, same_gender_allowed_here,
+  away_from_home, ip_resolved, mismatch_streak, checked_at)
+VALUES (race.id('60'), 1, false, false, true, true, 1, now() - interval '1 hour');
+INSERT INTO race.outcome SELECT 'tc_key', race.key('tc');"
+run "a device check that ends a trip while the trip choice waits: no_trip, the key unspent, and its replay no_trip" "$FX_TRIPCHOICE" \
+  "SET race.sleep_dating_session_context_update = '1.5:race.s1';
+   INSERT INTO race.outcome SELECT 'tc_check', public.record_dating_device_check(race.id('60'), encode(extensions.digest('0123456789abcdef0123456789abcdef', 'sha256'), 'hex'), 'GH', NULL)::text;" \
+  "SELECT pg_sleep(0.5);
+   INSERT INTO race.outcome SELECT 'tc_overlap', (SELECT is_called FROM race.s1)::text;
+   INSERT INTO race.outcome SELECT 'tc_choice', race.call(race.id('60'), format('SELECT public.set_dating_trip_choice(%L, true)',
+     (SELECT result FROM race.outcome WHERE name = 'tc_key')))::text;" \
+  "SELECT CASE WHEN (SELECT result FROM race.outcome WHERE name = 'tc_overlap') IS DISTINCT FROM 'true'
+               THEN 'the choice did not run while the check slept (no race)'
+               WHEN (SELECT result::jsonb ->> 'ok' FROM race.outcome WHERE name = 'tc_check') IS DISTINCT FROM 'true'
+               THEN 'the check answered ' || coalesce((SELECT result FROM race.outcome WHERE name = 'tc_check'), '-')
+               WHEN (SELECT result::jsonb FROM race.outcome WHERE name = 'tc_choice') IS DISTINCT FROM '{\"ok\": false, \"reason\": \"no_trip\"}'::jsonb
+               THEN 'the choice read the trip before the check landed: ' || coalesce((SELECT result FROM race.outcome WHERE name = 'tc_choice'), '-')
+               WHEN EXISTS (SELECT 1 FROM public.dating_rpc_idempotency WHERE user_id = race.id('60')
+                             AND idempotency_key = (SELECT result FROM race.outcome WHERE name = 'tc_key'))
+               THEN 'the refused key was spent'
+               WHEN race.call(race.id('60'), format('SELECT public.set_dating_trip_choice(%L, true)',
+                      (SELECT result FROM race.outcome WHERE name = 'tc_key'))) IS DISTINCT FROM '{\"ok\": false, \"reason\": \"no_trip\"}'::jsonb
+               THEN 'the no_trip key replayed something else'
+               WHEN (SELECT c.show_here OR c.trip_note_shown_at IS NOT NULL OR c.away_from_home
+                       FROM public.dating_session_context AS c WHERE c.user_id = race.id('60'))
+               THEN 'the choice wrote onto the ended trip, or the check did not land'
+               ELSE 'ok' END;" serialised
+
+# Spec 2 W8b (Task 4 fix round 4, R-T4-10, Re3-M-2): one lock order with
+# leaving (private.dating_exit_internal: the sensitive row, the context row,
+# then the phones). The trip choice takes the context row before its
+# phone's and never the sensitive row; the device check never the
+# sensitive row. (61) the leave sleeps holding the sensitive row while the
+# person's Show it on this phone anyway runs; (62) the choice sleeps
+# touching its phone's row (last seen 2 days ago) while the person leaves;
+# (63) a device check that ends a trip sleeps holding the context row while
+# the person leaves. Both land each time, no deadlock.
+FX_LO61="SELECT race.reset(); ALTER SEQUENCE race.s1 RESTART;
+SELECT race.ready('61', 'woman', ARRAY['man']);
+UPDATE public.feature_flags SET enabled = true WHERE key = 'dating_traveller_detection';
+INSERT INTO public.dating_session_context (user_id, effective_tier, dating_allowed_here, same_gender_allowed_here,
+  away_from_home, ip_resolved, mismatch_streak, checked_at)
+VALUES (race.id('61'), 1, false, false, true, true, 1, now() - interval '1 hour');"
+run "a leave holding the sensitive row while the trip choice runs: both land, no deadlock" "$FX_LO61" \
+  "SET race.sleep_dating_profile_sensitive_delete = '1.5:race.s1';
+   INSERT INTO race.outcome SELECT 'lo_exit', race.call(race.id('61'), format('SELECT to_jsonb(public.exit_dating_mode(%L))', race.key('exit'))) ->> 'state';" \
+  "SELECT pg_sleep(0.5);
+   INSERT INTO race.outcome SELECT 'lo_overlap', (SELECT is_called FROM race.s1)::text;
+   INSERT INTO race.outcome SELECT 'lo_choice', race.call(race.id('61'), format('SELECT public.set_dating_trip_choice(%L, true)', race.key('lo')))::text;" \
+  "SELECT CASE WHEN (SELECT result FROM race.outcome WHERE name = 'lo_overlap') IS DISTINCT FROM 'true'
+               THEN 'the choice did not run while the leave slept (no race)'
+               WHEN (SELECT result FROM race.outcome WHERE name = 'lo_exit') IS DISTINCT FROM 'exited'
+               THEN 'the leave answered ' || coalesce((SELECT result FROM race.outcome WHERE name = 'lo_exit'), '-')
+               WHEN (SELECT result::jsonb FROM race.outcome WHERE name = 'lo_choice') IS DISTINCT FROM '{\"ok\": true}'::jsonb
+               THEN 'the choice answered ' || coalesce((SELECT result FROM race.outcome WHERE name = 'lo_choice'), '-')
+               WHEN EXISTS (SELECT 1 FROM public.dating_session_context WHERE user_id = race.id('61'))
+               THEN 'the leave left the context row'
+               ELSE 'ok' END;" serialised
+
+FX_LO62="SELECT race.reset(); ALTER SEQUENCE race.s1 RESTART;
+SELECT race.ready('62', 'woman', ARRAY['man']);
+UPDATE public.feature_flags SET enabled = true WHERE key = 'dating_traveller_detection';
+INSERT INTO public.dating_session_context (user_id, effective_tier, dating_allowed_here, same_gender_allowed_here,
+  away_from_home, ip_resolved, mismatch_streak, checked_at)
+VALUES (race.id('62'), 1, false, false, true, true, 1, now() - interval '1 hour');
+UPDATE public.dating_trusted_devices SET last_seen_at = now() - interval '2 days' WHERE user_id = race.id('62');"
+run "the trip choice touching its phone while the person leaves: both land, no deadlock" "$FX_LO62" \
+  "SET race.sleep_dating_trusted_devices_update = '1.5:race.s1';
+   INSERT INTO race.outcome SELECT 'tp_choice', race.call(race.id('62'), format('SELECT public.set_dating_trip_choice(%L, true)', race.key('tp')))::text;" \
+  "SELECT pg_sleep(0.5);
+   INSERT INTO race.outcome SELECT 'tp_overlap', (SELECT is_called FROM race.s1)::text;
+   INSERT INTO race.outcome SELECT 'tp_exit', race.call(race.id('62'), format('SELECT to_jsonb(public.exit_dating_mode(%L))', race.key('exit'))) ->> 'state';" \
+  "SELECT CASE WHEN (SELECT result FROM race.outcome WHERE name = 'tp_overlap') IS DISTINCT FROM 'true'
+               THEN 'the leave did not run while the choice slept (no race)'
+               WHEN (SELECT result::jsonb FROM race.outcome WHERE name = 'tp_choice') IS DISTINCT FROM '{\"ok\": true}'::jsonb
+               THEN 'the choice answered ' || coalesce((SELECT result FROM race.outcome WHERE name = 'tp_choice'), '-')
+               WHEN (SELECT result FROM race.outcome WHERE name = 'tp_exit') IS DISTINCT FROM 'exited'
+               THEN 'the leave answered ' || coalesce((SELECT result FROM race.outcome WHERE name = 'tp_exit'), '-')
+               WHEN EXISTS (SELECT 1 FROM public.dating_trusted_devices WHERE user_id = race.id('62'))
+               THEN 'the leave left the phone bound'
+               ELSE 'ok' END;" serialised
+
+FX_LO63="SELECT race.reset(); ALTER SEQUENCE race.s1 RESTART;
+SELECT race.ready('63', 'woman', ARRAY['man']);
+UPDATE public.feature_flags SET enabled = true WHERE key = 'dating_traveller_detection';
+INSERT INTO public.dating_session_context (user_id, effective_tier, dating_allowed_here, same_gender_allowed_here,
+  away_from_home, ip_resolved, mismatch_streak, checked_at)
+VALUES (race.id('63'), 1, false, false, true, true, 1, now() - interval '1 hour');
+UPDATE public.dating_session_context SET dating_allowed_here = true, same_gender_allowed_here = true, away_from_home = false, mismatch_streak = 0, show_here = true, trip_note_shown_at = now() - interval '9 days', home_since = now() - interval '8 days' WHERE user_id = race.id('63');"
+run "a device check that ends a trip while the person leaves: both land, no deadlock" "$FX_LO63" \
+  "SET race.sleep_dating_session_context_update = '1.5:race.s1';
+   INSERT INTO race.outcome SELECT 'dc_check', public.record_dating_device_check(race.id('63'), encode(extensions.digest('0123456789abcdef0123456789abcdef', 'sha256'), 'hex'), 'GH', NULL)::text;" \
+  "SELECT pg_sleep(0.5);
+   INSERT INTO race.outcome SELECT 'dc_overlap', (SELECT is_called FROM race.s1)::text;
+   INSERT INTO race.outcome SELECT 'dc_exit', race.call(race.id('63'), format('SELECT to_jsonb(public.exit_dating_mode(%L))', race.key('exit'))) ->> 'state';" \
+  "SELECT CASE WHEN (SELECT result FROM race.outcome WHERE name = 'dc_overlap') IS DISTINCT FROM 'true'
+               THEN 'the leave did not run while the check slept (no race)'
+               WHEN (SELECT result::jsonb ->> 'ok' FROM race.outcome WHERE name = 'dc_check') IS DISTINCT FROM 'true'
+               THEN 'the check answered ' || coalesce((SELECT result FROM race.outcome WHERE name = 'dc_check'), '-')
+               WHEN (SELECT result FROM race.outcome WHERE name = 'dc_exit') IS DISTINCT FROM 'exited'
+               THEN 'the leave answered ' || coalesce((SELECT result FROM race.outcome WHERE name = 'dc_exit'), '-')
+               WHEN EXISTS (SELECT 1 FROM public.dating_session_context WHERE user_id = race.id('63'))
+               THEN 'the leave left the context row'
+               ELSE 'ok' END;" serialised
+
+$P -c "SELECT race.reset(); UPDATE public.feature_flags SET enabled = false WHERE key IN ('dating_candidate_generation', 'dating_traveller_detection');" > /dev/null 2>&1 # Spec 2 W8b: and the traveller flag
 exit $fail

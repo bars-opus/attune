@@ -14,6 +14,8 @@ import 'package:attune/features/dating/chat/dating_chat.dart';
 import 'package:attune/features/dating/chat/dating_chat_repository.dart';
 import 'package:attune/features/dating/data/dating_providers.dart';
 import 'package:attune/features/dating/data/dating_supabase_client.dart';
+import 'package:attune/features/dating/device/dating_device_check.dart';
+import 'package:attune/features/dating/device/trip_phone.dart';
 import 'package:attune/features/dating/gentle_wait/gentle_wait_providers.dart'
     show datingOnlineProvider;
 import 'package:attune/features/dating/lock/dating_unlock.dart'
@@ -25,6 +27,9 @@ final datingChatGatewayProvider = Provider<DatingChatGateway>(
   (ref) => DatingChatRepository(
     ref.watch(datingRpcProvider),
     ref.watch(datingSupabaseClientProvider),
+    // Spec 2 W8b (R-T4-9): the account signed in at each call (D8).
+    showSameGender:
+        () => DatingTripPhone.showFor(ref.read(datingAccountProvider)),
   ),
 );
 
@@ -32,6 +37,14 @@ final datingChatGatewayProvider = Provider<DatingChatGateway>(
 final datingConversationsProvider = FutureProvider.autoDispose
     .family<DatingConversations, String?>((ref, account) async {
       if (account == null) return DatingConversations.failed;
+      // Final client fix (I-1): as Today, after a device check due or under
+      // way (at most 3 s); not sent when its answer asked for a new read.
+      final checker = ref.read(datingDeviceCheckerProvider.notifier);
+      final asked = checker.changesFor(account);
+      await checker.settled(account);
+      if (checker.changesFor(account) != asked) {
+        return DatingConversations.failed;
+      }
       return ref.read(datingChatGatewayProvider).conversations(ended: true);
     });
 

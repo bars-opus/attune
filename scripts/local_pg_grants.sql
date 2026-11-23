@@ -375,7 +375,15 @@ BEGIN
     -- W1a twin (20261106110010).
     'public.report_dating_match(text, uuid, text, text)',
     'public.report_dating_introduction(text, uuid, text, text)',
-    'public.submit_dating_report(text, uuid, text, text)'] LOOP
+    'public.submit_dating_report(text, uuid, text, text)',
+    -- Spec 2 W8b Task 5 (R-T5-1): re-created by W8b with p_show_same_gender
+    -- (the old signatures dropped), named by the W1a, W5b and W6a twins
+    -- (20261106110010, 20261119110010, 20261120100010).
+    'public.get_my_dating_today()',
+    'public.get_my_dating_introductions()',
+    'public.act_on_dating_introduction(text, uuid, text)',
+    'public.get_my_dating_matches(boolean)',
+    'public.get_dating_messages(uuid, timestamp with time zone, integer)'] LOOP
     IF to_regprocedure(v_sig) IS NULL THEN
       EXECUTE format('CREATE FUNCTION %s RETURNS void LANGUAGE plpgsql AS %L', v_sig, 'BEGIN RETURN; END');
       INSERT INTO pg_temp.harness_stubs (kind, name) VALUES ('function', v_sig);
@@ -470,6 +478,10 @@ END $$;
 
 -- Spec 2 W5 final (M-1): the stand-ins made above go (only those).
 -- Spec 2 W6 final server fix (M-10): after the last twin that names one (W5c's).
+-- Spec 2 W6a: the chat (twin of 20261120100000). Spec 2 W8b Task 5: above
+-- the stand-ins' drop, as it names two W8b re-created reads' old signatures.
+\i supabase/migrations/20261120100010_dating_v2_chat_grants.sql
+
 DO $$
 DECLARE
   r record;
@@ -479,9 +491,6 @@ BEGIN
   END LOOP;
 END $$;
 DROP TABLE pg_temp.harness_stubs;
-
--- Spec 2 W6a: the chat (twin of 20261120100000)
-\i supabase/migrations/20261120100010_dating_v2_chat_grants.sql
 
 -- Spec 2 W6b: the chat safety pipeline (twin of 20261120110000)
 \i supabase/migrations/20261120110010_dating_v2_chat_safety_grants.sql
@@ -497,3 +506,6 @@ DROP TABLE pg_temp.harness_stubs;
 
 -- Spec 2 W7c: escalations, the law-enforcement log (twin of 20261121120000)
 \i supabase/migrations/20261121120010_dating_v2_escalations_grants.sql
+
+-- Spec 2 W8b: the traveller (twin of 20261122100000)
+\i supabase/migrations/20261122100010_dating_v2_traveller_grants.sql

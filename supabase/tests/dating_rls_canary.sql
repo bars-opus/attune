@@ -740,6 +740,40 @@ INSERT INTO allowed_fn (sig, clients, service) VALUES
   ('moderation_lift_case_holds(uuid,uuid)', '', 'service_role'),
   -- Round 4 (N3-1): the orphaned ID check's record test.
   ('private.dating_case_id_record_live(uuid)', '', '');
+-- Spec 2 W8b Task 4: the traveller. The device check's record is the
+-- service role's alone (dating-device-check's); the trip choice is the
+-- app's; the helpers are the database's own.
+INSERT INTO allowed_fn (sig, clients, service) VALUES
+  ('record_dating_device_check(uuid,text,text,text)', '', 'service_role'),
+  ('set_dating_trip_choice(text,boolean)', 'authenticated', ''),
+  ('private.dating_traveller_on()', '', ''),
+  ('private.dating_wants_same_gender(uuid)', '', ''),
+  ('private.dating_trip_hides(uuid,uuid,text)', '', ''),
+  ('private.dating_trip_json(uuid)', '', ''),
+  ('private.dating_icon_offer_json(uuid)', '', '');
+-- Spec 2 W8b Task 4 fix round 2 (Re-I-1): the one same-gender trip rule.
+INSERT INTO allowed_fn (sig, clients, service) VALUES
+  ('private.dating_has_same_gender_pair(uuid)', '', ''),
+  ('private.dating_same_gender_trip(uuid)', '', '');
+-- Spec 2 W8b Task 4 fix round 3: the pair as the viewer sees it, the
+-- introduction states that count, the hiding computed once (fix round 4:
+-- the encrypted trip choice is gone).
+INSERT INTO allowed_fn (sig, clients, service) VALUES
+  ('private.dating_intro_counts(text,timestamp with time zone)', '', ''),
+  ('private.dating_pair_seen_as_man_woman(uuid,uuid)', '', ''),
+  ('private.dating_same_gender_hiding(uuid)', '', ''),
+  ('private.dating_trip_hides(uuid,uuid,text,boolean)', '', '');
+-- Spec 2 W8b Task 5 (W7 carry M-6): whether a person reviews now.
+INSERT INTO allowed_fn (sig, clients, service) VALUES
+  ('private.dating_review_mode()', '', '');
+-- Spec 2 W8b Task 5 (R-T5-1): the reads that hide take the phone's
+-- "Show it on this phone anyway"; the old signatures are gone and the new
+-- ones are granted exactly as they were (the app's alone).
+UPDATE allowed_fn SET sig = 'get_my_dating_today(boolean)' WHERE sig = 'get_my_dating_today()';
+UPDATE allowed_fn SET sig = 'get_my_dating_introductions(boolean)' WHERE sig = 'get_my_dating_introductions()';
+UPDATE allowed_fn SET sig = 'act_on_dating_introduction(text,uuid,text,boolean)' WHERE sig = 'act_on_dating_introduction(text,uuid,text)';
+UPDATE allowed_fn SET sig = 'get_my_dating_matches(boolean,boolean)' WHERE sig = 'get_my_dating_matches(boolean)';
+UPDATE allowed_fn SET sig = 'get_dating_messages(uuid,timestamp with time zone,integer,boolean)' WHERE sig = 'get_dating_messages(uuid,timestamp with time zone,integer)';
 
 -- ---------------------------------------------------------------------
 -- Checks (every batch adds its rows above this line).
@@ -761,10 +795,10 @@ END $$;
 -- reason (I-4's pin leaves it at ''); this asserts the finished list.
 DO $$ BEGIN
   IF (SELECT string_agg(clients || '|' || coalesce(service, '<unpinned>'), ';') FROM allowed_fn
-       WHERE sig = 'act_on_dating_introduction(text,uuid,text)') IS DISTINCT FROM 'authenticated|' THEN
+       WHERE sig = 'act_on_dating_introduction(text,uuid,text,boolean)') IS DISTINCT FROM 'authenticated|' THEN -- Spec 2 W8b (R-T5-1)
     RAISE EXCEPTION 'CONTRACT VIOLATED: the allow-list lets more than the app run the card''s act: %',
       (SELECT string_agg(clients || '|' || coalesce(service, '<unpinned>'), ';') FROM allowed_fn
-        WHERE sig = 'act_on_dating_introduction(text,uuid,text)');
+        WHERE sig = 'act_on_dating_introduction(text,uuid,text,boolean)'); -- Spec 2 W8b (R-T5-1)
   END IF;
 END $$;
 CREATE FUNCTION pg_temp.table_privs(p_rel oid, p_role text, p_dml_only boolean) RETURNS text LANGUAGE sql AS $$

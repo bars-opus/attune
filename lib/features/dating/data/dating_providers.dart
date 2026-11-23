@@ -9,6 +9,7 @@ import 'package:attune/features/dating/data/dating_home_repository.dart';
 import 'package:attune/features/dating/data/dating_lifecycle_repository.dart';
 import 'package:attune/features/dating/data/dating_rpc.dart';
 import 'package:attune/features/dating/data/dating_supabase_client.dart';
+import 'package:attune/features/dating/device/trip_phone.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 /// The signed-in account's id (null when signed out).
@@ -29,13 +30,16 @@ final datingLifecycleGatewayProvider = Provider<DatingLifecycleGateway>(
 );
 
 /// The home, one entry per account: the next account's entry starts as a
-/// plain loading value, never holding the last one's state.
+/// plain loading value, never holding the last one's state. Spec 2 W8b
+/// (R-T4-9, Re4-I-2): a same-gender trip takes its note and choice from
+/// this phone, and every good read keeps the phone's mark in step.
 final datingHomeProvider = FutureProvider.autoDispose
     .family<DatingHome, String?>((ref, account) async {
       if (account == null) {
         return const DatingHome(state: DatingHomeState.unavailable);
       }
-      return ref.read(datingHomeGatewayProvider).read();
+      final home = await ref.read(datingHomeGatewayProvider).read();
+      return DatingTripPhone.onHome(account, home);
     });
 
 /// The countries Dating is open in. Config only, with no personal data, so

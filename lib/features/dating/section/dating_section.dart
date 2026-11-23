@@ -3,8 +3,12 @@
 // its card; any other reads as unavailable (Task 1's model). A 200 ms
 // cross-fade between states (none with reduce motion); one semantic region
 // "Dating"; a failed or offline read says so (nothing is cached). Nothing
-// here is kept on the phone (D20); taps belong to the account that made
-// them (D8).
+// here is kept on the phone (D20; Spec 2 W8b: but a same-gender trip's
+// note answer, trip_phone.dart, R-T4-9); taps belong to the account that
+// made them (D8). Spec 2 W8b (§2.3, §3.11): the device check and the away
+// card. Fix round 1 (I-2, I-3): a trip on Me is one neutral line and "What
+// this means"; the note's words, the place and the choices are only on
+// /dating/away (Me has no FLAG_SECURE or capture cover).
 import 'package:attune/app/routing/app_router.dart' show RouteNames;
 import 'package:attune/app/theme/design_tokens.dart';
 import 'package:attune/core/ui/motion/motion_tokens.dart';
@@ -19,6 +23,9 @@ import 'package:attune/features/dating/data/dating_home_repository.dart';
 import 'package:attune/features/dating/data/dating_names.dart';
 import 'package:attune/features/dating/data/dating_providers.dart';
 import 'package:attune/features/dating/data/dating_rpc.dart';
+import 'package:attune/features/dating/device/dating_device_check.dart';
+import 'package:attune/features/dating/device/dating_trip.dart';
+import 'package:attune/features/dating/device/dating_surface.dart';
 import 'package:attune/features/dating/gentle_wait/gentle_wait_providers.dart'
     show datingOnlineProvider;
 import 'package:attune/features/dating/report/restricted_screen.dart'
@@ -58,12 +65,17 @@ class _DatingSectionState extends ConsumerState<DatingSection>
   /// Contact support here (said in the app's own words, with the address).
   String? _noMailFor;
 
+  /// Spec 2 W8b: the signed-in account's home, followed for the check.
+  ProviderSubscription<AsyncValue<DatingHome>>? _homeWatch;
+
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     ref.listenManual<String?>(datingAccountProvider, (previous, next) {
       if (previous == next || !mounted) return;
+      // Spec 2 W8b (D8): the next account's home is followed for itself.
+      _watchHome(next);
       setState(() {
         _busy = false;
         _error = null;
@@ -71,6 +83,45 @@ class _DatingSectionState extends ConsumerState<DatingSection>
         _noMailFor = null;
       });
     });
+    // Final client fix (I-1): Dating's device checker lives while the
+    // section shows (its answers, its throttle, its lifecycle hook).
+    ref.listenManual(datingDeviceCheckerProvider, (_, __) {});
+    // Spec 2 W8b (§2.3): each good home read may check where the phone is.
+    _watchHome(ref.read(datingAccountProvider));
+  }
+
+  void _watchHome(String? account) {
+    _homeWatch?.close();
+    _homeWatch = ref.listenManual<AsyncValue<DatingHome>>(
+      datingHomeProvider(account),
+      (_, next) {
+        if (next.isLoading || next.hasError) return;
+        _maybeCheck(account, next.valueOrNull);
+      },
+      fireImmediately: true,
+    );
+  }
+
+  /// Spec 2 W8b (§2.3, §2.5): someone with Dating data, on a phone Dating
+  /// can use, checks where they are at most once per 15 minutes while the
+  /// section shows; when the answer disagrees with the home shown (a trip
+  /// began or ended), the home is read again once. A failed check changes
+  /// nothing. Final client fix (I-1): the check is Dating's checker's (it
+  /// also starts on resume, on the first Dating page and from Dating's
+  /// reads); a home read while one is under way waits for its answer; an
+  /// answer that changed what the phone knew has read the home again
+  /// already.
+  Future<void> _maybeCheck(String? account, DatingHome? home) async {
+    if (account == null || home == null) return;
+    final run = ref
+        .read(datingDeviceCheckerProvider.notifier)
+        .ensure(account, home: home);
+    if (run == null) return;
+    final done = await run;
+    if (!mounted || ref.read(datingAccountProvider) != account) return;
+    if (done.answer.ok && !done.changed && done.answer.disagreesWith(home)) {
+      _refresh();
+    }
   }
 
   /// M-4 (W4b carry): support's email, as the restricted screen opens it;
@@ -174,6 +225,10 @@ class _DatingSectionState extends ConsumerState<DatingSection>
     // One entry per account (D8), so a value here is this account's; a
     // failed refresh never shows the last state (nothing is cached).
     final data = home.hasError ? null : home.valueOrNull;
+    // Spec 2 W8b (§3.11): the place of a trip, held while the section shows
+    // (watched from the first frame, so a check's answer is never lost), for
+    // /dating/away opened from here. Fix round 1 (I-2): never shown on Me.
+    ref.watch(datingTripPlaceProvider(account));
     final Object key;
     final Widget child;
     if (data != null) {
@@ -206,20 +261,24 @@ class _DatingSectionState extends ConsumerState<DatingSection>
       key = 'loading';
       child = const SizedBox(height: 96);
     }
-    return Semantics(
-      container: true,
-      label: loc.flow_slotDatingTitle,
-      // A new account gets a new switcher (D8, I-8): the last account's
-      // card never stays in the tree while it would fade out.
-      child: KeyedSubtree(
-        key: ValueKey(account),
-        child: AnimatedSwitcher(
-          duration:
-              reduceMotionOf(context)
-                  // Fix round 1 (Minor 4): reduce motion fades at 150 ms.
-                  ? kReducedMotionFade
-                  : const Duration(milliseconds: 200),
-          child: KeyedSubtree(key: ValueKey(key), child: child),
+    // Spec 2 W8a fix round 1 (M-3): nothing of the section under quick
+    // exit's decoy (it keeps its place, so Me doesn't move).
+    return DatingSurfaceGuard.section(
+      child: Semantics(
+        container: true,
+        label: loc.flow_slotDatingTitle,
+        // A new account gets a new switcher (D8, I-8): the last account's
+        // card never stays in the tree while it would fade out.
+        child: KeyedSubtree(
+          key: ValueKey(account),
+          child: AnimatedSwitcher(
+            duration:
+                reduceMotionOf(context)
+                    // Fix round 1 (Minor 4): reduce motion fades at 150 ms.
+                    ? kReducedMotionFade
+                    : const Duration(milliseconds: 200),
+            child: KeyedSubtree(key: ValueKey(key), child: child),
+          ),
         ),
       ),
     );
@@ -246,6 +305,17 @@ class _DatingSectionState extends ConsumerState<DatingSection>
       label: loc.flow_slotNotReady,
       alignment: AlignmentDirectional.centerStart,
       onPressed: _notReady,
+    );
+    // Spec 2 W8b fix round 1 (I-2, I-3): while a same-gender trip lasts,
+    // the active and gentle-wait cards say one neutral line and link to
+    // /dating/away, where the note and "Keep it hidden" always are (the way
+    // back after "Show it on this phone anyway").
+    final sameGender = h.trip?.kind == DatingTripKind.sameGender;
+    final tripLink = FlowTextLink(
+      key: const ValueKey('dating_trip_more'),
+      label: loc.dating_tripMore,
+      alignment: AlignmentDirectional.centerStart,
+      onPressed: () => context.push(DatingPaths.away),
     );
     switch (h.state) {
       case DatingHomeState.featureUnavailable:
@@ -338,8 +408,12 @@ class _DatingSectionState extends ConsumerState<DatingSection>
                 MyDateFormat.toDate(at),
                 MyDateFormat.toTime(at),
               ),
+            if (sameGender) loc.dating_tripSameGenderTitle,
           ],
-          children: [if (settings != null) settings],
+          children: [
+            if (sameGender) tripLink,
+            if (settings != null) settings,
+          ],
         );
       case DatingHomeState.active:
         return _SectionCard(
@@ -348,6 +422,7 @@ class _DatingSectionState extends ConsumerState<DatingSection>
             // Spec 2 W7a (§3.7): for 7 days after an accepted appeal.
             if (h.appealAccepted) loc.dating_appealAccepted,
             loc.dating_sectionActive,
+            if (sameGender) loc.dating_tripSameGenderTitle,
           ],
           children: [
             // Spec 2 W5b (§3.1, §3.4): the day's introductions.
@@ -361,11 +436,29 @@ class _DatingSectionState extends ConsumerState<DatingSection>
               label: loc.dating_chatsTitle,
               onPressed: () => context.push(DatingPaths.chats),
             ),
+            if (sameGender) tripLink,
             if (settings != null) settings,
           ],
         );
       case DatingHomeState.paused:
-        return _paused(context, loc, h, online, settings);
+        return _paused(context, loc, h, online, settings, tripLink);
+      // Spec 2 W8b (§3.1, §3.11): hidden while away; shown on this phone
+      // anyway, the conversations stay one tap away.
+      case DatingHomeState.away:
+        return _SectionCard(
+          title: loc.flow_slotDatingTitle,
+          lines: [loc.dating_sectionAway],
+          onTap: () => context.push(DatingPaths.away),
+          children: [
+            tripLink,
+            if (h.trip?.showHere ?? false)
+              FlowSecondaryButton(
+                label: loc.dating_chatsTitle,
+                onPressed: () => context.push(DatingPaths.chats),
+              ),
+            if (settings != null) settings,
+          ],
+        );
       // Spec 2 W4b (§3.3.4): the re-check, or the setup again, here; a
       // phone with no install id can't be checked (T6 I-4 ruling).
       case DatingHomeState.reverifyDevice:
@@ -503,6 +596,7 @@ class _DatingSectionState extends ConsumerState<DatingSection>
     DatingHome h,
     bool online,
     Widget? settings,
+    Widget tripLink,
   ) {
     final reason = h.pauseReason;
     // Every reason has a safe card (carry 9); Resume only where resume can
@@ -552,6 +646,16 @@ class _DatingSectionState extends ConsumerState<DatingSection>
         // (R-53); fix round 1 (M-6): said without "open again".
         if (h.appealAccepted) loc.dating_appealAcceptedPaused,
         if (!ended) line,
+        // Final client fix round 2 (server M-1; R-T7-14 extended): the home
+        // names a trip while paused too. Me says the same neutral line as
+        // the active and gentle-wait cards (the away one once: a travel
+        // pause already says it) and links to /dating/away; the note's
+        // words, the place and the choices stay there.
+        if (h.trip?.kind == DatingTripKind.sameGender)
+          loc.dating_tripSameGenderTitle,
+        if (h.trip?.kind == DatingTripKind.away &&
+            reason != DatingPauseReason.away)
+          loc.dating_sectionAway,
       ],
       children: [
         // Final fix (M-10): the one final ending is D11's error row (the
@@ -629,6 +733,8 @@ class _DatingSectionState extends ConsumerState<DatingSection>
           label: loc.dating_chatsTitle,
           onPressed: () => context.push(DatingPaths.chats),
         ),
+        // Round 2 (server M-1): as on the active card, before settings.
+        if (h.trip != null) tripLink,
         if (settings != null) settings,
       ],
     );

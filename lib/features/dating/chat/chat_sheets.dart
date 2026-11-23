@@ -43,17 +43,21 @@ Future<T?> _show<T>(
   String name,
   String? account,
   Widget Function(BuildContext context, void Function(T?) close) builder,
-) => showModalBottomSheet<T>(
-  context: context,
-  routeSettings: datingSheetSettings(name),
-  isScrollControlled: true,
-  builder:
-      (sheet) => DatingSheetTracker(
-        child: AllowLargeText(
-          child: _OnceSheet<T>(account: account, builder: builder),
+) {
+  // Spec 2 W8a round 2 (Re-1-M2): nothing opens once Dating is blank.
+  if (datingSheetRefused) return Future<T?>.value();
+  return showModalBottomSheet<T>(
+    context: context,
+    routeSettings: datingSheetSettings(name),
+    isScrollControlled: true,
+    builder:
+        (sheet) => DatingSheetTracker(
+          child: AllowLargeText(
+            child: _OnceSheet<T>(account: account, builder: builder),
+          ),
         ),
-      ),
-);
+  );
+}
 
 class _OnceSheet<T> extends ConsumerStatefulWidget {
   const _OnceSheet({required this.account, required this.builder});

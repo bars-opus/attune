@@ -30,6 +30,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../../../helpers/home_harness.dart' show testUser;
 import 'dating_chat_fakes.dart';
 import 'dating_fakes.dart';
+import 'dating_trip_fakes.dart';
 import 'dating_verify_fakes.dart';
 
 /// Spec 2 W4a: both checks passed, so D11 shows "You're verified." and
@@ -219,6 +220,8 @@ Future<DatingShell> pumpDatingShell(
         // Spec 2 W6a: the chat is faked unless a test says otherwise.
         ...datingChatOverrides(FakeDatingChat()),
         ...datingKitOverrides,
+        // Spec 2 W8b: the device check is faked unless a test says otherwise.
+        ...datingTripOverrides(FakeDatingTrip()),
         ...overrides,
       ],
       child: ScreenUtilConfig.builder(
@@ -273,6 +276,8 @@ List<Override> datingShellOverrides({
   datingAbroadGatewayProvider.overrideWithValue(FakeAbroad()),
   ...datingChatOverrides(FakeDatingChat()),
   ...datingKitOverrides,
+  // Spec 2 W8b: the device check is faked.
+  ...datingTripOverrides(FakeDatingTrip()),
 ];
 
 /// The Dating section's overrides for a Spec 1 test that renders Me on the
@@ -287,4 +292,6 @@ List<Override> datingHomeOnlyOverrides({
   datingLockStoreProvider.overrideWithValue(FakeLock(false)),
   datingLockAccountProvider.overrideWith((ref) => Stream.value(account)),
   datingOnlineProvider.overrideWith((ref) => Stream.value(true)),
+  // Spec 2 W8b: the device check is faked.
+  ...datingTripOverrides(FakeDatingTrip()),
 ];

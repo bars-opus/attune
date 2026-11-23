@@ -5478,4 +5478,77 @@ class AppLocalizationsDe extends AppLocalizations {
   String dating_restrictedIdCode(String code) {
     return 'Include this code in your email: $code';
   }
+
+  @override
+  String get dating_unlockCaptureLine => 'Stop recording or sharing your screen to enter your PIN.';
+
+  @override
+  String get dating_tripAwayTitle => 'Dating is hidden while you\'re away';
+
+  @override
+  String dating_tripAwayBody(String country) {
+    return 'While you\'re in $country, your Dating section is hidden on this phone and nobody new is introduced to you. Your conversations are safe and come back when you leave.';
+  }
+
+  @override
+  String get dating_tripAwayBodyNoPlace => 'While you\'re away, your Dating section is hidden on this phone and nobody new is introduced to you. Your conversations are safe and come back when you leave.';
+
+  @override
+  String get dating_tripSameGenderTitle => 'Some introductions are paused while you\'re away';
+
+  @override
+  String dating_tripSameGenderBody(String country) {
+    return 'While you\'re in $country, introductions between people of the same gender are switched off for you, and the ones you have are hidden on this phone. They come back when you leave.';
+  }
+
+  @override
+  String get dating_tripSameGenderBodyNoPlace => 'While you\'re away, introductions between people of the same gender are switched off for you, and the ones you have are hidden on this phone. They come back when you leave.';
+
+  @override
+  String get dating_tripKeepHidden => 'Keep it hidden';
+
+  @override
+  String get dating_tripShowAnyway => 'Show it on this phone anyway';
+
+  @override
+  String get dating_tripPause => 'Pause Dating';
+
+  @override
+  String get dating_tripSetPin => 'Set a PIN';
+
+  @override
+  String get dating_tripMore => 'What this means';
+
+  @override
+  String get dating_appealSentTesting => 'Appeal sent. A different person from the one who made the first decision will look at it.';
+
+  @override
+  String get appIcon_title => 'App icon';
+
+  @override
+  String get appIcon_intro => 'Some people like their apps to look plain. The icon on your home screen changes; Attune works the same.';
+
+  @override
+  String get appIcon_attune => 'Attune';
+
+  @override
+  String get appIcon_plain => 'Plain';
+
+  @override
+  String get appIcon_ios => 'You\'ll see a message when the icon changes.';
+
+  @override
+  String get appIcon_android => 'Your phone may close Attune while the icon changes, and the icon may move or leave your home screen. It stays in your app list.';
+
+  @override
+  String get appIcon_failed => 'That didn\'t change. Try again.';
+
+  @override
+  String get appIcon_unsupported => 'This phone can\'t change Attune\'s icon.';
+
+  @override
+  String get dating_readyPlainIcon => 'Some people like their apps to look plain.';
+
+  @override
+  String get dating_readyPlainIconButton => 'Choose an app icon';
 }

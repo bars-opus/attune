@@ -2,7 +2,7 @@
 // 30-minute steps, a labelled list), one item while you wait (R-39), the
 // shared-phone question (S17: Spec 1's Dating lock, the PIN set up first;
 // the existing every-open PIN), and Done -> activate_dating_profile, then Me.
-// The plain-icon offer stays hidden until W8b (A-11). No motion (§3.15).
+// The plain-icon offer in Tier 1/2 (W8b, A-11). No motion (§3.15).
 //
 // T11 carries: activation settles its key once the answer is final (carry
 // A: a named refusal gives the next Done a new key; busy or failed keeps
@@ -21,6 +21,8 @@ import 'package:attune/features/dating/data/dating_providers.dart';
 import 'package:attune/features/dating/data/dating_rpc.dart';
 import 'package:attune/features/dating/gentle_wait/gentle_wait_providers.dart'
     show datingOnlineProvider;
+import 'package:attune/features/dating/routes/dating_routes.dart'
+    show DatingPaths;
 import 'package:attune/features/dating/routes/dating_setup_steps.dart';
 import 'package:attune/features/dating/section/dating_lifecycle_errors.dart';
 import 'package:attune/features/dating/setup/dating_picker_sheet.dart';
@@ -275,8 +277,17 @@ class _DatingReadyStepState extends ConsumerState<DatingReadyStep>
               onChanged: _setEveryOpen,
             ),
           ],
-          // A-11: "Some people like their apps to look plain." arrives with
-          // Settings -> App icon in W8b.
+          // Spec 2 W8b (A-11): the plain-icon offer, when the effective
+          // tier is 1 or 2 (the home says so).
+          if (ref.watch(datingHomeProvider(account)).valueOrNull?.offerPlainIcon ??
+              false) ...[
+            const SizedBox(height: Spacing.md),
+            Text(loc.dating_readyPlainIcon, style: theme.textTheme.bodyMedium),
+            DatingStartLink(
+              label: loc.dating_readyPlainIconButton,
+              onPressed: () => context.push(DatingPaths.appIcon),
+            ),
+          ],
           if (_error != null)
             ...datingLifecycleErrorRows(
               context,

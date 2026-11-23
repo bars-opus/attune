@@ -11,6 +11,7 @@ import 'package:attune/features/auth/sign_up/presentation/widgets/flow_text_fiel
 import 'package:attune/features/dating/data/dating_rpc.dart';
 import 'package:attune/features/dating/data/models/dating_profile_photo.dart';
 import 'package:attune/features/dating/dating_device_wipes.dart';
+import 'package:attune/features/dating/device/dating_surface.dart';
 import 'package:attune/features/dating/domain/services/dating_image_preparer.dart';
 import 'package:attune/features/dating/gentle_wait/gentle_wait_providers.dart'
     show datingOnlineProvider;
@@ -1904,6 +1905,67 @@ void main() {
     r.gateway.photos = [photo(1, 'pending')];
     await _recheck(t);
     expect(find.text(line), findsNothing);
+  });
+
+  // Spec 2 W8a fix round 1 (I-1): no frame of them under quick exit's decoy.
+  group('W8a: blank once quick exit or sign-out runs', () {
+    testWidgets('the caption sheet, with what was typed', (t) async {
+      addTearDown(DatingSurface.reset);
+      final gateway = FakeDatingPhotosGateway(
+        photos: [photo(1, 'approved')],
+        afterMutualFrom: DateTime.utc(2026, 1, 1),
+      );
+      await _open9(t, gateway: gateway);
+      await tapInReach(t, find.byTooltip('Add a caption (only you see it)'));
+      await t.pumpAndSettle();
+      const typed = "At my sister's wedding";
+      await t.enterText(find.widgetWithText(TextField, 'Caption'), typed);
+      await t.pump();
+      expect(find.text(typed), findsOneWidget);
+      await DatingSurface.hide();
+      await t.pump();
+      expect(find.text(typed, skipOffstage: false), findsNothing);
+      expect(find.widgetWithText(TextField, 'Caption'), findsNothing);
+    });
+
+    testWidgets('the Remove dialog', (t) async {
+      addTearDown(DatingSurface.reset);
+      await _photos(t, photos: [photo(1, 'approved')]);
+      await tapInReach(t, find.byTooltip('Remove').first);
+      await t.pumpAndSettle();
+      expect(find.text('Remove photo 1?'), findsOneWidget);
+      await DatingSurface.hide();
+      await t.pump();
+      expect(find.text('Remove photo 1?', skipOffstage: false), findsNothing);
+    });
+
+    // Round 2 (Re-1-M2): once Dating is blank neither opens.
+    testWidgets('the caption sheet never opens', (t) async {
+      addTearDown(DatingSurface.reset);
+      final gateway = FakeDatingPhotosGateway(
+        photos: [photo(1, 'approved')],
+        afterMutualFrom: DateTime.utc(2026, 1, 1),
+      );
+      await _open9(t, gateway: gateway);
+      await DatingSurface.hide();
+      await tapInReach(t, find.byTooltip('Add a caption (only you see it)'));
+      await t.pumpAndSettle();
+      expect(find.byType(BottomSheet, skipOffstage: false), findsNothing);
+      expect(gateway.calls.where((c) => c.$1 == 'caption'), isEmpty);
+    });
+
+    testWidgets('the Remove dialog never opens', (t) async {
+      addTearDown(DatingSurface.reset);
+      final (gateway, _, _, _) = await _photos(
+        t,
+        photos: [photo(1, 'approved')],
+      );
+      await DatingSurface.hide();
+      await tapInReach(t, find.byTooltip('Remove').first);
+      await t.pumpAndSettle();
+      expect(find.byType(AlertDialog, skipOffstage: false), findsNothing);
+      expect(gateway.calls.where((c) => c.$1 == 'remove'), isEmpty);
+    });
   });
 }
 

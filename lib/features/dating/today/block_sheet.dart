@@ -64,6 +64,8 @@ Future<bool> _show(
   String? account,
   Widget Function(BuildContext context, void Function(bool) close) builder,
 ) async {
+  // Spec 2 W8a round 2 (Re-1-M2): nothing opens once Dating is blank.
+  if (datingSheetRefused) return false;
   final chosen = await showModalBottomSheet<bool>(
     context: context,
     routeSettings: datingSheetSettings(name),

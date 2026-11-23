@@ -2,6 +2,7 @@
 import 'package:attune/app/theme/design_tokens.dart';
 import 'package:attune/core/ui/text/allow_large_text.dart';
 import 'package:attune/i10n/generated/app_localizations.dart';
+import 'package:attune/features/dating/lock/dating_sheets.dart';
 import 'package:flutter/material.dart';
 
 Future<T?> showDatingPicker<T>(
@@ -9,15 +10,23 @@ Future<T?> showDatingPicker<T>(
   required String title,
   required List<(T, String)> items,
   T? selected,
-}) => showModalBottomSheet<T>(
-  context: context,
-  isScrollControlled: true,
-  showDragHandle: true,
-  builder:
-      (sheet) => AllowLargeText(
-        child: _Picker<T>(title: title, items: items, selected: selected),
-      ),
-);
+}) {
+  // Spec 2 W8a round 2 (Re-1-M2): nothing opens once Dating is blank.
+  if (datingSheetRefused) return Future<T?>.value();
+  return showModalBottomSheet<T>(
+    context: context,
+    isScrollControlled: true,
+    showDragHandle: true,
+    // Spec 2 W8a round 2: blank once quick exit runs, like every Dating
+    // sheet.
+    builder:
+        (sheet) => DatingSheetTracker(
+          child: AllowLargeText(
+            child: _Picker<T>(title: title, items: items, selected: selected),
+          ),
+        ),
+  );
+}
 
 class _Picker<T> extends StatefulWidget {
   const _Picker({required this.title, required this.items, this.selected});

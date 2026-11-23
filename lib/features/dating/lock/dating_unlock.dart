@@ -3,9 +3,17 @@
 // per foreground session. The unlock is memory only: putting the app away,
 // another account, quick exit and sign-out all end it. The lock itself is
 // Spec 1's protective setting and is never cleared here.
+//
+// Spec 2 W8a Task 2 round 2 (I-4): while an iPhone's screen is recorded or
+// mirrored (DatingDiscretion.captured), the PIN sheet stays closed: its
+// keys would show the Safety PIN one press at a time.
+import 'dart:async';
+
 import 'package:attune/app/routing/app_router.dart' show RouteNames;
 import 'package:attune/features/auth/sign_up/presentation/widgets/flow_buttons.dart';
 import 'package:attune/features/auth/sign_up/presentation/widgets/flow_frame.dart';
+import 'package:attune/features/dating/device/dating_discretion.dart';
+import 'package:attune/features/dating/device/dating_surface.dart';
 import 'package:attune/features/me/presentation/widgets/dating_lock_setting.dart'
     show setDatingLock;
 import 'package:attune/features/onboarding/domain/home_state.dart' show AppTab;
@@ -57,7 +65,18 @@ class DatingUnlock extends Notifier<bool> with WidgetsBindingObserver {
     return false;
   }
 
-  void unlock() => state = true;
+  void unlock() {
+    // Spec 2 W8a round 2 (Re-1-M1): a Safety PIN check that finishes while
+    // quick exit or sign-out is under way (Me's slot, under the decoy)
+    // unlocks nothing and shows nothing.
+    if (DatingSurface.leaving) return;
+    // Spec 2 W8a fix round 1 (Task 3 carry): a Dating page left blank while
+    // it stayed open (a sign-out that didn't finish; the PIN sheet is
+    // Spec 1's, over the blank) shows again with the unlock, so a later
+    // step from one Dating page to another can't stay blank.
+    DatingSurface.reset();
+    state = true;
+  }
 
   void lock() {
     if (state) state = false;
@@ -217,19 +236,66 @@ class DatingUnlockScreen extends ConsumerStatefulWidget {
 class _DatingUnlockScreenState extends ConsumerState<DatingUnlockScreen> {
   bool _asking = false;
 
+  /// I-4: the sheet was wanted (or closed) while the screen was captured;
+  /// it opens when the capture ends. A sheet the person dismissed isn't.
+  bool _waiting = false;
+
+  /// I-4: the calm line, painted in the overlay above the blurred page.
+  final _line = OverlayPortalController();
+
   @override
   void initState() {
     super.initState();
+    _line.show();
+    DatingDiscretion.captured.addListener(_onCapture);
     WidgetsBinding.instance.addPostFrameCallback((_) => _ask());
+  }
+
+  @override
+  void dispose() {
+    DatingDiscretion.captured.removeListener(_onCapture);
+    super.dispose();
+  }
+
+  void _onCapture() {
+    if (!mounted) return;
+    if (DatingDiscretion.captured.value) {
+      _close();
+    } else if (_waiting) {
+      unawaited(_ask());
+    }
+  }
+
+  /// I-4: a capture started while the sheet is open (or on its way: the
+  /// PIN store is read first): take it away, nothing entered is checked.
+  void _close() {
+    if (!mounted || !_asking || !DatingDiscretion.captured.value) return;
+    _waiting = true;
+    final page = ModalRoute.of(context);
+    // Round 3 (M-10): a page already replaced (the decoy coming in over it)
+    // has nothing of its own above it to take away.
+    if (page == null || !page.isActive) return;
+    Navigator.of(context).popUntil((r) => r == page);
+    WidgetsBinding.instance.addPostFrameCallback((_) => _close());
   }
 
   Future<void> _ask() async {
     if (_asking || !mounted) return;
+    // I-4: never while the screen is captured; its end asks again.
+    if (DatingDiscretion.captured.value) {
+      _waiting = true;
+      return;
+    }
+    _waiting = false;
     setState(() => _asking = true);
     final ok = await confirmSafetyPin(context);
     if (!mounted) return;
     setState(() => _asking = false);
-    if (!ok) return;
+    if (!ok) {
+      // Closed by a capture that has already ended: ask again.
+      if (_waiting && !DatingDiscretion.captured.value) unawaited(_ask());
+      return;
+    }
     ref.read(datingUnlockedProvider.notifier).unlock();
     context.go(datingSafeReturn(widget.from));
   }
@@ -237,20 +303,64 @@ class _DatingUnlockScreenState extends ConsumerState<DatingUnlockScreen> {
   @override
   Widget build(BuildContext context) {
     final loc = AppLocalizations.of(context)!;
-    return FlowFrame(
-      title: loc.flow_slotLocked,
-      onBack: () => context.go(homeLocation(tab: AppTab.me)),
-      body: Text(
-        loc.flow_slotLockedLine,
-        style: Theme.of(context).textTheme.bodyLarge,
-      ),
-      actions: [
-        FlowPrimaryButton(
-          label: loc.dating_unlockButton,
-          busy: _asking,
-          onPressed: _ask,
+    return OverlayPortal(
+      controller: _line,
+      overlayChildBuilder:
+          (context) => ValueListenableBuilder<bool>(
+            valueListenable: DatingDiscretion.captured,
+            builder:
+                (context, captured, _) =>
+                    captured
+                        ? _CaptureLine(loc.dating_unlockCaptureLine)
+                        : const SizedBox.shrink(),
+          ),
+      child: FlowFrame(
+        title: loc.flow_slotLocked,
+        onBack: () => context.go(homeLocation(tab: AppTab.me)),
+        body: Text(
+          loc.flow_slotLockedLine,
+          style: Theme.of(context).textTheme.bodyLarge,
         ),
-      ],
+        actions: [
+          FlowPrimaryButton(
+            label: loc.dating_unlockButton,
+            busy: _asking,
+            onPressed: _ask,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// I-4: what the unlock page says while the screen is captured. In the
+/// overlay, so the page's blur doesn't reach it; it names nothing.
+class _CaptureLine extends StatelessWidget {
+  const _CaptureLine(this.text);
+
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return IgnorePointer(
+      child: Center(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 24),
+          child: Material(
+            color: theme.colorScheme.surfaceContainerHigh,
+            borderRadius: BorderRadius.circular(16),
+            child: Padding(
+              padding: const EdgeInsets.all(20),
+              child: Text(
+                text,
+                textAlign: TextAlign.center,
+                style: theme.textTheme.bodyLarge,
+              ),
+            ),
+          ),
+        ),
+      ),
     );
   }
 }

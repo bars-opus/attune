@@ -4,6 +4,10 @@
 // these are removed, wherever they sit in the stack: a Spec 1 sheet on Me
 // (Quizzes, Healing, the journal reminder, More ways) stays, with what was
 // typed in it, even one opened over a Dating sheet.
+//
+// Spec 2 W8a fix round 1 (I-1): each one is blank once quick exit or
+// sign-out runs (DatingSurfaceGuard), in the decoy's first frame.
+import 'package:attune/features/dating/device/dating_surface.dart';
 import 'package:flutter/widgets.dart';
 
 /// The route-name prefix every Me-hosted Dating sheet carries.
@@ -48,8 +52,14 @@ class _DatingSheetTrackerState extends State<DatingSheetTracker> {
   }
 
   @override
-  Widget build(BuildContext context) => widget.child;
+  Widget build(BuildContext context) => DatingSurfaceGuard(child: widget.child);
 }
+
+/// Spec 2 W8a round 2 (Re-1-M2): no Dating sheet, dialog or picker opens
+/// once quick exit or sign-out has run, until Dating shows again; each
+/// opener answers as if dismissed (DatingSurfaceGuard's hold is the
+/// backstop).
+bool get datingSheetRefused => DatingSurface.hidden.value;
 
 /// Removes every open Dating sheet (and only those). A sheet above one
 /// stays where it is; nothing of the Dating sheet is left to read.

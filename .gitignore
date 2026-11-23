@@ -74,3 +74,6 @@ coverage/
 # mismatch; pure diagnostics, never source. Three agents generated these
 # during Plan C and none was committed only by luck.
 **/test/**/failures/
+
+# Spec 2 W8b (R-74): the IP table, built at deploy time from DB-IP Lite.
+supabase/functions/dating-device-check/ip_country.bin

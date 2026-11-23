@@ -112,6 +112,8 @@ abstract final class TextScalePolicy {
     '/settings/signed-in-devices',
     '/settings/quiet',
     '/settings/hidden-periods',
+    // Spec 2 W8b (R-80): App icon.
+    '/settings/app-icon',
   ];
 
   /// The boot route `app_router.dart` starts on before its redirect (it

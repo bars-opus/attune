@@ -923,7 +923,8 @@ DECLARE
   v_seen timestamptz;
   v_bad text[] := '{}';
 BEGIN
-  FOREACH v_fn IN ARRAY ARRAY['public.get_my_dating_matches(boolean)', 'public.get_dating_messages(uuid,timestamp with time zone,integer)'] LOOP
+  FOREACH v_fn IN ARRAY ARRAY['public.get_my_dating_matches(boolean,boolean)', -- Spec 2 W8b (R-T5-1)
+                              'public.get_dating_messages(uuid,timestamp with time zone,integer,boolean)'] LOOP -- Spec 2 W8b
     UPDATE public.dating_trusted_devices SET last_seen_at = now() - interval '2 days' WHERE user_id = u;
     SELECT p.provolatile <> 'v' INTO v_ro FROM pg_catalog.pg_proc AS p WHERE p.oid = v_fn::regprocedure;
     v_seen := NULL;

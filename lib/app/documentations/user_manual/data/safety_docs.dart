@@ -189,6 +189,19 @@ class SafetyDocs implements DocumentationModule {
           numberPrefix: '3',
           type: ManualContentType.text,
         ),
+        // Spec 2 W8b (R-80; Plan copy): only while Settings shows the row.
+        if (DocumentationRegistry.passageVisible(
+          'appIcon',
+          documentationFlagsOf(context),
+        ))
+          ManualContent(
+            id: 'safety_app_icon',
+            title: 'A plain app icon',
+            content:
+                'Settings → App icon changes Attune\'s icon on your home screen to a plain one; its name stays the same. An iPhone or iPad shows a message when it changes. On Android your phone may close Attune while it changes, and the icon may move or leave your home screen; it stays in your app list. Quick exit and signing out never change it back: only you do, in App icon.',
+            numberPrefix: '4',
+            type: ManualContentType.text,
+          ),
       ],
     ),
   ];

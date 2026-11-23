@@ -6,6 +6,7 @@ import 'package:attune/features/auth/sign_up/presentation/widgets/flow_buttons.d
 import 'package:attune/features/dating/data/dating_home.dart';
 import 'package:attune/features/dating/data/dating_names.dart';
 import 'package:attune/features/dating/data/dating_providers.dart';
+import 'package:attune/features/dating/device/dating_surface.dart';
 import 'package:attune/features/dating/routes/dating_routes.dart';
 import 'package:attune/features/dating/routes/dating_setup_steps.dart';
 import 'package:attune/features/dating/setup/dating_step_frame.dart';
@@ -37,7 +38,26 @@ class _DatingHowStepState extends ConsumerState<DatingHowStep> {
   bool _closedSent = false;
 
   @override
+  void initState() {
+    super.initState();
+    DatingSurface.hidden.addListener(_onHidden);
+  }
+
+  /// Spec 2 W8a round 3: the bar is in the app's own messenger, so it would
+  /// ride onto quick exit's decoy (or the sign-in page): it goes at once,
+  /// in the same call that blanks Dating, never animating out.
+  void _onHidden() {
+    final messenger = _messenger;
+    if (!DatingSurface.hidden.value || !_switched || messenger == null) return;
+    if (!messenger.mounted) return;
+    messenger
+      ..clearSnackBars()
+      ..removeCurrentSnackBar();
+  }
+
+  @override
   void dispose() {
+    DatingSurface.hidden.removeListener(_onHidden);
     // M-1: the snackbar never outlives D1 (a screen reader keeps a bar with
     // an action up until it is dismissed).
     final messenger = _messenger;
@@ -86,7 +106,9 @@ class _DatingHowStepState extends ConsumerState<DatingHowStep> {
       ),
     );
     await bar.closed;
-    if (!mounted) return;
+    // Round 3: a bar taken down by quick exit or sign-out sends no one to Me
+    // (the decoy stays).
+    if (!mounted || DatingSurface.hidden.value) return;
     setState(() => _switched = false);
     if (!undone) widget.nav.toMe();
   }

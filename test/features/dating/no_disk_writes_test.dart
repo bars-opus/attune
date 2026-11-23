@@ -2,6 +2,8 @@
 // screen and Dating settings writes nothing to SharedPreferences and nothing
 // to the secure store but Spec 1's own me_section_lock.
 import 'package:attune/features/dating/data/dating_home.dart';
+import 'package:attune/features/dating/device/trip_note.dart';
+import 'package:attune/features/dating/device/trip_phone.dart';
 import 'package:attune/features/dating/not_open/dating_not_open_screen.dart';
 import 'package:attune/features/dating/section/dating_section.dart';
 import 'package:attune/features/dating/settings/dating_settings_screen.dart';
@@ -18,6 +20,7 @@ import '../../helpers/flow_harness.dart';
 import '../../helpers/tap_in_reach.dart';
 import 'support/dating_fakes.dart';
 import 'support/dating_shell.dart';
+import 'support/dating_trip_fakes.dart';
 import 'support/dating_verify_fakes.dart';
 
 Future<void> _expectNothingWritten() async {
@@ -39,6 +42,51 @@ Future<void> _expectNothingWritten() async {
 }
 
 void main() {
+  // Spec 2 W8b fix round 1 (R-T4-9, concern 5): answering a same-gender
+  // trip's note keeps exactly one thing on the phone: the neutral
+  // me_section_view in the keystore (nothing in prefs; nothing in the key
+  // or the value names Dating, a gender, a trip or a place).
+  testWidgets('answering a same-gender note keeps only me_section_view', (
+    t,
+  ) async {
+    DatingTripPhone.reset();
+    addTearDown(DatingTripPhone.reset);
+    final trip = FakeDatingTrip();
+    await pumpFlowScreen(
+      t,
+      () => const DatingAwayScreen(),
+      overrides: [
+        ...datingShellOverrides(
+          home: FakeDatingHomeGateway(
+            home: const DatingHome(
+              state: DatingHomeState.active,
+              hasData: true,
+              trip: DatingTrip(kind: DatingTripKind.sameGender),
+            ),
+          ),
+        ),
+        ...datingTripOverrides(trip),
+      ],
+    );
+    await tapInReach(t, find.byKey(const ValueKey('dating_trip_show')));
+    await t.pumpAndSettle();
+    expect(trip.choices, isEmpty);
+    final words = RegExp(
+      'dating|gender|same|trip|away|show|note|country|place',
+      caseSensitive: false,
+    );
+    final prefs = await SharedPreferences.getInstance();
+    for (final key in prefs.getKeys()) {
+      expect(words.hasMatch('$key ${prefs.get(key)}'), isFalse, reason: key);
+    }
+    final secure = await const FlutterSecureStorage().readAll();
+    expect(secure.keys.toSet(), {DatingTripPhone.key});
+    expect(
+      words.hasMatch('${secure.keys.single} ${secure.values.single}'),
+      isFalse,
+    );
+  });
+
   testWidgets('the section, the not-open screen and settings write nothing', (
     t,
   ) async {

@@ -10098,6 +10098,144 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Include this code in your email: {code}'**
   String dating_restrictedIdCode(String code);
+
+  /// Plan copy (Spec 2 W8a Task 2 round 2, I-4): the Dating lock's PIN screen while an iPhone's or iPad's screen is being recorded or mirrored; the PIN sheet stays closed until that stops. Reviewers: copy, DV.
+  ///
+  /// In en, this message translates to:
+  /// **'Stop recording or sharing your screen to enter your PIN.'**
+  String get dating_unlockCaptureLine;
+
+  /// Spec 2 §3.11 the traveller's note where Dating isn't allowed (in-app, once per trip, never a push; never animated). Reviewers: copy, cultural.
+  ///
+  /// In en, this message translates to:
+  /// **'Dating is hidden while you\'re away'**
+  String get dating_tripAwayTitle;
+
+  /// Spec 2 §3.11 the note's words; {country} is where the phone is. Reviewers: copy, cultural (naming {country}, e.g. Ghana or the UAE).
+  ///
+  /// In en, this message translates to:
+  /// **'While you\'re in {country}, your Dating section is hidden on this phone and nobody new is introduced to you. Your conversations are safe and come back when you leave.'**
+  String dating_tripAwayBody(String country);
+
+  /// Spec 2 §3.11 the note's words when this phone doesn't know the place yet (the check hasn't answered). Plan copy (the spec's line without the place). Reviewers: copy, cultural.
+  ///
+  /// In en, this message translates to:
+  /// **'While you\'re away, your Dating section is hidden on this phone and nobody new is introduced to you. Your conversations are safe and come back when you leave.'**
+  String get dating_tripAwayBodyNoPlace;
+
+  /// Spec 2 §3.11 the traveller's note where same-gender introductions aren't allowed. Reviewers: copy, LGBTQ+ safety, cultural.
+  ///
+  /// In en, this message translates to:
+  /// **'Some introductions are paused while you\'re away'**
+  String get dating_tripSameGenderTitle;
+
+  /// Spec 2 §3.11 the note's words; {country} is where the phone is. Reviewers: copy, LGBTQ+ safety, cultural.
+  ///
+  /// In en, this message translates to:
+  /// **'While you\'re in {country}, introductions between people of the same gender are switched off for you, and the ones you have are hidden on this phone. They come back when you leave.'**
+  String dating_tripSameGenderBody(String country);
+
+  /// Spec 2 §3.11 the same, without the place. Plan copy (the spec's line without the place). Reviewers: copy, LGBTQ+ safety, cultural.
+  ///
+  /// In en, this message translates to:
+  /// **'While you\'re away, introductions between people of the same gender are switched off for you, and the ones you have are hidden on this phone. They come back when you leave.'**
+  String get dating_tripSameGenderBodyNoPlace;
+
+  /// Spec 2 §3.11 the default choice. Reviewers: copy, LGBTQ+ safety.
+  ///
+  /// In en, this message translates to:
+  /// **'Keep it hidden'**
+  String get dating_tripKeepHidden;
+
+  /// Spec 2 §3.11 changes only what this phone shows; nobody new is introduced. Reviewers: copy, LGBTQ+ safety (does the wording make the per-phone scope clear?).
+  ///
+  /// In en, this message translates to:
+  /// **'Show it on this phone anyway'**
+  String get dating_tripShowAnyway;
+
+  /// Spec 2 §3.11. Reviewers: copy, LGBTQ+ safety.
+  ///
+  /// In en, this message translates to:
+  /// **'Pause Dating'**
+  String get dating_tripPause;
+
+  /// Spec 2 §3.11 turns on the Dating lock (the Safety PIN first if there is none); hidden when the lock is already on. Reviewers: copy, LGBTQ+ safety.
+  ///
+  /// In en, this message translates to:
+  /// **'Set a PIN'**
+  String get dating_tripSetPin;
+
+  /// Spec 2 §3.1 away: the section's link to the note's page. Plan copy. Reviewers: copy, LGBTQ+ safety.
+  ///
+  /// In en, this message translates to:
+  /// **'What this means'**
+  String get dating_tripMore;
+
+  /// Spec 2 §3.7 an appeal sent while nobody reviews yet (W7 carry M-6: no review time in testing). Plan copy (the W7 final reviewer's line). Reviewers: copy, DV.
+  ///
+  /// In en, this message translates to:
+  /// **'Appeal sent. A different person from the one who made the first decision will look at it.'**
+  String get dating_appealSentTesting;
+
+  /// Spec 2 §3.12, §6.7; R-80 Settings -> App icon (the page's title, Settings' row and Dating settings' row). For everyone: never names Dating. Reviewers: copy.
+  ///
+  /// In en, this message translates to:
+  /// **'App icon'**
+  String get appIcon_title;
+
+  /// Spec 2 §6.7 the App icon page's first line (the spec's D13 sentence, then what changes). Plan copy (second sentence). Reviewers: copy, DV.
+  ///
+  /// In en, this message translates to:
+  /// **'Some people like their apps to look plain. The icon on your home screen changes; Attune works the same.'**
+  String get appIcon_intro;
+
+  /// Spec 2 §6.7 the usual icon (also the Settings rows' value). Reviewers: copy.
+  ///
+  /// In en, this message translates to:
+  /// **'Attune'**
+  String get appIcon_attune;
+
+  /// Spec 2 §6.7 the plain icon (also the Settings rows' value). Reviewers: copy.
+  ///
+  /// In en, this message translates to:
+  /// **'Plain'**
+  String get appIcon_plain;
+
+  /// Spec 2 §6.7 iOS changes the icon, then shows a system message with one OK (no confirm step). Plan copy (fix round 1, M-1). Final client fix (M-5): no device word (it shows on iPhones and iPads). Reviewers: copy.
+  ///
+  /// In en, this message translates to:
+  /// **'You\'ll see a message when the icon changes.'**
+  String get appIcon_ios;
+
+  /// Spec 2 §6.7 Android may close the app while the launcher entry changes; launchers may drop the home-screen shortcut. Plan copy (fix round 1, M-2). Reviewers: copy.
+  ///
+  /// In en, this message translates to:
+  /// **'Your phone may close Attune while the icon changes, and the icon may move or leave your home screen. It stays in your app list.'**
+  String get appIcon_android;
+
+  /// Spec 2 §6.7 the phone refused the change. Plan copy. Reviewers: copy.
+  ///
+  /// In en, this message translates to:
+  /// **'That didn\'t change. Try again.'**
+  String get appIcon_failed;
+
+  /// Spec 2 §6.7 a phone without alternate icons. Plan copy. Reviewers: copy.
+  ///
+  /// In en, this message translates to:
+  /// **'This phone can\'t change Attune\'s icon.'**
+  String get appIcon_unsupported;
+
+  /// Spec 2 §3.2 D13 the plain-icon offer (effective tier 1 or 2; A-11). Reviewers: copy, cultural.
+  ///
+  /// In en, this message translates to:
+  /// **'Some people like their apps to look plain.'**
+  String get dating_readyPlainIcon;
+
+  /// Spec 2 §3.2 D13 opens App icon (/dating/app-icon). Reviewers: copy.
+  ///
+  /// In en, this message translates to:
+  /// **'Choose an app icon'**
+  String get dating_readyPlainIconButton;
 }
 
 class _AppLocalizationsDelegate extends LocalizationsDelegate<AppLocalizations> {

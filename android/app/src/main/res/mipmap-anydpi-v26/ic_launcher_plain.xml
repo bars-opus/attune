@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Spec 2 W8b (§6.7): the plain app icon (Android 8 and later). -->
+<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+  <background android:drawable="@color/ic_launcher_plain_background"/>
+  <foreground android:drawable="@drawable/ic_launcher_plain_foreground"/>
+</adaptive-icon>

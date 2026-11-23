@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Spec 2 W8b (§6.7): the plain app icon's one light ring, an abstract
+     shape that is no other app's icon (iOS draws the same: IconPlain). -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#FFECEFF1"
+        android:strokeWidth="5"
+        android:pathData="M54,36.5a17.5,17.5 0,1 1,0 35a17.5,17.5 0,1 1,0 -35z" />
+</vector>

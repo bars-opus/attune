@@ -11,6 +11,7 @@ import 'package:attune/features/auth/sign_up/presentation/widgets/flow_text_fiel
 import 'package:attune/features/dating/data/dating_home_repository.dart';
 import 'package:attune/features/dating/data/dating_home.dart';
 import 'package:attune/features/dating/data/dating_rpc.dart';
+import 'package:attune/features/dating/device/dating_surface.dart';
 import 'package:attune/features/dating/lock/dating_unlock.dart';
 import 'package:attune/features/dating/routes/dating_routes.dart';
 import 'package:attune/features/dating/not_open/dating_not_open_screen.dart';
@@ -241,6 +242,26 @@ void main() {
       expect(r.spec1.count('set_my_path'), 2);
       // Fix 1 (M-1): undone, D1 stays.
       await t.pump(const Duration(seconds: 6));
+      await t.pumpAndSettle();
+      expect(r.steps, isEmpty);
+    });
+
+    // Spec 2 W8a round 3 (sweep): the bar sits in the app's own messenger,
+    // so it would ride onto quick exit's decoy; it goes at once, and the
+    // closing never sends the person to Me.
+    testWidgets('the "Just for me" bar goes at once once quick exit or '
+        'sign-out runs', (t) async {
+      addTearDown(DatingSurface.reset);
+      final r = await _open(t, (nav) => DatingHowStep(nav: nav));
+      await tapInReach(t, find.text('Not ready? Use Attune just for me'));
+      await t.pumpAndSettle();
+      expect(find.text("You're on 'Just for me'."), findsOneWidget);
+      await DatingSurface.hide();
+      await t.pump();
+      expect(
+        find.text("You're on 'Just for me'.", skipOffstage: false),
+        findsNothing,
+      );
       await t.pumpAndSettle();
       expect(r.steps, isEmpty);
     });
@@ -638,6 +659,37 @@ void main() {
       await tapInReach(t, find.text("I'm separated but not divorced"));
       await t.pumpAndSettle();
       expect(find.textContaining('Once your divorce is final'), findsOneWidget);
+    });
+
+    // Spec 2 W8a fix round 1 (I-1): no frame of it under quick exit's decoy.
+    testWidgets('the separated sheet shows nothing once quick exit or '
+        'sign-out runs', (t) async {
+      addTearDown(DatingSurface.reset);
+      await _open(t, (nav) => DatingLookingForStep(nav: nav));
+      await tapInReach(t, find.text("I'm separated but not divorced"));
+      await t.pumpAndSettle();
+      expect(find.textContaining('Once your divorce is final'), findsOneWidget);
+      await DatingSurface.hide();
+      await t.pump();
+      expect(
+        find.textContaining('Once your divorce is final', skipOffstage: false),
+        findsNothing,
+      );
+    });
+
+    // Spec 2 W8a round 2 (Re-1-M2): once Dating is blank it never opens.
+    testWidgets('the separated sheet never opens once quick exit or sign-out '
+        'has run', (t) async {
+      addTearDown(DatingSurface.reset);
+      await _open(t, (nav) => DatingLookingForStep(nav: nav));
+      await DatingSurface.hide();
+      await tapInReach(t, find.text("I'm separated but not divorced"));
+      await t.pumpAndSettle();
+      expect(find.byType(BottomSheet, skipOffstage: false), findsNothing);
+      expect(
+        find.textContaining('Once your divorce is final', skipOffstage: false),
+        findsNothing,
+      );
     });
 
     testWidgets(

@@ -10,6 +10,7 @@ import 'package:attune/features/auth/sign_up/presentation/widgets/flow_text_fiel
     show FlowErrorLine;
 import 'package:attune/features/dating/data/dating_home_repository.dart';
 import 'package:attune/features/dating/data/dating_never_introduce.dart';
+import 'package:attune/core/device/app_icon.dart';
 import 'package:attune/features/dating/data/dating_providers.dart';
 import 'package:attune/features/dating/gentle_wait/gentle_wait_providers.dart';
 import 'package:attune/features/dating/gentle_wait/gentle_wait_repository.dart';
@@ -464,6 +465,19 @@ class _DatingSettingsScreenState extends ConsumerState<DatingSettingsScreen> {
                     text: online ? loc.dating_errorGeneric : loc.dating_offline,
                     liveRegion: true,
                   ),
+                // Spec 2 W8b (§3.12, §6.7): App icon, for everyone, in
+                // the spec's order; the phone's own setting, so offline too.
+                row(
+                  loc.appIcon_title,
+                  switch (ref.watch(appIconProvider).valueOrNull) {
+                    AppIconChoice.plain => loc.appIcon_plain,
+                    AppIconChoice.attune => loc.appIcon_attune,
+                    null => '',
+                  },
+                  Icons.apps_outlined,
+                  () => context.push(DatingPaths.appIcon),
+                  evenOffline: true,
+                ),
                 SwitchListTile(
                   contentPadding: EdgeInsets.zero,
                   secondary: const Icon(Icons.lock_outline),

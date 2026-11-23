@@ -87,6 +87,11 @@ const _audited = {
   'datingCheckin',
   // Spec 2 W7a (§3.7): the restricted screen.
   'datingRestricted',
+  // Spec 2 W8b (§3.11): the traveller's note.
+  'datingAway',
+  // Spec 2 W8b (§3.12, §6.7; R-80): App icon, in Dating and in Settings.
+  'datingAppIcon',
+  'appIcon',
   'aboutUs',
   'addEditReminder',
   'ageStop',

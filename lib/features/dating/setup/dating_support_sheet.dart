@@ -20,17 +20,21 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 Future<void> showDatingSupportSheet(
   BuildContext context, {
   required String country,
-}) => showModalBottomSheet<void>(
-  context: context,
-  isScrollControlled: true,
-  showDragHandle: true,
-  // Final fix (I-1b): a Dating sheet, closed when the unlock ends.
-  routeSettings: datingSheetSettings('support'),
-  builder:
-      (sheet) => DatingSheetTracker(
-        child: AllowLargeText(child: _Support(country: country)),
-      ),
-);
+}) {
+  // Spec 2 W8a round 2 (Re-1-M2): nothing opens once Dating is blank.
+  if (datingSheetRefused) return Future<void>.value();
+  return showModalBottomSheet<void>(
+    context: context,
+    isScrollControlled: true,
+    showDragHandle: true,
+    // Final fix (I-1b): a Dating sheet, closed when the unlock ends.
+    routeSettings: datingSheetSettings('support'),
+    builder:
+        (sheet) => DatingSheetTracker(
+          child: AllowLargeText(child: _Support(country: country)),
+        ),
+  );
+}
 
 class _Support extends ConsumerWidget {
   const _Support({required this.country});

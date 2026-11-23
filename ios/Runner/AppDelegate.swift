@@ -21,6 +21,16 @@ import UIKit
   private var backupExclusionChannel: FlutterMethodChannel?
   private var ageSignalsChannel: FlutterMethodChannel?
   private var switcherCover: UIView?
+  // Spec 2 W8a (§6.7; F-4): attune/safety on iOS. While any Dating page is
+  // open the screen's capture state is watched (recording, mirroring) and
+  // every change is sent as captureChanged(bool); the Dating pages blur.
+  // iOS can't block a screenshot; the app switcher is covered above.
+  private var safetyChannel: FlutterMethodChannel?
+  private var captureWatching = false
+  private var captureObserver: NSObjectProtocol?
+  private var captureRegistration: Any?
+  // Fix round 1 (M-7): the scene the registration belongs to.
+  private weak var captureScene: AnyObject?
 
   override func application(
     _ application: UIApplication,
@@ -167,6 +177,40 @@ import UIKit
       }
     }
 
+    let safety = FlutterMethodChannel(
+      name: "attune/safety",
+      binaryMessenger: controller.binaryMessenger
+    )
+    safetyChannel = safety
+    safety.setMethodCallHandler { [weak self] call, result in
+      switch call.method {
+      case "setSecure":
+        let on = (call.arguments as? Bool) ?? false
+        self?.watchCapture(on)
+        result(on && (self?.screenIsCaptured() ?? false))
+      // Spec 2 W8b (§6.7): the app icon is iOS's alternate icon; nothing
+      // else is stored. iOS shows its own alert on a change.
+      case "appIcon":
+        guard UIApplication.shared.supportsAlternateIcons else {
+          result("unsupported")
+          return
+        }
+        result(UIApplication.shared.alternateIconName == "IconPlain" ? "plain" : "default")
+      case "setAppIcon":
+        guard UIApplication.shared.supportsAlternateIcons else {
+          result(false)
+          return
+        }
+        let name: String? = (call.arguments as? String) == "plain" ? "IconPlain" : nil
+        // The completion may run off the main thread; Flutter answers there.
+        UIApplication.shared.setAlternateIconName(name) { error in
+          DispatchQueue.main.async { result(error == nil) }
+        }
+      default:
+        result(FlutterMethodNotImplemented)
+      }
+    }
+
     TogetherLiveActivityChannel.register(with: controller.binaryMessenger)
 
     return super.application(application, didFinishLaunchingWithOptions: launchOptions)
@@ -190,6 +234,50 @@ import UIKit
       NotificationCenter.default.removeObserver(observer)
       screenshotObserver = nil
     }
+  }
+
+  // Spec 2 W8a (F-4): sceneCaptureState where available (iOS 17 and
+  // later), the deprecated UIScreen.isCaptured only before.
+  private func screenIsCaptured() -> Bool {
+    if #available(iOS 17.0, *), let scene = window?.windowScene {
+      return scene.traitCollection.sceneCaptureState == .active
+    }
+    return window?.screen.isCaptured ?? false
+  }
+
+  private func watchCapture(_ on: Bool) {
+    guard on != captureWatching else { return }
+    captureWatching = on
+    if !on {
+      if let observer = captureObserver {
+        NotificationCenter.default.removeObserver(observer)
+        captureObserver = nil
+      }
+      if #available(iOS 17.0, *), let registration = captureRegistration as? UITraitChangeRegistration,
+         let scene = captureScene as? UIWindowScene {
+        scene.unregisterForTraitChanges(registration)
+      }
+      captureRegistration = nil
+      captureScene = nil
+      return
+    }
+    if #available(iOS 17.0, *), let scene = window?.windowScene {
+      captureScene = scene
+      captureRegistration = scene.registerForTraitChanges(
+        [UITraitSceneCaptureState.self]
+      ) { [weak self] (_: UIWindowScene, _: UITraitCollection) in
+        self?.sendCapture()
+      }
+    } else {
+      captureObserver = NotificationCenter.default.addObserver(
+        forName: UIScreen.capturedDidChangeNotification, object: nil, queue: .main
+      ) { [weak self] _ in self?.sendCapture() }
+    }
+  }
+
+  private func sendCapture() {
+    guard captureWatching else { return }
+    safetyChannel?.invokeMethod("captureChanged", arguments: screenIsCaptured())
   }
 
   private func showSwitcherCover() {

@@ -59,6 +59,8 @@ DatingRestrictionRead _read(
   bool canAppeal = false,
 }) => DatingRestrictionRead(
   ok: true,
+  // Spec 2 W8b fix round 1 (M-2): a person reviews (W7's lines).
+  staffed: true,
   restriction: DatingRestriction(
     id: 'r1',
     type: type,

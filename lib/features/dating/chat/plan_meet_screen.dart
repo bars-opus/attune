@@ -322,6 +322,8 @@ class _DatingPlanMeetScreenState extends ConsumerState<DatingPlanMeetScreen> {
   }
 
   Future<void> _pickWhen() async {
+    // Spec 2 W8a round 2 (Re-1-M2): no picker once Dating is blank.
+    if (datingSheetRefused) return;
     final account = ref.read(datingAccountProvider);
     final now = _now;
     final first = DateTime(now.year, now.month, now.day);

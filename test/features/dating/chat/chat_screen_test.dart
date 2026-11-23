@@ -153,9 +153,11 @@ void main() {
 
     testWidgets('Swap: disabled before 72 hours with its time; open: the sheet '
         'and its card, then Swap; each state after', (t) async {
+      // The screen reads the real clock here (no now:): a time two days
+      // from now is always ahead (W8a Ruling; datingChatT0 has passed).
       final fake = FakeDatingChat(
         page: datingPageJson(
-          swapFrom: datingChatT0.add(const Duration(days: 2)),
+          swapFrom: DateTime.now().toUtc().add(const Duration(days: 2)),
         ),
       );
       await pumpDatingShell(

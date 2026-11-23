@@ -97,21 +97,28 @@ Future<T?> _show<T>(
   String? account,
   bool tall,
   Widget Function(BuildContext context, void Function(T?) close) builder,
-) => showModalBottomSheet<T>(
-  context: context,
-  routeSettings: datingSheetSettings(name),
-  isScrollControlled: true,
-  builder: (sheet) {
-    final body = DatingSheetTracker(
-      child: AllowLargeText(
-        child: _OnceSheet<T>(account: account, builder: builder),
-      ),
-    );
-    return tall
-        ? SizedBox(height: MediaQuery.of(sheet).size.height * 0.8, child: body)
-        : body;
-  },
-);
+) {
+  // Spec 2 W8a round 2 (Re-1-M2): nothing opens once Dating is blank.
+  if (datingSheetRefused) return Future<T?>.value();
+  return showModalBottomSheet<T>(
+    context: context,
+    routeSettings: datingSheetSettings(name),
+    isScrollControlled: true,
+    builder: (sheet) {
+      final body = DatingSheetTracker(
+        child: AllowLargeText(
+          child: _OnceSheet<T>(account: account, builder: builder),
+        ),
+      );
+      return tall
+          ? SizedBox(
+            height: MediaQuery.of(sheet).size.height * 0.8,
+            child: body,
+          )
+          : body;
+    },
+  );
+}
 
 /// One answer, and D8: [builder]'s close answers once; once the signed-in
 /// account is no longer [account] the sheet shows nothing and closes.

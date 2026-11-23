@@ -45,6 +45,7 @@ import 'package:attune/features/dating/gentle_wait/gentle_wait_providers.dart'
     show datingOnlineProvider;
 import 'package:attune/features/dating/photos/dating_photos_providers.dart';
 import 'package:attune/features/dating/photos/dating_photos_repository.dart';
+import 'package:attune/features/dating/lock/dating_sheets.dart';
 import 'package:attune/features/dating/routes/dating_setup_steps.dart';
 import 'package:attune/features/dating/setup/dating_setup_models.dart';
 import 'package:attune/features/dating/setup/dating_step_frame.dart';
@@ -547,25 +548,30 @@ class _DatingPhotosStepState extends ConsumerState<DatingPhotosStep>
   /// object goes with the row; an approved photo added again is checked
   /// again), so Remove asks first. Keep it is the default and sends nothing.
   Future<void> _remove(DatingProfilePhoto photo, int n) async {
+    // Spec 2 W8a round 2 (Re-1-M2): no dialog once Dating is blank.
+    if (datingSheetRefused) return;
     final gen = _gen;
     final loc = AppLocalizations.of(context)!;
     final sure = await showDialog<bool>(
       context: context,
+      // Spec 2 W8a fix round 1 (I-1): blank once quick exit runs.
       builder:
-          (dialog) => AllowLargeText(
-            child: AlertDialog(
-              title: Text(loc.dating_photoRemoveQ(n)),
-              content: Text(loc.dating_photoRemoveBody),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.of(dialog).pop(false),
-                  child: Text(loc.dating_photoKeep),
-                ),
-                TextButton(
-                  onPressed: () => Navigator.of(dialog).pop(true),
-                  child: Text(loc.dating_photoRemove),
-                ),
-              ],
+          (dialog) => DatingSheetTracker(
+            child: AllowLargeText(
+              child: AlertDialog(
+                title: Text(loc.dating_photoRemoveQ(n)),
+                content: Text(loc.dating_photoRemoveBody),
+                actions: [
+                  TextButton(
+                    onPressed: () => Navigator.of(dialog).pop(false),
+                    child: Text(loc.dating_photoKeep),
+                  ),
+                  TextButton(
+                    onPressed: () => Navigator.of(dialog).pop(true),
+                    child: Text(loc.dating_photoRemove),
+                  ),
+                ],
+              ),
             ),
           ),
     );
@@ -595,11 +601,18 @@ class _DatingPhotosStepState extends ConsumerState<DatingPhotosStep>
   }
 
   Future<void> _caption(DatingProfilePhoto photo) async {
+    // Spec 2 W8a round 2 (Re-1-M2): no sheet once Dating is blank.
+    if (datingSheetRefused) return;
     final text = await showModalBottomSheet<String>(
       context: context,
       isScrollControlled: true,
       showDragHandle: true,
-      builder: (_) => _CaptionSheet(initial: photo.caption ?? ''),
+      // Spec 2 W8a fix round 1 (I-1): blank once quick exit runs, and
+      // what was typed goes with it.
+      builder:
+          (_) => DatingSheetTracker(
+            child: _CaptionSheet(initial: photo.caption ?? ''),
+          ),
     );
     if (text == null || !mounted) return;
     final caption = text.trim();

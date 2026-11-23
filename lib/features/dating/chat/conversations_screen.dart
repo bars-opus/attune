@@ -31,6 +31,7 @@ import 'package:attune/features/auth/sign_up/presentation/widgets/flow_text_fiel
 import 'package:attune/features/dating/chat/dating_chat.dart';
 import 'package:attune/features/dating/chat/dating_chat_providers.dart';
 import 'package:attune/features/dating/data/dating_providers.dart';
+import 'package:attune/features/dating/device/dating_device_check.dart';
 import 'package:attune/features/dating/gentle_wait/gentle_wait_providers.dart'
     show datingOnlineProvider;
 import 'package:attune/features/dating/report/dating_report.dart';
@@ -73,6 +74,9 @@ class _DatingConversationsScreenState
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    // Spec 2 W8 final client fix (I-1): Dating's device checker lives while
+    // the list shows (its read waits for a check under way).
+    ref.listenManual(datingDeviceCheckerProvider, (_, __) {});
   }
 
   @override

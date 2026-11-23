@@ -30,6 +30,7 @@ import 'package:attune/features/dating/data/dating_home.dart'
     show DatingHomeState;
 import 'package:attune/features/dating/data/dating_providers.dart';
 import 'package:attune/features/dating/data/dating_rpc.dart';
+import 'package:attune/features/dating/device/dating_device_check.dart';
 import 'package:attune/features/dating/gentle_wait/gentle_wait_providers.dart'
     show datingOnlineProvider;
 import 'package:attune/features/dating/report/dating_report.dart';
@@ -68,7 +69,8 @@ class DatingTodayScreen extends ConsumerStatefulWidget {
   ConsumerState<DatingTodayScreen> createState() => _DatingTodayScreenState();
 }
 
-class _DatingTodayScreenState extends ConsumerState<DatingTodayScreen> {
+class _DatingTodayScreenState extends ConsumerState<DatingTodayScreen>
+    with WidgetsBindingObserver {
   final _keys = DatingActionKeys();
   late final DatingTodayGateway _gateway;
   String? _account;
@@ -138,6 +140,12 @@ class _DatingTodayScreenState extends ConsumerState<DatingTodayScreen> {
   void initState() {
     super.initState();
     _gateway = ref.read(datingTodayGatewayProvider);
+    // Spec 2 W8b (carry 5): Today reads again when the app comes back (a
+    // trip may have begun or ended while it was away).
+    WidgetsBinding.instance.addObserver(this);
+    // Spec 2 W8 final client fix (I-1): Dating's device checker lives while
+    // Today shows (Today's read waits for its check under way).
+    ref.listenManual(datingDeviceCheckerProvider, (_, __) {});
     _account = ref.read(datingAccountProvider);
     // D8: another account sees nothing of this one's day, and this one's
     // held answer is never sent as the next person.
@@ -169,7 +177,13 @@ class _DatingTodayScreenState extends ConsumerState<DatingTodayScreen> {
   }
 
   @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) _reread();
+  }
+
+  @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _undo?.cancel();
     // §3.4: closing the screen ends the undo window.
     final id = _pending;
@@ -260,6 +274,11 @@ class _DatingTodayScreenState extends ConsumerState<DatingTodayScreen> {
         _answers[c.id] = r;
         if (r.ok) _noted.add(c.id);
       });
+      // Spec 2 W8b (carry 5): a card the server no longer has (a trip hides
+      // it) says so calmly and Today reads again, so it leaves.
+      if (r.reason == 'introduction_unavailable') {
+        ref.invalidate(datingTodayProvider(account));
+      }
       if (r.matched) {
         // M-1: the card leaves Today; its moment opens on the next read.
         _ownMatchOn = on ?? DatingToday.failed;
@@ -448,11 +467,16 @@ class _DatingTodayScreenState extends ConsumerState<DatingTodayScreen> {
         for (final m in day.moments)
           if (!_momentsKnown.contains(m.matchId)) m,
       ];
-      // Spec 2 W6a (carry 7): the exact match, when act named it.
+      // Spec 2 W6a (carry 7): the exact match, when act named it. Spec 2
+      // W8b (Task 5 review carry b): only while this read lists it (a
+      // replay's match a trip hides opens nothing, nor another in its
+      // place); by name only when act named none.
+      final named = _ownMatchId;
       own =
-          day.moments.where((m) => m.matchId == _ownMatchId).firstOrNull ??
-          arrived.where((m) => m.name.trim() == _ownMatchName).lastOrNull ??
-          arrived.lastOrNull;
+          named != null
+              ? day.moments.where((m) => m.matchId == named).firstOrNull
+              : arrived.where((m) => m.name.trim() == _ownMatchName).lastOrNull ??
+                  arrived.lastOrNull;
       _ownMatchId = null;
     }
     _momentsKnown.addAll([for (final m in day.moments) m.matchId]);
@@ -500,6 +524,11 @@ class _DatingTodayScreenState extends ConsumerState<DatingTodayScreen> {
     if (day != null && day.ok && !identical(day, _photoDay)) {
       _photoDay = day;
       _photos.removeWhere((_, b) => b.any((x) => x.isEmpty));
+      // Spec 2 W8b (Task 5 review carry a): a card this read no longer
+      // lists leaves with its photos (memory: datingTodayProvider).
+      final listed = {for (final c in [...day.cards, ...day.waiting]) c.id};
+      _photos.removeWhere((id, _) => !listed.contains(id));
+      _loading.removeWhere((id) => !listed.contains(id));
     }
     if (day != null && day.ok) _openMoment(day);
     return AllowLargeText(

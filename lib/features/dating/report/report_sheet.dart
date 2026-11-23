@@ -67,6 +67,8 @@ Future<DatingReportOutcome?> showDatingReportSheet(
   required DatingReportTarget target,
   bool canBlockLater = true,
 }) async {
+  // Spec 2 W8a round 2 (Re-1-M2): nothing opens once Dating is blank.
+  if (datingSheetRefused) return null;
   Future<DatingReportOutcome?>? sending;
   // W7a Task 4 fix round 1 (K-1): a sheet removed from outside
   // (closeDatingSheets: the lock, quick exit) never completes its own

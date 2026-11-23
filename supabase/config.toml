@@ -10,6 +10,14 @@ verify_jwt = true
 [functions.dating-photo-urls]
 verify_jwt = true
 
+# Spec 2 W8b (§2.3, §4.7): where the person is, in the moment. The caller is
+# the signed-in person; the IP table (DB-IP Lite, built at deploy time by
+# scripts/ip_country/build_ip_country.ts, git-ignored) ships as its static
+# file.
+[functions.dating-device-check]
+verify_jwt = true
+static_files = ["./functions/dating-device-check/ip_country.bin"]
+
 # Spec 2 W6b (§6.1): the chat safety worker. Called every minute by the cron
 # (public.invoke_edge_function) with the service-role key as its bearer;
 # index.ts checks it with requireServiceRole before any work.
