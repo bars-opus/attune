@@ -1392,20 +1392,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen>
   void _openGames() {
     FocusScope.of(context).unfocus();
     _closeHeaderExpanded();
-    unawaited(
-      showChatGamesPicker(
-        context,
-        relationshipId: widget.conversation.relationshipId,
-        onStageNewGame:
-            (gameType) => ref
-                .read(
-                  gameComposerProvider(
-                    widget.conversation.relationshipId,
-                  ).notifier,
-                )
-                .stage(gameType),
-      ),
-    );
+    unawaited(context.pushNamed('gamesHub'));
   }
 
   void _toggleHeaderExpanded() {
@@ -5311,7 +5298,14 @@ Future<void> openGameRoute(
     case ChatGameDestination.loveMap:
       await context.pushNamed('loveMap');
     case ChatGameDestination.thisOrThat:
-      await context.pushNamed('thisOrThatGamesHub');
+      if (sessionId != null) {
+        await context.pushNamed('thisOrThatSessionRouter', extra: sessionId);
+      } else {
+        await context.pushNamed(
+          'gameLanding',
+          pathParameters: {'gameType': 'this_or_that'},
+        );
+      }
     case ChatGameDestination.truthOrDare:
       await context.pushNamed('truthOrDareGame');
     case ChatGameDestination.snakesAndLadders:

@@ -3,6 +3,9 @@ import 'dart:async';
 import 'package:attune/core/ui/feedback/haptics.dart';
 import 'package:attune/core/ui/feedback/sound_service.dart';
 import 'package:attune/core/ui/motion/reduce_motion.dart';
+import 'package:attune/features/games/platform/feel/game_motion.dart';
+import 'package:attune/features/games/platform/feel/game_tile.dart';
+import 'package:attune/features/games/platform/shell/game_buttons.dart';
 import 'package:attune/features/games/this_or_that/presentation/providers/this_or_that_providers.dart';
 import 'package:attune/features/games/this_or_that/presentation/widgets/this_or_that_game_ui.dart';
 import 'package:flutter/material.dart';
@@ -160,10 +163,9 @@ class _WaitingScreenState extends ConsumerState<WaitingScreen> {
       await ref.read(sendReminderProvider(widget.sessionId).future);
       if (!mounted) return;
       ref.read(hapticsProvider).light();
+      final partner = thisOrThatPartnerLabel(widget.partnerName);
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('A gentle nudge was sent to ${widget.partnerName}.'),
-        ),
+        SnackBar(content: Text('A gentle nudge was sent to $partner.')),
       );
       setState(() => _showRemindButton = false);
       _scheduleReminder(const Duration(hours: 4));
@@ -182,120 +184,142 @@ class _WaitingScreenState extends ConsumerState<WaitingScreen> {
     final palette = ThisOrThatPalette.of(context);
     final choiceText = _currentChoice == 'a' ? widget.optionA : widget.optionB;
     final choiceEmoji = _currentChoice == 'a' ? widget.emojiA : widget.emojiB;
+    final face = _currentChoice == 'b' ? palette.thatColor : palette.thisColor;
+    final ink = palette.inkOn(face);
+    // "your partner" when the name is not known, never "Partner".
+    final partner = thisOrThatPartnerLabel(widget.partnerName);
+    final partnerFirst = thisOrThatPartnerLabel(
+      widget.partnerName,
+      sentenceStart: true,
+    );
 
     return ThisOrThatGameScaffold(
       roundNumber: widget.roundNumber,
       totalRounds: widget.totalRounds,
-      leading: IconButton(
-        icon: const Icon(Icons.close_rounded),
-        tooltip: 'Leave game',
-        onPressed: _showExitConfirmation,
-      ),
-      child: Column(
-        children: [
-          const SizedBox(height: 8),
-          const ThisOrThatWaitingMark(),
-          const SizedBox(height: 12),
-          Text(
-            '${widget.partnerName} is choosing',
-            style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-              color: palette.ink,
-              fontWeight: FontWeight.w800,
-              letterSpacing: 0,
-            ),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            'Your answer is tucked away. The reveal begins as soon as they lock theirs in.',
-            textAlign: TextAlign.center,
-            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-              color: palette.mutedInk,
-              height: 1.4,
-              letterSpacing: 0,
-            ),
-          ),
-          const SizedBox(height: 24),
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: palette.panel.withValues(alpha: 0.94),
-              borderRadius: BorderRadius.circular(24),
-              border: Border.all(color: palette.line),
-            ),
-            child: Column(
+      onBack: _showExitConfirmation,
+      child: ThisOrThatCentredBody(
+        builder:
+            (context, _) => Column(
+              mainAxisSize: MainAxisSize.min,
               children: [
-                ThisOrThatStageLabel(
-                  text: 'Your locked pick',
-                  icon: Icons.lock_rounded,
-                  color: palette.mutedInk,
+                const SizedBox(height: 4),
+                // The player's own pick, in its own colour: the one thing
+                // on this screen that is theirs, so it leads.
+                GameTile(
+                  key: const ValueKey('this-or-that-locked-pick'),
+                  color: face,
+                  radius: 22,
+                  depth: 6,
+                  padding: const EdgeInsets.fromLTRB(20, 18, 20, 22),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Align(
+                        alignment: Alignment.centerLeft,
+                        child: ThisOrThatStageLabel(
+                          text: 'Your locked pick',
+                          icon: Icons.lock_rounded,
+                          color: ink,
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      Text(
+                        widget.questionText,
+                        style: TextStyle(
+                          color: ink,
+                          fontSize: 15,
+                          height: 1.25,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                      AnimatedSwitcher(
+                        duration: GameMotion.of(context, GameMotion.settle),
+                        switchInCurve: GameMotion.settleCurve,
+                        // The new pick springs in where the old one was;
+                        // the old one goes at once rather than fading
+                        // under it.
+                        layoutBuilder:
+                            (current, previous) => current ?? const SizedBox(),
+                        transitionBuilder:
+                            (child, animation) => ScaleTransition(
+                              scale: Tween(
+                                begin: 0.9,
+                                end: 1.0,
+                              ).animate(animation),
+                              alignment: Alignment.centerLeft,
+                              child: child,
+                            ),
+                        child: Text(
+                          '${choiceEmoji ?? ''} $choiceText'.trim(),
+                          key: ValueKey(_currentChoice),
+                          style: TextStyle(
+                            color: ink,
+                            fontSize: 24,
+                            height: 1.15,
+                            fontWeight: FontWeight.w800,
+                            letterSpacing: -0.2,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
-                const SizedBox(height: 14),
-                AnimatedSwitcher(
-                  duration:
-                      reduceMotionOf(context)
-                          ? Duration.zero
-                          : const Duration(milliseconds: 220),
-                  child: Text(
-                    '${choiceEmoji ?? ''} $choiceText'.trim(),
-                    key: ValueKey(_currentChoice),
-                    textAlign: TextAlign.center,
-                    style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                      color: palette.ink,
-                      fontWeight: FontWeight.w800,
-                      letterSpacing: 0,
-                    ),
+                const SizedBox(height: 22),
+                const ThisOrThatWaitingMark(size: 96),
+                const SizedBox(height: 12),
+                Text(
+                  '$partnerFirst is choosing',
+                  textAlign: TextAlign.center,
+                  style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                    color: palette.ink,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: 0,
                   ),
                 ),
                 const SizedBox(height: 8),
                 Text(
-                  widget.questionText,
+                  'Your answer is tucked away. The reveal begins as soon as '
+                  '$partner locks theirs in.',
                   textAlign: TextAlign.center,
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                     color: palette.mutedInk,
+                    height: 1.4,
                     letterSpacing: 0,
                   ),
                 ),
+                const SizedBox(height: 24),
+                if (reduceMotionOf(context))
+                  _buildChoiceEditor()
+                else
+                  AnimatedSize(
+                    duration: GameMotion.of(context, GameMotion.settle),
+                    curve: GameMotion.enterCurve,
+                    alignment: Alignment.topCenter,
+                    child: _buildChoiceEditor(),
+                  ),
+                if (_showRemindButton) ...[
+                  const SizedBox(height: 12),
+                  GameSecondaryButton(
+                    // While it is on its way the button says so, and takes no
+                    // second tap.
+                    label: _isSendingReminder ? 'Sending…' : 'Nudge $partner',
+                    onTap: _isSendingReminder ? null : _sendReminder,
+                  ),
+                ],
               ],
             ),
-          ),
-          const SizedBox(height: 14),
-          if (reduceMotionOf(context))
-            _buildChoiceEditor()
-          else
-            AnimatedSize(
-              duration: const Duration(milliseconds: 260),
-              curve: Curves.easeOutCubic,
-              alignment: Alignment.topCenter,
-              child: _buildChoiceEditor(),
-            ),
-          if (_showRemindButton) ...[
-            const SizedBox(height: 20),
-            OutlinedButton.icon(
-              onPressed: _isSendingReminder ? null : _sendReminder,
-              icon:
-                  _isSendingReminder
-                      ? const SizedBox.square(
-                        dimension: 16,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                      : const Icon(Icons.notifications_active_outlined),
-              label: Text('Nudge ${widget.partnerName}'),
-            ),
-          ],
-        ],
       ),
     );
   }
 
   Widget _buildChoiceEditor() {
     if (!_isEditing) {
-      return TextButton.icon(
+      return GameSecondaryButton(
         key: const ValueKey('change-pick'),
-        onPressed:
+        label: 'Change my pick',
+        onTap:
             _isUpdatingChoice ? null : () => setState(() => _isEditing = true),
-        icon: const Icon(Icons.swap_horiz_rounded),
-        label: const Text('Change my pick'),
       );
     }
 
@@ -335,21 +359,24 @@ class _WaitingScreenState extends ConsumerState<WaitingScreen> {
     final exit = await showDialog<bool>(
       context: context,
       builder:
-          (context) => AlertDialog(
-            title: const Text('Leave for now?'),
-            content: const Text(
-              'Your pick is saved. You can come back when your partner answers.',
+          (context) => thisOrThatDarkTheme(
+            context,
+            child: AlertDialog(
+              title: const Text('Leave for now?'),
+              content: const Text(
+                'Your pick is saved. You can come back when your partner answers.',
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context, false),
+                  child: const Text('Keep waiting'),
+                ),
+                FilledButton(
+                  onPressed: () => Navigator.pop(context, true),
+                  child: const Text('Leave game'),
+                ),
+              ],
             ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(context, false),
-                child: const Text('Keep waiting'),
-              ),
-              FilledButton(
-                onPressed: () => Navigator.pop(context, true),
-                child: const Text('Leave game'),
-              ),
-            ],
           ),
     );
     if (exit == true && mounted) Navigator.of(context).maybePop();

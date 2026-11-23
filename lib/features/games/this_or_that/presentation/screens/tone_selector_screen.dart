@@ -1,7 +1,8 @@
 import 'package:attune/core/ui/feedback/haptics.dart';
 import 'package:attune/core/ui/feedback/sound_service.dart';
 import 'package:attune/features/games/presentation/widgets/game_icon.dart';
-import 'package:attune/features/games/this_or_that/presentation/providers/this_or_that_providers.dart';
+import 'package:attune/features/games/this_or_that/domain/this_or_that_tones.dart';
+import 'package:attune/features/games/this_or_that/presentation/start_this_or_that.dart';
 import 'package:attune/features/games/this_or_that/presentation/widgets/this_or_that_game_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -18,48 +19,10 @@ class _ToneSelectorScreenState extends ConsumerState<ToneSelectorScreen> {
   String _selectedTone = 'connecting';
   bool _isStarting = false;
 
-  static const _tones = <_ToneOption>[
-    _ToneOption(
-      id: 'connecting',
-      label: 'Connecting',
-      description: 'Easy questions that bring you closer',
-      icon: Icons.people_alt_rounded,
-      color: Color(0xFF3F66D4),
-    ),
-    _ToneOption(
-      id: 'romantic',
-      label: 'Romantic',
-      description: 'Soft, affectionate, and a little dreamy',
-      icon: Icons.favorite_rounded,
-      color: Color(0xFFD94C65),
-    ),
-    _ToneOption(
-      id: 'playful',
-      label: 'Playful',
-      description: 'Silly choices and surprising debates',
-      icon: Icons.celebration_rounded,
-      color: Color(0xFFF09A36),
-    ),
-    _ToneOption(
-      id: 'spicy',
-      label: 'Spicy',
-      description: 'Flirty choices with extra heat',
-      icon: Icons.local_fire_department_rounded,
-      color: Color(0xFFE35843),
-    ),
-    _ToneOption(
-      id: 'intimate',
-      label: 'Intimate',
-      description: 'Deeper adult questions, with consent',
-      icon: Icons.nights_stay_rounded,
-      color: Color(0xFF7957C8),
-    ),
-  ];
+  ThisOrThatTone get _selected =>
+      thisOrThatTones.firstWhere((tone) => tone.id == _selectedTone);
 
-  _ToneOption get _selected =>
-      _tones.firstWhere((tone) => tone.id == _selectedTone);
-
-  void _selectTone(_ToneOption tone) {
+  void _selectTone(ThisOrThatTone tone) {
     if (_selectedTone == tone.id) return;
     ref.read(hapticsProvider).selection();
     ref.read(soundServiceProvider).play(AppSound.gameTap);
@@ -68,61 +31,17 @@ class _ToneSelectorScreenState extends ConsumerState<ToneSelectorScreen> {
 
   Future<void> _startGame() async {
     if (_isStarting) return;
-    final messenger = ScaffoldMessenger.of(context);
-    final relationshipId = await ref.read(currentRelationshipIdProvider.future);
-    if (relationshipId == null) {
-      if (!mounted) return;
-      messenger.showSnackBar(
-        const SnackBar(
-          content: Text('This game unlocks when a relationship is active.'),
-        ),
-      );
-      return;
-    }
-
-    if (_selectedTone == 'intimate') {
-      if (!mounted) return;
-      final confirmed = await showDialog<bool>(
-        context: context,
-        builder:
-            (context) => AlertDialog(
-              icon: const Icon(Icons.favorite_outline_rounded),
-              title: const Text('Choose Intimate together'),
-              content: const Text(
-                'This tone includes adult questions for committed couples. Your partner will also be asked before the game begins.',
-                textAlign: TextAlign.center,
-              ),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.pop(context, false),
-                  child: const Text('Not now'),
-                ),
-                FilledButton(
-                  onPressed: () => Navigator.pop(context, true),
-                  child: const Text('Continue'),
-                ),
-              ],
-            ),
-      );
-      if (confirmed != true) return;
-    }
-
     setState(() => _isStarting = true);
     try {
-      final request = (relationshipId: relationshipId, tone: _selectedTone);
-      ref.invalidate(createThisOrThatSessionProvider(request));
-      final session = await ref.read(
-        createThisOrThatSessionProvider(request).future,
+      final sessionId = await startThisOrThat(
+        context,
+        ref,
+        tone: _selectedTone,
       );
-      if (!mounted) return;
+      if (sessionId == null || !mounted) return;
       context.pushReplacementNamed(
         'thisOrThatSessionRouter',
-        extra: session.id,
-      );
-    } catch (_) {
-      if (!mounted) return;
-      messenger.showSnackBar(
-        const SnackBar(content: Text('The game could not start. Try again.')),
+        extra: sessionId,
       );
     } finally {
       if (mounted) setState(() => _isStarting = false);
@@ -173,7 +92,7 @@ class _ToneSelectorScreenState extends ConsumerState<ToneSelectorScreen> {
                 spacing: 12,
                 runSpacing: 12,
                 children: [
-                  for (final tone in _tones)
+                  for (final tone in thisOrThatTones)
                     SizedBox(
                       width: width,
                       child: _ToneCard(
@@ -200,7 +119,7 @@ class _ToneCard extends StatelessWidget {
     required this.onTap,
   });
 
-  final _ToneOption tone;
+  final ThisOrThatTone tone;
   final bool selected;
   final VoidCallback onTap;
 
@@ -304,20 +223,4 @@ class _ToneCard extends StatelessWidget {
       ),
     );
   }
-}
-
-class _ToneOption {
-  const _ToneOption({
-    required this.id,
-    required this.label,
-    required this.description,
-    required this.icon,
-    required this.color,
-  });
-
-  final String id;
-  final String label;
-  final String description;
-  final IconData icon;
-  final Color color;
 }

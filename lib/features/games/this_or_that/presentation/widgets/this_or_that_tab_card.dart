@@ -1,4 +1,6 @@
-import 'package:attune/core/ui/motion/reduce_motion.dart';
+import 'package:attune/features/games/platform/feel/game_motion.dart';
+import 'package:attune/features/games/platform/feel/game_tile.dart';
+import 'package:attune/features/games/platform/game_theme.dart';
 import 'package:attune/features/games/this_or_that/presentation/widgets/this_or_that_game_ui.dart';
 import 'package:flutter/material.dart';
 
@@ -14,18 +16,42 @@ enum ThisOrThatTab {
   thatOption,
 }
 
-/// A question and its two answers as three layered tabs, like a set of
-/// folder dividers.
+/// Marks the row of tabs of the [ThisOrThatTabCard] below it with
+/// [target], so a tutorial can point at the tabs rather than the whole card.
+class ThisOrThatTabRowTarget extends InheritedWidget {
+  const ThisOrThatTabRowTarget({
+    super.key,
+    required this.target,
+    required super.child,
+  });
+
+  final GlobalKey target;
+
+  static GlobalKey? maybeOf(BuildContext context) =>
+      context
+          .dependOnInheritedWidgetOfExactType<ThisOrThatTabRowTarget>()
+          ?.target;
+
+  @override
+  bool updateShouldNotify(ThisOrThatTabRowTarget oldWidget) =>
+      oldWidget.target != target;
+}
+
+/// A question and its two answers: three tabs over one card.
 ///
 /// The round opens on the middle tab with the question. Pulling the left
 /// or right tab forward floods the whole card with that option's colour
 /// and IS the answer -- there is no separate confirm, because the colour
 /// arriving is a better confirmation than a button could be.
 ///
-/// Two side-by-side cards (what this replaces) make the player compare
+/// Two side-by-side cards (what this replaced) make the player compare
 /// two small things. One card that BECOMES the choice makes the choice
 /// feel like a commitment, which is what a question about your partner
 /// should feel like.
+///
+/// Everything is the games' tile: flat faces over hard offset shadows. The
+/// forward tab stands on a deeper shadow and shares the card's colour, so
+/// which tab the card belongs to reads without reading a word.
 class ThisOrThatTabCard extends StatelessWidget {
   const ThisOrThatTabCard({
     super.key,
@@ -55,48 +81,41 @@ class ThisOrThatTabCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final palette = ThisOrThatPalette.of(context);
-    final reduceMotion = reduceMotionOf(context);
 
     final surface = switch (active) {
       ThisOrThatTab.thisOption => palette.thisColor,
       ThisOrThatTab.thatOption => palette.thatColor,
-      ThisOrThatTab.question => palette.panel,
+      ThisOrThatTab.question => GameTheme.tile,
     };
-
-    // Text has to stay legible on three different grounds, and the two
-    // option colours are saturated while the question panel is not.
-    final onSurface =
-        active == ThisOrThatTab.question
-            ? palette.ink
-            : ThemeData.estimateBrightnessForColor(surface) == Brightness.dark
-            ? Colors.white
-            : palette.ink;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       mainAxisSize: MainAxisSize.min,
       children: [
         Row(
+          key: ThisOrThatTabRowTarget.maybeOf(context),
+          // Bottoms aligned: a tab further back sits on a shallower
+          // shadow, so its face is lower -- pressed in, next to the one
+          // standing up.
+          crossAxisAlignment: CrossAxisAlignment.end,
           children: [
             Expanded(
               child: _Tab(
                 label: 'THIS',
-                color: palette.thisColor,
+                face: palette.thisColor,
                 forward: active == ThisOrThatTab.thisOption,
-                reduceMotion: reduceMotion,
                 onTap:
                     onSelect == null
                         ? null
                         : () => onSelect!(ThisOrThatTab.thisOption),
               ),
             ),
+            const SizedBox(width: 8),
             Expanded(
               child: _Tab(
                 label: 'OR',
-                color: palette.panel,
-                labelColor: palette.mutedInk,
+                face: GameTheme.tile,
                 forward: active == ThisOrThatTab.question,
-                reduceMotion: reduceMotion,
                 // The middle tab is not a choice -- it is where the
                 // round starts. Making it tappable would offer a way to
                 // un-answer, and an answer you can take back is not the
@@ -104,12 +123,12 @@ class ThisOrThatTabCard extends StatelessWidget {
                 onTap: null,
               ),
             ),
+            const SizedBox(width: 8),
             Expanded(
               child: _Tab(
                 label: 'THAT',
-                color: palette.thatColor,
+                face: palette.thatColor,
                 forward: active == ThisOrThatTab.thatOption,
-                reduceMotion: reduceMotion,
                 onTap:
                     onSelect == null
                         ? null
@@ -118,20 +137,9 @@ class ThisOrThatTabCard extends StatelessWidget {
             ),
           ],
         ),
-        AnimatedContainer(
-          duration:
-              reduceMotion ? Duration.zero : const Duration(milliseconds: 260),
-          curve: Curves.easeOutCubic,
-          decoration: BoxDecoration(
-            color: surface,
-            borderRadius: const BorderRadius.only(
-              topLeft: Radius.circular(22),
-              topRight: Radius.circular(22),
-              bottomLeft: Radius.circular(22),
-              bottomRight: Radius.circular(22),
-            ),
-          ),
-          padding: const EdgeInsets.fromLTRB(22, 26, 22, 28),
+        const SizedBox(height: 6),
+        _Panel(
+          color: surface,
           child: _CardBody(
             active: active,
             questionText: questionText,
@@ -139,8 +147,7 @@ class ThisOrThatTabCard extends StatelessWidget {
             optionB: optionB,
             emojiA: emojiA,
             emojiB: emojiB,
-            onSurface: onSurface,
-            reduceMotion: reduceMotion,
+            ink: palette.inkOn(surface),
           ),
         ),
       ],
@@ -148,75 +155,126 @@ class ThisOrThatTabCard extends StatelessWidget {
   }
 }
 
-/// One divider tab.
+/// [ink] mixed toward [face] for a tab that is not forward: 62% strength
+/// where that still reads, and only as faint as 4.5:1 allows where it does
+/// not. On the two option colours 62% would fall to about 3.8:1.
+Color _dimmed(Color ink, Color face) {
+  // A hair over the bar, so rounding in the mix cannot land under it.
+  const bar = 4.6;
+  for (var strength = 0.62; strength < 1; strength += 0.02) {
+    final mixed = Color.lerp(face, ink, strength)!;
+    if (ThisOrThatPalette.contrast(mixed, face) >= bar) return mixed;
+  }
+  return ink;
+}
+
+/// One tab: a tile in its option's colour.
 class _Tab extends StatelessWidget {
   const _Tab({
     required this.label,
-    required this.color,
+    required this.face,
     required this.forward,
-    required this.reduceMotion,
-    this.labelColor,
     this.onTap,
   });
 
   final String label;
-  final Color color;
+  final Color face;
   final bool forward;
-  final bool reduceMotion;
-  final Color? labelColor;
   final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
-    final palette = ThisOrThatPalette.of(context);
-    final ink =
-        labelColor ??
-        (ThemeData.estimateBrightnessForColor(color) == Brightness.dark
-            ? Colors.white
-            : palette.ink);
+    final ink = ThisOrThatPalette.of(context).inkOn(face);
 
-    return Semantics(
-      button: onTap != null,
-      selected: forward,
-      label: label,
-      child: GestureDetector(
-        onTap: onTap,
-        behavior: HitTestBehavior.opaque,
-        child: AnimatedContainer(
-          duration:
-              reduceMotion ? Duration.zero : const Duration(milliseconds: 220),
-          curve: Curves.easeOutCubic,
-          // A tab that is forward sits taller and loses the gap beneath
-          // it, so it reads as joined to the card rather than resting on
-          // it. That join is the whole illusion.
-          height: forward ? 46 : 38,
-          margin: EdgeInsets.only(
-            bottom: forward ? 0 : 8,
-            right: 2,
-            left: 2,
-          ),
-          decoration: BoxDecoration(
-            color: color,
-            borderRadius: const BorderRadius.only(
-              topLeft: Radius.circular(16),
-              topRight: Radius.circular(16),
-            ),
-          ),
-          alignment: Alignment.center,
-          child: AnimatedDefaultTextStyle(
-            duration:
-                reduceMotion
-                    ? Duration.zero
-                    : const Duration(milliseconds: 220),
-            style: TextStyle(
-              color: ink.withValues(alpha: forward ? 1 : 0.62),
-              fontSize: 11,
-              fontWeight: FontWeight.w800,
-              letterSpacing: 1.6,
-            ),
-            child: Text(label),
+    final caption = Center(
+      child: AnimatedDefaultTextStyle(
+        duration: GameMotion.of(context, GameMotion.settle),
+        curve: GameMotion.enterCurve,
+        // Merged, not replaced: a bare style here would drop the app's
+        // font for the platform's default.
+        style: DefaultTextStyle.of(context).style.merge(
+          TextStyle(
+            color: forward ? ink : _dimmed(ink, face),
+            fontSize: 14,
+            fontWeight: FontWeight.w900,
+            letterSpacing: 1.6,
           ),
         ),
+        child: Text(label, maxLines: 1),
+      ),
+    );
+
+    // The tile's depth is a plain number, so it is animated here: the
+    // chosen tab rises onto a deeper shadow as the one before it settles
+    // back, at the same pace as the card's flood. The row aligns bottoms,
+    // so a deeper shadow lifts the face. Instant under reduced motion.
+    return TweenAnimationBuilder<double>(
+      tween: Tween(end: forward ? _forwardDepth : _backDepth),
+      duration: GameMotion.of(context, GameMotion.settle),
+      curve: GameMotion.enterCurve,
+      child: caption,
+      builder:
+          (context, depth, caption) => GameTile(
+            color: face,
+            radius: 14,
+            depth: depth,
+            semanticLabel: label,
+            selected: forward,
+            onTap: onTap,
+            padding: const EdgeInsets.symmetric(vertical: 13),
+            child: caption!,
+          ),
+    );
+  }
+
+  static const double _forwardDepth = 5;
+  static const double _backDepth = 2;
+}
+
+/// The card itself: one tile-shaped panel whose colour is the choice.
+///
+/// Drawn here rather than as a [GameTile] because its colour change is the
+/// answer arriving, and runs at the settle pace rather than a press's.
+class _Panel extends StatelessWidget {
+  const _Panel({required this.color, required this.child});
+
+  final Color color;
+  final Widget child;
+
+  static const double _depth = 6;
+  static const BorderRadius _radius = BorderRadius.all(Radius.circular(22));
+
+  @override
+  Widget build(BuildContext context) {
+    const dx = _depth * GameTile.lean;
+
+    // The padding reserves the shadow's room, as a tile's does.
+    return Padding(
+      padding: const EdgeInsets.only(right: dx, bottom: _depth),
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          Positioned.fill(
+            child: Transform.translate(
+              offset: const Offset(dx, _depth),
+              child: const DecoratedBox(
+                decoration: BoxDecoration(
+                  color: GameTheme.tileShadow,
+                  borderRadius: _radius,
+                ),
+              ),
+            ),
+          ),
+          AnimatedContainer(
+            key: const ValueKey('this-or-that-card-panel'),
+            duration: GameMotion.of(context, GameMotion.settle),
+            curve: GameMotion.enterCurve,
+            width: double.infinity,
+            padding: const EdgeInsets.fromLTRB(22, 24, 22, 26),
+            decoration: BoxDecoration(color: color, borderRadius: _radius),
+            child: child,
+          ),
+        ],
       ),
     );
   }
@@ -229,8 +287,7 @@ class _CardBody extends StatelessWidget {
     required this.questionText,
     required this.optionA,
     required this.optionB,
-    required this.onSurface,
-    required this.reduceMotion,
+    required this.ink,
     this.emojiA,
     this.emojiB,
   });
@@ -239,8 +296,7 @@ class _CardBody extends StatelessWidget {
   final String questionText;
   final String optionA;
   final String optionB;
-  final Color onSurface;
-  final bool reduceMotion;
+  final Color ink;
   final String? emojiA;
   final String? emojiB;
 
@@ -260,56 +316,51 @@ class _CardBody extends StatelessWidget {
     // No AnimatedSize here. It wraps children that animate their OWN
     // size -- AnimatedDefaultTextStyle changes the question's font size
     // -- and a RenderAnimatedSize mutated during its own performLayout
-    // throws. The enclosing AnimatedContainer already animates the
-    // card's height, so the resize is carried there instead.
+    // throws. The enclosing AnimatedContainer carries the resize instead.
     return Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          // The question stays visible after a choice, smaller. Removing
-          // it would leave the answer with nothing to be an answer TO,
-          // and a partner glancing over should still see what was asked.
-          AnimatedDefaultTextStyle(
-            duration:
-                reduceMotion
-                    ? Duration.zero
-                    : const Duration(milliseconds: 260),
-            curve: Curves.easeOutCubic,
-            style: TextStyle(
-              color: onSurface.withValues(
-                alpha: chosen == null ? 1 : 0.72,
-              ),
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        // The question stays visible after a choice, smaller. Removing
+        // it would leave the answer with nothing to be an answer TO,
+        // and a partner glancing over should still see what was asked.
+        AnimatedDefaultTextStyle(
+          duration: GameMotion.of(context, GameMotion.settle),
+          curve: GameMotion.enterCurve,
+          style: DefaultTextStyle.of(context).style.merge(
+            TextStyle(
+              color: ink,
               fontSize: chosen == null ? 30 : 17,
               height: 1.12,
-              fontWeight: chosen == null ? FontWeight.w800 : FontWeight.w600,
-              letterSpacing: -0.4,
+              fontWeight: chosen == null ? FontWeight.w800 : FontWeight.w700,
+              letterSpacing: chosen == null ? -0.4 : 0,
             ),
-            child: Text(questionText),
           ),
-          if (chosen != null) ...[
-            const SizedBox(height: 18),
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.center,
-              children: [
-                if (emoji != null && emoji.isNotEmpty) ...[
-                  Text(emoji, style: const TextStyle(fontSize: 34)),
-                  const SizedBox(width: 12),
-                ],
-                Expanded(
-                  child: Text(
-                    chosen,
-                    style: TextStyle(
-                      color: onSurface,
-                      fontSize: 26,
-                      height: 1.15,
-                      fontWeight: FontWeight.w800,
-                      letterSpacing: -0.3,
-                    ),
+          child: Text(questionText),
+        ),
+        if (chosen != null) ...[
+          const SizedBox(height: 16),
+          Row(
+            children: [
+              if (emoji != null && emoji.isNotEmpty) ...[
+                Text(emoji, style: TextStyle(color: ink, fontSize: 34)),
+                const SizedBox(width: 12),
+              ],
+              Expanded(
+                child: Text(
+                  chosen,
+                  style: TextStyle(
+                    color: ink,
+                    fontSize: 26,
+                    height: 1.15,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: -0.3,
                   ),
                 ),
-              ],
-            ),
-          ],
+              ),
+            ],
+          ),
+        ],
       ],
     );
   }

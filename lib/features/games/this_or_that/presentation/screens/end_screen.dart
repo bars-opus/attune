@@ -1,14 +1,19 @@
-import 'dart:math' as math;
-
-import 'package:attune/core/ui/feedback/haptics.dart';
-import 'package:attune/core/ui/feedback/sound_service.dart';
-import 'package:attune/core/ui/motion/reduce_motion.dart';
-import 'package:attune/features/games/presentation/widgets/game_icon.dart';
+import 'package:attune/features/games/platform/feel/game_tile.dart';
+import 'package:attune/features/games/platform/game_theme.dart';
+import 'package:attune/features/games/platform/shell/game_complete_screen.dart';
+import 'package:attune/features/games/presentation/providers/game_partner_name_provider.dart';
 import 'package:attune/features/games/this_or_that/presentation/widgets/this_or_that_game_ui.dart';
+import 'package:attune/features/games/this_or_that/this_or_that_game.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-class EndScreen extends ConsumerStatefulWidget {
+/// This or That's end, on the shell's completion screen.
+///
+/// The verdict over COMPLETE in tiles, the two players' names, the score
+/// said in words and the round most worth talking about. It is a shared
+/// result: nothing on it says who "got it wrong". The win sound and buzz
+/// are the completion screen's, once, as it arrives.
+class EndScreen extends ConsumerWidget {
   const EndScreen({
     super.key,
     required this.matchCount,
@@ -24,237 +29,51 @@ class EndScreen extends ConsumerStatefulWidget {
   final VoidCallback onPlayAgain;
   final VoidCallback onTryAnotherGame;
 
-  @override
-  ConsumerState<EndScreen> createState() => _EndScreenState();
-}
-
-class _EndScreenState extends ConsumerState<EndScreen>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _controller = AnimationController(
-    vsync: this,
-    duration: const Duration(milliseconds: 1100),
-  );
-  bool _started = false;
-
-  double get matchRatio =>
-      widget.totalRounds == 0 ? 0 : widget.matchCount / widget.totalRounds;
+  double get matchRatio => totalRounds == 0 ? 0 : matchCount / totalRounds;
 
   @override
-  void initState() {
-    super.initState();
-    ref.read(soundServiceProvider).play(AppSound.gameComplete);
-    ref.read(hapticsProvider).medium();
-  }
+  Widget build(BuildContext context, WidgetRef ref) {
+    final partner = thisOrThatPartnerLabel(
+      ref.watch(gamePartnerNameProvider).valueOrNull?.trim(),
+    );
 
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    if (_started) return;
-    _started = true;
-    if (reduceMotionOf(context)) {
-      _controller.value = 1;
-    } else {
-      _controller.forward();
-    }
-  }
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final palette = ThisOrThatPalette.of(context);
-    return ThisOrThatGameScaffold(
-      title: 'Game complete',
-      scrollable: true,
-      bottom: Row(
+    return GameCompleteScreen(
+      theme: thisOrThatTheme,
+      headline: _headline,
+      word: 'COMPLETE',
+      names: ['You', partner],
+      onPlayAgain: onPlayAgain,
+      onBackToGames: onTryAnotherGame,
+      summary: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          SizedBox(
-            width: 58,
-            height: 58,
-            child: OutlinedButton(
-              onPressed: widget.onTryAnotherGame,
-              style: OutlinedButton.styleFrom(
-                padding: EdgeInsets.zero,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(18),
-                ),
-              ),
-              child: const Icon(Icons.grid_view_rounded, size: 21),
-            ),
-          ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: ThisOrThatPrimaryAction(
-              label: 'Play again',
-              onPressed: widget.onPlayAgain,
-              icon: Icons.replay_rounded,
-            ),
-          ),
-        ],
-      ),
-      child: Column(
-        children: [
-          const SizedBox(height: 4),
-          ScaleTransition(
-            scale: CurvedAnimation(
-              parent: _controller,
-              curve: const Interval(0, 0.45, curve: Curves.easeOutBack),
-            ),
-            child: const GameIcon(gameType: 'this_or_that', size: 82),
-          ),
-          const SizedBox(height: 14),
+          // On the backdrop, which is still the game's orange on a short
+          // screen: white, where nothing else reads.
           Text(
-            _headline,
+            'You matched on $matchCount of $totalRounds.',
             textAlign: TextAlign.center,
-            style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-              color: palette.ink,
-              fontWeight: FontWeight.w900,
-              height: 1.08,
-              letterSpacing: 0,
+            style: const TextStyle(
+              color: GameTheme.onGround,
+              fontSize: 18,
+              fontWeight: FontWeight.w800,
+              height: 1.25,
             ),
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 6),
           Text(
             _subtitle,
             textAlign: TextAlign.center,
-            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-              color: palette.mutedInk,
+            style: const TextStyle(
+              color: GameTheme.onGround,
+              fontSize: 15,
               height: 1.4,
-              letterSpacing: 0,
             ),
           ),
-          const SizedBox(height: 22),
-          if (matchRatio >= 0.6)
-            AnimatedBuilder(
-              animation: _controller,
-              builder: (context, _) {
-                final progress = Curves.easeOutCubic.transform(
-                  const Interval(0.18, 0.82).transform(_controller.value),
-                );
-                return Semantics(
-                  label:
-                      '${widget.matchCount} matches out of ${widget.totalRounds} rounds',
-                  child: SizedBox.square(
-                    dimension: 164,
-                    child: CustomPaint(
-                      painter: _ScoreRingPainter(
-                        value: matchRatio * progress,
-                        track: palette.line,
-                        first: palette.thisColor,
-                        second: palette.thatColor,
-                      ),
-                      child: Center(
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Text(
-                              '${(matchRatio * progress * 100).round()}%',
-                              style: Theme.of(
-                                context,
-                              ).textTheme.headlineMedium?.copyWith(
-                                color: palette.ink,
-                                fontWeight: FontWeight.w900,
-                                letterSpacing: 0,
-                              ),
-                            ),
-                            Text(
-                              '${widget.matchCount} matched',
-                              style: Theme.of(
-                                context,
-                              ).textTheme.labelMedium?.copyWith(
-                                color: palette.mutedInk,
-                                fontWeight: FontWeight.w700,
-                                letterSpacing: 0,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ),
-                );
-              },
-            )
-          else
-            ScaleTransition(
-              scale: CurvedAnimation(
-                parent: _controller,
-                curve: const Interval(0.18, 0.82, curve: Curves.easeOutBack),
-              ),
-              child: const _DiscoveryMark(),
-            ),
-          if (widget.mostInterestingPick.isNotEmpty) ...[
+          if (mostInterestingPick.isNotEmpty) ...[
             const SizedBox(height: 24),
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(18),
-              decoration: BoxDecoration(
-                color: palette.panel.withValues(alpha: 0.96),
-                borderRadius: BorderRadius.circular(24),
-                border: Border.all(color: palette.line),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  ThisOrThatStageLabel(
-                    text: 'Talk about this one',
-                    icon: Icons.chat_bubble_outline_rounded,
-                    color: palette.thisColor,
-                  ),
-                  const SizedBox(height: 10),
-                  Text(
-                    widget.mostInterestingPick['question_text'] as String? ??
-                        '',
-                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                      color: palette.ink,
-                      fontWeight: FontWeight.w800,
-                      height: 1.25,
-                      letterSpacing: 0,
-                    ),
-                  ),
-                  const SizedBox(height: 14),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: _ResultPick(
-                          label: 'YOU',
-                          text:
-                              widget.mostInterestingPick['answer_a_text']
-                                  as String? ??
-                              '',
-                          emoji:
-                              widget.mostInterestingPick['answer_a_emoji']
-                                  as String? ??
-                              '',
-                          color: palette.thisColor,
-                        ),
-                      ),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: _ResultPick(
-                          label: 'PARTNER',
-                          text:
-                              widget.mostInterestingPick['answer_b_text']
-                                  as String? ??
-                              '',
-                          emoji:
-                              widget.mostInterestingPick['answer_b_emoji']
-                                  as String? ??
-                              '',
-                          color: palette.thatColor,
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
+            _PickTile(pick: mostInterestingPick, partner: partner),
           ],
-          const SizedBox(height: 8),
         ],
       ),
     );
@@ -268,7 +87,7 @@ class _EndScreenState extends ConsumerState<EndScreen>
 
   String get _subtitle {
     if (matchRatio >= 0.8) {
-      return 'You found the same side ${widget.matchCount} times. That deserves a rematch.';
+      return 'You found the same side $matchCount times. That deserves a rematch.';
     }
     if (matchRatio >= 0.5) {
       return 'A little alignment, a little discovery. Exactly the good stuff.';
@@ -277,116 +96,74 @@ class _EndScreenState extends ConsumerState<EndScreen>
   }
 }
 
-class _DiscoveryMark extends StatelessWidget {
-  const _DiscoveryMark();
+/// The round worth talking about: a white tile with the question, and the
+/// two picks on their options' colours, as the reveal showed them.
+class _PickTile extends StatelessWidget {
+  const _PickTile({required this.pick, required this.partner});
+
+  final Map<String, dynamic> pick;
+  final String partner;
+
+  String _text(String key) => pick[key] as String? ?? '';
 
   @override
   Widget build(BuildContext context) {
     final palette = ThisOrThatPalette.of(context);
-    return Semantics(
-      label: 'Different answers give you more to discover together',
-      child: Container(
-        width: 164,
-        height: 164,
-        decoration: BoxDecoration(
-          color: palette.panel.withValues(alpha: 0.84),
-          shape: BoxShape.circle,
-          border: Border.all(color: palette.line),
-        ),
-        child: Stack(
-          alignment: Alignment.center,
-          children: [
-            Positioned(
-              left: 25,
-              top: 31,
-              child: _DiscoveryDot(
-                color: palette.thisColor,
-                icon: Icons.arrow_back_rounded,
-              ),
-            ),
-            Positioned(
-              right: 25,
-              bottom: 31,
-              child: _DiscoveryDot(
-                color: palette.thatColor,
-                icon: Icons.arrow_forward_rounded,
-              ),
-            ),
-            Container(
-              width: 64,
-              height: 64,
-              decoration: BoxDecoration(
-                color: palette.ink,
-                borderRadius: BorderRadius.circular(22),
-              ),
-              child: Icon(Icons.forum_rounded, color: palette.canvas, size: 29),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
+    // The side each picked, where the router says; otherwise yours is
+    // THIS and theirs THAT, as they always were here.
+    Color face(String key, String fallback) =>
+        (pick[key] as String? ?? fallback) == 'b'
+            ? palette.thatColor
+            : palette.thisColor;
 
-class _DiscoveryDot extends StatelessWidget {
-  const _DiscoveryDot({required this.color, required this.icon});
-
-  final Color color;
-  final IconData icon;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: 40,
-      height: 40,
-      decoration: BoxDecoration(color: color, shape: BoxShape.circle),
-      child: Icon(icon, color: Colors.white, size: 20),
-    );
-  }
-}
-
-class _ResultPick extends StatelessWidget {
-  const _ResultPick({
-    required this.label,
-    required this.text,
-    required this.emoji,
-    required this.color,
-  });
-
-  final String label;
-  final String text;
-  final String emoji;
-  final Color color;
-
-  @override
-  Widget build(BuildContext context) {
-    final palette = ThisOrThatPalette.of(context);
-    return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.10),
-        borderRadius: BorderRadius.circular(16),
-      ),
+    return GameTile(
+      key: const ValueKey('this-or-that-end-pick'),
+      radius: 20,
+      depth: 6,
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 18),
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
+          const ThisOrThatStageLabel(
+            text: 'Talk about this one',
+            icon: Icons.chat_bubble_outline_rounded,
+            color: GameTheme.tileInk,
+          ),
+          const SizedBox(height: 10),
           Text(
-            label,
-            style: Theme.of(context).textTheme.labelSmall?.copyWith(
-              color: color,
-              fontWeight: FontWeight.w900,
-              letterSpacing: 0,
+            _text('question_text'),
+            style: const TextStyle(
+              color: GameTheme.tileInk,
+              fontSize: 18,
+              fontWeight: FontWeight.w800,
+              height: 1.25,
             ),
           ),
-          const SizedBox(height: 5),
-          Text(
-            '$emoji $text'.trim(),
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-              color: palette.ink,
-              fontWeight: FontWeight.w700,
-              letterSpacing: 0,
+          const SizedBox(height: 14),
+          IntrinsicHeight(
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Expanded(
+                  child: _Pick(
+                    key: const ValueKey('this-or-that-end-pick-you'),
+                    owner: 'You',
+                    text: _text('answer_a_text'),
+                    emoji: _text('answer_a_emoji'),
+                    face: face('answer_a', 'a'),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: _Pick(
+                    key: const ValueKey('this-or-that-end-pick-partner'),
+                    owner: partner,
+                    text: _text('answer_b_text'),
+                    emoji: _text('answer_b_emoji'),
+                    face: face('answer_b', 'b'),
+                  ),
+                ),
+              ],
             ),
           ),
         ],
@@ -395,54 +172,64 @@ class _ResultPick extends StatelessWidget {
   }
 }
 
-class _ScoreRingPainter extends CustomPainter {
-  const _ScoreRingPainter({
-    required this.value,
-    required this.track,
-    required this.first,
-    required this.second,
+/// One player's pick, captioned with whose it is.
+class _Pick extends StatelessWidget {
+  const _Pick({
+    super.key,
+    required this.owner,
+    required this.text,
+    required this.emoji,
+    required this.face,
   });
 
-  final double value;
-  final Color track;
-  final Color first;
-  final Color second;
+  final String owner;
+  final String text;
+  final String emoji;
+  final Color face;
 
   @override
-  void paint(Canvas canvas, Size size) {
-    final rect = Offset.zero & size;
-    final ringRect = rect.deflate(11);
-    final paint =
-        Paint()
-          ..style = PaintingStyle.stroke
-          ..strokeWidth = 13
-          ..strokeCap = StrokeCap.round;
-    canvas.drawArc(
-      ringRect,
-      -math.pi / 2,
-      math.pi * 2,
-      false,
-      paint..color = track,
-    );
-    paint.shader = SweepGradient(
-      startAngle: -math.pi / 2,
-      endAngle: math.pi * 1.5,
-      colors: [first, second],
-      transform: const GradientRotation(-math.pi / 2),
-    ).createShader(ringRect);
-    canvas.drawArc(
-      ringRect,
-      -math.pi / 2,
-      math.pi * 2 * value.clamp(0, 1),
-      false,
-      paint,
+  Widget build(BuildContext context) {
+    final ink = ThisOrThatPalette.of(context).inkOn(face);
+    return Semantics(
+      container: true,
+      label: '$owner: $text',
+      excludeSemantics: true,
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: face,
+          borderRadius: BorderRadius.circular(14),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                owner.toUpperCase(),
+                maxLines: 2,
+                style: TextStyle(
+                  color: ink,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w900,
+                  letterSpacing: 1.2,
+                  height: 1.2,
+                ),
+              ),
+              const SizedBox(height: 4),
+              // Wraps in full: a long pick is the point of the tile.
+              Text(
+                '$emoji $text'.trim(),
+                style: TextStyle(
+                  color: ink,
+                  fontSize: 15,
+                  fontWeight: FontWeight.w800,
+                  height: 1.2,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
-
-  @override
-  bool shouldRepaint(covariant _ScoreRingPainter oldDelegate) =>
-      oldDelegate.value != value ||
-      oldDelegate.track != track ||
-      oldDelegate.first != first ||
-      oldDelegate.second != second;
 }

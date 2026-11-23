@@ -1,8 +1,10 @@
 import 'package:attune/core/ui/feedback/haptics.dart';
 import 'package:attune/core/ui/feedback/sound_service.dart';
 import 'package:attune/core/ui/motion/reduce_motion.dart';
+import 'package:attune/features/games/platform/shell/game_material_theme.dart';
 import 'package:attune/features/games/this_or_that/presentation/providers/this_or_that_providers.dart';
 import 'package:attune/features/games/this_or_that/presentation/widgets/this_or_that_game_ui.dart';
+import 'package:attune/features/games/this_or_that/this_or_that_game.dart';
 import 'package:flutter/material.dart';
 import 'package:attune/features/games/presentation/providers/game_session_live_provider.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -119,7 +121,8 @@ class _QuestionSourceScreenState extends ConsumerState<QuestionSourceScreen> {
               _choosingOwner
                   ? Icons.people_alt_rounded
                   : Icons.auto_awesome_rounded,
-          color: palette.thisColor,
+          // On the game's orange, where the accent cannot be read.
+          color: palette.ink,
         ),
         const SizedBox(height: 16),
         Text(
@@ -141,7 +144,8 @@ class _QuestionSourceScreenState extends ConsumerState<QuestionSourceScreen> {
               : 'The choice changes this round only. You will alternate next time.',
           textAlign: TextAlign.center,
           style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-            color: palette.mutedInk,
+            // On the game's orange, where muted ink cannot be read.
+            color: palette.ink,
             height: 1.4,
             letterSpacing: 0,
           ),
@@ -181,7 +185,13 @@ class _QuestionSourceScreenState extends ConsumerState<QuestionSourceScreen> {
                       _error!,
                       textAlign: TextAlign.center,
                       style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: Theme.of(context).colorScheme.error,
+                        // The game's error red: this context is above the
+                        // dark backdrop, where the app's own is too dark.
+                        color:
+                            gameMaterialTheme(
+                              context,
+                              thisOrThatTheme,
+                            ).colorScheme.error,
                         fontWeight: FontWeight.w700,
                         letterSpacing: 0,
                       ),

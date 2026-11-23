@@ -25,6 +25,8 @@ import 'package:attune/features/games/paint_ball/presentation/screens/paint_ball
 import 'package:attune/features/games/paint_ball/presentation/screens/paint_ball_history_screen.dart';
 import 'package:attune/features/games/paint_ball/presentation/screens/paint_ball_knockout_screen.dart';
 import 'package:attune/features/games/paint_ball/presentation/screens/paint_ball_lobby_screen.dart';
+import 'package:attune/features/games/platform/shell/game_landing_page.dart';
+import 'package:attune/features/games/platform/shell/games_hub_screen.dart';
 import 'package:attune/features/games/snakes_and_ladders/presentation/screens/snakes_game_screen.dart';
 import 'package:attune/features/games/constellation/prototype/constellation_prototype_screen.dart';
 import 'package:attune/features/games/dots_and_boxes/prototype/dots_boxes_prototype_screen.dart';
@@ -353,6 +355,8 @@ class RouteNames {
   static const String slidingScaleGame = '/slidingScaleGame';
   static const String scenarioGame = '/scenarioGame';
   static const String loveMap = '/loveMap';
+  static const String gamesHub = '/games/hub';
+  static const String gameLanding = '/games/play/:gameType';
 }
 
 /// GoRouter's `extra` carries exactly one object per route — these small
@@ -1853,6 +1857,18 @@ GoRouter createAppRouter(RoutingNotifier routingNotifier) {
             sessionId: state.uri.queryParameters['session'],
           );
         },
+      ),
+      GoRoute(
+        path: RouteNames.gamesHub,
+        name: 'gamesHub',
+        builder: (context, state) => const GamesHubScreen(),
+      ),
+      GoRoute(
+        path: RouteNames.gameLanding,
+        name: 'gameLanding',
+        builder: (context, state) => GameLandingPage(
+          gameType: state.pathParameters['gameType'] ?? '',
+        ),
       ),
       GoRoute(
         path: RouteNames.ask2Flow,

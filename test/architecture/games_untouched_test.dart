@@ -54,6 +54,8 @@ const _gamesRoutes = <String, String>{
   'constellationPrototype': '/games/constellation/prototype',
   'dotsBoxesPrototype': '/games/dots-and-boxes/prototype',
   'wordHuntGame': '/games/word-hunt/:relationshipId',
+  'gamesHub': '/games/hub',
+  'gameLanding': '/games/play/:gameType',
 };
 
 /// Route name -> SHA-256 of its whole `GoRoute(...)` call in app_router.dart.
@@ -135,6 +137,10 @@ const _gamesRouteSource = <String, String>{
       '728b40a5a8f16dcdf97532e8525593e38ad1a150f09545bfa604e4047116fbb2',
   'wordHuntGame':
       '1cce8fe6cfa7057a070d07645d16dce1dc451792adbff3a577a96552c7cf0eb5',
+  'gamesHub':
+      'c3709e49486e824cf1d58451b1ff666123c1d60cdbd3f2e4c2f9c1fa9a6b92ef',
+  'gameLanding':
+      'c26b77e9d43ebd00ccabba23ff284ebfe1ce6d2a379d756e909443856d853594',
 };
 
 /// The chat screen's Games entry points (§1.5: chat_screen.dart:69-78).
