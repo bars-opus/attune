@@ -14,7 +14,7 @@ BEGIN
      OR has_table_privilege('authenticated', 'public.analysis_sessions', 'SELECT') THEN
     RAISE EXCEPTION 'CONTRACT VIOLATED: clients can read analysis_sessions';
   END IF;
-  FOREACH v_fn IN ARRAY ARRAY['public.forum_topic_tags', 'public.opinion_tags', 'public.tags'] LOOP
+  FOREACH v_fn IN ARRAY ARRAY['public.opinion_tags', 'public.tags'] LOOP -- Spec 3 W3: forum_topic_tags is dropped
     IF has_table_privilege('anon', v_fn, 'INSERT') OR has_table_privilege('authenticated', v_fn, 'INSERT')
        OR has_table_privilege('authenticated', v_fn, 'UPDATE') OR has_table_privilege('authenticated', v_fn, 'DELETE') THEN
       RAISE EXCEPTION 'CONTRACT VIOLATED: clients can write % directly', v_fn;

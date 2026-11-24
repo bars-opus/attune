@@ -521,7 +521,7 @@ No redirect stubs for `/debateRoom`, `/sideSelection` or `/forumInsight` (D5): n
 - No rename of `forum_reports` is planned. If one happens anyway, steps 3–4 apply to the new name.
 
 **Migrations, in order:**
-1. **`forum_drop_views.sql`**: `DROP VIEW IF EXISTS public.public_forum_posts RESTRICT; DROP VIEW IF EXISTS public.public_forum_topics RESTRICT;`. RESTRICT everywhere in W3, so an unexpected dependency fails loudly instead of cascading. No function returns a view rowtype (checked).
+1. **`forum_drop_views.sql`**: `DROP VIEW IF EXISTS public.public_forum_posts RESTRICT; DROP VIEW IF EXISTS public.public_forum_topics RESTRICT;`. RESTRICT everywhere in W3, so an unexpected dependency fails loudly instead of cascading. No function returns a view rowtype (checked). *(amended Spec 3 W3 build: the migration opens with a preflight that stops the push before anything is dropped unless the database is the one W3 was built on: the 36-function inventory of checklist step 3, the five re-created bodies and the kept notification helper by md5 (step 4), no dependency on a forum relation or its row type but the three foreign keys, no cron job naming the forum schema, W2's health, and no Opinions strike waiting on a removed forum post without the exclusion key (migration 3 stamps those first). The six files are `20261125100000`–`20261125100050`.)*
 2. **`forum_drop_functions.sql`**: `DROP FUNCTION IF EXISTS <sig> RESTRICT` for the 29 signatures in §3.9. This also removes the `topic-counts:` and `post-counts:` broadcast senders.
 3. **`forum_drop_tables.sql`** (one transaction):
    - (i) `DELETE FROM public.post_polls WHERE topic_id IS NOT NULL` (poll options and votes cascade).
@@ -534,14 +534,14 @@ No redirect stubs for `/debateRoom`, `/sideSelection` or `/forumInsight` (D5): n
    - (i) `CREATE OR REPLACE` `private.create_poll_for_post` and `public.get_post_poll` with unchanged signatures, as in §3.9. Re-assert the current ACLs explicitly: `create_poll_for_post` gets `REVOKE ALL FROM PUBLIC, anon, authenticated`; `get_post_poll` gets `REVOKE ALL FROM PUBLIC` and `GRANT EXECUTE TO anon, authenticated`.
    - (ii) `post_polls`: drop `post_polls_one_parent`, the `post_polls_unique_topic` constraint and `idx_post_polls_topic`; `DROP COLUMN topic_id RESTRICT`; `ALTER COLUMN opinion_id SET NOT NULL`.
    - (iii) `forum_reports`: drop `forum_reports_check`, `forum_reports_unique_reporter_forum_post`, `forum_reports_unique_reporter_topic`, `idx_forum_reports_forum_post_id` and `idx_forum_reports_topic_id`; `DROP COLUMN forum_post_id RESTRICT, DROP COLUMN topic_id RESTRICT`; `ADD CONSTRAINT forum_reports_target_check CHECK (opinion_id IS NOT NULL OR comment_id IS NOT NULL)`.
-5. **`forum_shared_function_branches.sql`**: `CREATE OR REPLACE` `private.assert_can_post` and `public.admin_confirm_content_removal`.
+5. **`forum_shared_function_branches.sql`**: `CREATE OR REPLACE` `private.assert_can_post` and `public.admin_confirm_content_removal`. *(amended Spec 3 W3 build: and `private.opinion_stamp_backfill()`, Spec 1 W9d's owner-run backfill, written after this spec, whose body read `forum_posts`; only that `UNION ALL` branch goes.)*
    - The live bodies, minus the `topic` and `forum_post` branches only.
    - `SET search_path = ''` with fully qualified names.
    - ACLs unchanged: `REVOKE ALL … FROM PUBLIC, anon, authenticated`; service role only for the removal function.
    - The migration header quotes the "before" body it was built from, so review is a pure diff.
 6. **`forum_retirement_health_v2.sql`**: redefine `forum_retirement_health()` with two more checks:
    - `forum_schema_dropped`: none of the 10 relations or 29 functions exists, and neither `post_polls.topic_id`, `forum_reports.forum_post_id` nor `forum_reports.topic_id` exists.
-   - `no_code_references_forum_schema`: no `pg_proc.prosrc` in `public` or `private`, no `pg_views.definition` and no `cron.job.command` matches `\m(forum_topics|forum_posts|topic_votes|topic_impressions|user_forum_sides|forum_post_likes|forum_topic_tags|forum_topic_visits|public_forum_topics|public_forum_posts)\M`.
+   - `no_code_references_forum_schema`: no `pg_proc.prosrc` in `public` or `private`, no `pg_views.definition` and no `cron.job.command` matches `\m(forum_topics|forum_posts|topic_votes|topic_impressions|user_forum_sides|forum_post_likes|forum_topic_tags|forum_topic_visits|public_forum_topics|public_forum_posts)\M`. *(amended Spec 3 W3 build: `forum_retirement_health()` itself is left out of the scan, since it names the relations to look for them; `forum_schema_dropped` also checks `idx_scheduled_notifications_forum_activity`.)*
 
 **Also in W3:**
 - `supabase/tests/security_lockdown_contracts.sql:17` drops `'public.forum_topic_tags'` from its array.
@@ -643,7 +643,7 @@ No redirect stubs for `/debateRoom`, `/sideSelection` or `/forumInsight` (D5): n
   - `private.create_poll_for_post(A, NULL, gen_random_uuid(), ARRAY['a','b'])` raises `topic_polls_retired`.
   - `get_post_poll(p_topic_id => gen_random_uuid())` returns zero rows.
   - Section E re-runs unchanged.
-- **Also re-run in W3:** `account_deletion_contracts.sql`, `data_export_contracts.sql`, Spec 1 W9's `opinion_moderation_notice_contracts.sql` and `security_lockdown_contracts.sql` (edited).
+- **Also re-run in W3:** `account_deletion_contracts.sql`, `data_export_contracts.sql`, Spec 1 W9's `opinion_moderation_notice_contracts.sql` and `security_lockdown_contracts.sql` (edited). *(amended Spec 3 W3 build: `opinion_moderation_notice_contracts.sql` is edited too: its "kept forum branch" pin becomes "`forum_post` raises `invalid_content_type`". `dating_v2_device_contracts.sql`'s exemption (`moderation_opinions_remove` → `enqueue_forum_notification`) names two kept functions and is unchanged. Section F runs the full three-strike ladder, which Spec 1 W9b's OPN-BAN-42702 fix made possible. A rehearsal on a pre-W3 copy proves the drop with forum data present.)*
 
 ### 7.4 No-dangling-references test: `test/architecture/no_forum_references_test.dart`
 

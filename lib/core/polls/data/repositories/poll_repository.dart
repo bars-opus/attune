@@ -3,11 +3,11 @@
 import 'package:attune/core/polls/data/models/poll_model.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
-/// Polls on opinions and forum topics (ATTUNE_MASTER_SPEC.md §8.11).
+/// Polls on opinions (ATTUNE_MASTER_SPEC.md §8.11).
 ///
-/// One repository serves both surfaces: a poll behaves identically whether it
-/// hangs off an opinion or a topic, so the vote path exists once rather than
-/// being duplicated per feature.
+/// Topic polls were retired with the forums (Spec 3): only opinions carry
+/// polls now. [getPollForTopic] stays so `PollTarget` never changes; it always
+/// returns null.
 ///
 /// Every call goes through a SECURITY DEFINER RPC. The poll tables carry no
 /// grants to `authenticated` at all, so direct table access is impossible by
@@ -30,7 +30,8 @@ class PollRepository {
     return _parse(rows);
   }
 
-  /// Fetches the poll attached to a forum topic, or null if it has none.
+  /// Topic polls retired (Spec 3); always returns null. Kept so `PollTarget`
+  /// never changes: the server matches nothing for a topic id.
   Future<PollModel?> getPollForTopic(String topicId) async {
     final rows = await _supabase.rpc(
       'get_post_poll',
@@ -52,19 +53,6 @@ class PollRepository {
     return {
       for (final row in (rows as List).cast<Map<String, dynamic>>())
         row['opinion_id'] as String: row['poll_id'] as String,
-    };
-  }
-
-  /// Which of these topics carry a poll.
-  Future<Map<String, String>> getPollIdsForTopics(List<String> topicIds) async {
-    if (topicIds.isEmpty) return const {};
-    final rows = await _supabase.rpc(
-      'get_polls_for_topics',
-      params: {'p_topic_ids': topicIds},
-    );
-    return {
-      for (final row in (rows as List).cast<Map<String, dynamic>>())
-        row['topic_id'] as String: row['poll_id'] as String,
     };
   }
 

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # scripts/deploy/hosted_deploy.sh — the 2026-11-24 hosted deploy (Spec 1 W1–W10
-# + Spec 2 W1–W10, demo mode), in the order of
+# + Spec 2 W1–W10 + Spec 3 W2–W3, demo mode), in the order of
 # docs/deploy/2026-11-24-hosted-deploy.md. The owner runs it; nothing here
 # runs by itself.
 #
@@ -59,8 +59,8 @@ WORK_DIR="${ATTUNE_DEPLOY_WORK:-$HOME/attune-deploy-tmp}"
 MIGRATIONS_DIR="supabase/migrations"
 BASE_COMMIT="9bac1bdb"
 FIRST_PENDING="20261025090000"
-LAST_PENDING="20261124100010"
-EXPECTED_PENDING=121
+LAST_PENDING="20261125100050"
+EXPECTED_PENDING=127
 DEMO_FLAG_COUNT=27
 IP_BIN="supabase/functions/dating-device-check/ip_country.bin"
 IP_BUNDLE_LIMIT=$((20 * 1024 * 1024))
@@ -300,6 +300,89 @@ deploy_dating_moderation() {
 
 should_run() { [[ "$1" -ge "$FROM_STEP" ]]; }
 
+# Spec 3 W3 pre-push probe (read-only; W3 final review I-1). W3's migration 1
+# refuses the push when one of these four live bodies differs from the one W3
+# was built on, or production has a forum function W3 doesn't know, but only
+# after the 121 earlier files are applied. These four are live now and the
+# pending set never re-creates them; the other two bodies W3 checks
+# (admin_confirm_content_removal, opinion_stamp_backfill) are re-created by
+# 20261107100000 in the same push. The inventory is migration 1's (a).
+W3_EXPECTED_MD5S="920660396b7d4e331db2948838f98333 6154f307c3afdb76c0249c2db2ec44f6 dd3f4fc152767cd7b054c8324a46020e 3d57c8b5ca75d1edbe87192d5af837e1"
+w3_probe() {
+  local md5_sql inventory_sql w3_md5s w3_unknown
+  md5_sql="$(cat <<'SQL'
+select string_agg(coalesce(md5(p.prosrc), 'missing'), ' ' order by s.n)
+  from (values (1, 'private.assert_can_post(uuid,text)'),
+               (2, 'private.create_poll_for_post(uuid,uuid,uuid,text[])'),
+               (3, 'public.get_post_poll(uuid,uuid)'),
+               (4, 'private.enqueue_forum_notification(uuid,text,text,text,uuid,uuid,uuid)')) as s(n, sig)
+  left join pg_catalog.pg_proc p on p.oid = to_regprocedure(s.sig);
+SQL
+)"
+  inventory_sql="$(cat <<'SQL'
+with known as (
+  select to_regprocedure(k) as o from unnest(array[
+    'public.activate_pending_topics()', 'public.expire_old_topics()', 'public.mark_quiet_topics()',
+    'public.notify_quiet_topic(uuid)', 'private.queue_forum_activity_notifications(uuid,uuid)',
+    'public.record_forum_topic_visit(uuid)', 'public.create_forum_post(uuid,text,text,uuid,text)',
+    'public.create_forum_topic(text)', 'public.create_forum_topic_with_poll(text,text[])',
+    'public.edit_forum_post(uuid,text)', 'public.attach_forum_topic_tags(uuid,text[])',
+    'public.get_forum_topic_tags(uuid)', 'public.get_forum_topics_by_tag(text,integer,integer)',
+    'public.get_tags_for_forum_topics(uuid[])', 'public.get_polls_for_topics(uuid[])',
+    'public.get_active_forums_filtered(text[])', 'public.get_quiet_forums_filtered(text[])',
+    'public.get_voting_topics_filtered(text[])', 'public.increment_topic_upvote_count(uuid)',
+    'public.decrement_topic_upvote_count(uuid)', 'public.increment_topic_downvote_count(uuid)',
+    'public.decrement_topic_downvote_count(uuid)', 'public.increment_topic_post_count(uuid,text)',
+    'public.decrement_topic_post_count(uuid,text)', 'public.increment_topic_seen_count(uuid)',
+    'public.increment_forum_post_like_count(uuid)', 'public.decrement_forum_post_like_count(uuid)',
+    'public.report_forum_post(uuid,text)', 'public.report_forum_topic(uuid,text)',
+    'private.assert_can_post(uuid,text)', 'public.admin_confirm_content_removal(text,uuid)',
+    'private.enqueue_forum_notification(uuid,text,text,text,uuid,uuid,uuid)',
+    'private.opinion_stamp_backfill()', 'private.create_poll_for_post(uuid,uuid,uuid,text[])',
+    'public.get_post_poll(uuid,uuid)', 'public.forum_retirement_health()']) as k
+   where to_regprocedure(k) is not null)
+select coalesce(string_agg(x.sig, ', ' order by x.sig), '') from (
+  select p.oid::regprocedure::text as sig
+    from pg_catalog.pg_proc p join pg_catalog.pg_namespace n on n.oid = p.pronamespace
+   where n.nspname in ('public', 'private') and p.prokind in ('f', 'p')
+     and (p.proname ~* 'forum|topic'
+          or p.prosrc ~* '(forum_topics|forum_posts|topic_votes|topic_impressions|user_forum_sides|forum_post_likes|forum_topic_tags|forum_topic_visits|public_forum|\mtopic_id\M|\mforum_post_id\M)')
+     and p.oid not in (select o from known)
+  union
+  select p.oid::regprocedure::text
+    from pg_catalog.pg_proc p join pg_catalog.pg_namespace n on n.oid = p.pronamespace
+   where n.nspname not in ('public', 'private', 'pg_catalog', 'information_schema')
+     and n.nspname !~ '^pg_(temp|toast)'
+     and p.prosrc ~* '(forum_topics|forum_posts|topic_votes|topic_impressions|user_forum_sides|forum_post_likes|forum_topic_tags|forum_topic_visits|public_forum)'
+     and not exists (select 1 from pg_catalog.pg_depend e
+                      where e.classid = 'pg_catalog.pg_proc'::regclass and e.objid = p.oid and e.deptype = 'e')) as x;
+SQL
+)"
+  # Once W3 is applied (a --from 2 re-run after the push), the bodies are W3's own: nothing to probe.
+  if [[ "$(sql_value "select (to_regclass('public.forum_topics') is null)::text;")" == "true" ]]; then
+    note "W3 probe: the forum tables are already dropped (W3 applied); skipped."
+    return 0
+  fi
+  w3_md5s="$(sql_value "$md5_sql")"
+  w3_unknown="$(sql_value "$inventory_sql")"
+  if [[ $DRY_RUN -eq 1 ]]; then
+    note "(dry run) A real run stops unless the md5s read: $W3_EXPECTED_MD5S"
+    note "(dry run) and the inventory reads empty."
+    return 0
+  fi
+  if [[ "$w3_md5s" != "$W3_EXPECTED_MD5S" ]]; then
+    note "Live md5s:     $w3_md5s"
+    note "Expected md5s: $W3_EXPECTED_MD5S"
+    note "(order: assert_can_post, create_poll_for_post, get_post_poll, enqueue_forum_notification)"
+    die "A function W3 checks is not the body W3 was built on (a hand edit in production?). W3's migration 1 would refuse the push after the 121 earlier files. Either deploy from a commit without the W3 merge (EXPECTED_PENDING 121), or re-plan W3's migrations 4-5 and migration 1's md5s from: select pg_get_functiondef('<sig>'::regprocedure);"
+  fi
+  if [[ -n "$w3_unknown" ]]; then
+    note "Forum function(s) W3 does not know: $w3_unknown"
+    die "W3's migration 1 would refuse the push (unexpected forum function) after the 121 earlier files. Either deploy from a commit without the W3 merge (EXPECTED_PENDING 121), or add them to W3's migration 2 (forum-only) or 5 (shared) first."
+  fi
+  note "W3 probe: the four bodies match and production has no forum function W3 does not know."
+}
+
 # ---------------------------------------------------------------------------
 # Checks on every run (also on --from): tools, variables, the development
 # ref, the tree, the commit, and that psql reaches the ref's database.
@@ -486,6 +569,9 @@ select jobid, jobname, username, username = current_user as owned_by_me, active,
 SQL
   gate "Does every forum job above show owned_by_me = t (or have you unscheduled the others in the dashboard)?"
 
+  note "0.9b STOP: Spec 3 W3 (the forum table drop) pre-push probe, read-only (checklist 0.9b)."
+  w3_probe
+
   note "0.10 No Database Webhooks on relationships, users, the couple tables or any dating_* table."
   sql "select event_object_schema, event_object_table, trigger_name from information_schema.triggers where action_statement ilike '%supabase_functions.http_request%' order by 2;"
   gate "No webhook on those tables (and none in Dashboard -> Database -> Webhooks)?"
@@ -634,6 +720,8 @@ step2() {
   CURRENT_STEP=2
   say "Step 2: migrations (checklist section 2)"
   git_clean_check
+  note "2.0 The W3 pre-push probe again (checklist 0.9b), in case step 0 ran in another session."
+  w3_probe
   show "supabase db push --db-url \"\$ATTUNE_DB_URL\" --dry-run"
   if [[ $DRY_RUN -eq 0 ]]; then supabase db push --db-url "$ATTUNE_DB_URL" --dry-run; fi
   gate "Is the list exactly the pending set from step 0 (Appendix A)? Push now?"
@@ -677,7 +765,7 @@ select policyname from pg_policies where schemaname = 'storage' and tablename = 
 select private.match_form('K' || chr(596) || 'k' || chr(596) || chr(596) || ' B@st4rd'),
        private.content_filter_verdict('call me on 024 412 3456', null),
        private.content_filter_verdict('We met in 1999 and married in 2004.', null);
--- Spec 3 W2: 5 rows, all ok = true
+-- Spec 3 W2 + W3: 7 rows, all ok = true
 select * from public.forum_retirement_health();
 -- S2 W1: true | true | true | development
 select h ->> 'field_key_present' as field_key, h ->> 'field_key_fingerprint_ok' as field_fp, h -> 'log_settings_safe' as logs_safe, h ->> 'environment' as env
@@ -996,7 +1084,7 @@ select public.get_dating_operational_health() -> 'chat_safety_outbox' as outbox;
 select public.get_identity_health();
 SQL
   fi
-  say "Done. Not yet (checklist 10): production mode, the forum drop, Database Webhooks on couple/Dating tables."
+  say "Done. Not yet (checklist 10): production mode, Database Webhooks on couple/Dating tables."
 }
 
 basic_checks

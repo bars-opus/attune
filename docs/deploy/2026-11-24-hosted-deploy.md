@@ -28,7 +28,7 @@ The script for this checklist is `scripts/deploy/hosted_deploy.sh`. It follows t
 
 | What | Count | Notes |
 |---|---|---|
-| Migrations | **121** | `20261025090000` → `20261124100010`, in one `supabase db push --db-url "$ATTUNE_DB_URL"`. They are 58 migration + `_grants` twin pairs plus 5 singles. Assumption: the last applied file is `20261024100800_my_closed_story_items.sql` (Stories, deployed 2026-10-24). Step 0.5 checks this. |
+| Migrations | **127** | `20261025090000` → `20261125100050`, in one `supabase db push --db-url "$ATTUNE_DB_URL"`. They are 58 migration + `_grants` twin pairs plus 11 singles (the last six are the Spec 3 W3 forum drop). Assumption: the last applied file is `20261024100800_my_closed_story_items.sql` (Stories, deployed 2026-10-24). Step 0.5 checks this. |
 | Edge functions | **20 deploys, 4 deletes** | 12 new and 8 changed. `verify_jwt = false` on `otp-delivery-intent`, `send-sms-hook`, `start-fresh-account` and `dating-moderation`. Delete `upload-dating-photo`, `verify-dating-profile`, `activate-topics` and `forum-quiet-check`. Everything ships from a clean tree at `9bac1bdb` or later. |
 | Cron jobs | **23** (+1 conditional) | The migrations create every one of them. `enqueue-new-storage-objects` exists only if the media scan takes the sweep path. Three forum jobs are removed. |
 | Secrets | **6 Vault keys to create, 4 edge secrets to set, 3 existing to confirm** | The script asks for each value with a hidden prompt. Plus 23 vendor secrets that are set only when a vendor is contracted. `attune_environment` is never set. |
@@ -42,7 +42,7 @@ The script for this checklist is `scripts/deploy/hosted_deploy.sh`. It follows t
 - Every Dating and traveller flag is on, for demos.
 - Only the owner and testers use the store build.
 - The owner sets every secret and runs every command.
-- The forum table drop (Spec 3 W3) is **not** part of this deploy.
+- The forum table drop (Spec 3 W3) is part of this deploy (owner, 2026-11-24; branch `spec3-w3-forum-drop` merged): its six migrations (`20261125100000`–`100050`) sort last, so they apply in the same push right after everything else, the W2 forum-retirement migrations included. W3 is irreversible. The Vault keys (step 1, `dating_exclusion_key` included) must be set before the push: W3's migration 3 stamps Opinions strikes from removed forum posts before dropping them, and its preflight refuses without the key. Step 0.9b probes, before the push, what W3's preflight would refuse. See the W3 plan's Owner checklist 4 for its refusals.
 
 **Placeholders and secrets hygiene:**
 - `$SUPABASE_PROJECT_REF` is the project's ref. It is not a secret.
@@ -101,7 +101,7 @@ The script for this checklist is `scripts/deploy/hosted_deploy.sh`. It follows t
 - **If not:** set `log_statement` to `none` or `ddl`, `log_parameter_max_length_on_error` to `0`, and either `log_min_duration_statement` to `-1` or `log_parameter_max_length` to `0` (Dashboard → Database → Settings, or ask support), then re-check. If pgaudit is on, make sure it doesn't log these statements. The script refuses to go on until the check reads `t`.
 
 ### 0.4 Backup / PITR
-- **What:** the only real rollback for a 121-file push.
+- **What:** the only real rollback for a 127-file push (the forum drop in it has no down migration).
 - **Commands:**
   - Dashboard → Database → Backups: note the latest daily backup time. If PITR is enabled, note the exact UTC time just before the push. That time is your restore point.
   - Optional local dumps, kept **outside the repo** (they hold personal data; never commit them):
@@ -115,7 +115,7 @@ The script for this checklist is `scripts/deploy/hosted_deploy.sh`. It follows t
 
 ### 0.5 What is already applied (`supabase migration list`)
 - **What:** confirms the assumption that nothing after `20261024100800` is live.
-  - The memory index says "nothing since 2026-11-01". The wave memories say Spec 1 W1–W3 and the four forum files (dated 2026-10-25/26) are undeployed too, so the expected pending set is 121 files.
+  - The memory index says "nothing since 2026-11-01". The wave memories say Spec 1 W1–W3 and the four forum files (dated 2026-10-25/26) are undeployed too, so the expected pending set is 127 files (121 plus the six Spec 3 W3 files).
   - Spec 2 W1's plan (item 21) once called `20261025100010` "already applied on hosted projects". Trust the list, not the memory.
 - **Command:**
   ```bash
@@ -124,7 +124,7 @@ The script for this checklist is `scripts/deploy/hosted_deploy.sh`. It follows t
   ```
   The URL must be percent-encoded.
 - **Verify:**
-  - The script compares the local files with `supabase_migrations.schema_migrations`: 121 pending, first `20261025090000`, last `20261124100010` (Appendix A).
+  - The script compares the local files with `supabase_migrations.schema_migrations`: 127 pending, first `20261025090000`, last `20261125100050` (Appendix A).
   - SQL cross-check: `select max(version) from supabase_migrations.schema_migrations;` → `20261024100800`.
 - **If it differs:**
   - **Fewer files pending:** fine if the missing ones are the earliest ones and the remote has them. Note which are gone, and skip the matching baselines (for example 0.8 if W1 is already live).
@@ -201,6 +201,22 @@ select u.id, u.phone is not null as has_phone, a.phone_confirmed_at is not null 
   ```
 - **Go:** every listed job has `owned_by_me = t`. If a job is owned by another role and `can_unschedule_others = f`, unschedule it from Dashboard → Integrations → Cron first.
 
+### 0.9b STOP: Spec 3 W3 pre-push probe (read-only; W3 final review I-1)
+- **What:** W3's migration 1 refuses the push if a function it checks was hand-edited in production, or production has a forum function W3 doesn't know. In this push that refusal comes only after the 121 earlier files are applied, mid-deploy. This probe finds it before the push. The script runs it here and again at the start of step 2, and stops on any difference.
+- Four of the six bodies W3 checks are live now and nothing in the pending set re-creates them; the other two (`admin_confirm_content_removal`, `opinion_stamp_backfill`) are re-created by `20261107100000` in the same push and cannot drift.
+  ```sql
+  select p.oid::regprocedure, md5(p.prosrc) from pg_proc p where p.oid in (
+    'private.assert_can_post(uuid,text)'::regprocedure,
+    'private.create_poll_for_post(uuid,uuid,uuid,text[])'::regprocedure,
+    'public.get_post_poll(uuid,uuid)'::regprocedure,
+    'private.enqueue_forum_notification(uuid,text,text,text,uuid,uuid,uuid)'::regprocedure);
+  -- expect: 920660396b7d4e331db2948838f98333, 6154f307c3afdb76c0249c2db2ec44f6,
+  --         dd3f4fc152767cd7b054c8324a46020e, 3d57c8b5ca75d1edbe87192d5af837e1
+  ```
+  The script also runs migration 1's inventory (a) (`w3_probe` in `scripts/deploy/hosted_deploy.sh`); it must list nothing.
+- **Go:** all four match and the inventory is empty.
+- **No-go:** deploy from a commit without the W3 merge (121 files), or re-plan W3's migrations 4–5 and migration 1's md5s from `select pg_get_functiondef('<sig>'::regprocedure);` first.
+
 ### 0.10 No dashboard Database Webhooks on sensitive tables (S2 W9 owner list 1.4)
 - **Command:**
   ```sql
@@ -232,6 +248,7 @@ select u.id, u.phone is not null as has_phone, a.phone_confirmed_at is not null 
   The script runs the same probe as one `select` (via `query_to_xml`), so it can read the total. Run the `do` block above in the SQL editor to see which tables hold rows.
 - **GO only when the total is 0.** There is no "I reviewed the ids" exception. Then `purge-unfinished-signups` is deployed in step 3.
 - **NO-GO** (total above 0): the function is not deployed, step 2.5 unschedules its cron, and step 11 says how to re-arm it later.
+- **The forum tables count here** (W3 final review M-6): seven of them (`forum_topics`, `topic_votes`, `topic_impressions`, `forum_posts`, `forum_post_likes`, `user_forum_sides`, `forum_topic_visits`) have foreign keys to `auth.users`, and W3 deletes them in this push. If the only non-zero tables were forum ones, re-run the `do` block after step 2: it then reads 0, and the purge can be re-armed per step 11.
 - An undecided or missing decision counts as NO-GO.
 
 ### 0.12 The purge must not already be live (review I-2)
@@ -251,7 +268,7 @@ select u.id, u.phone is not null as has_phone, a.phone_confirmed_at is not null 
 
 ## 1. Secrets and Vault keys (hidden prompts; you hold every value)
 
-Set the Vault keys **before** the push. Then the backfills and fingerprint seeds that run at apply time (`20261106100000`, `20261106140000`, `20261106190000`, `20261107100000`) use them. Step 2.4 re-runs them anyway; they are idempotent.
+Set the Vault keys **before** the push. Then the backfills and fingerprint seeds that run at apply time (`20261106100000`, `20261106140000`, `20261106190000`, `20261107100000`, and `20261125100020`, which runs `opinion_stamp_backfill()` before the forum drop and refuses without `dating_exclusion_key`) use them. Step 2.4 re-runs them anyway; they are idempotent.
 
 ### 1.1 Vault keys (the script asks for each one, hidden, and sends it to psql on stdin)
 
@@ -313,13 +330,13 @@ Expected: the first four plus `supabase_url` and `service_role_key`, and the rec
 ## 2. Migrations (one `supabase db push --db-url "$ATTUNE_DB_URL"`)
 
 ### 2.1 The push
-- **What:** applies the 121 files in Appendix A, in order, each in its own transaction.
+- **What:** applies the 127 files in Appendix A, in order, each in its own transaction.
   - Every `_grants` twin re-asserts its migration's grants.
   - `20261025100000` and the Spec 2 W6–W10 files (`20261120*`–`20261124*`) revoke what they create until their twin runs. A push that stops between a file and its twin **fails closed**: re-run it.
   - The script re-checks that the tree is clean first.
 - **Command:**
   ```bash
-  supabase db push --db-url "$ATTUNE_DB_URL" --dry-run   # the list again: 121 files
+  supabase db push --db-url "$ATTUNE_DB_URL" --dry-run   # the list again: 127 files
   supabase db push --db-url "$ATTUNE_DB_URL"             # answer the prompt with Y
   ```
 - **Watch the output for:**
@@ -334,7 +351,7 @@ Expected: the first four plus `supabase_url` and `service_role_key`, and the rec
 
 ### 2.2 Right after the push: every migration landed
 ```sql
-select count(*) from supabase_migrations.schema_migrations where version >= '20261025090000';  -- 121
+select count(*) from supabase_migrations.schema_migrations where version >= '20261025090000';  -- 127
 select public.get_attune_environment();                                                        -- development
 ```
 
@@ -364,7 +381,7 @@ select policyname from pg_policies where schemaname = 'storage' and tablename = 
 select private.match_form('K' || chr(596) || 'k' || chr(596) || chr(596) || ' B@st4rd'),
        private.content_filter_verdict('call me on 024 412 3456', null),
        private.content_filter_verdict('We met in 1999 and married in 2004.', null);
--- Spec 3 W2: forum retirement                                               → 5 rows, all ok = true
+-- Spec 3 W2 + W3: forum retirement and drop                                 → 7 rows, all ok = true
 select * from public.forum_retirement_health();
 -- S2 W1: keys and logging                                                   → true | true | true | development
 select h ->> 'field_key_present', h ->> 'field_key_fingerprint_ok', h -> 'log_settings_safe', h ->> 'environment'
@@ -770,7 +787,6 @@ select count(*) filter (where enabled) as enabled_total,
 
 - **Don't let anyone but testers use the current store build on this project** until the W10 build is in the stores (see "Testers, read first").
 - **Never set production mode:** no `vault.create_secret('production', 'attune_environment')` and no `ALTER DATABASE … SET app.settings.attune_environment`. Production mode waits for the W10 launch checklist (`lib/architecture/DATING_MODE_RELEASE_READINESS_CHECKLIST.md` §3).
-- **No forum table drop** (Spec 3 W3). This deploy only retires the forum (Spec 3 W2).
 - **No dashboard Database Webhooks** on `relationships`, `users`, the couple tables (`couple_profiles`, `couple_how_we_met`, `together_change_signals`, `relationship_invite_acceptances`) or any Dating table.
 - **The Vault keys:**
   - Never rotate, replace or delete `dating_exclusion_key` or `dating_field_key`.
@@ -816,7 +832,7 @@ select count(*) filter (where enabled) as enabled_total,
 ## Sources
 
 - **Memory:** `hosted_deploy_plan.md`, every `spec1_w*_status.md`, `spec2_w*_status.md` and `spec2_w9_w10_status.md`.
-- **Plans' owner checklists:** `docs/superpowers/plans/2026-10-25-spec1-w1-identity.md` … `2026-11-24-spec2-w10-launch-guards.md`, and `2026-10-25-spec3-forum-removal-w1-w2.md`.
+- **Plans' owner checklists:** `docs/superpowers/plans/2026-10-25-spec1-w1-identity.md` … `2026-11-24-spec2-w10-launch-guards.md`, `2026-10-25-spec3-forum-removal-w1-w2.md` and `2026-11-24-spec3-w3-forum-drop.md` (with `.superpowers/sdd/2026-11-24-spec3-w3-forum-drop/w3-owner-list.md`).
 - **Ledgers:**
   - `.superpowers/sdd/2026-11-07-spec2-w3-setup-ui/final-server-review.md`
   - `…-spec2-w4-verification/final-server-review.md`
@@ -835,7 +851,7 @@ select count(*) filter (where enabled) as enabled_total,
 
 ---
 
-## Appendix A: the 121 migrations, in push order
+## Appendix A: the 127 migrations, in push order
 
 **Spec 3 W2 forum retirement (crons off, client access revoked, queued pushes cancelled, health). NOT the table drop** (4 files)
 
@@ -1021,5 +1037,14 @@ select count(*) filter (where enabled) as enabled_total,
 120. `20261124100000_dating_v2_launch_guards.sql`
 121. `20261124100010_dating_v2_launch_guards_grants.sql`
 
+**Spec 3 W3 forum drop (irreversible; preflight first, then the views, functions, tables, kept columns, shared branches and health v2)** (6 files)
 
-Twin pairs: 58 (`<v>_<name>.sql` + `<v+10>_<name>_grants.sql`). Singles: the four forum files and `20261025100020_onboarding_profiles_mode_optional.sql`.
+122. `20261125100000_forum_drop_views.sql`
+123. `20261125100010_forum_drop_functions.sql`
+124. `20261125100020_forum_drop_tables.sql`
+125. `20261125100030_forum_kept_table_columns.sql`
+126. `20261125100040_forum_shared_function_branches.sql`
+127. `20261125100050_forum_retirement_health_v2.sql`
+
+
+Twin pairs: 58 (`<v>_<name>.sql` + `<v+10>_<name>_grants.sql`). Singles: the four forum files, `20261025100020_onboarding_profiles_mode_optional.sql` and the six Spec 3 W3 files.

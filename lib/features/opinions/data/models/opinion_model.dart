@@ -2,11 +2,11 @@
 
 /// How long after posting a contribution can still be edited
 /// (ATTUNE_MASTER_SPEC.md §8.11 "Editing", FORUM.md §7). One window, one rule,
-/// identical for opinions, comments and forum posts.
+/// identical for opinions and comments.
 ///
 /// Client-side this only decides whether an Edit affordance is OFFERED —
 /// enforcement is the `created_at > now() - interval '15 minutes'` check
-/// inside edit_opinion / edit_opinion_comment / edit_forum_post, which still
+/// inside edit_opinion / edit_opinion_comment, which still
 /// runs regardless of what the UI showed. MUST be kept in step with that
 /// interval: a longer value here just means offering edits that the server
 /// then rejects.

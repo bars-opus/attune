@@ -8,8 +8,8 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 /// increment/decrement RPCs, right after the row UPDATE, with only the
 /// entity id and its count columns as payload).
 ///
-/// Broadcast rather than postgres_changes: the base tables (opinions,
-/// forum_topics, forum_posts) aren't SELECT-able by anon, and even
+/// Broadcast rather than postgres_changes: the base table (opinions) isn't
+/// SELECT-able by anon, and even
 /// authenticated's raw-table SELECT carries user_id, which postgres_changes
 /// would replay to every subscriber. Broadcast on a public (non-private)
 /// channel has no RLS involved at all — the payload is exactly what the RPC

@@ -161,7 +161,24 @@ GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public
 \i supabase/migrations/20261018110100_chapters_deletion_grants.sql
 
 -- Security lockdown (Spec 3b review C3, I4): analysis_sessions, tag tables, 36Q/import functions.
-\i supabase/migrations/20261017195000_security_lockdown.sql
+-- Spec 3 W3: inlined from supabase/migrations/20261017195000_security_lockdown.sql
+-- (an applied migration, never edited) without public.forum_topic_tags, which
+-- W3 drops; an \i of that file would stop this script after W3.
+ALTER TABLE public.analysis_sessions ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON public.analysis_sessions FROM anon, authenticated;
+REVOKE INSERT, UPDATE, DELETE ON public.opinion_tags, public.tags -- Spec 3 W3
+  FROM anon, authenticated;
+REVOKE ALL ON FUNCTION public.get_thirty_six_seen_map(uuid) FROM PUBLIC, anon;
+REVOKE ALL ON FUNCTION public.mark_thirty_six_questions_seen(uuid, uuid[]) FROM PUBLIC, anon;
+REVOKE ALL ON FUNCTION public.mark_thirty_six_round_complete(uuid) FROM PUBLIC, anon;
+REVOKE ALL ON FUNCTION public.complete_thirty_six_chapter(uuid) FROM PUBLIC, anon;
+REVOKE ALL ON FUNCTION public.replace_thirty_six_question(uuid, uuid, text) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.get_thirty_six_seen_map(uuid) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.mark_thirty_six_questions_seen(uuid, uuid[]) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.mark_thirty_six_round_complete(uuid) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.complete_thirty_six_chapter(uuid) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.replace_thirty_six_question(uuid, uuid, text) TO authenticated;
+REVOKE ALL ON FUNCTION public.remove_import_derived_evidence(uuid) FROM PUBLIC, anon, authenticated;
 
 -- Spec 3b final review M-2: chapter gate helpers.
 \i supabase/migrations/20261018110300_chapter_reads_grants.sql

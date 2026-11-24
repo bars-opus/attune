@@ -1,6 +1,8 @@
 # ATTUNE — FORUM FEATURE SPECIFICATION V2
 
 > **Forums retired 2026-10 (Spec 3):** screens and pushes removed in W1, producers stopped in W2, tables dropped in W3. §4, §7 and §8 still describe Opinions.
+>
+> **Schema dropped, Spec 3 W3 (2026-11):** the 8 forum tables, 2 views and 29 functions are gone, and so are `post_polls.topic_id` and the forum columns of `forum_reports`. `forum_reports`, `enqueue_forum_notification` and the `forum_content_removed` / `forum_posting_banned` notices keep their names (they are Opinions').
 
 ### Updated implementation spec incorporating owner decisions
 **Version:** 2.0
@@ -247,6 +249,8 @@ pulls from the user's profile location data.
 ---
 
 ## 4. FEATURE 1 — OPINIONS
+
+> **Since Spec 1 W9 (2026-11):** the six Opinions writers pass a content filter, reports have the "Someone may be at risk" reason (it reaches a person, never auto-hides), and confirmed removals queue the "Post removed" and "Posting paused" notices again.
 
 ### What it is
 

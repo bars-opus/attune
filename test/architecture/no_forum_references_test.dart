@@ -150,23 +150,14 @@ void main() {
       'onTopicSubmitted',
     ];
     final names = [..._forumRpcs, ..._forumRelations].join('|');
-    final hits = _hits(
-      _dartFiles(['lib', 'test']),
-      [
-        RegExp(r'package:attune/features/forums/'),
-        RegExp('\\b(${[...classes, ...providers].join('|')})\\b'),
-        // A named push to a removed route compiles and then throws.
-        RegExp(r'''['"](debateRoom|sideSelection|forumInsight)['"]'''),
-        RegExp('[\'"][^\'"]*\\b($names)\\b[^\'"]*[\'"]'),
-      ],
-      // The dead topic-poll lookup goes with its RPC in W3 (§6.3).
-      allow:
-          (path, line) =>
-              path.endsWith(
-                'core/polls/data/repositories/poll_repository.dart',
-              ) &&
-              line.contains("'get_polls_for_topics'"),
-    );
+    // Spec 3 W3: no allowance is left; every forum RPC is dropped.
+    final hits = _hits(_dartFiles(['lib', 'test']), [
+      RegExp(r'package:attune/features/forums/'),
+      RegExp('\\b(${[...classes, ...providers].join('|')})\\b'),
+      // A named push to a removed route compiles and then throws.
+      RegExp(r'''['"](debateRoom|sideSelection|forumInsight)['"]'''),
+      RegExp('[\'"][^\'"]*\\b($names)\\b[^\'"]*[\'"]'),
+    ]);
     expect(hits, isEmpty, reason: hits.join('\n'));
   });
 

@@ -211,11 +211,16 @@ BEGIN
       (SELECT jsonb_agg(x->>'body') FROM pg_temp.notices(v_a, 'forum_posting_banned') AS x);
   END IF;
 
-  -- The kept forum branch and the type check are unchanged.
-  SELECT * INTO r FROM public.admin_confirm_content_removal('forum_post', gen_random_uuid());
-  IF r.violation_count IS DISTINCT FROM 0 THEN
-    RAISE EXCEPTION 'CONTRACT VIOLATED: the forum_post branch changed';
-  END IF;
+  -- Spec 3 W3: the forum_post branch went with its table; it is refused
+  -- like any unknown type, and the type check is unchanged.
+  BEGIN
+    PERFORM public.admin_confirm_content_removal('forum_post', gen_random_uuid());
+    RAISE EXCEPTION 'CONTRACT VIOLATED: forum_post is still a content type';
+  EXCEPTION WHEN invalid_parameter_value THEN
+    IF SQLERRM <> 'invalid_content_type' THEN
+      RAISE EXCEPTION 'CONTRACT VIOLATED: forum_post raised %, expected invalid_content_type', SQLERRM;
+    END IF;
+  END;
   BEGIN
     PERFORM public.admin_confirm_content_removal('poll', gen_random_uuid());
     RAISE EXCEPTION 'CONTRACT VIOLATED: an unknown content type was accepted';

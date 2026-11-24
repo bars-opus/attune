@@ -28,8 +28,8 @@ class TagPickerRow extends StatelessWidget {
     required this.onChanged,
   });
 
-  /// Matches attach_opinion_tags / attach_forum_topic_tags, which raise
-  /// `too_many_tags` past this many DISTINCT slugs.
+  /// Matches attach_opinion_tags, which raises `too_many_tags` past this
+  /// many DISTINCT slugs.
   static const int maxTags = 3;
 
   @override
