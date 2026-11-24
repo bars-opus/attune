@@ -6,9 +6,9 @@
 // nothing of the page is built until then: the route's redirect builds no
 // page at all (checked every frame), and the page's own gate, reached with
 // no redirect, builds none of what it guards (fix round 1, M-1, M-3).
-// Every Dating push the server can send (me_update, me_checkin; the old
-// dating_mutual_match for one release) opens Me or the check-in, the
-// check-in behind the PIN. The route list is read from datingRoutes(), so
+// Every Dating push the server can send (me_update, me_checkin) opens Me
+// or the check-in, the check-in behind the PIN (Spec 2 W10, A-7: the old
+// dating_mutual_match is no Dating push any more). The route list is read from datingRoutes(), so
 // a route a later wave adds is covered without editing this file.
 import 'package:attune/core/notifications/config/notification_config.dart';
 import 'package:attune/core/notifications/domain/entities/app_notification.dart';
@@ -189,7 +189,6 @@ void main() {
 
   for (final (type, route, lockedTo, openTo) in [
     ('me_update', 'me', '/home?tab=me', '/home?tab=me'),
-    ('dating_mutual_match', 'me', '/home?tab=me', '/home?tab=me'),
     (
       'me_checkin',
       'me_checkin',

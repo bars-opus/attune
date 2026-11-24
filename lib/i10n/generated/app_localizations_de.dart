@@ -5551,4 +5551,97 @@ class AppLocalizationsDe extends AppLocalizations {
 
   @override
   String get dating_readyPlainIconButton => 'Choose an app icon';
+
+  @override
+  String get dating_linkBecome => 'Become a couple on Attune';
+
+  @override
+  String get dating_linkAgreeingTitle => 'What are we agreeing to?';
+
+  @override
+  String get dating_linkAgreeingBody => 'Your Dating profiles pause for both of you. You\'ll share a private space for the two of you. Either of you can end it at any time.';
+
+  @override
+  String dating_linkKeep(String name) {
+    return 'Keep our first messages as a \'How we met\' card (only if $name agrees too)';
+  }
+
+  @override
+  String dating_linkAsk(String name) {
+    return 'Ask $name';
+  }
+
+  @override
+  String get dating_linkNotNow => 'Not now';
+
+  @override
+  String dating_linkAskedYou(String name) {
+    return '$name would like to become a couple on Attune.';
+  }
+
+  @override
+  String get dating_linkSee => 'See what this means';
+
+  @override
+  String get dating_linkYes => 'Yes, let\'s';
+
+  @override
+  String get dating_linkNotRightNow => 'Not right now';
+
+  @override
+  String dating_linkNotReady(String name) {
+    return '$name isn\'t ready yet.';
+  }
+
+  @override
+  String get dating_linkDecided => 'You decided together.';
+
+  @override
+  String get dating_linkDecidedBody => 'Your Dating profiles are paused.';
+
+  @override
+  String get dating_linkOffline => 'You\'re offline. Nothing has changed yet.';
+
+  @override
+  String dating_linkAsked(String name) {
+    return 'You\'ve asked $name.';
+  }
+
+  @override
+  String get dating_linkTakeBack => 'Take it back';
+
+  @override
+  String get dating_linkUnavailable => 'This isn\'t possible right now.';
+
+  @override
+  String dating_linkMatchedChip(String date) {
+    return 'The day you matched: $date';
+  }
+
+  @override
+  String get dating_linkOfferTitle => 'Delete your Dating profile and preferences?';
+
+  @override
+  String get dating_linkOfferBody => 'You can set up Dating again later.';
+
+  @override
+  String get dating_linkOfferDelete => 'Delete my Dating data';
+
+  @override
+  String get dating_linkOfferKeep => 'Keep for now';
+
+  @override
+  String get dating_howWeMetRow => 'How we met';
+
+  @override
+  String get dating_howWeMetRowHint => 'Opens your first messages';
+
+  @override
+  String get dating_howWeMetIntro => 'Your first messages, as you both saw them.';
+
+  @override
+  String get dating_howWeMetYou => 'You';
+
+  @override
+  String get dating_howWeMetThem => 'Your partner';
 }

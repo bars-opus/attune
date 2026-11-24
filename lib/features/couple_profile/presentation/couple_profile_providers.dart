@@ -4,6 +4,8 @@ import 'package:attune/core/providers/shared_prefs_provider.dart';
 import 'package:attune/features/couple_profile/data/about_us_outbox.dart';
 import 'package:attune/features/couple_profile/data/couple_profile_service.dart';
 import 'package:attune/features/couple_profile/domain/couple_profile.dart';
+import 'package:attune/features/dating/link/how_we_met.dart'
+    show datingAboutUsDateSuggestions;
 import 'package:attune/features/onboarding/presentation/providers/flow_flags.dart';
 import 'package:attune/features/reminders/presentation/providers/reminders_providers.dart'
     show remindersRepositoryProvider;
@@ -262,7 +264,8 @@ final coupleProfileDraftProvider = coupleProfileProvider(
 /// matched: {date}"); a suggestion is never pre-filled.
 final aboutUsDateSuggestionsProvider = Provider.autoDispose
     .family<List<AboutUsDateSuggestion>, String>(
-      (ref, relationshipId) => const [],
+      // Spec 2 W9 (I-12): Dating's chip, for a couple that came from Dating.
+      (ref, relationshipId) => datingAboutUsDateSuggestions(ref, relationshipId),
     );
 
 /// One AU2 chip: its words and the date it fills in when tapped.

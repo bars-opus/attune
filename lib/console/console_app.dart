@@ -24,6 +24,10 @@
 // copied key is cleared by writing an empty clipboard, never by reading it
 // (a read can raise the browser's permission prompt), and only when this
 // console copied it.
+//
+// Spec 2 W10 (§8 W10): Launch readiness, Metrics and Fairness, the safety
+// owner's, after Audit (screens/launch_screens.dart); a publish refused for
+// the launch gates says to read Launch readiness.
 import 'dart:async';
 import 'dart:convert';
 
@@ -31,6 +35,7 @@ import 'package:attune/console/console_api.dart';
 import 'package:attune/console/console_auth.dart';
 import 'package:attune/console/screens/case_screen.dart';
 import 'package:attune/console/screens/console_lists.dart';
+import 'package:attune/console/screens/launch_screens.dart';
 import 'package:attune/console/screens/law_enforcement_screen.dart';
 import 'package:attune/console/screens/queue_screen.dart';
 import 'package:flutter/gestures.dart';
@@ -352,6 +357,10 @@ String consoleReason(String? reason) => switch (reason) {
         'settings would hide it from the phone check. Nothing was published.',
   'config:production_checks_failed' =>
     "The production checks didn't pass, so nothing was published.",
+  // Spec 2 W10 (§8 W10).
+  'config:launch_not_ready' =>
+    "This would open Dating somewhere while a launch gate is red, so "
+        'nothing was published. Launch readiness shows which.',
   // Spec 2 W7c (Task 8 fix round 1).
   'exists' =>
     'This request is already in the log with another decision. Decide it '
@@ -1040,7 +1049,11 @@ enum ConsolePage {
   countries('Countries', Icons.public_outlined),
   lawEnforcement('Law enforcement', Icons.policy_outlined),
   csamHolds('CSAM holds', Icons.shield_outlined),
-  audit('Audit', Icons.history_outlined);
+  audit('Audit', Icons.history_outlined),
+  // Spec 2 W10 (§8 W10): the safety owner's.
+  readiness('Launch readiness', Icons.flag_outlined),
+  metrics('Metrics', Icons.query_stats_outlined),
+  fairness('Fairness', Icons.balance_outlined);
 
   const ConsolePage(this.label, this.icon);
 
@@ -1141,6 +1154,9 @@ class _ConsoleHomeState extends State<ConsoleHome> {
     ),
     ConsolePage.csamHolds => CsamHoldsScreen(api: widget.api, me: widget.me),
     ConsolePage.audit => AuditScreen(api: widget.api),
+    ConsolePage.readiness => ReadinessScreen(api: widget.api, me: widget.me),
+    ConsolePage.metrics => MetricsScreen(api: widget.api, me: widget.me),
+    ConsolePage.fairness => FairnessScreen(api: widget.api, me: widget.me),
   };
 
   @override

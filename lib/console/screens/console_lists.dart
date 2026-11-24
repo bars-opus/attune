@@ -29,6 +29,7 @@ import 'dart:convert';
 import 'package:attune/console/console_api.dart';
 import 'package:attune/console/console_app.dart';
 import 'package:attune/console/screens/case_screen.dart';
+import 'package:attune/console/screens/launch_screens.dart';
 import 'package:flutter/material.dart';
 
 /// Spec 2 W7c Task 9 (owner 2026-11-22, R-60): the CSAM hold lift.
@@ -519,7 +520,8 @@ ConsoleLine consolePublishLine(ConsoleAnswer r) {
       '$what was already published with these values. Nothing changed.',
     );
   }
-  final checks = (d['checks'] as List).join(', ');
+  // Spec 2 W10 fix round 1 (M-1): each check in words.
+  final checks = (d['checks'] as List).map(consoleCheckLabel).join(', ');
   return ConsoleLine(
     [
       'Published $what (${d['environment']}): '

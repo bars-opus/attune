@@ -57,6 +57,9 @@ import 'package:attune/features/dating/chat/safety_card.dart';
 import 'package:attune/features/dating/data/dating_providers.dart';
 import 'package:attune/features/dating/data/dating_rpc.dart';
 import 'package:attune/features/dating/device/dating_device_check.dart';
+import 'package:attune/features/dating/link/dating_link.dart';
+import 'package:attune/features/dating/link/link_screen.dart'
+    show DatingLinkMoment, datingLinkDone;
 import 'package:attune/features/dating/gentle_wait/gentle_wait_providers.dart'
     show datingOnlineProvider;
 import 'package:attune/features/dating/report/dating_report.dart';
@@ -267,6 +270,12 @@ class _DatingChatScreenState extends ConsumerState<DatingChatScreen>
   int _olderTicket = 0;
   final _outgoing = <_Outgoing>[];
   String? _blockedName;
+
+  /// Spec 2 W9 fix round 1 (M-1): Take it back is being sent.
+  bool _takingBack = false;
+
+  /// Spec 2 W9 final client fix (M-3): the moment is being answered.
+  bool _linkLeaving = false;
   bool _offlineTried = false;
   String? _actionReason;
 
@@ -382,6 +391,8 @@ class _DatingChatScreenState extends ConsumerState<DatingChatScreen>
         _actionFrom = null;
         _readReason = null;
         _composer.clear();
+        _takingBack = false;
+        _linkLeaving = false;
       });
       unawaited(_read());
     });
@@ -830,6 +841,10 @@ class _DatingChatScreenState extends ConsumerState<DatingChatScreen>
       weMet: header.weMet,
       // M-7: just blocked here: Block is not offered again.
       blocked: _blockedName != null,
+      // Spec 2 W9 (§3.9; carry 6): either side's We met, nothing asked yet.
+      canLink:
+          (header.weMet || header.theyMet) &&
+          header.link?.state == DatingLinkState.none,
     );
     if (!mounted || _account != account || choice == null) return;
     switch (choice) {
@@ -871,7 +886,60 @@ class _DatingChatScreenState extends ConsumerState<DatingChatScreen>
         // Fix round 1: "Noted that you met." (never whether they're told).
         _say(r.ok ? 'we_met' : r.reason);
         unawaited(_read());
+      case DatingSafetyChoice.becomeCouple:
+        await _openLink();
     }
+  }
+
+  /// Spec 2 W9 (§3.9): the link page; the chat reads again on return.
+  Future<void> _openLink() async {
+    await context.push(DatingPaths.link(widget.matchId));
+    if (mounted) unawaited(_read());
+  }
+
+  /// Spec 2 W9: the asker takes the request back (from the top card).
+  Future<void> _takeBack(String requestId) async {
+    final account = _account;
+    if (_takingBack) return;
+    if (!_online) {
+      _say('offline');
+      return;
+    }
+    setState(() => _takingBack = true);
+    final r = await ref.read(datingLinkGatewayProvider).cancel(requestId);
+    if (!mounted || _account != account) return;
+    setState(() => _takingBack = false);
+    // Moved on already (answered, lapsed or linked): the re-read says so.
+    _say(
+      r.ok || r.reason == 'request_unavailable' || r.reason == 'linked'
+          ? null
+          : r.reason,
+    );
+    unawaited(_read());
+  }
+
+  /// Spec 2 W9 final client fix (M-3): the asker's "You decided together."
+  /// shows under this ended chat.
+  bool get _linkMoment {
+    final page = _page;
+    final h = page?.header;
+    return page != null &&
+        page.ok &&
+        h != null &&
+        _blockedName == null &&
+        h.ended &&
+        h.link?.state == DatingLinkState.linked &&
+        h.link!.moment;
+  }
+
+  /// Spec 2 W9 (§3.9 step 4; final client fix M-3): the moment answered,
+  /// by Continue or by back (as on the link page): marked seen (bounded),
+  /// then the Relationship home; once.
+  Future<void> _linkDone() async {
+    if (_linkLeaving) return;
+    _linkLeaving = true;
+    await datingLinkDone(context, seen: true);
+    if (mounted) _linkLeaving = false;
   }
 
   /// Spec 2 W6c Task 10 (§3.6): the meeting kit.
@@ -1112,6 +1180,37 @@ class _DatingChatScreenState extends ConsumerState<DatingChatScreen>
           child: Text(label),
         );
     final out = <Widget>[];
+    // Spec 2 W9 (§3.9 steps 2-4): the couple link, above everything else.
+    final link = h.link;
+    switch (link?.state) {
+      case DatingLinkState.askedYou:
+        out.add(
+          card('link:asked_you', 'dating_link_card', [
+            title(loc.dating_linkAskedYou(name)),
+            actions([
+              button('dating_link_see', loc.dating_linkSee, () => unawaited(_openLink())),
+            ]),
+          ]),
+        );
+      case DatingLinkState.asked:
+        out.add(
+          card('link:asked', 'dating_link_card', [
+            title(loc.dating_linkAsked(name)),
+            actions([
+              button(
+                'dating_link_take_back',
+                loc.dating_linkTakeBack,
+                _takingBack ? null : () => unawaited(_takeBack(link!.requestId!)),
+              ),
+            ]),
+          ]),
+        );
+      case DatingLinkState.notReady:
+        out.add(card('link:not_ready', 'dating_link_card', [title(loc.dating_linkNotReady(name))]));
+      // A linked chat has ended: its moment is under the chat (lines).
+      case _:
+        break;
+    }
     final pendingBoxes =
         _account == null ? const <String>{} : _pendingTimeboxes(_account!);
     final timebox =
@@ -1313,11 +1412,27 @@ class _DatingChatScreenState extends ConsumerState<DatingChatScreen>
             : header.age == null
             ? name
             : loc.dating_chatTitle(name, header.age!);
+    // Spec 2 W9 final client fix (M-3): while the moment shows, back
+    // answers it (the Relationship home), as Continue.
+    final linkMoment = _linkMoment;
+    final rootBack = datingRootBackButton(context);
     return AllowLargeText(
-      child: Scaffold(
+      child: DatingOwnBack(
+        active: linkMoment,
+        onBack: () => unawaited(_linkDone()),
+        child: Scaffold(
         appBar: AppBar(
           // Fix round 1 (I-3): the only page goes back to Conversations.
-          leading: datingRootBackButton(context),
+          // Final client fix (M-3): as the only page, its back answers the
+          // moment too (pushed, the AppBar's own back pops through
+          // DatingOwnBack).
+          leading:
+              linkMoment && rootBack != null
+                  ? BackButton(
+                    key: const ValueKey('dating_link_back_home'),
+                    onPressed: () => unawaited(_linkDone()),
+                  )
+                  : rootBack,
           title: Semantics(header: true, child: Text(title)),
           actions: [
             if (header != null)
@@ -1348,6 +1463,7 @@ class _DatingChatScreenState extends ConsumerState<DatingChatScreen>
             },
           ),
         ),
+      ),
       ),
     );
   }
@@ -1421,6 +1537,19 @@ class _DatingChatScreenState extends ConsumerState<DatingChatScreen>
                 ? loc.dating_blockDoneNoName
                 : loc.dating_blockDone(_blockedName!),
           ),
+        )
+      // Spec 2 W9 (§3.9 step 4; R-W9-3): the couple linked (this chat
+      // ended with it) and the moment is still to show: in the ended
+      // line's place.
+      else if (ended &&
+          header.link?.state == DatingLinkState.linked &&
+          header.link!.moment)
+        Padding(
+          key: const ValueKey('dating_link_card'),
+          padding: const EdgeInsets.all(Spacing.md),
+          // Fix round 1 (I-1): marked seen (bounded) before the
+          // Relationship home reads its card.
+          child: DatingLinkMoment(onContinue: _linkDone),
         )
       else if (ended)
         Padding(

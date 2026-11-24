@@ -18,6 +18,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:attune/features/chat/domain/utils/conversation_preview.dart';
+import 'package:attune/features/dating/link/link_offer_card.dart';
 
 /// Whether the cards have settled in this session: they do once, the first
 /// time the screen has its content, and never again until the app restarts.
@@ -204,9 +205,16 @@ class ConversationsScreen extends ConsumerWidget {
                     ReorderableHomeCards(
                       animateIn: settle,
                       firstStep: 2,
-                      cards: const [
-                        HomeCard(id: 'journals', label: 'Journals', child: JournalsCard()),
-                        HomeCard(id: 'together', label: 'Together', child: TogetherCard()),
+                      cards: [
+                        const HomeCard(id: 'journals', label: 'Journals', child: JournalsCard()),
+                        const HomeCard(id: 'together', label: 'Together', child: TogetherCard()),
+                        // Spec 2 W9 (§3.9 step 6, C-4): Dating's one card, while it has something to say.
+                        if (datingLinkOfferShown(ref))
+                          const HomeCard(
+                            id: datingLinkOfferCardId,
+                            label: datingLinkOfferCardLabel,
+                            child: DatingLinkOfferCard(),
+                          ),
                       ],
                     ),
                   ],

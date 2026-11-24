@@ -16,6 +16,7 @@ import {
   readme,
   ZipStream,
 } from "./bundle.ts";
+import { addDatingPart } from "./dating_part.ts";
 
 export type Limits = {
   chatPage: number;
@@ -81,6 +82,8 @@ export async function buildPart(supabase: any, job: Job, zip: ZipStream, limits:
     zip.add("data.json", enc.encode(JSON.stringify(bundle)));
     zip.add("calendar.ics", enc.encode(buildCalendar(calendarItems(bundle), new Date(), { feed: false })));
     zip.add("README.txt", enc.encode(readme(bundle)));
+    // Spec 2 W9 (S-4, I-13): the own-data Dating part, by the job alone.
+    await addDatingPart(supabase, job.id, zip);
     return { next: { ...fresh, phase: rels.length > 0 ? "chat" : "media", rel_index: 1 }, leftOut };
   }
 

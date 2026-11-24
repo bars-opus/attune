@@ -91,6 +91,8 @@ const _audited = {
   'datingAway',
   // Spec 2 W8b (§3.12, §6.7; R-80): App icon, in Dating and in Settings.
   'datingAppIcon',
+  // Spec 2 W9 (§3.9, §3.14): Become a couple on Attune.
+  'datingLink',
   'appIcon',
   'aboutUs',
   'addEditReminder',

@@ -2144,7 +2144,8 @@ BEGIN
   IF (SELECT string_agg(p.oid::regprocedure::text, ',' ORDER BY p.oid::regprocedure::text)
         FROM pg_proc AS p JOIN pg_namespace AS ns ON ns.oid = p.pronamespace
        WHERE ns.nspname NOT IN ('pg_catalog', 'information_schema') AND p.prosrc ~ '\mdating_never_introduce\M')
-     IS DISTINCT FROM 'add_dating_never_introduce(text,text,text),dating_never_introduce_excludes(uuid,uuid),list_dating_never_introduce(),private.dating_exit_internal(uuid,boolean),private.dating_has_data(uuid),remove_dating_never_introduce(uuid)' THEN
+     -- Spec 2 W9 (S-4, I-13): and the export's Dating part (the person's own labels, never a number).
+     IS DISTINCT FROM 'add_dating_never_introduce(text,text,text),dating_export_for_job(uuid),dating_never_introduce_excludes(uuid,uuid),list_dating_never_introduce(),private.dating_exit_internal(uuid,boolean),private.dating_has_data(uuid),remove_dating_never_introduce(uuid)' THEN
     RAISE EXCEPTION 'CONTRACT VIOLATED: a function other than the four never-introduce functions and exit reads the list: %',
       (SELECT string_agg(p.oid::regprocedure::text, ',') FROM pg_proc AS p WHERE p.prosrc ~ '\mdating_never_introduce\M');
   END IF;

@@ -118,6 +118,86 @@ void main() {
     ], isEmpty);
   });
 
+  // Spec 2 W9 (R-W9-16 as built; Task 5 fix round 2, M-7): a named,
+  // deliberate exception to the rule above (the final client fix's I-1
+  // adds the couple side, below). Whether dating_couple_link is
+  // on is read for every couple, Dating or not, so it is not Dating
+  // traffic and carries no install id: lib/core/flags/couple_link_flag.dart
+  // reads get_dating_home() on the app's own client, and the couple link's
+  // provider is the only Dating file that reaches it.
+  test('the couple-link flag read is a named non-Dating client', () {
+    const flag = 'lib/core/flags/couple_link_flag.dart';
+    expect(_filesWith('coupleLinkFlagReadProvider'), [
+      flag,
+      'lib/features/dating/link/dating_link.dart',
+    ]);
+    expect(
+      _filesWith('core/flags/couple_link_flag.dart', 'lib/features/dating'),
+      ['lib/features/dating/link/dating_link.dart'],
+    );
+    final source = File(flag).readAsStringSync();
+    expect(source, contains('ref.watch(supabaseClientProvider)'));
+    expect(RegExp(r'\.rpc\(').allMatches(source), hasLength(1));
+    expect(source, contains("client.rpc('get_dating_home')"));
+    for (final name in [
+      'datingSupabaseClient',
+      'DatingDeviceHttpClient',
+      'x-attune-device',
+      'installId',
+      'InstallId',
+    ]) {
+      expect(source, isNot(contains(name)), reason: name);
+    }
+  });
+
+  // Spec 2 W9 final client fix (I-1; S-7, R15): the second named exception.
+  // The couple side of the link (the Relationship home's card and its
+  // dismiss, the match date, How we met) is read by every couple, Dating or
+  // not, so it is couples traffic: lib/core/flags/couple_link_couple_side.dart
+  // makes those four calls on the app's own client, and the couple link's
+  // repository is the only Dating file that reaches it. The chat side's
+  // calls stay on Dating's client.
+  test('the couple side of the link is the other non-Dating client', () {
+    const side = 'lib/core/flags/couple_link_couple_side.dart';
+    const link = 'lib/features/dating/link/dating_link.dart';
+    expect(_filesWith('coupleLinkCoupleCallProvider'), [side, link]);
+    expect(
+      _filesWith(
+        'core/flags/couple_link_couple_side.dart',
+        'lib/features/dating',
+      ),
+      [link],
+    );
+    final source = File(side).readAsStringSync();
+    expect(source, contains('ref.watch(supabaseClientProvider)'));
+    expect(RegExp(r'\.rpc\(').allMatches(source), hasLength(1));
+    for (final name in [
+      'datingSupabaseClient',
+      'datingRpc',
+      'DatingRpc',
+      'DatingDeviceHttpClient',
+      'x-attune-device',
+      'installId',
+      'InstallId',
+    ]) {
+      expect(source, isNot(contains(name)), reason: name);
+    }
+    // The four couple-side calls are named only there in the repository's
+    // couple path, never through Dating's RPC client.
+    final repo = File(link).readAsStringSync();
+    for (final fn in const [
+      'get_dating_post_link_offer',
+      'dismiss_dating_post_link_offer',
+      'get_dating_link_origin',
+      'get_how_we_met',
+    ]) {
+      expect(source, contains("'$fn'"), reason: fn);
+      expect(repo, contains("_couple('$fn'"), reason: fn);
+      expect(repo, isNot(contains("_rpc.call('$fn'")), reason: fn);
+    }
+    expect(repo, contains('couple: ref.watch(coupleLinkCoupleCallProvider)'));
+  });
+
   // Fix round 1 (M-3): every Dating photo is read through the Dating
   // client's storage (bytes, Image.memory); no URL a request could fetch
   // without the header.

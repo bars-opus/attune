@@ -590,7 +590,8 @@ void main() {
     expect(
       find.text(
         'Published GH version 4 (test): Dating on, same gender off. '
-        'Checks still open: tier_review_missing.',
+        'Checks still open: the tier change has no review reference of its '
+        'own.',
       ),
       findsOneWidget,
     );

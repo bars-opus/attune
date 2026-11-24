@@ -226,6 +226,9 @@ BEGIN
   IF NOT coalesce(b->'personal'->'settings' ?& ARRAY['timezone', 'seen_receipts', 'devices'], false) THEN
     RAISE EXCEPTION 'CONTRACT VIOLATED: personal settings are missing: %', b->'personal'->'settings';
   END IF;
+  -- Spec 2 W9 (S-4, I-13): Dating is never a section of the bundle; the
+  -- own-data dating part is its own file, from dating_export_for_job with
+  -- the building job (1b below).
   FOREACH k IN ARRAY ARRAY['analysis', 'patterns', 'compatibility', 'safety', 'dating', 'forum'] LOOP
     IF b ? k OR (b->'personal') ? k OR r ? k THEN
       RAISE EXCEPTION 'CONTRACT VIOLATED: a "%" section exists', k;
@@ -243,6 +246,56 @@ BEGIN
                      WHERE m.zip_path = (b->'personal'->'journal'->0->'blocks'->0->>'photo')) THEN
     RAISE EXCEPTION 'CONTRACT VIOLATED: a journal photo reference does not match its file';
   END IF;
+END $$;
+
+-- 1b. Spec 2 W9 (S-4, I-13): the own-data dating part. U and P met in
+-- Dating and linked; with U's export building, dating_export_for_job (the
+-- worker's, as the service role) gives U's own Dating data and U's own
+-- sent message, nothing of P's, no id; for a job not building it refuses.
+DO $$
+DECLARE
+  v_job uuid;
+  v_m uuid;
+  d jsonb;
+BEGIN
+  INSERT INTO public.dating_enrollments (user_id, state, opted_in_at, paused_at, pause_reason)
+  VALUES (pg_temp.u(), 'paused', now() - interval '40 days', now() - interval '1 day', 'relationship');
+  INSERT INTO public.dating_matches (user_low_id, user_high_id, state, matched_at, closed_at, closed_reason, evidence_until)
+  VALUES (least(pg_temp.u(), pg_temp.p()), greatest(pg_temp.u(), pg_temp.p()), 'closed', now() - interval '20 days',
+          now() - interval '1 day', 'couple_linked', now() + interval '29 days')
+  RETURNING id INTO v_m;
+  INSERT INTO public.dating_messages (match_id, sender_side, sender_user_id, body, body_masked, mask_version, idempotency_key, created_at)
+  VALUES (v_m, CASE WHEN pg_temp.u() < pg_temp.p() THEN 'low' ELSE 'high' END, pg_temp.u(), 'Una wrote this in Dating',
+          'Una wrote this in Dating', 1, 'w9-export-u', now() - interval '19 days'),
+         (v_m, CASE WHEN pg_temp.p() < pg_temp.u() THEN 'low' ELSE 'high' END, pg_temp.p(), 'Paa wrote this in Dating',
+          'Paa wrote this in Dating', 1, 'w9-export-p', now() - interval '18 days');
+  INSERT INTO public.data_export_jobs (user_id, status, claimed_at) VALUES (pg_temp.u(), 'building', now()) RETURNING id INTO v_job;
+  EXECUTE 'SET LOCAL ROLE service_role';
+  d := public.dating_export_for_job(v_job);
+  RESET ROLE;
+  IF d ->> 'format' IS DISTINCT FROM 'attune-dating-export' OR d -> 'enrolment' ->> 'state' IS DISTINCT FROM 'paused'
+     OR jsonb_array_length(d -> 'conversations') <> 1
+     OR d -> 'conversations' -> 0 -> 'my_messages' -> 0 ->> 'text' IS DISTINCT FROM 'Una wrote this in Dating'
+     OR jsonb_array_length(d -> 'conversations' -> 0 -> 'my_messages') <> 1 THEN
+    RAISE EXCEPTION 'CONTRACT VIOLATED: the own-data dating part is wrong: %', d;
+  END IF;
+  IF d::text LIKE '%Paa%' OR d::text ~ '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}' THEN
+    RAISE EXCEPTION 'CONTRACT VIOLATED: the dating part holds the partner''s words, name or an id: %', d;
+  END IF;
+  UPDATE public.data_export_jobs SET status = 'ready' WHERE id = v_job;
+  BEGIN
+    EXECUTE 'SET LOCAL ROLE service_role';
+    PERFORM public.dating_export_for_job(v_job);
+    RAISE EXCEPTION 'CONTRACT VIOLATED: a ready job was read';
+  EXCEPTION WHEN raise_exception THEN
+    IF SQLERRM <> 'export:not_building' THEN
+      RAISE;
+    END IF;
+  END;
+  RESET ROLE;
+  DELETE FROM public.data_export_jobs WHERE id = v_job;
+  DELETE FROM public.dating_matches WHERE id = v_m;
+  DELETE FROM public.dating_enrollments WHERE user_id = pg_temp.u();
 END $$;
 
 -- 2. The media manifest.

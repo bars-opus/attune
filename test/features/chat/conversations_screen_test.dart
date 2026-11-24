@@ -1,8 +1,12 @@
 import 'dart:async';
 
+import 'package:attune/core/flags/couple_link_couple_side.dart';
+import 'package:attune/core/flags/couple_link_flag.dart';
 import 'package:attune/features/chat/domain/entities/conversation.dart';
 import 'package:attune/features/chat/presentation/screens/conversations_screen.dart';
 import 'package:attune/features/chat/presentation/state/chat_state.dart';
+import 'package:attune/features/dating/data/dating_providers.dart';
+import 'package:attune/features/dating/link/link_offer_card.dart';
 import 'package:attune/features/reflection_journal/data/models/journal_entry.dart';
 import 'package:attune/features/reflection_journal/presentation/providers/reflection_journal_providers.dart';
 import 'package:attune/features/reminders/data/models/reminder_model.dart';
@@ -60,8 +64,9 @@ class _FixedRemindersListNotifier extends RemindersListNotifier {
 
 void main() {
   ({Widget widget, ProviderContainer container}) wrap(
-    AsyncValue<List<Conversation>> conversationsState,
-  ) {
+    AsyncValue<List<Conversation>> conversationsState, {
+    List<Override> extra = const [],
+  }) {
     final container = ProviderContainer(
       overrides: [
         conversationsProvider.overrideWith(
@@ -71,6 +76,14 @@ void main() {
           () => _FixedJournalEntriesNotifier(),
         ),
         remindersListProvider.overrideWith(() => _FixedRemindersListNotifier()),
+        // Spec 2 W9 final client fix (M-8): the couple link's flag read
+        // answers (off: no couple_link) rather than failing on a missing
+        // Supabase, so a screen that asks it runs the answered branch and never
+        // registers the failed branch's resume and reconnect retries.
+        coupleLinkFlagReadProvider.overrideWithValue(
+          () async => const {'state': 'not_started'},
+        ),
+        ...extra,
       ],
     );
     return (
@@ -191,4 +204,37 @@ void main() {
       expect(find.byType(CircularProgressIndicator), findsOneWidget);
     },
   );
+
+  // Spec 2 W9 final client fix (M-8): signed in, the couple link's flag read
+  // answers (the success branch, not a missing Supabase): one read; off, no
+  // couple-side call; on with nothing to say, one offer read; either way
+  // the Relationship home's cards are exactly as before.
+  for (final on in [false, true]) {
+    testWidgets('signed in, the couple link answered ${on ? 'on' : 'off'}: '
+        'the cards are as before', (tester) async {
+      var reads = 0;
+      final calls = <String>[];
+      final harness = wrap(
+        AsyncData([_conversation()]),
+        extra: [
+          datingAccountProvider.overrideWithValue('u-1'),
+          coupleLinkFlagReadProvider.overrideWithValue(() async {
+            reads++;
+            return {'state': 'not_started', if (on) 'couple_link': true};
+          }),
+          coupleLinkCoupleCallProvider.overrideWithValue((fn, _) async {
+            calls.add(fn);
+            return const {'ok': true, 'offer': null};
+          }),
+        ],
+      );
+      addTearDown(harness.container.dispose);
+      await tester.pumpWidget(harness.widget);
+      await tester.pumpAndSettle();
+      expect(find.text('Partner'), findsOneWidget);
+      expect(find.byType(DatingLinkOfferCard), findsNothing);
+      expect(reads, 1);
+      expect(calls, on ? ['get_dating_post_link_offer'] : isEmpty);
+    });
+  }
 }

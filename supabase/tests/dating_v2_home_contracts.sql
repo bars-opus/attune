@@ -1031,7 +1031,8 @@ DECLARE
 BEGIN
   -- Spec 2 W3a (C-2, R-43): private.dating_has_data reads only whether the
   -- person's own row exists (get_dating_home's has_data), never the text.
-  IF v IS DISTINCT FROM 'get_my_gentle_wait_reflection(), private.dating_carry_on_auth_user_delete(), '
+  -- Spec 2 W9 (S-4, I-13): the export's Dating part, for the person's own export only.
+  IF v IS DISTINCT FROM 'dating_export_for_job(uuid), get_my_gentle_wait_reflection(), private.dating_carry_on_auth_user_delete(), '
                         'private.dating_exit_internal(uuid,boolean), private.dating_has_data(uuid), '
                         'save_gentle_wait_reflection(jsonb)' THEN
     RAISE EXCEPTION 'CONTRACT VIOLATED: the functions reaching the reflections changed: %', v;

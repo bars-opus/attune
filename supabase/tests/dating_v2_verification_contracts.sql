@@ -1559,6 +1559,10 @@ BEGIN
       public.dating_flag_enabled('dating_age_assurance'), private.dating_verification_mode();
   END IF;
 END $p2$;
+-- Spec 2 W9 (R-W9-16): the dev script also turns dating_couple_link on,
+-- and every home answer then carries couple_link; this file's exact home
+-- answers are W4's, so the couple link is off again here (rolled back).
+UPDATE public.feature_flags SET enabled = false WHERE key = 'dating_couple_link';
 
 -- =====================================================================
 -- W4b (Task 5). The device helpers: [p] calls [p_sql] from the device

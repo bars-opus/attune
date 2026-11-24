@@ -152,7 +152,8 @@ BEGIN
                            'dating_opener_hashes', -- Spec 2 W6c (Task 8 fix round 1): a purge step that sleeps
                            'dating_reports', -- Spec 2 W7a (Task 1 fix round 2): a report that sleeps after its first locks
                            'dating_moderation_cases', -- Spec 2 W7b (Task 5 fix round 1): a console decision that sleeps
-                           'dating_session_context'] LOOP -- Spec 2 W8b (Task 4 fix round 1, M-5): a device check that sleeps
+                           'dating_session_context', -- Spec 2 W8b (Task 4 fix round 1, M-5): a device check that sleeps
+                           'dating_couple_link_requests', 'users'] LOOP -- Spec 2 W9: a second Yes, a path change that sleeps
     EXECUTE format('DROP TRIGGER IF EXISTS zz_race_delay ON public.%I', t);
     EXECUTE format('CREATE TRIGGER zz_race_delay BEFORE UPDATE OR DELETE ON public.%I FOR EACH ROW EXECUTE FUNCTION race.delay()', t);
   END LOOP;
@@ -1770,5 +1771,100 @@ run "a device check that ends a trip while the person leaves: both land, no dead
                THEN 'the leave left the context row'
                ELSE 'ok' END;" serialised
 
-$P -c "SELECT race.reset(); UPDATE public.feature_flags SET enabled = false WHERE key IN ('dating_candidate_generation', 'dating_traveller_detection');" > /dev/null 2>&1 # Spec 2 W8b: and the traveller flag
+# Spec 2 W9 (§3.9, Ruling R-W9-4): the second Yes meets the asker. The
+# confirm takes both setup locks first (every Dating writer's first lock),
+# then the match, the request and both users rows. (64) the asker takes
+# the request back while the second Yes sleeps in its last write: the
+# take-back waits at the asker's setup lock, then finds it linked (linked).
+# (65) the asker leaves Dating (exit sleeps holding the asker's setup lock)
+# while the second Yes runs: it waits, then finds the chat ended (closed);
+# no relationship. (66) the asker's path change (Just for me) sleeps
+# holding the asker's users row while the second Yes runs: one of them
+# is the deadlock victim and absorbs it (the second Yes retries, or the
+# path change's Dating pause gives up, is counted and the sweep pauses
+# later); both land, the couple is linked on the Relationship path. No
+# caller sees an error. The race people's relationships go before
+# race.reset() (it deletes the users; their columns are ON DELETE SET NULL).
+FX_LINK="DELETE FROM public.relationships WHERE user_a::text LIKE '5e2f%' OR user_b::text LIKE '5e2f%';
+SELECT race.reset(); ALTER SEQUENCE race.s1 RESTART;
+SELECT race.ready('64', 'woman', ARRAY['man']), race.ready('65', 'man', ARRAY['woman']);
+UPDATE public.feature_flags SET enabled = true WHERE key = 'dating_couple_link';
+INSERT INTO race.outcome SELECT 'lk_match', race.match(race.id('64'), race.id('65'))::text;
+UPDATE public.dating_matches SET low_we_met_at = now() WHERE id = (SELECT result::uuid FROM race.outcome WHERE name = 'lk_match');
+INSERT INTO race.outcome SELECT 'lk_req', race.call(race.id('64'), format('SELECT public.request_dating_couple_link(%L, %L, true)',
+  race.key('ask'), (SELECT result FROM race.outcome WHERE name = 'lk_match'))) ->> 'request_id';"
+LK_YES="race.call(race.id('65'), format('SELECT public.confirm_dating_couple_link(%L, %L, true)', race.key('yes'),
+  (SELECT result FROM race.outcome WHERE name = 'lk_req')))::text"
+LK_LINKED="(SELECT r.state FROM public.dating_couple_link_requests AS r WHERE r.id = (SELECT result::uuid FROM race.outcome WHERE name = 'lk_req'))"
+LK_RELS="(SELECT count(*) FROM public.relationships WHERE race.id('64') IN (user_a, user_b) AND status = 'active')"
+run "the asker takes it back while the second Yes sleeps: linked, one couple, no deadlock" "$FX_LINK" \
+  "SET race.sleep_dating_couple_link_requests_update = '1.5:race.s1';
+   INSERT INTO race.outcome SELECT 'lk_yes', $LK_YES;" \
+  "SELECT pg_sleep(0.5);
+   INSERT INTO race.outcome SELECT 'lk_overlap', (SELECT is_called FROM race.s1)::text;
+   INSERT INTO race.outcome SELECT 'lk_back', race.call(race.id('64'), format('SELECT public.cancel_dating_couple_link(%L)',
+     (SELECT result FROM race.outcome WHERE name = 'lk_req')))::text;" \
+  "SELECT CASE WHEN (SELECT result FROM race.outcome WHERE name = 'lk_overlap') IS DISTINCT FROM 'true'
+               THEN 'the take-back did not run while the second Yes slept (no race)'
+               WHEN (SELECT result::jsonb ->> 'ok' FROM race.outcome WHERE name = 'lk_yes') IS DISTINCT FROM 'true'
+               THEN 'the second Yes answered ' || coalesce((SELECT result FROM race.outcome WHERE name = 'lk_yes'), '-')
+               WHEN (SELECT result::jsonb FROM race.outcome WHERE name = 'lk_back') IS DISTINCT FROM '{\"ok\": false, \"reason\": \"linked\"}'::jsonb
+               THEN 'the take-back answered ' || coalesce((SELECT result FROM race.outcome WHERE name = 'lk_back'), '-')
+               WHEN $LK_LINKED IS DISTINCT FROM 'linked' OR $LK_RELS <> 1
+               THEN 'not one linked couple'
+               ELSE 'ok' END;" serialised
+
+run "the asker leaves Dating while the second Yes waits: closed, no couple, no deadlock" "$FX_LINK" \
+  "SET race.sleep_dating_profile_sensitive_delete = '1.5:race.s1';
+   INSERT INTO race.outcome SELECT 'lk_exit', race.call(race.id('64'), format('SELECT to_jsonb(public.exit_dating_mode(%L))', race.key('exit'))) ->> 'state';" \
+  "SELECT pg_sleep(0.5);
+   INSERT INTO race.outcome SELECT 'lk_overlap', (SELECT is_called FROM race.s1)::text;
+   INSERT INTO race.outcome SELECT 'lk_yes', $LK_YES;" \
+  "SELECT CASE WHEN (SELECT result FROM race.outcome WHERE name = 'lk_overlap') IS DISTINCT FROM 'true'
+               THEN 'the second Yes did not run while the leave slept (no race)'
+               WHEN (SELECT result FROM race.outcome WHERE name = 'lk_exit') IS DISTINCT FROM 'exited'
+               THEN 'the leave answered ' || coalesce((SELECT result FROM race.outcome WHERE name = 'lk_exit'), '-')
+               WHEN (SELECT result::jsonb FROM race.outcome WHERE name = 'lk_yes') IS DISTINCT FROM '{\"ok\": false, \"reason\": \"closed\"}'::jsonb
+               THEN 'the second Yes answered ' || coalesce((SELECT result FROM race.outcome WHERE name = 'lk_yes'), '-')
+               WHEN $LK_RELS <> 0 THEN 'a couple was made with someone who left'
+               ELSE 'ok' END;" serialised
+
+run "the asker's path change while the second Yes runs: both land, linked on the Relationship path" "$FX_LINK" \
+  "SET race.sleep_users_update = '1.5:race.s1';
+   INSERT INTO race.outcome SELECT 'lk_path', race.call(race.id('64'), 'SELECT public.set_my_path(''just_me'')') ->> 'tab';" \
+  "SELECT pg_sleep(0.5);
+   INSERT INTO race.outcome SELECT 'lk_overlap', (SELECT is_called FROM race.s1)::text;
+   INSERT INTO race.outcome SELECT 'lk_yes', $LK_YES;" \
+  "SELECT CASE WHEN (SELECT result FROM race.outcome WHERE name = 'lk_overlap') IS DISTINCT FROM 'true'
+               THEN 'the second Yes did not run while the path change slept (no race)'
+               WHEN (SELECT result FROM race.outcome WHERE name = 'lk_path') IS NULL
+               THEN 'the path change answered nothing'
+               WHEN (SELECT result::jsonb ->> 'ok' FROM race.outcome WHERE name = 'lk_yes') IS DISTINCT FROM 'true'
+               THEN 'the second Yes answered ' || coalesce((SELECT result FROM race.outcome WHERE name = 'lk_yes'), '-')
+               WHEN $LK_RELS <> 1 OR (SELECT path FROM public.users WHERE id = race.id('64')) IS DISTINCT FROM 'relationship'
+               THEN 'not linked on the Relationship path: ' || coalesce((SELECT path FROM public.users WHERE id = race.id('64')), '-')
+               ELSE 'ok' END;"
+
+# Spec 2 W9 (Task 3 ruling, Task 1 review): a double tap of the second Yes.
+# (67) the first tap sleeps in its last write; the second tap waits at the
+# setup locks, then finds the request linked and answers the same couple.
+# One relationship; neither tap sees an error.
+run "a double tap of the second Yes: the second waits, then answers the same couple" "$FX_LINK" \
+  "SET race.sleep_dating_couple_link_requests_update = '1.5:race.s1';
+   INSERT INTO race.outcome SELECT 'lk_yes', $LK_YES;" \
+  "SELECT pg_sleep(0.5);
+   INSERT INTO race.outcome SELECT 'lk_overlap', (SELECT is_called FROM race.s1)::text;
+   INSERT INTO race.outcome SELECT 'lk_yes2', $LK_YES;" \
+  "SELECT CASE WHEN (SELECT result FROM race.outcome WHERE name = 'lk_overlap') IS DISTINCT FROM 'true'
+               THEN 'the second tap did not run while the first slept (no race)'
+               WHEN (SELECT result::jsonb ->> 'ok' FROM race.outcome WHERE name = 'lk_yes') IS DISTINCT FROM 'true'
+               THEN 'the first tap answered ' || coalesce((SELECT result FROM race.outcome WHERE name = 'lk_yes'), '-')
+               WHEN (SELECT result::jsonb FROM race.outcome WHERE name = 'lk_yes2')
+                    IS DISTINCT FROM (SELECT result::jsonb FROM race.outcome WHERE name = 'lk_yes')
+               THEN 'the second tap answered ' || coalesce((SELECT result FROM race.outcome WHERE name = 'lk_yes2'), '-')
+               WHEN $LK_LINKED IS DISTINCT FROM 'linked' OR $LK_RELS <> 1
+               THEN 'not one linked couple'
+               ELSE 'ok' END;" serialised
+
+$P -c "DELETE FROM public.relationships WHERE user_a::text LIKE '5e2f%' OR user_b::text LIKE '5e2f%'; SELECT race.reset(); UPDATE public.feature_flags SET enabled = false WHERE key IN ('dating_candidate_generation', 'dating_traveller_detection', 'dating_couple_link');" > /dev/null 2>&1 # Spec 2 W8b: and the traveller flag; Spec 2 W9: the couple link's
 exit $fail

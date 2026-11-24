@@ -12,8 +12,16 @@
 --      in it saying "dating", never edited in place, written as a JSON
 --      literal or joined by || to anything but another such object (§3.13,
 --      Fable M4, I-9). The helpers a Dating function reaches are followed
---      to a fixpoint. The app routes exactly those (and the old
---      dating_mutual_match, to Me, for one release: A-7).
+--      to a fixpoint. The app routes exactly those (Spec 2 W10, A-7: the
+--      old dating_mutual_match case is gone).
+--      Spec 2 W9 (carry 1): the walk covers every schema's SQL and
+--      plpgsql functions and follows each write to the triggers that fire
+--      on that table for that operation (a Dating write into
+--      relationships, timeline_events, game_sessions ... brings their
+--      triggers in); a queue write may be quoted, schema-qualified or a
+--      MERGE; nothing reached writes the other queue tables, calls
+--      send-notification or OneSignal, or EXECUTEs a statement built at
+--      run time.
 -- One BEGIN ... ROLLBACK. Run only on attune_spec3a:
 --   psql -X -q -v ON_ERROR_STOP=1 -d attune_spec3a -f supabase/tests/dating_v2_device_contracts.sql
 BEGIN;
@@ -182,6 +190,64 @@ BEGIN
   END LOOP;
 END $f$;
 
+-- Spec 2 W9 (carry 1): the functions (every schema's SQL and plpgsql
+-- ones), the edges (a call by name; a write, to each trigger that fires on
+-- its table for its operation) and the walk from Dating's functions to its
+-- fixpoint, tagged by root as before.
+CREATE TEMP TABLE w9a_fn AS
+  SELECT p.oid, p.oid::regprocedure::text AS sig, p.proname::text AS proname, p.prosrc AS src
+    FROM pg_proc AS p JOIN pg_namespace AS n ON n.oid = p.pronamespace
+   WHERE n.nspname NOT IN ('pg_catalog', 'information_schema') AND p.prokind IN ('f', 'p')
+     AND p.prolang IN (SELECT l.oid FROM pg_language AS l WHERE l.lanname IN ('plpgsql', 'sql'));
+-- Spec 2 W9 (Task 3 fix round 1, I-1, M-1): every write, by table and
+-- operation ('i', 'u', 'd'; a MERGE all three; an upsert's ON CONFLICT DO
+-- UPDATE 'u' too), then the foreign keys' cascades: a DELETE that cascades
+-- deletes from the child (recursively); SET NULL / SET DEFAULT, or an
+-- UPDATE's cascade, updates the child (one level: its own key is not
+-- changed).
+CREATE TEMP TABLE w9a_write AS
+  WITH RECURSIVE dw (a, rel, op, deep) AS (
+    SELECT DISTINCT c.oid, tc.oid, o.op, true
+      FROM w9a_fn AS c CROSS JOIN LATERAL regexp_matches(c.src,
+             '\m(insert\s+into|update|delete\s+from|merge\s+into)\s+(?:only\s+)?(?:"?([a-z_][a-z0-9_]*)"?\s*\.\s*)?"?([a-z_][a-z0-9_]*)"?', 'gi') AS m
+      JOIN pg_class AS tc ON tc.relname = lower(m[3]) AND tc.relkind IN ('r', 'p')
+      JOIN pg_namespace AS tn ON tn.oid = tc.relnamespace AND tn.nspname = coalesce(lower(m[2]), 'public')
+      CROSS JOIN LATERAL unnest(CASE WHEN lower(m[1]) ~ '^insert' THEN ARRAY['i'] WHEN lower(m[1]) = 'update' THEN ARRAY['u']
+                                     WHEN lower(m[1]) ~ '^delete' THEN ARRAY['d'] ELSE ARRAY['i', 'u', 'd'] END) AS o(op)
+    UNION
+    SELECT DISTINCT c.oid, tc.oid, 'u', true
+      FROM w9a_fn AS c CROSS JOIN LATERAL regexp_matches(c.src,
+             '\minsert\s+into\s+(?:only\s+)?(?:"?([a-z_][a-z0-9_]*)"?\s*\.\s*)?"?([a-z_][a-z0-9_]*)"?[^;]*\mon\s+conflict\M[^;]*\mdo\s+update\M', 'gi') AS m
+      JOIN pg_class AS tc ON tc.relname = lower(m[2]) AND tc.relkind IN ('r', 'p')
+      JOIN pg_namespace AS tn ON tn.oid = tc.relnamespace AND tn.nspname = coalesce(lower(m[1]), 'public')
+    UNION
+    SELECT dw.a, k.conrelid, CASE WHEN dw.op = 'd' AND k.confdeltype = 'c' THEN 'd' ELSE 'u' END,
+           dw.op = 'd' AND k.confdeltype = 'c'
+      FROM dw JOIN pg_constraint AS k ON k.contype = 'f' AND k.confrelid = dw.rel
+     WHERE dw.deep AND ((dw.op = 'd' AND k.confdeltype IN ('c', 'n', 'd')) OR (dw.op = 'u' AND k.confupdtype IN ('c', 'n', 'd'))))
+  SELECT DISTINCT dw.a, dw.rel, dw.op FROM dw;
+CREATE TEMP TABLE w9a_edge AS
+  SELECT DISTINCT c.oid AS a, f.oid AS b
+    FROM w9a_fn AS c CROSS JOIN LATERAL regexp_matches(c.src, '([a-z_][a-z0-9_]*)\s*\(', 'gi') AS m
+    JOIN w9a_fn AS f ON f.proname = lower(m[1])
+  UNION
+  SELECT DISTINCT w.a, t.tgfoid
+    FROM w9a_write AS w JOIN pg_trigger AS t ON t.tgrelid = w.rel AND NOT t.tgisinternal
+   WHERE t.tgtype & CASE w.op WHEN 'i' THEN 4 WHEN 'u' THEN 16 ELSE 8 END <> 0;
+CREATE TEMP TABLE w9a_dat AS
+  SELECT fn.* FROM w9a_fn AS fn
+   WHERE fn.proname ~ '(dating|moderation)' OR fn.src ~ '(public|private)\.dating_\w+'
+      OR fn.oid IN (SELECT t.tgfoid FROM pg_trigger AS t JOIN pg_class AS tc ON tc.oid = t.tgrelid
+                     JOIN pg_namespace AS tn ON tn.oid = tc.relnamespace
+                    WHERE NOT t.tgisinternal AND tn.nspname NOT IN ('pg_catalog', 'information_schema')
+                      AND tc.relname ~ '^dating_');
+CREATE TEMP TABLE w9a_reach AS
+  WITH RECURSIVE reach (root, oid) AS (
+    SELECT CASE WHEN d.proname = 'moderation_opinions_remove' THEN d.proname ELSE 'dating' END, d.oid FROM w9a_dat AS d
+    UNION
+    SELECT reach.root, e.b FROM reach JOIN w9a_edge AS e ON e.a = reach.oid)
+  SELECT * FROM reach;
+
 DO $$
 DECLARE
   r record;
@@ -222,32 +288,22 @@ BEGIN
   -- relationship_end_internal, is no longer exempt: that writer only
   -- cancels, so it passes the audit, and is audited like any other.)
   FOR r IN
-    WITH RECURSIVE fn AS (
-      SELECT p.oid, p.oid::regprocedure::text AS sig, p.proname, p.prosrc AS src
-        FROM pg_proc AS p JOIN pg_namespace AS n ON n.oid = p.pronamespace
-       WHERE n.nspname IN ('public', 'private') AND p.prokind IN ('f', 'p')),
-    trg AS (
-      SELECT DISTINCT t.tgfoid AS oid
-        FROM pg_trigger AS t JOIN pg_class AS tc ON tc.oid = t.tgrelid JOIN pg_namespace AS tn ON tn.oid = tc.relnamespace
-       WHERE NOT t.tgisinternal AND tn.nspname IN ('public', 'private') AND tc.relname ~ '^dating_'),
-    dat AS (
-      SELECT * FROM fn WHERE fn.proname ~ '(dating|moderation)' OR fn.src ~ '(public|private)\.dating_\w+'
-                          OR fn.oid IN (SELECT trg.oid FROM trg)),
-    -- The walk, to its fixpoint, tagged by root: 'dating' from every Dating
-    -- function but the exempt root, which walks under its own name.
-    reach (root, oid) AS (
-      SELECT CASE WHEN dat.proname = 'moderation_opinions_remove'
-                  THEN dat.proname::text ELSE 'dating' END, dat.oid FROM dat
-      UNION
-      SELECT reach.root, f.oid
-        FROM reach JOIN fn AS caller ON caller.oid = reach.oid
-        JOIN fn AS f ON caller.src ~ ('\m' || f.proname || '\s*\(')),
+    -- Spec 2 W9 (carry 1): the walk is w9a_reach (above); a queue write may
+    -- be quoted, schema-qualified or a MERGE.
+    WITH fn AS (SELECT * FROM w9a_fn),
+    dat AS (SELECT * FROM w9a_dat),
+    reach AS (SELECT * FROM w9a_reach),
     wr AS (
       SELECT * FROM fn
-       WHERE fn.src ~* '\m(insert\s+into|update)\s+(public\.)?"?scheduled_notifications\M')
+       WHERE fn.src ~* '\m(insert\s+into|update|merge\s+into)\s+(only\s+)?("?[a-z_]+"?\s*\.\s*)?"?scheduled_notifications"?\M')
     SELECT wr.oid, wr.sig, wr.src FROM wr
      WHERE wr.oid IN (SELECT reach.oid FROM reach
                        WHERE (reach.root, wr.proname::text) IS DISTINCT FROM ('moderation_opinions_remove', 'enqueue_forum_notification'))
+       -- Spec 2 W9: the push queue's own triggers (its guards, reached now
+       -- through every write to it) are audited only when they are Dating's
+       -- (the UNION below), as before.
+       AND wr.oid NOT IN (SELECT t.tgfoid FROM pg_trigger AS t
+                           WHERE t.tgrelid = 'public.scheduled_notifications'::regclass AND NOT t.tgisinternal)
     UNION
     SELECT dat.oid, dat.sig, dat.src FROM dat
      WHERE dat.oid IN (SELECT t.tgfoid FROM pg_trigger AS t
@@ -351,7 +407,7 @@ BEGIN
     END LOOP;
     -- A writer (an insert) has a payload this audit reads; an update (a
     -- cancel) needs none.
-    IF r.src ~* '\minsert\s+into\s+(public\.)?"?scheduled_notifications\M' AND v_k = 0 THEN
+    IF r.src ~* '\m(insert\s+into|merge\s+into)\s+(only\s+)?("?[a-z_]+"?\s*\.\s*)?"?scheduled_notifications"?\M' AND v_k = 0 THEN -- Spec 2 W9
       v_bad := v_bad || format(E'\n  %s writes a push this audit cannot read', r.sig);
     END IF;
     -- Backstops over the whole source (a payload built another way).
@@ -378,6 +434,67 @@ BEGIN
                 WHERE m[1] ~ '^\s*\{.*"(type|route|title|body)"') THEN
       v_bad := v_bad || format(E'\n  %s writes a push payload as a JSON literal', r.sig);
     END IF;
+  END LOOP;
+  -- Spec 2 W9 (carry 1): nothing the Dating walk reaches writes another
+  -- queue table (the push queue's own triggers aside), calls
+  -- send-notification or OneSignal, or EXECUTEs a statement built at run
+  -- time (format, a variable, ||: a write the walk could not follow).
+  FOR r IN
+    SELECT f.oid, f.sig, f.src, lower(pg_temp.w8a_mask(f.src)) AS msrc, n.nspname::text AS nsp -- Spec 2 W9 (fix round 1)
+      FROM w9a_fn AS f JOIN pg_proc AS p ON p.oid = f.oid JOIN pg_namespace AS n ON n.oid = p.pronamespace
+     WHERE f.oid IN (SELECT x.oid FROM w9a_reach AS x WHERE x.root = 'dating')
+  LOOP
+    IF r.src ~* '\m(insert\s+into|update|merge\s+into)\s+(only\s+)?("?[a-z_]+"?\s*\.\s*)?"?(in_app_notifications|message_notification_outbox|verdict_notification_outbox)"?\M'
+       AND r.oid NOT IN (SELECT t.tgfoid FROM pg_trigger AS t
+                          WHERE t.tgrelid = 'public.scheduled_notifications'::regclass AND NOT t.tgisinternal) THEN
+      v_bad := v_bad || format(E'\n  %s writes a notification queue other than the neutral push queue', r.sig);
+    END IF;
+    IF r.src ~* '(send-notification|onesignal)' THEN
+      v_bad := v_bad || format(E'\n  %s sends a notification itself', r.sig);
+    END IF;
+    -- Spec 2 W9 (Task 3 fix round 1, M-4): an allow list. Every EXECUTE
+    -- is one literal (quoted, or dollar-quoted with only $n inside) and
+    -- then USING, INTO or ';', or a GRANT/REVOKE EXECUTE ON FUNCTION or a
+    -- trigger's EXECUTE FUNCTION; anything else is built at run time.
+    IF (SELECT count(*) FROM regexp_matches(r.msrc, '\mexecute\M', 'g'))
+       > (SELECT count(*) FROM regexp_matches(r.msrc,
+            '\mexecute\s+(?:(?:''x*'')+|\$(\w*)\$(?:[^$]|\$[0-9])*\$\1\$)\s*(?:using|into|;)', 'g'))
+         + (SELECT count(*) FROM regexp_matches(r.msrc,
+            '\mexecute\s+(?:on\s+(?:all\s+)?(?:function|procedure|routine)s?|function|procedure)\M', 'g')) THEN
+      v_bad := v_bad || format(E'\n  %s runs a statement built at run time, which the audit cannot follow', r.sig);
+    END IF;
+    -- Spec 2 W9 (Task 3 fix round 1, M-3): an HTTP call (its URL may come
+    -- from anywhere) only from the two reached today: photo processing and
+    -- the moderation alert. The transport itself (net, supabase_functions)
+    -- aside.
+    IF r.src ~* '\mhttp(_[a-z]+)?\s*\(' AND r.nsp NOT IN ('net', 'supabase_functions')
+       AND r.sig NOT IN ('dating_moderation_sla_check(timestamp with time zone)', 'enqueue_dating_photo_processing()') THEN
+      v_bad := v_bad || format(E'\n  %s makes an HTTP call the audit has not allowed', r.sig);
+    END IF;
+  END LOOP;
+  -- Spec 2 W9 (Task 3 fix round 1, M-3): a trigger that fires on a write
+  -- the Dating walk reaches takes no arguments (a dashboard webhook keeps
+  -- its URL there), is not supabase_functions' and is SQL or plpgsql.
+  FOR r IN
+    SELECT DISTINCT t.tgname::text AS tgname, t.tgrelid::regclass::text AS tbl
+      FROM w9a_write AS w JOIN pg_trigger AS t ON t.tgrelid = w.rel AND NOT t.tgisinternal
+      JOIN pg_proc AS p ON p.oid = t.tgfoid JOIN pg_namespace AS n ON n.oid = p.pronamespace
+     WHERE w.a IN (SELECT x.oid FROM w9a_reach AS x WHERE x.root = 'dating')
+       AND t.tgtype & CASE w.op WHEN 'i' THEN 4 WHEN 'u' THEN 16 ELSE 8 END <> 0
+       AND (t.tgnargs > 0 OR n.nspname = 'supabase_functions'
+            OR p.prolang NOT IN (SELECT l.oid FROM pg_language AS l WHERE l.lanname IN ('plpgsql', 'sql')))
+  LOOP
+    v_bad := v_bad || format(E'\n  trigger %s on %s fires on a Dating write and takes arguments or calls out, which the audit cannot read',
+                             r.tgname, r.tbl);
+  END LOOP;
+  -- Spec 2 W9 (Task 3 fix round 1, M-2): a SQL-standard body (BEGIN
+  -- ATOMIC) keeps no source the walk can read.
+  FOR r IN
+    SELECT p.oid::regprocedure::text AS sig
+      FROM pg_proc AS p JOIN pg_namespace AS n ON n.oid = p.pronamespace
+     WHERE n.nspname NOT IN ('pg_catalog', 'information_schema') AND p.prosqlbody IS NOT NULL
+  LOOP
+    v_bad := v_bad || format(E'\n  %s has a SQL-standard body, which the audit cannot read', r.sig);
   END LOOP;
   -- The body helper: every body it returns is one of the copies, and each
   -- is the whole answer (fix round 2, Re-M-3: never a copy || more).
@@ -1408,9 +1525,11 @@ BEGIN
   -- Task 5 (carry 4, R-T5-5): the reads that hide are VOLATILE (PostgREST
   -- must let them touch the phone's last use, W5/W6); what each writes is
   -- pinned below.
-  IF v_writers IS DISTINCT FROM ARRAY['public.act_on_dating_introduction', 'public.get_dating_home', 'public.get_dating_messages',
+  IF v_writers IS DISTINCT FROM ARRAY['public.act_on_dating_introduction', 'public.confirm_dating_couple_link', -- Spec 2 W9
+                                      'public.get_dating_couple_link', -- Spec 2 W9 (final server fix, M-6): VOLATILE
+                                      'public.get_dating_home', 'public.get_dating_messages',
                                       'public.get_my_dating_introductions', 'public.get_my_dating_matches',
-                                      'public.get_my_dating_today'] THEN
+                                      'public.get_my_dating_today', 'public.request_dating_couple_link'] THEN -- Spec 2 W9
     RAISE EXCEPTION 'CONTRACT VIOLATED: something that reads the same-gender rule writes: %', v_writers;
   END IF;
   -- The gate is transitive: a STABLE card helper that hides, and a read
@@ -1429,9 +1548,12 @@ BEGIN
   EXCEPTION WHEN SQLSTATE 'W8B05' THEN
     NULL;
   END;
-  IF v_probe IS DISTINCT FROM ARRAY['public.act_on_dating_introduction', 'public.get_dating_home', 'public.get_dating_messages',
+  IF v_probe IS DISTINCT FROM ARRAY['public.act_on_dating_introduction', 'public.confirm_dating_couple_link', -- Spec 2 W9
+                                    'public.get_dating_couple_link', -- Spec 2 W9 (final server fix, M-6)
+                                    'public.get_dating_home', 'public.get_dating_messages',
                                     'public.get_my_dating_introductions', 'public.get_my_dating_matches',
-                                    'public.get_my_dating_today', 'public.zz_w8_read'] THEN
+                                    'public.get_my_dating_today', 'public.request_dating_couple_link', -- Spec 2 W9
+                                    'public.zz_w8_read'] THEN
     RAISE EXCEPTION 'CONTRACT VIOLATED: the catalogue gate missed a writer behind a helper: %', v_probe;
   END IF;
   v_src := (SELECT p.prosrc FROM pg_proc AS p WHERE p.oid = 'public.get_dating_home()'::regprocedure);
@@ -1443,8 +1565,10 @@ BEGIN
   -- list write nothing themselves; the phone's touch (in
   -- dating_require_trusted_device, the same for everyone) comes before
   -- the same-gender rule is read.
+  -- Spec 2 W9 (final server fix, M-6): the link page's read too.
   FOREACH v_sig IN ARRAY ARRAY['public.get_my_dating_today(boolean)', 'public.get_my_dating_introductions(boolean)',
-                               'public.get_my_dating_matches(boolean,boolean)'] LOOP
+                               'public.get_my_dating_matches(boolean,boolean)',
+                               'public.get_dating_couple_link(uuid,boolean)'] LOOP -- Spec 2 W9 (final server fix, M-6)
     v_src := (SELECT p.prosrc FROM pg_proc AS p WHERE p.oid = v_sig::regprocedure);
     IF regexp_count(v_src, '(\minsert\M|\mupdate\M|\mdelete\M|claim_dating_idempotency|bump_metric|dating_field_encrypt|dating_open_signal_case|nextval|set_config)', 1, 'i') <> 0
        OR position('dating_require_trusted_device' IN v_src) = 0
@@ -1466,6 +1590,16 @@ BEGIN
      OR position('FOR UPDATE' IN v_src) > position('dating_trip_hides' IN v_src) THEN
     RAISE EXCEPTION 'CONTRACT VIOLATED: acting writes before the hiding';
   END IF;
+  -- Spec 2 W9 (carry 5): asking and the second Yes write only past the
+  -- hiding; before it, only their row locks (the match; and the request).
+  FOREACH v_sig IN ARRAY ARRAY['public.request_dating_couple_link(text,uuid,boolean,boolean):1',
+                               'public.confirm_dating_couple_link(text,uuid,boolean,boolean):2'] LOOP
+    v_src := (SELECT p.prosrc FROM pg_proc AS p WHERE p.oid = split_part(v_sig, ':', 1)::regprocedure);
+    IF regexp_count(left(v_src, position('dating_trip_hides' IN v_src)), '(\minsert\M|\mupdate\M|\mdelete\M|claim_dating_idempotency|bump_metric|dating_field_encrypt|dating_open_signal_case|nextval|set_config)', 1, 'i')
+         <> split_part(v_sig, ':', 2)::int THEN
+      RAISE EXCEPTION 'CONTRACT VIOLATED: % writes before the hiding', split_part(v_sig, ':', 1);
+    END IF;
+  END LOOP;
   v_src := (SELECT p.prosrc FROM pg_proc AS p WHERE p.oid = 'public.set_dating_trip_choice(text,boolean)'::regprocedure);
   IF v_src ~* '(same_gender|dating_profile_sensitive|decrypt|identity_enc|dating_identity_of|dating_trip_json|dating_wants|dating_pair_)' THEN
     RAISE EXCEPTION 'CONTRACT VIOLATED: the trip choice reads identity or the sensitive row';
@@ -1823,6 +1957,44 @@ BEGIN
         v_state, v_open, v_at;
     END IF;
   END LOOP;
+END $$;
+
+-- =====================================================================
+-- C1d. (Spec 2 W9, carry 3) C1c's windows from the inside: an old match
+--      whose last message is 13 days old counts, and so does a match 6
+--      days old with no message; with a fresh one that is the pause (3),
+--      on Today and in dating_open_chats alike. Fixtures 140-143.
+-- =====================================================================
+DO $$
+DECLARE
+  v_p constant uuid := pg_temp.ready('140');
+  v_at constant int := coalesce(((private.dating_intro_config()).o_config ->> 'open_chat_pause_at')::int, 3);
+  v_men uuid[] := '{}';
+  v_m uuid[] := '{}';
+  v_state text;
+  v_open int;
+BEGIN
+  PERFORM pg_temp.flag(false);
+  FOR i IN 141 .. 143 LOOP
+    v_men := v_men || pg_temp.ready(i::text, '{"identity": "man", "seeking": ["woman"]}');
+    v_m := v_m || pg_temp.match(v_p, v_men[i - 140]);
+  END LOOP;
+  -- 1: 20 days old, its last message 13 days ago; 2: 6 days old, no
+  -- message; 3: fresh.
+  UPDATE public.dating_matches SET matched_at = now() - interval '20 days' WHERE id = v_m[1];
+  UPDATE public.dating_matches SET matched_at = now() - interval '6 days' WHERE id = v_m[2];
+  INSERT INTO public.dating_messages (match_id, sender_side, sender_user_id, body, body_masked, mask_version, idempotency_key, created_at)
+  VALUES (v_m[1], CASE WHEN v_men[1] < v_p THEN 'low' ELSE 'high' END, v_men[1], 'hello', 'hello', 1, 'w9-c1d-1',
+          now() - interval '13 days');
+  v_state := pg_temp.today_json(v_p, '140') ->> 'today_state';
+  v_open := private.dating_open_chats(v_p, now());
+  IF v_at <> 3 OR v_open IS DISTINCT FROM 3 THEN
+    RAISE EXCEPTION 'CONTRACT VIOLATED: the C1d fixture is not 3 open conversations (pause at %): %', v_at, v_open;
+  END IF;
+  IF v_state IS DISTINCT FROM 'paused_open_chats' THEN
+    RAISE EXCEPTION 'CONTRACT VIOLATED: Today''s open-chat pause drops a conversation inside its windows: % with % open',
+      v_state, v_open;
+  END IF;
 END $$;
 
 -- =====================================================================

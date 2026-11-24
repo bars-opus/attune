@@ -12,6 +12,16 @@
 --   psql -X -q -v ON_ERROR_STOP=1 -d attune_spec3a -f supabase/tests/country_safety_config_contracts.sql
 -- Fixture ids 5e2b0000-0000-0000-0000-0000000000NN; phones 15558701NN.
 BEGIN;
+-- Spec 2 W10: in production, opening a place also needs the launch gates
+-- green (dating_v2_launch_contracts.sql pins them). This file pins the
+-- publisher's own rules, so here the gates read green (rolled back).
+DO $$
+BEGIN
+  IF to_regprocedure('private.dating_launch_gates(text[],public.country_safety_config)') IS NOT NULL THEN
+    CREATE OR REPLACE FUNCTION private.dating_launch_gates(p_countries text[], p_row public.country_safety_config DEFAULT NULL)
+    RETURNS jsonb LANGUAGE sql STABLE AS 'SELECT ''[]''::jsonb';
+  END IF;
+END $$;
 
 DO $$
 BEGIN

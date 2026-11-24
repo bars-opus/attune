@@ -774,6 +774,44 @@ UPDATE allowed_fn SET sig = 'get_my_dating_introductions(boolean)' WHERE sig = '
 UPDATE allowed_fn SET sig = 'act_on_dating_introduction(text,uuid,text,boolean)' WHERE sig = 'act_on_dating_introduction(text,uuid,text)';
 UPDATE allowed_fn SET sig = 'get_my_dating_matches(boolean,boolean)' WHERE sig = 'get_my_dating_matches(boolean)';
 UPDATE allowed_fn SET sig = 'get_dating_messages(uuid,timestamp with time zone,integer,boolean)' WHERE sig = 'get_dating_messages(uuid,timestamp with time zone,integer)';
+-- Spec 2 W9 Task 1: the couple link. Its tables are nobody's (S-5: the
+-- service role's neither); its reads and writes the app's; its helpers
+-- the database's own.
+INSERT INTO allowed_rel (name, authenticated, service_dml) VALUES
+  ('dating_couple_link_requests', '', ''),
+  ('couple_how_we_met', '', ''),
+  ('dating_link_origins', '', '');
+INSERT INTO allowed_fn (sig, clients, service) VALUES
+  ('private.dating_link_on()', '', ''),
+  ('private.dating_link_blocked(uuid)', '', ''),
+  ('private.dating_link_json(dating_matches,text)', '', ''),
+  ('get_dating_couple_link(uuid,boolean)', 'authenticated', ''),
+  ('request_dating_couple_link(text,uuid,boolean,boolean)', 'authenticated', ''),
+  ('decline_dating_couple_link(uuid)', 'authenticated', ''),
+  ('cancel_dating_couple_link(uuid)', 'authenticated', ''),
+  ('confirm_dating_couple_link(text,uuid,boolean,boolean)', 'authenticated', '');
+-- Spec 2 W9 Task 2: the origin, How we met and the post-link offer are
+-- the app's; the export's Dating part is the service role's alone (S-4)
+-- and its read log nobody's; export_relationship names couple_how_we_met
+-- now and stays the database's own.
+INSERT INTO allowed_rel (name, authenticated, service_dml) VALUES
+  ('dating_export_reads', '', '');
+INSERT INTO allowed_fn (sig, clients, service) VALUES
+  ('get_dating_link_origin(uuid)', 'authenticated', ''),
+  ('get_how_we_met(uuid)', 'authenticated', ''),
+  ('get_dating_post_link_offer()', 'authenticated', ''),
+  ('dismiss_dating_post_link_offer(text)', 'authenticated', ''),
+  ('dating_export_for_job(uuid)', '', 'service_role'),
+  ('export_relationship(uuid,uuid)', '', '');
+-- Spec 2 W10: the launch readiness and the console's readiness and
+-- dashboards are the service role's alone (the owner's SQL editor,
+-- dating-moderation); the gates are the database's own.
+INSERT INTO allowed_fn (sig, clients, service) VALUES
+  ('get_dating_launch_readiness(text)', '', 'service_role'),
+  ('private.dating_launch_gates(text[],country_safety_config)', '', ''),
+  ('moderation_launch_readiness(uuid,text)', '', 'service_role'),
+  ('moderation_metrics(uuid,integer)', '', 'service_role'),
+  ('moderation_fairness(uuid,integer)', '', 'service_role');
 
 -- ---------------------------------------------------------------------
 -- Checks (every batch adds its rows above this line).

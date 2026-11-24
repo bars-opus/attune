@@ -242,6 +242,7 @@ Deno.test("decider_unknown and the publish's config codes pass through; an unkno
   for (const code of [
     "config:invalid_country", "config:invalid_values", "config:unknown_key", "config:invalid_tz", "config:invalid_lists",
     "config:checklist_keys_removed", "config:invalid_regions", "config:no_calling_code", "config:production_checks_failed",
+    "config:launch_not_ready", // Spec 2 W10
   ]) {
     eq(await handleModeration({ action: "publish_country", country: "GH", values: { tier: 1 } }, MOD,
       deps({ ok: false, reason: code, checks: { secret: "x" } }, fresh())), { ok: false, reason: code }, code);
@@ -685,4 +686,61 @@ Deno.test("final fix round 2: lift_case_holds is one function, a case id before 
     await handleModeration({ action: "lift_case_holds", case_id: CASE }, MOD, deps({ ok: false, reason: "case_unavailable" }, fresh())),
     { ok: false, reason: "case_unavailable" },
   );
+});
+
+Deno.test("W10: readiness, metrics and fairness are one function each, bad input before any call", async () => {
+  eq(ACTIONS.readiness?.fn, "moderation_launch_readiness");
+  eq(ACTIONS.metrics?.fn, "moderation_metrics");
+  eq(ACTIONS.fairness?.fn, "moderation_fairness");
+  const seen = fresh();
+  const ok = deps({ ok: true }, seen);
+  await handleModeration({ action: "readiness" }, MOD, ok);
+  await handleModeration({ action: "readiness", country: "GH", p_actor: "someone-else" }, MOD, ok);
+  await handleModeration({ action: "metrics", days: 28 }, MOD, ok);
+  await handleModeration({ action: "fairness" }, MOD, ok);
+  await handleModeration({ action: "fairness", weeks: 12 }, MOD, ok);
+  eq(seen.rpc, [
+    ["moderation_launch_readiness", { p_country: null, p_actor: ME }],
+    ["moderation_launch_readiness", { p_country: "GH", p_actor: ME }],
+    ["moderation_metrics", { p_days: 28, p_actor: ME }],
+    ["moderation_fairness", { p_weeks: 4, p_actor: ME }],
+    ["moderation_fairness", { p_weeks: 12, p_actor: ME }],
+  ]);
+  const none = fresh();
+  for (const body of [
+    { action: "readiness", country: "gh" },
+    { action: "readiness", country: "GHA" },
+    { action: "readiness", country: 233 },
+    { action: "metrics" },
+    { action: "metrics", days: 30 },
+    { action: "metrics", days: "7" },
+  ]) {
+    eq(await handleModeration(body, MOD, deps({ ok: true }, none)), { ok: false, reason: "invalid" }, JSON.stringify(body));
+  }
+  eq(none.rpc.length, 0);
+  // An out-of-range week count reads the default window, as the lists' limits do.
+  const weeks = fresh();
+  await handleModeration({ action: "fairness", weeks: 13 }, MOD, deps({ ok: true }, weeks));
+  eq(weeks.rpc, [["moderation_fairness", { p_weeks: 4, p_actor: ME }]]);
+});
+
+Deno.test("W10: the answers pass through; a moderator's refusal is safety_owner_only; no aal2, no call", async () => {
+  const ready = { ok: true, ready: false, environment: "development", countries: ["GH", "GB"], open: [],
+    gates: [{ gate: "environment", ok: false }, { gate: "flag_evidence", ok: false, detail: ["dating_couple_link"] }] };
+  eq(await handleModeration({ action: "readiness" }, MOD, deps(ready, fresh())), ready);
+  const metrics = { ok: true, days: 7, from: "2026-11-17", to: "2026-11-23", min_count: 50,
+    metrics: [{ key: "dating.mutual", count: 50 }], suppressed: 3 };
+  eq(await handleModeration({ action: "metrics", days: 7 }, MOD, deps(metrics, fresh())), metrics);
+  for (const body of [{ action: "readiness" }, { action: "metrics", days: 7 }, { action: "fairness" }]) {
+    eq(await handleModeration(body, MOD, deps({ ok: false, reason: "safety_owner_only" }, fresh())),
+      { ok: false, reason: "safety_owner_only" }, body.action);
+    const seen = fresh();
+    eq(await handleModeration(body, { userId: ME, aal: "aal1" }, deps({ ok: true }, seen)),
+      { ok: false, reason: "mfa_required" }, body.action);
+    eq(seen.rpc.length, 0);
+  }
+  // A publish refused for the launch gates passes only its code.
+  eq(await handleModeration({ action: "publish_country", country: "GH", values: { dating_enabled: true } }, MOD,
+    deps({ ok: false, reason: "config:launch_not_ready", gates: ["age_assurance_live"] }, fresh())),
+    { ok: false, reason: "config:launch_not_ready" });
 });

@@ -72,7 +72,9 @@ BEGIN
                           -- functions read and write them.
                           'dating_moderators', 'dating_moderation_actions',
                           -- Spec 2 W7c: escalations and the law-enforcement log.
-                          'dating_escalations', 'law_enforcement_requests')
+                          'dating_escalations', 'law_enforcement_requests',
+                          -- Spec 2 W9: the couple link's tables (S-5).
+                          'dating_link_origins', 'couple_how_we_met', 'dating_export_reads')
     AND NOT has_table_privilege('service_role', c.oid, 'SELECT');
 
   IF v_count > 0 THEN
@@ -133,11 +135,17 @@ BEGIN
                           -- functions read and write them.
                           'dating_moderators', 'dating_moderation_actions',
                           -- Spec 2 W7c: escalations and the law-enforcement log.
-                          'dating_escalations', 'law_enforcement_requests')
+                          'dating_escalations', 'law_enforcement_requests',
+                          -- Spec 2 W9: the couple link's tables (S-5).
+                          'dating_link_origins', 'couple_how_we_met', 'dating_export_reads')
     -- Spec 2 W1b (batch-4 fix round 1, C-1): the service role only reads
     -- country_safety_config (no worker claims rows there); publish_country_config,
     -- a definer, is its one writer, and dating_rls_canary.sql pins SELECT only.
     AND c.relname <> 'country_safety_config'
+    -- Spec 2 W9 (fix round 1, C-1; S-4): the service role only reads
+    -- data_export_jobs (get-export-url); its writers are the export's definer
+    -- functions, so no service key can make or rewrite a job (contract E1).
+    AND c.relname <> 'data_export_jobs'
     AND NOT has_table_privilege('service_role', c.oid, 'UPDATE');
 
   IF v_count > 0 THEN

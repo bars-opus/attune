@@ -4,10 +4,14 @@
 // name as the title (else "About us"), read-only with its end date while
 // paused or in the window, a row tap asks that question again; goldens and
 // guidelines.
+import 'package:attune/core/flags/couple_link_couple_side.dart';
+import 'package:attune/core/flags/couple_link_flag.dart';
 import 'package:attune/core/providers/couple_name_provider.dart';
 import 'package:attune/features/couple_profile/data/couple_profile_service.dart';
 import 'package:attune/features/couple_profile/presentation/screens/about_us_question_flow.dart';
 import 'package:attune/features/couple_profile/presentation/screens/about_us_screen.dart';
+import 'package:attune/features/dating/data/dating_providers.dart'
+    show datingAccountProvider;
 import 'package:attune/features/onboarding/presentation/providers/flow_flags.dart'
     show coupleProfileEnabledProvider;
 import 'package:attune/features/timeline/presentation/providers/timeline_providers.dart'
@@ -303,4 +307,47 @@ void main() {
       ),
     );
   });
+
+  // Spec 2 W9 final client fix (M-8): signed in, the couple link's flag read
+  // answers (the success branch, not a missing Supabase). Off, nothing
+  // else is asked; on with no How we met card, only the couple side's reads
+  // (on the app's client). Either way About us is as before.
+  for (final on in [false, true]) {
+    testWidgets('signed in, the couple link answered ${on ? 'on' : 'off'}: '
+        'About us is as before', (tester) async {
+      var reads = 0;
+      final calls = <String>[];
+      await pumpFlowScreen(
+        tester,
+        _screen,
+        overrides: [
+          ..._overrides(FakeCoupleProfileServer()),
+          datingAccountProvider.overrideWithValue('u-screen'),
+          coupleLinkFlagReadProvider.overrideWithValue(() async {
+            reads++;
+            return {'state': 'not_started', if (on) 'couple_link': true};
+          }),
+          coupleLinkCoupleCallProvider.overrideWithValue((fn, _) async {
+            calls.add(fn);
+            return const {'ok': false};
+          }),
+        ],
+        size: const Size(390, 1400),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('About us'), findsOneWidget);
+      expect(find.text('Not answered yet'), findsNWidgets(4));
+      expect(find.text('How we met'), findsNothing);
+      expect(reads, 1);
+      if (on) {
+        expect(calls, contains('get_how_we_met'));
+        expect(
+          calls.toSet().difference({'get_how_we_met', 'get_dating_link_origin'}),
+          isEmpty,
+        );
+      } else {
+        expect(calls, isEmpty);
+      }
+    });
+  }
 }

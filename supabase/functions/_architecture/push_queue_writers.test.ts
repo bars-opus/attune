@@ -7,7 +7,9 @@
 // new TypeScript writer (a Dating one above all) fails here until it is
 // reviewed and listed. A file is a writer when its code (comments aside)
 // names a queue table, uses the shared enqueuePush helper (or imports its
-// module), or reaches OneSignal. The list is exact both ways: a listed
+// module), reaches OneSignal, or (Spec 2 W9, carry 2) calls the
+// send-notification function (functions.invoke or its URL). The list is
+// exact both ways: a listed
 // file that stops touching what it is listed for fails too, so the list
 // never keeps a stale entry.
 import { assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
@@ -37,6 +39,8 @@ export const ALLOWED: Record<string, string[]> = {
   "evaluate-ask2-eligibility/index.ts": ["in_app_notifications", "scheduled_notifications"],
   "process-scheduled-notifications/index.ts": ["onesignal", "scheduled_notifications"],
   "generate-verdict/index.ts": ["verdict_notification_outbox"],
+  // Spec 2 W9 (carry 2): the check-in reminders call send-notification.
+  "send-checkin-reminders/index.ts": ["sendNotification"],
 };
 
 const root = new URL("../", import.meta.url);
@@ -96,7 +100,8 @@ export function stripComments(src: string): string {
   return out;
 }
 
-/** What a file's code touches: queue tables, the queue helper, OneSignal. */
+/** What a file's code touches: queue tables, the queue helper, OneSignal,
+ * the send-notification function (Spec 2 W9). */
 export function touches(src: string): string[] {
   const code = stripComments(src);
   const found = new Set<string>();
@@ -106,6 +111,9 @@ export function touches(src: string): string[] {
   if (/\benqueuePush\b/.test(code) || /push_queue(\.ts)?["'`]/.test(code)) found.add("enqueuePush");
   if (/onesignal\.com/i.test(code) || /\bsendOneSignalPush\b/.test(code) || /onesignal_push(\.ts)?["'`]/.test(code)) {
     found.add("onesignal");
+  }
+  if (/\.invoke\(\s*["'`]send-notification["'`]/.test(code) || /functions\/v1\/send-notification/.test(code)) {
+    found.add("sendNotification");
   }
   return [...found].sort();
 }
@@ -136,4 +144,9 @@ Deno.test("the detector sees each kind of writer and ignores comments", () => {
   assertEquals(touches(`import { sendOneSignalPush } from "../_shared/onesignal_push.ts";`), ["onesignal"]);
   assertEquals(touches(`// writes scheduled_notifications through enqueuePush\n/* OneSignal */ const x = 1;`), []);
   assertEquals(touches(`const idx = "in_app_notifications_chat_outbox_idx";`), []);
+  // Spec 2 W9 (carry 2): calling send-notification sends a push.
+  assertEquals(touches(`await supabase.functions.invoke('send-notification', { body })`), ["sendNotification"]);
+  assertEquals(touches("await db.functions.invoke(`send-notification`, {})"), ["sendNotification"]);
+  assertEquals(touches(`await fetch(url + "/functions/v1/send-notification", {})`), ["sendNotification"]);
+  assertEquals(touches(`// functions.invoke('send-notification') is not called here`), []);
 });

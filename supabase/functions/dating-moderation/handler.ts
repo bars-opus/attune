@@ -35,6 +35,8 @@ export const REVIEW_BUCKET = "dating-verification-review";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const DAY = /^\d{4}-\d{2}-\d{2}$/;
+/// Spec 2 W10 (§6.9): the metrics' windows, in days.
+export const METRIC_DAYS: ReadonlySet<number> = new Set([7, 28, 90]);
 /// Spec 2 W7c (§6.5): CSA 292 only with the victim's consent (its own kind).
 const ESCALATIONS = new Set(["police", "ncmec", "iwf", "csa", "csa_292_with_consent"]);
 const CATEGORIES = new Set([
@@ -53,6 +55,9 @@ export const REASONS: ReadonlySet<string> = new Set([
   "config:invalid_country", "config:invalid_values", "config:unknown_key", "config:invalid_tz", "config:invalid_lists",
   "config:checklist_keys_removed", "config:invalid_regions", "config:no_calling_code",
   "config:production_checks_failed",
+  // Spec 2 W10 (§8 W10): opening a place in production needs the launch
+  // gates green; which are red is read from readiness, never from here.
+  "config:launch_not_ready",
   // Spec 2 W7c (Task 8 fix round 1): the log's request already logged with
   // another decision, a disclosure only widened, CSA on a sextortion case
   // only as the consent kind, and a CSAM hold that isn't live (or is the
@@ -199,6 +204,27 @@ export const ACTIONS: Record<string, { fn: string; args: (b: Body) => Record<str
   // owner's alone (the database refuses anyone else: safety_owner_only).
   // The lift needs a written reason, at most 1000 code points.
   csam_holds: { fn: "moderation_csam_holds", args: () => ({}) },
+  // Spec 2 W10 (§8 W10, §6.9, §5.9): the launch readiness (Ghana and the
+  // UK, or one country), the dating.* counters at n >= 50 over 7, 28 or 90
+  // days, and the fairness reports of the last 1-12 weeks. The safety
+  // owner's (the database refuses anyone else: safety_owner_only).
+  readiness: {
+    fn: "moderation_launch_readiness",
+    args: (b) =>
+      b.country === undefined || b.country === null
+        ? { p_country: null }
+        : typeof b.country === "string" && /^[A-Z]{2}$/.test(b.country)
+        ? { p_country: b.country }
+        : null,
+  },
+  metrics: {
+    fn: "moderation_metrics",
+    args: (b) => (typeof b.days === "number" && METRIC_DAYS.has(b.days) ? { p_days: b.days } : null),
+  },
+  fairness: {
+    fn: "moderation_fairness",
+    args: (b) => ({ p_weeks: limit(b.weeks, 4, 12) }),
+  },
   lift_csam_hold: {
     fn: "moderation_lift_csam_hold",
     args: (b) =>

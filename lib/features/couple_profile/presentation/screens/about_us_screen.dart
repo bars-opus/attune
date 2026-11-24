@@ -10,6 +10,7 @@ import 'package:attune/features/couple_profile/presentation/about_us_copy.dart';
 import 'package:attune/features/couple_profile/presentation/couple_profile_providers.dart';
 import 'package:attune/features/couple_profile/presentation/screens/about_us_question_flow.dart';
 import 'package:attune/features/couple_profile/presentation/widgets/changed_by_line.dart';
+import 'package:attune/features/dating/link/how_we_met.dart' show DatingHowWeMetRow;
 import 'package:attune/i10n/generated/app_localizations.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -183,6 +184,8 @@ class AboutUsScreen extends ConsumerWidget {
               now: today,
               onTap: readOnly ? null : () => _ask(context, question),
             ),
+          // Spec 2 W9 (§8 W9): How we met, only when the couple kept it.
+          if (id != null) DatingHowWeMetRow(relationshipId: id),
           const SizedBox(height: Spacing.md),
           Text(
             loc.aboutUs_footer,

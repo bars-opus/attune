@@ -497,3 +497,88 @@ Gaps the console doesn't catch, so you must:
   emergency) and decision, requests met, reports by category, actions
   taken, appeals and overturned. The page gives raw counts: suppress small
   counts before anything is published (counsel sets the threshold).
+- Weekly (Spec 2 W10): the console's Fairness page (flagged cohorts go to
+  the safety owner; nothing re-weights by itself, a change is a new config
+  version with a fairness review reference) and Metrics page (counters of
+  50 or more only).
+  - **Metrics can be differenced.** The windows are fixed (the last 7, 28
+    or 90 UTC days, ending today), so two windows, or one window read on
+    consecutive days, can reveal a total under 50. The page is the safety
+    owner's only: never export, screenshot or pass on its figures; anything
+    published goes through the small-count suppression above.
+  - **Fairness has no country baseline yet.** A flagged cohort shows its
+    own figures, not the country rate it was compared with (a cohort is
+    flagged below 0.8x the country's); the weekly job doesn't keep the
+    country rates yet (a follow-up). The `top_decile` row is the share of
+    the country's introductions the top 10% received (flagged above 25%).
+
+## 14. Launch drills (Spec 2 W10)
+
+Run each drill before switch-on, on the hosted project while it still
+reads development (the owner launches on it), with test accounts only:
+never an account an advisor is using for a demo. Then once a quarter:
+drills 1-3 on the live project with test accounts; drills 4-5 only on a
+scratch clone of it (or, before launch, on the development project). In
+production a test country can't be opened (the launch gates refuse it), and
+if it could, Dating would really open there for everyone. Record who ran
+it, when, how long each step took and what broke, and keep the record with
+the `safety_owner_and_moderator` evidence.
+
+**The test country for drills 4-5** (set it up once):
+
+- Pick a country where nobody waits for Dating:
+  `select count(*) from public.dating_notify_requests where country_code = '<CC>';`
+  must read 0 (opening a country sends every waiting request "Tell me
+  when it's here" and then deletes it), and no real account's
+  `dating_preferences.open_abroad` names it. Never Ghana or the UK while
+  advisors use the demo.
+- It needs an entry in `private.dating_calling_codes` (a same-gender
+  switch-off is refused without one, `config:no_calling_code`).
+- Publish it from Countries: Dating on, Tier 3, same-gender on, its
+  `region_list`, the baseline checklist keys (`dpia`, `pen_test`,
+  `safety_owner_and_moderator`, `reviewer_signoffs`; `DEV-` references are
+  fine in development) and `resources_verified_at`.
+- Give it at least two test accounts of the same gender who pick it as
+  their Dating country (a Dating country can change only once in 30 days,
+  so keep dedicated accounts), matched and in a conversation, so drill 4
+  has something to close.
+
+1. **A P0 report at 03:00.** A tester files a `threat_to_life` report at
+   03:00 GMT. Check the SLA alert arrives where `moderation_alert_webhook`
+   points, the out-of-hours cover sees it, places the interim hold (§5) and
+   escalates (§7) inside the P0 time. Note the minutes from report to hold.
+2. **A CSAM hash hit.** With `csam_hash_matching` on (Spec 1's development
+   script turns it on; Dating's doesn't), upload the stub matcher's match
+   image `supabase/functions/scan-media/testdata/stub-match.gif` from a
+   test account on the development project; the vendor's test image only
+   once the real matcher is configured (never real material). Check the CSAM hold appears on the CSAM holds
+   page, the report goes to the hash vendor's route, and only the safety
+   owner can lift it, with a written reason.
+3. **A law-enforcement request.** Log a mock request on the Law
+   enforcement page: legal process, then an emergency one. Follow
+   `DATING_LAW_ENFORCEMENT_POLICY.md` to a decision and check the
+   transparency summary counts both.
+4. **The same-gender kill switch.** Publish `{"same_gender_enabled": false}`
+   for the test country from the Countries page (development or a clone
+   only). Check the answer's
+   `switched` and `affected`, that same-gender introductions and
+   conversations close neutrally, and that
+   `select public.get_dating_launch_readiness();` shows
+   `kill_switch_clear` green afterwards.
+5. **Dating off for a country (rollback, §7.6 8.1).** Publish
+   `{"dating_enabled": false}` for the test country (development or a
+   clone only). Check nobody there gets new introductions and the app shows
+   the country as not open; check `dating_notify_requests` for it still
+   reads 0, then open it again.
+
+**Launch follow-ups (not built; know them before switch-on):**
+
+- The introductions and chat configs' own activation checks (W5a, W6b)
+  read `DEV-` in plain ASCII only: one written with a Unicode dash or a
+  no-break space activates. The readiness still reads it red
+  (`introductions_config`, `chat_config`) and so refuses every opening;
+  check the Launch readiness page after activating a config.
+- Trusting a device can wait on the setup locks (W4b): a clash answers
+  busy and the app tries again; nothing is lost.
+- `dating-device-check` has no per-user rate limit yet (the pen test
+  decides).

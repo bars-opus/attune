@@ -509,3 +509,9 @@ DROP TABLE pg_temp.harness_stubs;
 
 -- Spec 2 W8b: the traveller (twin of 20261122100000)
 \i supabase/migrations/20261122100010_dating_v2_traveller_grants.sql
+
+-- Spec 2 W9: the couple link (twin of 20261123100000)
+\i supabase/migrations/20261123100010_dating_v2_couple_link_grants.sql
+
+-- Spec 2 W10: the launch guards (twin of 20261124100000)
+\i supabase/migrations/20261124100010_dating_v2_launch_guards_grants.sql

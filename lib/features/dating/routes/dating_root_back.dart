@@ -24,11 +24,22 @@ bool _onlyPage(BuildContext context) {
 
 /// Wraps a Dating route's page: when it is the only page, the system back
 /// goes to [to] (never out of the app), and [datingRootBackButton] shows.
-class DatingRootBack extends StatelessWidget {
+/// Spec 2 W9 final client fix (M-1, M-3): not while a [DatingOwnBack] below
+/// answers the back itself (a route's every pop handler runs, so the two
+/// would both go).
+class DatingRootBack extends StatefulWidget {
   const DatingRootBack({super.key, required this.to, required this.child});
 
   final String Function() to;
   final Widget child;
+
+  @override
+  State<DatingRootBack> createState() => _DatingRootBackState();
+}
+
+class _DatingRootBackState extends State<DatingRootBack> {
+  /// The [DatingOwnBack]s below that answer the back now.
+  final _owners = <Object>{};
 
   // One shape whether or not it is the only page (a page pushed on top
   // rebuilds this one; a changed shape would make its screen anew).
@@ -38,17 +49,93 @@ class DatingRootBack extends StatelessWidget {
     return PopScope(
       canPop: !only,
       onPopInvokedWithResult: (didPop, _) {
-        if (!didPop && _onlyPage(context)) context.go(to());
+        if (!didPop && _owners.isEmpty && _onlyPage(context)) {
+          context.go(widget.to());
+        }
       },
-      child: _DatingRootBackScope(to: to, child: child),
+      child: _DatingRootBackScope(
+        to: widget.to,
+        owners: _owners,
+        child: widget.child,
+      ),
     );
   }
 }
 
+/// Spec 2 W9 final client fix (M-1, M-3): while [active], the system back
+/// on this page is [onBack]'s alone: the route doesn't pop, and the
+/// [DatingRootBack] above (if any) doesn't go to its fallback too. Not
+/// active, it changes nothing.
+class DatingOwnBack extends StatefulWidget {
+  const DatingOwnBack({
+    super.key,
+    required this.active,
+    required this.onBack,
+    required this.child,
+  });
+
+  final bool active;
+  final VoidCallback onBack;
+  final Widget child;
+
+  @override
+  State<DatingOwnBack> createState() => _DatingOwnBackState();
+}
+
+class _DatingOwnBackState extends State<DatingOwnBack> {
+  Set<Object>? _owners;
+
+  void _sync() {
+    if (widget.active) {
+      _owners?.add(this);
+    } else {
+      _owners?.remove(this);
+    }
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final owners =
+        context.getInheritedWidgetOfExactType<_DatingRootBackScope>()?.owners;
+    if (!identical(owners, _owners)) {
+      _owners?.remove(this);
+      _owners = owners;
+    }
+    _sync();
+  }
+
+  @override
+  void didUpdateWidget(DatingOwnBack oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    _sync();
+  }
+
+  @override
+  void dispose() {
+    _owners?.remove(this);
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => PopScope(
+    canPop: !widget.active,
+    onPopInvokedWithResult: (didPop, _) {
+      if (!didPop && widget.active) widget.onBack();
+    },
+    child: widget.child,
+  );
+}
+
 class _DatingRootBackScope extends InheritedWidget {
-  const _DatingRootBackScope({required this.to, required super.child});
+  const _DatingRootBackScope({
+    required this.to,
+    required this.owners,
+    required super.child,
+  });
 
   final String Function() to;
+  final Set<Object> owners;
 
   @override
   bool updateShouldNotify(_DatingRootBackScope old) => false;

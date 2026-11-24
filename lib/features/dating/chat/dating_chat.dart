@@ -3,6 +3,7 @@
 // unknown refusal is failed, never a server's text). The text a message
 // carries is the server's view of it: masked ("•••") until both people
 // have swapped. Memory only (D20): nothing here is written to disk.
+import 'package:attune/features/dating/link/dating_link.dart';
 
 /// The chat RPCs' fixed refusals. `unavailable` (send and a swap offer):
 /// messages are paused (the chat's flag is off); it is retryable and does
@@ -123,6 +124,7 @@ class DatingChatHeader {
     this.weMet = false,
     this.theyMet = false,
     this.timebox,
+    this.link,
   });
 
   final String matchId;
@@ -139,6 +141,10 @@ class DatingChatHeader {
   /// 'day21'), never a date.
   final String? timebox;
 
+  /// Spec 2 W9 (§3.9): the couple link as this side sees it (null: none to
+  /// show, and Become a couple not offered).
+  final DatingLink? link;
+
   static DatingChatHeader? fromJson(Object? raw) {
     if (raw is! Map || raw['match_id'] is! String) return null;
     return DatingChatHeader(
@@ -153,6 +159,7 @@ class DatingChatHeader {
           raw['timebox'] == 'day7' || raw['timebox'] == 'day21'
               ? raw['timebox'] as String
               : null,
+      link: DatingLink.fromJson(raw['link']),
     );
   }
 }

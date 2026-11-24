@@ -5785,7 +5785,7 @@ abstract class AppLocalizations {
   /// **'Connect to save this answer.'**
   String get dating_connectToSave;
 
-  /// Spec 2 §3.0: a server failure on a Dating screen.
+  /// Spec 2 §3.0: a server failure on a Dating screen. Also on the Relationship home's card (Spec 2 W9) when Continue or Keep for now could not be saved.
   ///
   /// In en, this message translates to:
   /// **'Something went wrong. Try again.'**
@@ -10236,6 +10236,168 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Choose an app icon'**
   String get dating_readyPlainIconButton;
+
+  /// Spec 2 §3.6, §3.9 the Safety sheet's row (once either has tapped We met) and the link page's title. Reviewers: copy.
+  ///
+  /// In en, this message translates to:
+  /// **'Become a couple on Attune'**
+  String get dating_linkBecome;
+
+  /// Spec 2 §3.9 the private step's title. Reviewers: copy.
+  ///
+  /// In en, this message translates to:
+  /// **'What are we agreeing to?'**
+  String get dating_linkAgreeingTitle;
+
+  /// Spec 2 §3.9 what linking means, read in full before the buttons. Reviewers: copy, DV.
+  ///
+  /// In en, this message translates to:
+  /// **'Your Dating profiles pause for both of you. You\'ll share a private space for the two of you. Either of you can end it at any time.'**
+  String get dating_linkAgreeingBody;
+
+  /// Spec 2 §3.9 the checkbox (each side ticks their own; kept only when both did, A-3). Reviewers: copy, DV.
+  ///
+  /// In en, this message translates to:
+  /// **'Keep our first messages as a \'How we met\' card (only if {name} agrees too)'**
+  String dating_linkKeep(String name);
+
+  /// Spec 2 §3.9 step 1's button. Reviewers: copy.
+  ///
+  /// In en, this message translates to:
+  /// **'Ask {name}'**
+  String dating_linkAsk(String name);
+
+  /// Spec 2 §3.9 step 1: nothing is asked. Reviewers: copy.
+  ///
+  /// In en, this message translates to:
+  /// **'Not now'**
+  String get dating_linkNotNow;
+
+  /// Spec 2 §3.9 step 2, in the other person's chat and on the link page. Reviewers: copy, DV.
+  ///
+  /// In en, this message translates to:
+  /// **'{name} would like to become a couple on Attune.'**
+  String dating_linkAskedYou(String name);
+
+  /// Spec 2 §3.9 step 2: opens the same page. Reviewers: copy.
+  ///
+  /// In en, this message translates to:
+  /// **'See what this means'**
+  String get dating_linkSee;
+
+  /// Spec 2 §3.9 step 2: the second Yes. Reviewers: copy.
+  ///
+  /// In en, this message translates to:
+  /// **'Yes, let\'s'**
+  String get dating_linkYes;
+
+  /// Spec 2 §3.9 step 2: declines; only the asker is told (dating_linkNotReady). Reviewers: copy, DV.
+  ///
+  /// In en, this message translates to:
+  /// **'Not right now'**
+  String get dating_linkNotRightNow;
+
+  /// Spec 2 §3.9 step 2: what the asker sees after Not right now (for 14 days). Reviewers: copy, DV.
+  ///
+  /// In en, this message translates to:
+  /// **'{name} isn\'t ready yet.'**
+  String dating_linkNotReady(String name);
+
+  /// Spec 2 §3.9 step 4, with the one settle (≤ 600 ms, once). Reviewers: copy.
+  ///
+  /// In en, this message translates to:
+  /// **'You decided together.'**
+  String get dating_linkDecided;
+
+  /// Plan copy (W9 Ruling R-W9-3): under You decided together. on the Relationship home's card, for the asker who wasn't there for the second Yes. Reviewers: copy, DV, LGBTQ+.
+  ///
+  /// In en, this message translates to:
+  /// **'Your Dating profiles are paused.'**
+  String get dating_linkDecidedBody;
+
+  /// Spec 2 §3.15 the second confirmation offline, and on the Relationship home's card while offline (with Continue, or with Keep for now). Reviewers: copy.
+  ///
+  /// In en, this message translates to:
+  /// **'You\'re offline. Nothing has changed yet.'**
+  String get dating_linkOffline;
+
+  /// Plan copy (W9): the asker's own request, waiting, in the chat and on the link page. Reviewers: copy, DV, LGBTQ+.
+  ///
+  /// In en, this message translates to:
+  /// **'You\'ve asked {name}.'**
+  String dating_linkAsked(String name);
+
+  /// Plan copy (W9): the asker withdraws the open request (nothing is said to the other person). Reviewers: copy, DV, LGBTQ+.
+  ///
+  /// In en, this message translates to:
+  /// **'Take it back'**
+  String get dating_linkTakeBack;
+
+  /// Plan copy (W9): the server's unavailable (one of you is in another Attune relationship or under a hold; it never says which). Reviewers: copy, DV, LGBTQ+.
+  ///
+  /// In en, this message translates to:
+  /// **'This isn\'t possible right now.'**
+  String get dating_linkUnavailable;
+
+  /// Spec 2 §3.9 step 5 About us's AU2 chip (never pre-filled). Reviewers: copy, cultural.
+  ///
+  /// In en, this message translates to:
+  /// **'The day you matched: {date}'**
+  String dating_linkMatchedChip(String date);
+
+  /// Spec 2 §3.9 step 6, 30 days after linking, once, on the Relationship home. Reviewers: copy.
+  ///
+  /// In en, this message translates to:
+  /// **'Delete your Dating profile and preferences?'**
+  String get dating_linkOfferTitle;
+
+  /// Spec 2 §3.9 step 6. Reviewers: copy.
+  ///
+  /// In en, this message translates to:
+  /// **'You can set up Dating again later.'**
+  String get dating_linkOfferBody;
+
+  /// Spec 2 §3.9 step 6: opens Leave Dating (§3.8). Reviewers: copy.
+  ///
+  /// In en, this message translates to:
+  /// **'Delete my Dating data'**
+  String get dating_linkOfferDelete;
+
+  /// Spec 2 §3.9 step 6: never asks again. Reviewers: copy.
+  ///
+  /// In en, this message translates to:
+  /// **'Keep for now'**
+  String get dating_linkOfferKeep;
+
+  /// Plan copy (W9): About us's row and the card's title. Reviewers: copy, DV, LGBTQ+.
+  ///
+  /// In en, this message translates to:
+  /// **'How we met'**
+  String get dating_howWeMetRow;
+
+  /// Plan copy (W9): the row's screen reader hint. Reviewers: copy, DV, LGBTQ+.
+  ///
+  /// In en, this message translates to:
+  /// **'Opens your first messages'**
+  String get dating_howWeMetRowHint;
+
+  /// Plan copy (W9): the How we met card's line (masked details stay masked, A-3). Reviewers: copy, DV, LGBTQ+.
+  ///
+  /// In en, this message translates to:
+  /// **'Your first messages, as you both saw them.'**
+  String get dating_howWeMetIntro;
+
+  /// Plan copy (W9): the reader's own message on the How we met card. Reviewers: copy, DV, LGBTQ+.
+  ///
+  /// In en, this message translates to:
+  /// **'You'**
+  String get dating_howWeMetYou;
+
+  /// Plan copy (W9): the other's message on the How we met card. Reviewers: copy, DV, LGBTQ+.
+  ///
+  /// In en, this message translates to:
+  /// **'Your partner'**
+  String get dating_howWeMetThem;
 }
 
 class _AppLocalizationsDelegate extends LocalizationsDelegate<AppLocalizations> {

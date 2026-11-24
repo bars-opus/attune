@@ -4,6 +4,7 @@
 // where the screen sent the person ("at /signup?entry=new").
 import 'package:attune/app/routing/routing_notifier.dart';
 import 'package:attune/app/theme/app_theme.dart';
+import 'package:attune/core/flags/couple_link_flag.dart';
 import 'package:attune/core/flags/public_app_config.dart';
 import 'package:attune/core/metrics/metric_counter.dart';
 import 'package:attune/core/providers/routing_providers.dart';
@@ -119,6 +120,13 @@ Future<FlowHarness> pumpFlowScreen(
         // B7 review N-2: J3's row never reaches Supabase in a test (a
         // test's own override below wins: the last override is used).
         journalReminderRpcProvider.overrideWithValue(FakeReminderRpc().call),
+        // Spec 2 W9 final client fix (M-8): the couple link's flag read
+        // answers (off: no couple_link) rather than failing on a missing
+        // Supabase, so a screen that asks it runs the answered branch and never
+        // registers the failed branch's resume and reconnect retries.
+        coupleLinkFlagReadProvider.overrideWithValue(
+          () async => const {'state': 'not_started'},
+        ),
         ...overrides,
       ],
       child: ScreenUtilConfig.builder(

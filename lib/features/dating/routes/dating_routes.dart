@@ -10,6 +10,7 @@ import 'package:attune/features/dating/chat/conversations_screen.dart';
 import 'package:attune/features/dating/chat/dating_chat_screen.dart';
 import 'package:attune/features/dating/chat/plan_meet_screen.dart';
 import 'package:attune/features/dating/device/trip_note.dart';
+import 'package:attune/features/dating/link/link_screen.dart';
 import 'package:attune/features/dating/lock/dating_unlock.dart';
 import 'package:attune/features/dating/not_open/dating_not_open_screen.dart';
 import 'package:attune/features/dating/report/restricted_screen.dart';
@@ -66,6 +67,9 @@ abstract final class DatingPaths {
   /// Spec 2 W8b (§3.12, §6.7): Settings -> App icon, inside Dating (Settings'
   /// own is RouteNames.appIcon, R-80).
   static const appIcon = '/dating/app-icon';
+
+  /// Spec 2 W9 (§3.9, §3.14): Become a couple on Attune, for one chat.
+  static String link(String matchId) => '/dating/link/$matchId';
 
   static String step(String step) => '/dating/setup/$step';
 
@@ -358,4 +362,13 @@ List<RouteBase> datingRoutes({required bool Function() signedIn}) => [
     motion: (s) => DatingMotion.sharedAxis,
     back: () => DatingPaths.settings,
   ),
+  // Spec 2 W9 (§3.9, §3.15): nothing here moves but the moment's settle;
+  // alone, back is its chat.
+  datingRoute('/dating/link/:matchId', 'datingLink', signedIn, (s) {
+    final id = s.pathParameters['matchId'] ?? '';
+    return DatingRootBack(
+      to: () => DatingPaths.chat(id),
+      child: DatingLinkScreen(matchId: id),
+    );
+  }),
 ];

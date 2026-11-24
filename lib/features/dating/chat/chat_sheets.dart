@@ -36,6 +36,8 @@ enum DatingSafetyChoice {
   resources,
   weMet,
   planMeet,
+  // Spec 2 W9 (§3.9): Become a couple on Attune.
+  becomeCouple,
 }
 
 Future<T?> _show<T>(
@@ -131,6 +133,8 @@ Future<DatingSafetyChoice?> showDatingSafetySheet(
   required bool ended,
   bool weMet = false,
   bool blocked = false,
+  // Spec 2 W9 (§3.9): either has said We met and nothing is asked yet.
+  bool canLink = false,
 }) => _show<DatingSafetyChoice>(context, 'chat-safety', account, (
   context,
   close,
@@ -188,6 +192,13 @@ Future<DatingSafetyChoice?> showDatingSafetySheet(
       ),
     if (!ended && !weMet)
       row(loc.dating_weMet, Icons.handshake_outlined, DatingSafetyChoice.weMet),
+    // Spec 2 W9 (§3.6, §3.9): once either has tapped We met.
+    if (!ended && canLink)
+      row(
+        loc.dating_linkBecome,
+        Icons.favorite_border,
+        DatingSafetyChoice.becomeCouple,
+      ),
   ]);
 });
 
