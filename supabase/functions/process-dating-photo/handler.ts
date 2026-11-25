@@ -54,7 +54,7 @@
 // - M-8: up to PHOTO_CLAIM_LIMIT (20) jobs a cron run; RUN_BUDGET_MS bounds
 //   the run (a typical job, one matcher and one Vision call, takes 2-3 s,
 //   so about 20 fit 60 s; past it the rest go straight back to pending).
-import type { CsamMatcher, MatchResult } from "../_shared/csam_matcher.ts";
+import { type CsamMatcher, isDevelopmentProjectUrl, type MatchResult } from "../_shared/csam_matcher.ts";
 import { inlineRecorder, type MatchRpcClient, quarantineAndRecord, type QuarantineStore } from "../_shared/csam_match_path.ts";
 import {
   analyzeDatingPhoto,
@@ -135,6 +135,46 @@ export function visionStep(
   analyze: (p: { imageBytes: Uint8Array; apiKey: string }) => Promise<VisionModerationResult> = analyzeDatingPhoto,
 ): (bytes: Uint8Array) => Promise<VisionModerationResult> {
   return (bytes) => apiKey ? analyze({ imageBytes: bytes, apiKey }) : Promise.reject(new Error("missing_vision_api_key"));
+}
+
+/** The DATING_PHOTO_VISION value that asks for the development stand-in. */
+export const STUB_VISION_MODE = "stub";
+
+/**
+ * Development demo (owner 2026-11-25): the Vision step from the function's
+ * settings. A GOOGLE_VISION_API_KEY always wins. With none, and only when
+ * DATING_PHOTO_VISION is exactly "stub", the environment reads development
+ * AND SUPABASE_URL is exactly the development project's (the CSAM stub's
+ * rule), every photo reads as one clear adult face, so Dating setup can be
+ * demoed before Google billing exists. Anything else fails closed
+ * (missing_vision_api_key). The CSAM scan runs before this either way.
+ */
+export function visionFromEnv(
+  c: { apiKey: string | undefined; mode: string | undefined; environment: "development" | "production"; supabaseUrl: string | undefined },
+  analyze: (p: { imageBytes: Uint8Array; apiKey: string }) => Promise<VisionModerationResult> = analyzeDatingPhoto,
+): (bytes: Uint8Array) => Promise<VisionModerationResult> {
+  if (c.apiKey) return visionStep(c.apiKey, analyze);
+  if (c.mode === STUB_VISION_MODE && c.environment === "development" && isDevelopmentProjectUrl(c.supabaseUrl)) {
+    return (bytes) => Promise.resolve(stubVision(bytes));
+  }
+  return visionStep(undefined, analyze);
+}
+
+/** One clear adult face over the middle of the image (a quarter of its area). */
+function stubVision(bytes: Uint8Array): VisionModerationResult {
+  const dims = readImageDimensions(bytes) ?? { width: MIN_DIMENSION, height: MIN_DIMENSION };
+  const x0 = Math.round(dims.width / 4), x1 = Math.round((dims.width * 3) / 4);
+  const y0 = Math.round(dims.height / 4), y1 = Math.round((dims.height * 3) / 4);
+  return {
+    safeSearchFlags: { adult: "VERY_UNLIKELY", violence: "VERY_UNLIKELY", racy: "VERY_UNLIKELY", medical: "VERY_UNLIKELY", spoof: "VERY_UNLIKELY" },
+    faceDetected: true,
+    faceConfidence: 0.99,
+    faceBlurred: false,
+    faceUnderexposed: false,
+    faceAreaRatio: null,
+    faceBoundingPolyVertices: [{ x: x0, y: y0 }, { x: x1, y: y0 }, { x: x1, y: y1 }, { x: x0, y: y1 }],
+    childLabelScore: 0,
+  };
 }
 
 type Sleep = (ms: number) => Promise<void>;

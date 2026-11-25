@@ -697,6 +697,10 @@ step1() {
     read_secret v "SAFETY_ALERT_WEBHOOK (recommended; https URL)"
     if [[ "$v" == https://* ]]; then lines+="SAFETY_ALERT_WEBHOOK=$v"$'\n'; elif [[ -n "$v" ]]; then note "Not an https URL; skipped."; fi
   fi
+  if [[ $DRY_RUN -eq 1 ]] || { ! has_secret GOOGLE_VISION_API_KEY && ! has_secret DATING_PHOTO_VISION; }; then
+    note "No GOOGLE_VISION_API_KEY: the development stand-in approves every Dating photo that passes the CSAM scan (dev project only; refused in production)."
+    if confirm "Set DATING_PHOTO_VISION=stub until the Google key exists?"; then lines+="DATING_PHOTO_VISION=stub"$'\n'; fi
+  fi
   v=""
   set_edge_secrets "$lines"
   lines=""
@@ -704,9 +708,13 @@ step1() {
   load_secret_names
   if [[ $DRY_RUN -eq 0 ]]; then
     local name
-    for name in CSAM_MATCHER OTP_HMAC_KEY GOOGLE_VISION_API_KEY; do
+    for name in CSAM_MATCHER OTP_HMAC_KEY; do
       has_secret "$name" || die "Edge secret $name is not set (checklist 1.2)."
     done
+    if ! has_secret GOOGLE_VISION_API_KEY; then
+      has_secret DATING_PHOTO_VISION || die "Edge secret GOOGLE_VISION_API_KEY is not set, nor DATING_PHOTO_VISION=stub (checklist 1.2)."
+      note "note: photos use the development stand-in until GOOGLE_VISION_API_KEY is set; DATING_PHOTO_VISION must be exactly stub (lowercase), or photos stay pending."
+    fi
     has_secret SAFETY_ALERT_WEBHOOK || note "note: SAFETY_ALERT_WEBHOOK is not set (recommended)."
     has_secret DATING_CONSOLE_ORIGIN || note "note: DATING_CONSOLE_ORIGIN is set in step 6 (needed before dating-moderation)."
     note "Required edge secret names are present."

@@ -45,6 +45,7 @@ any gate is red is said in red: close it from Countries.
 - [ ] Each flag's gate line (`private.flag_production_gates.gate`) met, then `record_flag_gate_evidence`.
 - [ ] The §7.7 device matrix on release builds; the runbook drills (`DATING_MODERATION_RUNBOOK.md` §14).
 - [ ] The store listing and Welcome copy "Dating open in Ghana and the UK" (with Spec 1).
+- [ ] Real photo checks: `GOOGLE_VISION_API_KEY` set (a Google Cloud project with billing, the key restricted to Cloud Vision API), then `supabase secrets unset DATING_PHOTO_VISION`. The demo stand-in (2026-11-25) approves every JPEG photo that passes the CSAM scan, without a Vision check; it is refused once the project reads production, so new photos would stop being approved, not go out unchecked. **Photos approved during the demo stay approved:** once the real key is set, exit every demo account (§3 clean-up), and for any account kept from the demo period re-queue its photos for moderation, before launch.
 - [ ] Smoke tests on this project once it reads production, with test accounts: introductions, chat, report, appeal, exit, export; then those accounts exited.
 
 ## 3. Switch-on (the owner's)

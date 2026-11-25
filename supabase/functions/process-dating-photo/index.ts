@@ -8,12 +8,14 @@
 // and the orphan sweep run without it; only the Vision step fails closed
 // (visionStep). (M-5): the strip's re-upload is an update that never asks
 // storage to create a missing object (upsert: false), checked before and
-// after on the server (handler.ts).
+// after on the server (handler.ts). Development demo (2026-11-25): with no
+// key, DATING_PHOTO_VISION=stub stands in for Vision on the development
+// project only (visionFromEnv, the CSAM stub's rule).
 import { serve } from "https://deno.land/std@0.177.0/http/server.ts";
 import { HttpError, jsonResponse, requireServiceRole, serviceRoleClient } from "../_shared/attune_auth.ts";
 import { matcherFromEnv } from "../_shared/csam_matcher.ts";
 import { storageQuarantine, type StorageLike } from "../_shared/csam_match_path.ts";
-import { BUCKET, BusyError, errorCode, isBusy, runWorker, visionStep } from "./handler.ts";
+import { BUCKET, BusyError, errorCode, isBusy, runWorker, visionFromEnv } from "./handler.ts";
 
 const VISION_API_KEY = Deno.env.get("GOOGLE_VISION_API_KEY");
 
@@ -25,10 +27,11 @@ serve(async (req) => {
     const body = await req.json().catch(() => ({}));
     const requestedId = typeof body.photo_id === "string" ? body.photo_id : null;
     const { data: env, error: envError } = await supabase.rpc("get_attune_environment");
+    const environment = !envError && env === "development" ? "development" : "production";
     const matcher = matcherFromEnv({
       env: (name) => Deno.env.get(name),
       fetch,
-      environment: !envError && env === "development" ? "development" : "production",
+      environment,
     });
     const { data: configRows } = await supabase.from("dating_photo_moderation_config")
       .select("min_face_confidence, min_face_area_ratio, child_label_reject, child_label_review").limit(1);
@@ -73,7 +76,12 @@ serve(async (req) => {
         }).eq("photo_id", id).eq("state", "processing");
         if (error) throw failed(error, "finish_failed");
       },
-      vision: visionStep(VISION_API_KEY),
+      vision: visionFromEnv({
+        apiKey: VISION_API_KEY,
+        mode: Deno.env.get("DATING_PHOTO_VISION"),
+        environment,
+        supabaseUrl: Deno.env.get("SUPABASE_URL"),
+      }),
       matcher,
       quarantine: storageQuarantine(supabase.storage as unknown as StorageLike),
       config,

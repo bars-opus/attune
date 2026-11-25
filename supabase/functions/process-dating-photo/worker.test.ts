@@ -14,7 +14,9 @@ import {
   processPhotoJob,
   RUN_BUDGET_MS,
   runWorker,
+  STUB_VISION_MODE,
   sweepOrphan,
+  visionFromEnv,
   visionStep,
 } from "./handler.ts";
 import { analyzeDatingPhoto } from "../_shared/google_vision.ts";
@@ -722,5 +724,60 @@ Deno.test("M-6: no Vision key: the cron run still sweeps orphans", async () => {
 Deno.test("M-6: index.ts no longer stops before the worker when the Vision key is missing", async () => {
   const src = await Deno.readTextFile(new URL("./index.ts", import.meta.url));
   eq(src.includes('throw new Error("missing_vision_api_key")'), false);
-  eq(/vision:\s*visionStep\(VISION_API_KEY\)/.test(src), true);
+  eq(/vision:\s*visionFromEnv\(\{/.test(src), true);
+});
+
+// Development demo (owner 2026-11-25, no Google billing yet): with no
+// GOOGLE_VISION_API_KEY, DATING_PHOTO_VISION=stub stands in for Vision only
+// when the environment reads development AND SUPABASE_URL is exactly the
+// development project's (the CSAM stub's rule). A real key always wins; any
+// other case fails closed as before. The CSAM scan still runs first.
+const DEV_URL = "https://mrgjtyacrzfylawyzabm.supabase.co";
+
+Deno.test("Vision stub: development project, no key: a clear photo is approved after the CSAM scan", async () => {
+  const t = world();
+  t.d.vision = visionFromEnv({ apiKey: undefined, mode: STUB_VISION_MODE, environment: "development", supabaseUrl: DEV_URL });
+  eq(await processPhotoJob({ photo_id: "p1", attempts: 1 }, t.d), "approved");
+  eq(t.events.includes("csam"), true);
+  eq(t.verdicts, [["p1", "approved", null]]);
+});
+
+Deno.test("Vision stub: a CSAM match is still caught first", async () => {
+  const m = world({ match: "match" });
+  m.d.vision = visionFromEnv({ apiKey: undefined, mode: STUB_VISION_MODE, environment: "development", supabaseUrl: DEV_URL });
+  eq(await processPhotoJob({ photo_id: "p1", attempts: 1 }, m.d), "csam_hit");
+});
+
+Deno.test("Vision stub: refused in production, on another host, or unset; fails closed without a key", async () => {
+  const cases: Array<[string | undefined, "development" | "production", string | undefined]> = [
+    [STUB_VISION_MODE, "production", DEV_URL],
+    [STUB_VISION_MODE, "development", "https://abcdefghijklmnopqrst.supabase.co"],
+    [STUB_VISION_MODE, "development", undefined],
+    [undefined, "development", DEV_URL],
+    ["STUB", "development", DEV_URL],
+  ];
+  for (const [mode, environment, supabaseUrl] of cases) {
+    const step = visionFromEnv({ apiKey: undefined, mode, environment, supabaseUrl });
+    let code = "";
+    await step(jpeg(1200, 1600)).catch((e) => (code = errorCode(e)));
+    eq(code, "missing_vision_api_key", `${mode}/${environment}/${supabaseUrl}`);
+  }
+});
+
+Deno.test("Vision stub: a real key always wins over the stub", async () => {
+  let called = 0;
+  const step = visionFromEnv(
+    { apiKey: "k", mode: STUB_VISION_MODE, environment: "development", supabaseUrl: DEV_URL },
+    () => (called++, Promise.resolve(goodVision)),
+  );
+  eq(await step(jpeg(1200, 1600)), goodVision);
+  eq(called, 1);
+});
+
+Deno.test("Vision stub: index.ts reads DATING_PHOTO_VISION and the same environment as the matcher", async () => {
+  const src = await Deno.readTextFile(new URL("./index.ts", import.meta.url));
+  eq(src.includes('Deno.env.get("DATING_PHOTO_VISION")'), true);
+  eq(src.includes('supabaseUrl: Deno.env.get("SUPABASE_URL")'), true);
+  eq(/visionFromEnv\(\{[^}]*\benvironment,/s.test(src), true);
+  eq(/matcherFromEnv\(\{[^}]*\benvironment,/s.test(src), true);
 });

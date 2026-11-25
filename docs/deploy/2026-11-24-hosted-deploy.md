@@ -305,6 +305,7 @@ Expected: the first four plus `supabase_url` and `service_role_key`, and the rec
 | `SAFETY_ALERT_WEBHOOK` | `identity-health-alert`, `scan-media` | Step 1, recommended (empty = skip). |
 | `DATING_CONSOLE_ORIGIN` | `dating-moderation` (CORS) | **Step 6**, once the console's address is known. The script asks for it there. `dating-moderation` is deployed only after it exists. |
 | `GOOGLE_VISION_API_KEY` | `process-dating-photo` | **Confirm it exists** (from Dating v1), with `LABEL_DETECTION` enabled. Without it photos stay pending. |
+| `DATING_PHOTO_VISION` = `stub` | `process-dating-photo` | **Only while there is no `GOOGLE_VISION_API_KEY`** (owner 2026-11-25: no Google billing yet). Every JPEG photo that passes the CSAM scan reads as one clear adult face and is approved (the app sends JPEG; a PNG goes to a person). Photos approved this way stay approved: see the release checklist's real-photo-checks line. Works only in development on the dev ref; a real key always wins. Not a secret: the script asks yes/no. **Before launch:** set the real key, then `supabase secrets unset DATING_PHOTO_VISION`. |
 | `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_ANON_KEY` | all | Provided by the platform. Never set them. |
 
 **Vendor secrets: set only once the vendor is contracted.** The demo works without them, as follows:
@@ -321,7 +322,7 @@ Expected: the first four plus `supabase_url` and `service_role_key`, and the rec
 
   Set these with `supabase secrets set --env-file <600 file outside the repo> --project-ref "$SUPABASE_PROJECT_REF"`, then delete the file.
 
-**Verify:** `supabase secrets list --project-ref "$SUPABASE_PROJECT_REF"` prints names and digests, never values. After step 1 it must list `CSAM_MATCHER`, `OTP_HMAC_KEY` and `GOOGLE_VISION_API_KEY`. `DATING_CONSOLE_ORIGIN` follows in step 6.
+**Verify:** `supabase secrets list --project-ref "$SUPABASE_PROJECT_REF"` prints names and digests, never values. After step 1 it must list `CSAM_MATCHER`, `OTP_HMAC_KEY`, and `GOOGLE_VISION_API_KEY` or `DATING_PHOTO_VISION`. `DATING_CONSOLE_ORIGIN` follows in step 6.
 
 **If it fails:** fix it and re-check. Nothing is deployed yet.
 
@@ -801,6 +802,7 @@ select count(*) filter (where enabled) as enabled_total,
   - No `db push --include-all` without knowing why.
 - **Not until later waves:**
   - Don't set `CSAM_MATCHER=stub` on any future production project.
+  - Don't set `DATING_PHOTO_VISION=stub` on any future production project; unset it here once `GOOGLE_VISION_API_KEY` exists.
   - Don't enable the Send SMS hook before the provider secrets are set.
   - Don't switch on the invite page's Play referrer before W4b is live on Play.
   - Don't revoke the direct opinions writes before the W9 client is the minimum build.
