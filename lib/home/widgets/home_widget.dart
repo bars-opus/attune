@@ -1,8 +1,9 @@
 // lib/core/widgets/home_widget.dart
 import 'dart:math' as math;
-import 'dart:ui';
 
 import 'package:attune/app/theme/design_tokens.dart';
+import 'package:attune/core/ui/glass/liquid_glass.dart';
+import 'package:attune/core/ui/glass/liquid_lens.dart';
 import 'package:attune/core/utils/exports/export_packages.dart';
 import 'package:attune/home/providers/nav_visibility_provider.dart';
 import 'package:attune/home/widgets/home_tab.dart';
@@ -57,6 +58,16 @@ class HomeWidget extends ConsumerStatefulWidget {
 class _HomeWidgetState extends ConsumerState<HomeWidget> {
   late int _currentIndex;
   late final Set<int> _visitedIndices;
+
+  /// One per tab, on its icon and label: where the liquid lens sits.
+  List<GlobalKey> _tabKeys = const [];
+
+  List<GlobalKey> _keysFor(int count) {
+    if (_tabKeys.length != count) {
+      _tabKeys = List.generate(count, (i) => GlobalKey(debugLabel: 'tab$i'));
+    }
+    return _tabKeys;
+  }
 
   @override
   void initState() {
@@ -183,6 +194,7 @@ class _HomeWidgetState extends ConsumerState<HomeWidget> {
       ];
     }
 
+    final lensKeys = _keysFor(widget.tabs.length);
     return SafeArea(
       top: false,
       child: Padding(
@@ -192,42 +204,19 @@ class _HomeWidgetState extends ConsumerState<HomeWidget> {
           Spacing.xxl.w + Spacing.xxl,
           0,
         ),
-        child: DecoratedBox(
-          // The shadow lives on its own DecoratedBox, OUTSIDE the ClipRRect
-          // below — a shadow needs to paint beyond the pill's own edge, but
-          // ClipRRect hard-clips everything inside it to exactly the pill's
-          // bounds, so a shadow on the inner Container was being clipped
-          // away entirely and never actually showing.
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(100.r),
-            boxShadow: [
-              BoxShadow(
-                color: colorScheme.shadow.withValues(alpha: 0.12),
-                blurRadius: ElevationTokens.lg.r,
-                offset: Offset(0, ElevationTokens.xs.h),
-              ),
-            ],
-          ),
-          child: ClipRRect(
-            // Clipping has to wrap the BackdropFilter (not just live on the
-            // Container below): BackdropFilter blurs everything within its
-            // nearest clip's bounds, so without this the blur would spill
-            // into a rectangle instead of following the pill shape.
-            borderRadius: BorderRadius.circular(100.r),
-            child: BackdropFilter(
-              filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
-              child: Container(
-                height: navBarHeight,
-                decoration: BoxDecoration(
-                  color:
-                      widget.navigationBarColor ??
-                      colorScheme.surface.withOpacity(.5),
-                  borderRadius: BorderRadius.circular(100.r),
-                  border: Border.all(
-                    color: colorScheme.outline.withValues(alpha: 0.1),
-                    width: BorderWidthTokens.hairline,
-                  ),
-                ),
+        // Liquid glass (lib/core/ui/glass): the shadow, blur, rim and, on
+        // Impeller, the bent edge; the lens behind the selected tab.
+        child: LiquidGlass(
+          variant: GlassVariant.regular,
+          borderRadius: BorderRadius.circular(100.r),
+          tint: widget.navigationBarColor,
+          refraction: 16,
+          child: SizedBox(
+            height: navBarHeight,
+            child: LiquidLensRow(
+              selectedIndex: _currentIndex,
+              itemKeys: lensKeys,
+              padding: EdgeInsets.symmetric(horizontal: 12.w, vertical: 4.h),
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
@@ -240,6 +229,7 @@ class _HomeWidgetState extends ConsumerState<HomeWidget> {
                         Gap(gap),
                       _buildTabItem(
                         context,
+                        lensKey: lensKeys[index],
                         tab: widget.tabs[index],
                         hitPadding: hitPaddings?[index] ?? EdgeInsets.zero,
                         isActive: index == _currentIndex,
@@ -262,7 +252,6 @@ class _HomeWidgetState extends ConsumerState<HomeWidget> {
                     ],
                   ],
                 ),
-              ),
             ),
           ),
         ),
@@ -324,6 +313,7 @@ class _HomeWidgetState extends ConsumerState<HomeWidget> {
 
   Widget _buildTabItem(
     BuildContext context, {
+    required GlobalKey lensKey,
     required HomeTab tab,
     required EdgeInsetsGeometry hitPadding,
     required bool isActive,
@@ -356,6 +346,7 @@ class _HomeWidgetState extends ConsumerState<HomeWidget> {
         padding: EdgeInsets.symmetric(vertical: 2.h).add(hitPadding),
         constraints: const BoxConstraints(minHeight: _minTapTarget),
         child: Column(
+          key: lensKey,
           mainAxisAlignment: MainAxisAlignment.center,
           mainAxisSize: MainAxisSize.min,
           children: [

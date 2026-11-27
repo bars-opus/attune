@@ -27,9 +27,10 @@ void main() {
 
     await tester.tap(find.text('Get started'));
     await tester.pumpAndSettle();
-    expect(Uri.parse(h.location).path, '/signup');
+    // Fix round I-2 (owner 2026-11-26): Welcome first, so the path is
+    // chosen there; it carries the back on to sign-up.
+    expect(Uri.parse(h.location).path, '/welcome');
     final query = Uri.parse(h.location).queryParameters;
-    expect(query['entry'], 'new');
     // Spec 1 W3a (W2 B6 m-4): Back returns to this tab, Tab 2.
     final back = Uri.parse(query['back']!);
     expect(back.path, '/home');
@@ -77,14 +78,15 @@ void main() {
     expect(h.location, '/invite');
   });
 
-  testWidgets("flag off: today's screen, unchanged", (tester) async {
+  // The old phone login is gone (2026-11-26): with the flag off the tab is
+  // the same "Join Attune".
+  testWidgets('flag off: the same Join Attune, no old phone login', (tester) async {
     await pumpFlowScreen(
       tester,
       () => const Scaffold(body: LoginProfile()),
       overrides: [signInFlowV2Provider.overrideWithValue(false)],
     );
-    expect(find.text('Continue with phone number'), findsOneWidget);
-    expect(find.text('Invite a friend'), findsOneWidget);
-    expect(find.text('Join Attune'), findsNothing);
+    expect(find.text('Join Attune'), findsOneWidget);
+    expect(find.text('Continue with phone number'), findsNothing);
   });
 }

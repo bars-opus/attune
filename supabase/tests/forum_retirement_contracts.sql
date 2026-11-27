@@ -247,6 +247,15 @@ INSERT INTO public.users (id, phone, display_name) VALUES
   ('9f3a0000-0000-0000-0000-00000000000b', '+15550940002', 'Spec3 B'),
   ('9f3a0000-0000-0000-0000-00000000000c', '+15550940003', 'Spec3 C')
 ON CONFLICT (id) DO NOTHING;
+-- Entry gates 2026-11-27: posting needs a complete account (users row,
+-- 18+ date of birth, EULA 2, no hold; private.account_ready).
+UPDATE public.users SET eula_version = '2', eula_accepted_at = now()
+ WHERE id IN ('9f3a0000-0000-0000-0000-00000000000a', '9f3a0000-0000-0000-0000-00000000000b', '9f3a0000-0000-0000-0000-00000000000c');
+INSERT INTO public.account_birthdates (user_id, birth_date) VALUES
+  ('9f3a0000-0000-0000-0000-00000000000a', DATE '1990-01-01'),
+  ('9f3a0000-0000-0000-0000-00000000000b', DATE '1990-01-01'),
+  ('9f3a0000-0000-0000-0000-00000000000c', DATE '1990-01-01')
+ON CONFLICT (user_id) DO NOTHING;
 INSERT INTO public.profiles (id) VALUES
   ('9f3a0000-0000-0000-0000-00000000000a'),
   ('9f3a0000-0000-0000-0000-00000000000b'),
@@ -418,6 +427,15 @@ INSERT INTO public.users (id, phone, display_name) VALUES
   ('9f3a0000-0000-0000-0000-0000000000f2', '+15550940012', 'Spec3 F2'),
   ('9f3a0000-0000-0000-0000-0000000000f3', '+15550940013', 'Spec3 F3')
 ON CONFLICT (id) DO NOTHING;
+-- Entry gates 2026-11-27: posting needs a complete account (users row,
+-- 18+ date of birth, EULA 2, no hold; private.account_ready).
+UPDATE public.users SET eula_version = '2', eula_accepted_at = now()
+ WHERE id IN ('9f3a0000-0000-0000-0000-0000000000f1', '9f3a0000-0000-0000-0000-0000000000f2', '9f3a0000-0000-0000-0000-0000000000f3');
+INSERT INTO public.account_birthdates (user_id, birth_date) VALUES
+  ('9f3a0000-0000-0000-0000-0000000000f1', DATE '1990-01-01'),
+  ('9f3a0000-0000-0000-0000-0000000000f2', DATE '1990-01-01'),
+  ('9f3a0000-0000-0000-0000-0000000000f3', DATE '1990-01-01')
+ON CONFLICT (user_id) DO NOTHING;
 INSERT INTO public.profiles (id) VALUES
   ('9f3a0000-0000-0000-0000-0000000000f1'),
   ('9f3a0000-0000-0000-0000-0000000000f2'),

@@ -15,7 +15,6 @@ import 'package:attune/features/onboarding/data/home_state_service.dart';
 import 'package:attune/features/onboarding/data/onboarding_sync_service.dart';
 import 'package:attune/features/onboarding/presentation/providers/flow_flags.dart';
 import 'package:attune/features/onboarding/presentation/screens/invite_partner_screen.dart';
-import 'package:attune/features/onboarding/presentation/screens/onboarding_gate.dart';
 import 'package:attune/features/onboarding/presentation/screens/onboarding_gate_v2.dart';
 import 'package:attune/home/home_screen.dart';
 import 'package:attune/home/home_seams.dart';
@@ -306,8 +305,10 @@ void main() {
   });
 
   for (final pathsV2 in [false, true]) {
+    // Entry gates fix 4 (2026-11-27): the v2 gate either way; the legacy
+    // gate is gone.
     testWidgets('/onboarding with flow_paths_v2 ${pathsV2 ? 'on' : 'off'}: '
-        '${pathsV2 ? 'the v2 gate' : "today's gate"}', (tester) async {
+        'the v2 gate', (tester) async {
       SharedPreferences.setMockInitialValues({});
       final prefs = await SharedPreferences.getInstance();
       final router = GoRouter(
@@ -340,9 +341,8 @@ void main() {
         ),
       );
       await tester.pump();
-      expect(find.byType(OnboardingGate), findsNWidgets(pathsV2 ? 0 : 1));
-      expect(find.byType(OnboardingGateV2), findsNWidgets(pathsV2 ? 1 : 0));
-      // Signed out, both send the person to sign-in.
+      expect(find.byType(OnboardingGateV2), findsOneWidget);
+      // Signed out, it sends the person to sign-in.
       await _run(tester);
       expect(router.routerDelegate.currentConfiguration.uri.path, '/login');
     });

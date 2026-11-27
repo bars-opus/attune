@@ -87,6 +87,13 @@ ON CONFLICT (id) DO NOTHING;
 INSERT INTO public.users (id, phone, display_name)
 SELECT pg_temp.id(n), '+155586000' || n, 'W9a ' || n FROM unnest(ARRAY['01', '02', '03', '04', '05', '06', '07']) AS n
 ON CONFLICT (id) DO NOTHING;
+-- Entry gates 2026-11-27: posting needs a complete account (18+ date of
+-- birth, EULA 2; private.account_ready).
+UPDATE public.users SET eula_version = '2', eula_accepted_at = now()
+ WHERE id IN (SELECT pg_temp.id(n) FROM unnest(ARRAY['01', '02', '03', '04', '05', '06', '07']) AS n);
+INSERT INTO public.account_birthdates (user_id, birth_date)
+SELECT pg_temp.id(n), DATE '1990-01-01' FROM unnest(ARRAY['01', '02', '03', '04', '05', '06', '07']) AS n
+ON CONFLICT (user_id) DO NOTHING;
 INSERT INTO public.profiles (id)
 SELECT pg_temp.id(n) FROM unnest(ARRAY['01', '02', '03', '04', '05', '06', '07']) AS n
 ON CONFLICT (id) DO NOTHING;
@@ -864,9 +871,11 @@ BEGIN
       ('public.create_opinion(text)', '652def173437eec68c3f473f1239d377'),
       ('public.create_opinion_with_poll(text,text[])', '7625996b437a70bf9da6bc4528092444'),
       ('public.create_opinion_with_quote(text,uuid)', '0d15dce3d90b6401870c97bd6a7e3f92'),
-      ('public.edit_opinion(uuid,text)', '4bd69bc224c359600761326567657676'),
+      -- Re-pinned by the entry gates fix round (20261127100070): search_path
+      -- '' and the account_ready gate after BEGIN; nothing else changed.
+      ('public.edit_opinion(uuid,text)', '91ee88ee500c1d4d8679b8913b8354bc'),
       ('public.create_opinion_comment(uuid,text,uuid,text)', 'ed4570f8852cba20a780195c9a8a2dfc'),
-      ('public.edit_opinion_comment(uuid,text)', 'e21131d926bcad80766a5246455ba5f8')
+      ('public.edit_opinion_comment(uuid,text)', '4efb530d3f6f96842cb3b97349856034') -- re-pinned, 20261127100070
     ) AS x(sig, before_md5) LOOP
     v_def := pg_get_functiondef(r.sig::regprocedure);
     v_marked := ARRAY(SELECT l FROM regexp_split_to_table(v_def, E'\n') AS l WHERE l LIKE '%-- Spec 1 W9a%');

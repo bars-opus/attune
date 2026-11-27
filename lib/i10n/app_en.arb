@@ -936,7 +936,7 @@
   "flow_pathDatingLine": "A few introductions a day. Only when it's mutual.",
   "flow_pathJustMeTitle": "Just for me",
   "flow_pathJustMeLine": "Your journal, quizzes and Healing.",
-  "flow_welcomeCardSemantics": "{title}. {line} Opens a preview.",
+  "flow_welcomeCardSemantics": "{title}. {line}",
   "@flow_welcomeCardSemantics": {
     "placeholders": {
       "title": {"type": "String"},
@@ -1102,6 +1102,7 @@
   "flow_joinBody": "A private space for couples, a few introductions a day for singles, and a journal just for you.",
 
   "flow_phoneWhatsApp": "Send by WhatsApp instead",
+  "flow_phoneReadOpinions": "Not ready to share your number? Read Opinions first.",
   "flow_whatsAppTitle": "Is WhatsApp on {number}?",
   "@flow_whatsAppTitle": {
     "placeholders": {
@@ -1154,6 +1155,10 @@
   "flow_holdTitle": "We need to check your account",
   "flow_holdBody": "You can't use Attune while we do this. If you think this is a mistake, contact support.",
   "flow_holdContact": "Contact support",
+  "flow_deleteMyAccount": "Delete my account",
+  "flow_downloadMyData": "Download my data",
+  "flow_accountNotReady": "Finish setting up your account first.",
+  "flow_accountNotReadyAction": "Finish setting up",
   "flow_signOut": "Sign out",
   "flow_updateTitle": "Update Attune to continue",
   "flow_updateBody": "This version of Attune can't finish setting up your account. Update the app from your app store, then open it again.",
@@ -1334,8 +1339,7 @@
   "flow_inviteMsgPidginOpenNoName": "Make we try Attune. Na private space for only you and me.",
   "flow_inviteMsgPidginGet": "Download am: {link}",
   "@flow_inviteMsgPidginGet": {"placeholders": {"link": {"type": "String"}}},
-  "flow_inviteMsgOpenCode": "Open Attune \u2192 I have an invite \u2192 {code}",
-  "@flow_inviteMsgOpenCode": {"placeholders": {"code": {"type": "String"}}},
+  "flow_inviteMsgTapAgain": "Installed it already? Tap the link again to join me.",
   "flow_inviteMsgFoundMyself": "I found this myself. I just thought it'd be nice.",
 
   "flow_inviteCodeServerError": "Something went wrong on our side. Try again.",

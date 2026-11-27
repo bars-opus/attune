@@ -16,6 +16,8 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:go_router/go_router.dart';
+import 'package:attune/app/routing/app_router.dart' show RouteNames;
+import 'package:attune/i10n/generated/app_localizations.dart';
 import 'package:intl/intl.dart';
 
 import '../data/planning_error.dart';
@@ -166,10 +168,25 @@ Route<T> planningRoute<T>(Widget page) => MaterialPageRoute<T>(
 
 void showPlanningError(BuildContext context, Object error) {
   final e = mapPlanningError(error);
+  if (e is PlanningAccountNotReady) return _toOnboarding(context);
   context.showErrorSnackbar(planningErrorMessage(e));
   if (e is PlanningUnauthorized) {
     Navigator.of(context).popUntil((r) => r.settings.name != planningRouteName);
   }
+}
+
+/// Entry gates fix round (review M-3): the account gate refused. Say what
+/// to do, leave Planning and open the onboarding gate, which shows what the
+/// account still owes (or sends a complete one home).
+void _toOnboarding(BuildContext context) {
+  final loc = AppLocalizations.of(context);
+  context.showErrorSnackbar(
+    loc?.flow_accountNotReady ??
+        planningErrorMessage(const PlanningAccountNotReady()),
+  );
+  final router = GoRouter.maybeOf(context);
+  Navigator.of(context).popUntil((r) => r.settings.name != planningRouteName);
+  router?.go(RouteNames.onboarding);
 }
 
 /// The app's ConfirmationDialog, resolved by the dialog closing rather than
@@ -257,6 +274,20 @@ class PlanningErrorState extends StatelessWidget {
   Widget build(BuildContext context) {
     final e = mapPlanningError(error);
     final closed = e is PlanningUnauthorized;
+    // Entry gates fix round (review M-3): the account gate refused.
+    if (e is PlanningAccountNotReady) {
+      final loc = AppLocalizations.of(context);
+      return Center(
+        child: ErrorStateWidget(
+          type: ErrorStateType.permissionError,
+          title: 'Could not load this',
+          subtitle: loc?.flow_accountNotReady ?? planningErrorMessage(e),
+          primaryActionLabel:
+              loc?.flow_accountNotReadyAction ?? 'Finish setting up',
+          onPrimaryAction: () => _toOnboarding(context),
+        ),
+      );
+    }
     return Center(
       child: ErrorStateWidget(
         type: switch (e) {

@@ -65,8 +65,6 @@ function fakeClient(
   return { rpcs, pushes, client };
 }
 
-const noRow = () => Promise.resolve();
-
 async function refusalOf(run: () => Promise<unknown>): Promise<HttpError> {
   try {
     await run();
@@ -87,6 +85,9 @@ Deno.test("every SQL refusal maps to today's status and message", () => {
     "invite:phone_required": [403, "invite:phone_required"],
     "invite:age_required": [428, "invite:age_required"],
     "invite:not_possible": [403, "invite:not_possible"],
+    // Entry gates 2026-11-27: read by the app as its existing
+    // signup:incomplete (finish sign-up, keep the invite).
+    "invite:consent_required": [409, "signup:incomplete"],
     "account:hold": [403, "account:hold"],
   };
   if (JSON.stringify([...ACCEPT_REFUSAL_CODES].sort()) !== JSON.stringify(Object.keys(expected).sort())) {
@@ -109,7 +110,7 @@ Deno.test("the code: case-insensitive, spaces ignored, else 400", async () => {
   if (normalizeInviteCode(" k7p2 qm ") !== "K7P2QM") throw new Error("not normalised");
   if (normalizeInviteCode("K7") !== null || normalizeInviteCode(7) !== null) throw new Error("accepted a bad code");
   const { rpcs, client } = fakeClient({ data: null, error: null });
-  const refusal = await refusalOf(() => acceptInvite(client, "u2", "K7", noRow));
+  const refusal = await refusalOf(() => acceptInvite(client, "u2", "K7"));
   if (refusal.status !== 400) throw new Error(`got ${refusal.status}`);
   if (rpcs.length) throw new Error("asked the server about a malformed code");
 });
@@ -119,7 +120,7 @@ Deno.test("an accept: one SQL call, the push to the inviter, today's answer", as
     data: { relationship_id: "r1", status: "active", idempotent: false, inviter_id: "u1" },
     error: null,
   });
-  const result = await acceptInvite(client, "u2", "k7p2qm", noRow);
+  const result = await acceptInvite(client, "u2", "k7p2qm");
   if (JSON.stringify(result) !== JSON.stringify({ relationship_id: "r1", status: "active", idempotent: false })) {
     throw new Error(`answered ${JSON.stringify(result)}`);
   }
@@ -141,7 +142,7 @@ Deno.test("a replay: idempotent, no second push", async () => {
     data: { relationship_id: "r1", status: "active", idempotent: true, inviter_id: "u1" },
     error: null,
   });
-  const result = await acceptInvite(client, "u2", "K7P2QM", noRow);
+  const result = await acceptInvite(client, "u2", "K7P2QM");
   if (!result.idempotent) throw new Error("not idempotent");
   if (pushes.length) throw new Error("pushed on a replay");
 });
@@ -151,13 +152,13 @@ Deno.test("a failed push never fails the accept", async () => {
     { data: { relationship_id: "r1", status: "active", idempotent: false, inviter_id: "u1" }, error: null },
     { pushFails: true },
   );
-  const result = await acceptInvite(client, "u2", "K7P2QM", noRow);
+  const result = await acceptInvite(client, "u2", "K7P2QM");
   if (result.relationship_id !== "r1") throw new Error("the accept failed with the push");
 });
 
 Deno.test("a refusal answers its status, message and code, and pushes nothing", async () => {
   const { pushes, client } = fakeClient({ data: null, error: { message: "invite:already_in_relationship" } });
-  const refusal = await refusalOf(() => acceptInvite(client, "u2", "K7P2QM", noRow));
+  const refusal = await refusalOf(() => acceptInvite(client, "u2", "K7P2QM"));
   if (!(refusal instanceof InviteRefusal)) throw new Error("not an InviteRefusal");
   if (refusal.status !== 409 || !refusal.message.startsWith("You're already in a relationship")) {
     throw new Error(`got ${refusal.status} ${refusal.message}`);
@@ -166,20 +167,33 @@ Deno.test("a refusal answers its status, message and code, and pushes nothing", 
   if (pushes.length) throw new Error("pushed after a refusal");
 });
 
-Deno.test("no account with the flag on: 409 signup:incomplete before the accept", async () => {
-  const { rpcs, client } = fakeClient({ data: null, error: null }, { eligibility: "signup_incomplete" });
-  const refusal = await refusalOf(() => acceptInvite(client, "u2", "K7P2QM", noRow));
-  if (refusal.status !== 409 || refusal.message !== "signup:incomplete") {
+Deno.test("no account, or no current consent: 409 signup:incomplete before the accept", async () => {
+  for (const eligibility of ["signup_incomplete", "consent_required"]) {
+    const { rpcs, client } = fakeClient({ data: null, error: null }, { eligibility });
+    const refusal = await refusalOf(() => acceptInvite(client, "u2", "K7P2QM"));
+    if (refusal.status !== 409 || refusal.message !== "signup:incomplete") {
+      throw new Error(`${eligibility}: got ${refusal.status} ${refusal.message}`);
+    }
+    if (rpcs.some((c) => c.fn === "accept_relationship_invite_v2" || c.fn === "note_invite_attempt")) {
+      throw new Error(`${eligibility}: went on past the guard`);
+    }
+  }
+});
+
+Deno.test("the retired legacy answer never reaches the accept (503, fails closed)", async () => {
+  const { rpcs, client } = fakeClient({ data: null, error: null }, { eligibility: "legacy" });
+  const refusal = await refusalOf(() => acceptInvite(client, "u2", "K7P2QM"));
+  if (refusal.status !== 503 || refusal.message !== "flags:unavailable") {
     throw new Error(`got ${refusal.status} ${refusal.message}`);
   }
-  if (rpcs.some((c) => c.fn === "accept_relationship_invite_v2")) throw new Error("accepted without an account");
+  if (rpcs.some((c) => c.fn === "accept_relationship_invite_v2")) throw new Error("accepted on a legacy answer");
 });
 
 Deno.test("an unexpected database error is not a refusal", async () => {
   const { client } = fakeClient({ data: null, error: { message: "deadlock detected" } });
   let thrown: unknown;
   try {
-    await acceptInvite(client, "u2", "K7P2QM", noRow);
+    await acceptInvite(client, "u2", "K7P2QM");
   } catch (error) {
     thrown = error;
   }
@@ -196,7 +210,7 @@ const callsTo = (rpcs: { fn: string }[], fn: string) => rpcs.filter((c) => c.fn 
 
 Deno.test("the attempt is spent once, for the acceptor, after the guard and before the accept", async () => {
   const { rpcs, client } = fakeClient(accepted);
-  await acceptInvite(client, "u2", "K7P2QM", noRow);
+  await acceptInvite(client, "u2", "K7P2QM");
   const order = rpcs.map((c) => c.fn).join(",");
   if (order !== "relationship_invite_eligibility,note_invite_attempt,accept_relationship_invite_v2") {
     throw new Error(`called ${order}`);
@@ -209,7 +223,7 @@ Deno.test("the attempt is spent once, for the acceptor, after the guard and befo
 
 Deno.test("past the attempt limit: 429 invite:try_later, and no accept", async () => {
   const { rpcs, pushes, client } = fakeClient(accepted, { attempt: { data: false, error: null } });
-  const refusal = await refusalOf(() => acceptInvite(client, "u2", "K7P2QM", noRow));
+  const refusal = await refusalOf(() => acceptInvite(client, "u2", "K7P2QM"));
   if (!(refusal instanceof InviteRefusal)) throw new Error("not an InviteRefusal");
   if (refusal.status !== 429 || refusal.message !== TRY_LATER || refusal.code !== TRY_LATER) {
     throw new Error(`got ${refusal.status} ${refusal.message} ${refusal.code}`);
@@ -229,7 +243,7 @@ Deno.test("an attempt that can't be counted fails closed: no accept, not a refus
     const { rpcs, client } = fakeClient(accepted, { attempt });
     let thrown: unknown;
     try {
-      await acceptInvite(client, "u2", "K7P2QM", noRow);
+      await acceptInvite(client, "u2", "K7P2QM");
     } catch (error) {
       thrown = error;
     }
@@ -241,7 +255,7 @@ Deno.test("an attempt that can't be counted fails closed: no accept, not a refus
 
 Deno.test("a deadlock abort (40P01) is retried once, without spending a second attempt", async () => {
   const { rpcs, pushes, client } = fakeClient([deadlock, accepted]);
-  const result = await acceptInvite(client, "u2", "K7P2QM", noRow);
+  const result = await acceptInvite(client, "u2", "K7P2QM");
   if (result.relationship_id !== "r1" || result.idempotent) throw new Error(`answered ${JSON.stringify(result)}`);
   if (callsTo(rpcs, "accept_relationship_invite_v2") !== 2) {
     throw new Error(`accepted ${callsTo(rpcs, "accept_relationship_invite_v2")} times`);
@@ -258,7 +272,7 @@ Deno.test("a deadlock abort (40P01) is retried once, without spending a second a
 
 Deno.test("a second deadlock: a retryable 503 invite:try_again, no third try, no push", async () => {
   const { rpcs, pushes, client } = fakeClient([deadlock, deadlock, accepted]);
-  const refusal = await refusalOf(() => acceptInvite(client, "u2", "K7P2QM", noRow));
+  const refusal = await refusalOf(() => acceptInvite(client, "u2", "K7P2QM"));
   if (!(refusal instanceof InviteRefusal)) throw new Error("not an InviteRefusal");
   if (refusal.status !== 503 || refusal.message !== TRY_AGAIN || refusal.code !== TRY_AGAIN) {
     throw new Error(`got ${refusal.status} ${refusal.message} ${refusal.code}`);
@@ -273,7 +287,7 @@ Deno.test("a second deadlock: a retryable 503 invite:try_again, no third try, no
 
 Deno.test("a refusal on the retry is still the refusal", async () => {
   const { rpcs, client } = fakeClient([deadlock, { data: null, error: { message: "invite:already_accepted" } }]);
-  const refusal = await refusalOf(() => acceptInvite(client, "u2", "K7P2QM", noRow));
+  const refusal = await refusalOf(() => acceptInvite(client, "u2", "K7P2QM"));
   if (refusal.status !== 409 || refusal.message !== "Invite has already been accepted") {
     throw new Error(`got ${refusal.status} ${refusal.message}`);
   }
@@ -291,7 +305,7 @@ Deno.test("only a deadlock is retried: anything else is one call", async () => {
   ] as const) {
     const { rpcs, client } = fakeClient([answer, accepted]);
     try {
-      await acceptInvite(client, "u2", "K7P2QM", noRow);
+      await acceptInvite(client, "u2", "K7P2QM");
     } catch {
       // each answers an error; only the call count matters here
     }
@@ -378,7 +392,7 @@ Deno.test("a 500 logs the step and the SQLSTATE only", async () => {
     let response: Response;
     try {
       try {
-        await acceptInvite(client, "u2", "K7P2QM", noRow);
+        await acceptInvite(client, "u2", "K7P2QM");
         throw new Error(`${label}: no error`);
       } catch (error) {
         response = acceptErrorResponse(error);
@@ -398,7 +412,7 @@ Deno.test("a 500 logs the step and the SQLSTATE only", async () => {
   }
 });
 
-Deno.test("an error from outside the steps (e.g. the legacy users row) logs its SQLSTATE only", async () => {
+Deno.test("an error from outside the steps (e.g. a stray constraint) logs its SQLSTATE only", async () => {
   const leaky = "Failing row contains (K7P2QM, +233201234567, Ama)";
   const error = Object.assign(new Error(`new row violates check: ${leaky}`), { code: "23514", details: leaky });
   const logs = captureLogs();

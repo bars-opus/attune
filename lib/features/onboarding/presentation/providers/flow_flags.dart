@@ -1,5 +1,7 @@
 import 'dart:async';
 
+import 'package:attune/core/flags/public_app_config.dart'
+    show publicAppConfigKnownProvider;
 import 'package:attune/core/flags/signed_in_flow_flags.dart';
 import 'package:attune/core/providers/shared_prefs_provider.dart';
 import 'package:attune/features/auth/sign_up/presentation/sign_up_flags.dart';
@@ -104,10 +106,13 @@ final coupleProfileEnabledProvider = Provider<bool>((ref) {
 /// Unknown is not off: until then nothing accepts a stored invite.
 /// flow_paths_v2 on comes only from such an answer.
 ///
-/// Task 6 re-review R-1: with flow_signin_v2 off they can turn nothing on
-/// (flow_paths_v2 needs it), so they are known at once and today's legacy
-/// flow runs unchanged, offline included.
+/// Entry gates fix 4 (2026-11-27): first the public config must be known
+/// ([publicAppConfigKnownProvider]); before its first read flow_signin_v2
+/// is only the build default, which is not an answer. Once it is known
+/// and flow_signin_v2 is off, the signed-in flags can turn nothing on
+/// (flow_paths_v2 needs it), so they are known too.
 final flowFlagsKnownProvider = Provider<bool>((ref) {
+  if (!ref.watch(publicAppConfigKnownProvider)) return false;
   if (!ref.watch(signInFlowV2Provider)) return true;
   if (ref.watch(flowPathsV2Provider)) return true;
   ref.watch(flowFlagsProvider);

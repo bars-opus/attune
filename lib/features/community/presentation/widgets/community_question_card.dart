@@ -1,5 +1,6 @@
 // lib/features/community/presentation/widgets/community_question_card.dart
 
+import 'package:attune/core/ui/glass/glass_menu.dart';
 import 'package:attune/core/utils/exports/export_screens.dart';
 import 'package:attune/features/community/data/models/community_question.dart';
 import 'package:attune/features/community/presentation/providers/community_providers.dart';
@@ -168,13 +169,13 @@ class _CommunityQuestionCardState extends ConsumerState<CommunityQuestionCard> {
               ),
               const Spacer(),
               // Menu
-              PopupMenuButton<String>(
-                icon: const Icon(Icons.more_vert, size: 18),
+              GlassMenuButton<String>(
+                icon: Icon(Icons.more_vert, size: 18, color: IconTheme.of(context).color),
                 onSelected: (value) {
                   if (value == 'report') _showReportDialog();
                 },
                 itemBuilder: (context) => const [
-                  PopupMenuItem(value: 'report', child: Text('Report')),
+                  GlassMenuItem(value: 'report', label: 'Report'),
                 ],
               ),
             ],

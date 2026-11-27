@@ -231,6 +231,11 @@ class SettingsItem extends StatelessWidget {
               config.id == 'guide'
                   ? null // Use default (90%)
                   : MediaQuery.of(context).size.height * 0.7, // 70% for others
+          // The guides on the app's neutral background (2026-11-26).
+          backgroundColor:
+              config.id == 'guide'
+                  ? Theme.of(context).scaffoldBackgroundColor
+                  : null,
           // Dynamic content: guide shows full DocumentationScreen, others show legal docs
           widget:
               config.id == 'guide'

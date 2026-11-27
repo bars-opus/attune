@@ -1,6 +1,7 @@
 // The manual's topic list shows a topic for a switched-off feature only
 // once its flags are on.
 import 'package:attune/app/documentations/user_manual/data/documentation_flags.dart';
+import 'package:attune/app/documentations/user_manual/data/documentation_groups.dart';
 import 'package:attune/app/documentations/user_manual/widgets/all_manual_widget.dart';
 import 'package:attune/app/theme/app_theme.dart';
 import 'package:flutter/material.dart';
@@ -23,7 +24,10 @@ Future<void> _pump(WidgetTester tester, Set<String> flags) async {
         builder:
             (_, __) => MaterialApp(
               theme: AppTheme.lightTheme,
-              home: const Scaffold(body: DocumentationList()),
+              // Every section open, so each topic can be looked for.
+              home: Scaffold(
+                body: DocumentationList(initiallyOpen: DocumentationGroup.values.toSet()),
+              ),
             ),
       ),
     ),
@@ -50,10 +54,20 @@ void main() {
       'quiet_states',
       'couple_map_enabled',
     });
-    expect(find.text('In a hard moment'), findsOneWidget);
-    expect(find.text('Private safety check-in'), findsOneWidget);
-    expect(find.text('Quiet for a while'), findsOneWidget);
-    expect(find.text('Your map'), findsOneWidget);
+    // The list is built lazily and grouped (2026-11-26): scroll to each.
+    for (final title in const [
+      'In a hard moment',
+      'Private safety check-in',
+      'Your map',
+      'Quiet for a while',
+    ]) {
+      await tester.scrollUntilVisible(
+        find.text(title),
+        400,
+        scrollable: find.byType(Scrollable).last,
+      );
+      expect(find.text(title), findsOneWidget);
+    }
     // The toolkit needs both of its flags.
   });
 

@@ -4,8 +4,10 @@
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:attune/app/routing/app_router.dart' show RouteNames;
 import 'package:attune/app/routing/routing_notifier.dart';
 import 'package:attune/core/platform/sim_country.dart';
+import 'package:attune/core/providers/shared_prefs_provider.dart';
 import 'package:attune/core/ui/motion/motion_tokens.dart';
 import 'package:attune/core/ui/motion/shared_axis_step.dart';
 import 'package:attune/features/auth/sign_up/data/account_service.dart';
@@ -17,6 +19,11 @@ import 'package:attune/features/auth/sign_up/domain/sign_up_draft.dart';
 import 'package:attune/features/auth/sign_up/presentation/screens/sign_up_flow.dart';
 import 'package:attune/features/auth/sign_up/presentation/widgets/flow_text_field.dart';
 import 'package:attune/features/auth/sign_up/presentation/widgets/one_time_code_field.dart';
+import 'package:attune/features/onboarding/data/home_state_service.dart';
+import 'package:attune/features/onboarding/data/onboarding_store.dart';
+import 'package:attune/features/onboarding/domain/home_state.dart';
+import 'package:attune/features/onboarding/presentation/providers/flow_flags.dart';
+import 'package:attune/features/onboarding/presentation/providers/home_state_providers.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -25,6 +32,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../../helpers/fake_account_gateway.dart';
+import '../../../helpers/fake_home_state.dart';
 import '../../../helpers/fake_sign_up.dart';
 import '../../../helpers/flow_harness.dart';
 
@@ -174,13 +182,19 @@ void main() {
     expect(sender.sent.single.$1, '+233244123456');
 
     expect(find.text('Enter the code'), findsOneWidget);
-    expect(find.text('Send a new code in 0:30'), findsOneWidget);
+    // The time rolls as its own digits (2026-11-26): the line is whole for a
+    // screen reader.
+    expect(find.bySemanticsLabel('Send a new code in 0:30'), findsOneWidget);
     await tester.enterText(find.byType(TextField), '123456');
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 500));
     await tester.pumpAndSettle();
 
     expect(find.text('Before you start'), findsOneWidget);
+    // Entry gates fix round: no account yet, so nothing to delete (only
+    // the gate's A5c and H1 offer it).
+    expect(find.text('Delete my account'), findsNothing);
+    expect(find.text('Download my data'), findsNothing);
     await _tapText(tester, 'Agree and continue');
     expect(h.location, '/home');
     expect(gateway.count('complete_sign_up'), 1);
@@ -440,7 +454,7 @@ void main() {
       expect(sender.sent, isEmpty);
       // Review B5 M-3: no resend while the refusal's two minutes last.
       expect(find.text('Send a new code'), findsNothing);
-      expect(find.text('Send a new code in 2:00'), findsOneWidget);
+      expect(find.bySemanticsLabel('Send a new code in 2:00'), findsOneWidget);
 
       await tester.enterText(find.byType(TextField), '999999');
       await tester.pump();
@@ -1814,6 +1828,377 @@ void main() {
     );
     expect(gateway.count('complete_sign_up'), 0);
   });
+
+  // Owner 2026-11-26: the path chosen on Welcome is set once A5 has made
+  // the account, and A6 is never asked for it.
+  group('the path chosen on Welcome', () {
+    /// A4 (a resumed draft), the code, then A5's Agree.
+    Future<FlowHarness> agree(
+      WidgetTester tester, {
+      AppPath? path,
+      required FakeHomeStateGateway home,
+      FakeAccountGateway? gateway,
+      Map<String, Object> prefsValues = const {},
+      List<Override> overrides = const [],
+    }) async {
+      final h = await pumpFlowScreen(
+        tester,
+        () => SignUpFlow(entry: SignUpEntry.newAccount, path: path),
+        prefsValues: {
+          SignUpDraftStore.key: jsonEncodeDraft(_atCode()),
+          ...prefsValues,
+        },
+        overrides: [
+          ...overrides,
+          ..._deps(
+            FakeCodeSender(),
+            FakeSignUpAuth(),
+            gateway ??
+                FakeAccountGateway(
+                  homeState: FakeAccountGateway.account(hasAccount: false),
+                ),
+          ),
+          homeStateServiceProvider.overrideWithValue(HomeStateService(home)),
+        ],
+      );
+      expect(find.text('Enter the code'), findsOneWidget);
+      await tester.enterText(find.byType(TextField), '123456');
+      await tester.pump();
+      await tester.pump(kCodeAcceptedHold);
+      await tester.pumpAndSettle();
+      expect(find.text('Before you start'), findsOneWidget);
+      await _tapText(tester, 'Agree and continue');
+      return h;
+    }
+
+    OnboardingStore store(FlowHarness h) =>
+        OnboardingStore(h.prefs, scope: 'user.u1');
+
+    for (final (path, wire, target) in [
+      (AppPath.relationship, 'relationship', '/invite-partner'),
+      (AppPath.dating, 'dating', '/home'),
+      (AppPath.justMe, 'just_me', '/home'),
+    ]) {
+      testWidgets('${path.name}: set as A6 sets it, then $target', (
+        tester,
+      ) async {
+        final home = FakeHomeStateGateway(state: homeJson(path: wire));
+        final h = await agree(tester, path: path, home: home);
+        expect(home.calls.where((c) => c.$1 == 'set_my_path').single.$2, {
+          'p_path': wire,
+          'p_confirmed': false,
+        });
+        expect(h.location, target);
+        expect(store(h).pendingPath, isNull);
+      });
+    }
+
+    testWidgets('no path (the returning way, invites): home, nothing set', (
+      tester,
+    ) async {
+      final home = FakeHomeStateGateway();
+      final h = await agree(tester, home: home);
+      expect(home.calls, isEmpty);
+      expect(h.location, '/home');
+    });
+
+    for (final path in [AppPath.relationship, AppPath.justMe]) {
+      testWidgets('${path.name}, set_my_path offline: queued for the '
+          'replay, home', (tester) async {
+        final home = FakeHomeStateGateway()
+          ..failAlways = TimeoutException('offline');
+        final h = await agree(tester, path: path, home: home);
+        expect(home.count('set_my_path'), 1);
+        expect(store(h).pendingPath, path);
+        expect(h.location, '/home', reason: 'R1 needs the account online');
+      });
+    }
+
+    testWidgets('dating, set_my_path offline: nothing queued (D20), home', (
+      tester,
+    ) async {
+      final home = FakeHomeStateGateway()
+        ..failAlways = TimeoutException('offline');
+      final h = await agree(tester, path: AppPath.dating, home: home);
+      expect(store(h).pendingPath, isNull);
+      expect(h.location, '/home');
+      expect(h.prefs.getKeys().any((k) => k.contains('dating')), isFalse);
+    });
+
+    // Fix round M-1: a path the server refused is never queued (its replay
+    // would be refused too); home, where the gate asks A6.
+    for (final refusal in ['path:invalid', 'path:relationship_open']) {
+      testWidgets('a refusal ($refusal) never undoes the account: nothing '
+          'queued, home', (tester) async {
+        final home = FakeHomeStateGateway()
+          ..failAlways = FakeHomeStateGateway.refusal(refusal);
+        final gateway = FakeAccountGateway(
+          homeState: FakeAccountGateway.account(hasAccount: false),
+        );
+        final h = await agree(
+          tester,
+          path: AppPath.justMe,
+          home: home,
+          gateway: gateway,
+        );
+        expect(gateway.count('complete_sign_up'), 1);
+        expect(store(h).pendingPath, isNull);
+        expect(h.location, '/home');
+      });
+    }
+
+    testWidgets('path:needs_signup (the account not ready yet): queued, '
+        'home', (tester) async {
+      final home = FakeHomeStateGateway()
+        ..failAlways = FakeHomeStateGateway.refusal('path:needs_signup');
+      final h = await agree(tester, path: AppPath.relationship, home: home);
+      expect(store(h).pendingPath, AppPath.relationship);
+      expect(h.location, '/home');
+    });
+
+    // Fix round M-7: the path is in the home state before home opens, so
+    // the gate has nothing to ask (no A6).
+    testWidgets('after a set the home state holds the path, no A6 need', (
+      tester,
+    ) async {
+      final home = FakeHomeStateGateway(state: homeJson(path: 'just_me'));
+      final h = await agree(tester, path: AppPath.justMe, home: home);
+      expect(h.location, '/home');
+      final container = ProviderScope.containerOf(
+        tester.element(find.byType(MaterialApp)),
+      );
+      final snapshot = container.read(homeStateProvider('u1'));
+      expect(snapshot.path, AppPath.justMe);
+      expect(snapshot.needs, isNot(contains(HomeNeed.path)));
+      expect(snapshot.isComplete, isTrue);
+    });
+
+    // Fix round I-1: a partner's invite is waiting: never R1 ("Create my
+    // invite"); where the gate goes with a stored invite.
+    for (final (couplesV2, target) in [
+      (true, '/join-invite'),
+      (false, '/home'),
+    ]) {
+      testWidgets('relationship with a stored invite, flow_couples_v2 '
+          '$couplesV2: $target, never R1', (tester) async {
+        final home = FakeHomeStateGateway(state: homeJson(path: 'relationship'));
+        final h = await agree(
+          tester,
+          path: AppPath.relationship,
+          home: home,
+          prefsValues: {
+            'attune.onboarding.anonymous.pending_invite':
+                '{"code":"K7P2QM","stored_at":"${DateTime.now().toUtc().toIso8601String()}"}',
+          },
+          overrides: [flowCouplesV2Provider.overrideWithValue(couplesV2)],
+        );
+        expect(home.count('set_my_path'), 1);
+        expect(h.location, target);
+        expect(store(h).pendingInviteCode, 'K7P2QM', reason: 'kept for RI-3');
+      });
+    }
+
+    for (final (path, queued) in [
+      (AppPath.relationship, AppPath.relationship),
+      (AppPath.justMe, AppPath.justMe),
+      (AppPath.dating, null),
+    ]) {
+      testWidgets('${path.name} with the account only queued: no call, '
+          '${queued == null ? 'nothing' : 'the path'} queued, home', (
+        tester,
+      ) async {
+        final home = FakeHomeStateGateway();
+        final gateway = FakeAccountGateway(
+          homeState: FakeAccountGateway.account(hasAccount: false),
+        );
+        final h = await pumpFlowScreen(
+          tester,
+          () => SignUpFlow(entry: SignUpEntry.newAccount, path: path),
+          prefsValues: {SignUpDraftStore.key: jsonEncodeDraft(_atCode())},
+          overrides: [
+            ..._deps(FakeCodeSender(), FakeSignUpAuth(), gateway),
+            homeStateServiceProvider.overrideWithValue(HomeStateService(home)),
+          ],
+        );
+        await tester.enterText(find.byType(TextField), '123456');
+        await tester.pump();
+        await tester.pump(kCodeAcceptedHold);
+        await tester.pumpAndSettle();
+        gateway.failWith = TimeoutException('offline');
+        await _tapText(tester, 'Agree and continue');
+        expect(store(h).pendingSignUp, isNotNull);
+        expect(home.calls, isEmpty);
+        expect(store(h).pendingPath, queued);
+        expect(h.location, '/home');
+      });
+    }
+  });
+
+  // Fix round M-4: the way in's own back (the intro's "I already have an
+  // account" passes /start) is where A3's Back and A5's Not now go.
+  testWidgets('with back=/start, A3 Back and A5 Not now go to the intro', (
+    tester,
+  ) async {
+    final h = await pumpFlowScreen(
+      tester,
+      () => const SignUpFlow(
+        entry: SignUpEntry.returning,
+        backTo: RouteNames.start,
+      ),
+      overrides: _deps(FakeCodeSender(), FakeSignUpAuth(), FakeAccountGateway()),
+    );
+    expect(find.text("What's your phone number?"), findsOneWidget);
+    await tester.tap(find.byTooltip('Back'));
+    await tester.pumpAndSettle();
+    expect(h.location, '/start');
+
+    final auth = FakeSignUpAuth();
+    final h2 = await pumpFlowScreen(
+      tester,
+      () => const SignUpFlow(
+        entry: SignUpEntry.newAccount,
+        backTo: RouteNames.start,
+      ),
+      prefsValues: {SignUpDraftStore.key: jsonEncodeDraft(_atCode())},
+      overrides: _deps(
+        FakeCodeSender(),
+        auth,
+        FakeAccountGateway(
+          homeState: FakeAccountGateway.account(hasAccount: false),
+        ),
+      ),
+    );
+    await tester.enterText(find.byType(TextField), '123456');
+    await tester.pump();
+    await tester.pump(kCodeAcceptedHold);
+    await tester.pumpAndSettle();
+    await _tapText(tester, 'Not now');
+    expect(auth.signOuts, 1);
+    expect(h2.location, '/start');
+  });
+
+  // Owner 2026-11-26: A3's quiet "Read Opinions first", for a new account
+  // past A2's adult check.
+  group('A3 Read Opinions first', () {
+    const line = 'Not ready to share your number? Read Opinions first.';
+
+    Future<FlowHarness> toPhone(
+      WidgetTester tester,
+      SignUpEntry entry, {
+      RoutingNotifier? routing,
+      Map<String, Object> prefsValues = const {},
+      List<Override> overrides = const [],
+    }) async {
+      final h = await pumpFlowScreen(
+        tester,
+        () => SignUpFlow(entry: entry),
+        routing: routing ?? RoutingNotifier(flowV2: true),
+        prefsValues: prefsValues,
+        overrides: [
+          ..._deps(FakeCodeSender(), FakeSignUpAuth(), FakeAccountGateway()),
+          ...overrides,
+        ],
+      );
+      await _type(tester, 'Your name', 'Ama');
+      await _tapText(tester, 'Continue');
+      await _type(tester, 'Day', '27');
+      await _type(tester, 'Month', '3');
+      await _type(tester, 'Year', '1996');
+      await _tapText(tester, 'Continue');
+      expect(find.text("What's your phone number?"), findsOneWidget);
+      return h;
+    }
+
+    testWidgets('a new account: the guest pass with A2\'s year, then home', (
+      tester,
+    ) async {
+      final h = await toPhone(tester, SignUpEntry.newAccount);
+      expect(find.text(line), findsOneWidget);
+      expect(AgeGateStore.readGuestOk(h.prefs), isFalse);
+      await _tapText(tester, line);
+      expect(AgeGateStore.readGuestOk(h.prefs), isTrue);
+      expect(h.routing.guestAgeOk, isTrue);
+      expect(await AgeGateStore(h.prefs).guestBirthYear(), 1996);
+      expect(h.location, '/home');
+    });
+
+    // Fix round M-2.
+    testWidgets('a phone already holding the guest pass never offers it', (
+      tester,
+    ) async {
+      await toPhone(
+        tester,
+        SignUpEntry.newAccount,
+        routing: RoutingNotifier(flowV2: true, guestAgeOk: true),
+      );
+      expect(find.text(line), findsNothing);
+    });
+
+    testWidgets('a blocked phone never offers it', (tester) async {
+      await toPhone(
+        tester,
+        SignUpEntry.newAccount,
+        routing: RoutingNotifier(flowV2: true, underAgeBlocked: true),
+      );
+      expect(find.text(line), findsNothing);
+    });
+
+    testWidgets('a pass that cannot be saved stays on A3 with the error', (
+      tester,
+    ) async {
+      final h = await toPhone(
+        tester,
+        SignUpEntry.newAccount,
+        overrides: [
+          ageGateStoreProvider.overrideWith(
+            (ref) => _PassFails(ref.watch(sharedPreferencesProvider)),
+          ),
+        ],
+      );
+      await _tapText(tester, line);
+      expect(tester.takeException(), isNull);
+      expect(find.text("What's your phone number?"), findsOneWidget);
+      expect(find.text("We couldn't save that. Try again."), findsOneWidget);
+      expect(h.routing.guestAgeOk, isFalse);
+      expect(h.location, isNot('/home'));
+    });
+
+    testWidgets('an invite never offers it', (tester) async {
+      await toPhone(tester, SignUpEntry.invite);
+      expect(find.text(line), findsNothing);
+    });
+
+    testWidgets('the returning way (no date of birth) never offers it', (
+      tester,
+    ) async {
+      await pumpFlowScreen(
+        tester,
+        () => const SignUpFlow(entry: SignUpEntry.returning),
+        overrides: _deps(
+          FakeCodeSender(),
+          FakeSignUpAuth(),
+          FakeAccountGateway(),
+        ),
+      );
+      expect(find.text("What's your phone number?"), findsOneWidget);
+      expect(find.text(line), findsNothing);
+    });
+
+    testWidgets('A3 with the line meets the guidelines', (tester) async {
+      final semantics = tester.ensureSemantics();
+      await toPhone(tester, SignUpEntry.newAccount);
+      await expectFlowGuidelines(tester);
+      semantics.dispose();
+    });
+  });
+}
+
+/// Fix round M-2: the guest pass can't be written.
+class _PassFails extends AgeGateStore {
+  _PassFails(super.prefs);
+
+  @override
+  Future<void> passGuestGate(int year) async => throw StateError('disk full');
 }
 
 String jsonEncodeDraft(SignUpDraft draft) =>

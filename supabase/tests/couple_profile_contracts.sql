@@ -44,8 +44,9 @@ CREATE FUNCTION pg_temp.person(p_n text, p_name text) RETURNS void LANGUAGE plpg
 BEGIN
   INSERT INTO auth.users (id, phone, phone_confirmed_at)
   VALUES (pg_temp.id(p_n), '+155583000' || p_n, now());
-  INSERT INTO public.users (id, phone, display_name, path)
-  VALUES (pg_temp.id(p_n), '+155583000' || p_n, p_name, 'relationship');
+  -- Entry gates 2026-11-27: a complete account (EULA 2) writes content.
+  INSERT INTO public.users (id, phone, display_name, path, eula_version, eula_accepted_at)
+  VALUES (pg_temp.id(p_n), '+155583000' || p_n, p_name, 'relationship', '2', now());
   INSERT INTO public.account_birthdates (user_id, birth_date)
   VALUES (pg_temp.id(p_n), (current_date - interval '30 years')::date);
 END $$;

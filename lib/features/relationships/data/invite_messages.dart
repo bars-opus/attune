@@ -17,13 +17,16 @@ List<InviteRegister> offeredInviteRegisters() => [
 
 /// The message the invitee receives (§3.8 R1): the opening (with the
 /// partner's first name, or without it and its comma), the optional
-/// "I found this myself" line, the app link, then the code line, so the
-/// code travels in every message. No AI vocabulary.
+/// "I found this myself" line, the app link, then "Installed it already?
+/// Tap the link again to join me." The code travels in [link]
+/// (`…/i/CODE`), so it is in every message. No AI vocabulary.
+///
+/// Pidgin's last line is English until the cultural reviewer gives its
+/// Pidgin copy (with [kPidginRegisterReviewed]).
 String inviteMessage(
   AppLocalizations loc, {
   required InviteRegister register,
   required String link,
-  required String code,
   String? partnerFirstName,
   bool foundItMyself = false,
 }) {
@@ -52,6 +55,8 @@ String inviteMessage(
     opening,
     if (foundItMyself) loc.flow_inviteMsgFoundMyself,
     getLine,
-    loc.flow_inviteMsgOpenCode(code),
+    // The link carries the code (app links, QR): no "I have an invite" step
+    // any more (2026-11-26). After an install, the link opens the invite.
+    loc.flow_inviteMsgTapAgain,
   ].join('\n');
 }

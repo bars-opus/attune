@@ -695,6 +695,8 @@ class _AttuneLogoButton extends StatelessWidget {
           context: context,
           // Info items are typically view-only (no agree/decline)
           showButtons: false,
+          // The guides on the app's neutral background (2026-11-26).
+          backgroundColor: Theme.of(context).scaffoldBackgroundColor,
           // Dynamic content: guide shows the documentation list, others
           // show legal docs. DocumentationList (not DocumentationScreen) —
           // the sheet already supplies its own Scaffold, and a nested

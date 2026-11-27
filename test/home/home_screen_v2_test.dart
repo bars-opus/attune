@@ -202,9 +202,11 @@ void main() {
     }
   });
 
-  testWidgets('flow_paths_v2 off: the v2 home state is not read', (
-    tester,
-  ) async {
+  // Entry gates fix 4 (2026-11-27): the v2 gate is the only one, so the
+  // home state decides whether home opens whatever flow_paths_v2 says; the
+  // v2 layout (Chat or Me) stays the flag's.
+  testWidgets('flow_paths_v2 off: the home state gates, the legacy shell '
+      'shows', (tester) async {
     final h = await pumpHome(
       tester,
       pathsV2: false,
@@ -215,10 +217,30 @@ void main() {
       },
     );
     await tester.pumpAndSettle();
-    expect(h.gateway.count('get_my_home_state'), 0);
+    expect(h.gateway.count('get_my_home_state'), greaterThanOrEqualTo(1));
+    expect(h.onboardingVisits, isEmpty);
     expect(find.text('Chat'), findsOneWidget);
     expect(find.text('Me'), findsNothing);
   });
+
+  for (final need in ['consent', 'birth_date', 'name', 'path']) {
+    testWidgets('flow_paths_v2 off, the server asks for $need: the gate, '
+        'though the legacy flag says complete (entry gates fix 4)', (
+      tester,
+    ) async {
+      final h = await pumpHome(
+        tester,
+        pathsV2: false,
+        prefsValues: {
+          'attune.onboarding.user.u-home.completed': true,
+          'attune.onboarding.user.u-home.mode': 'personal',
+        },
+        server: homeJson(needs: [need]),
+      );
+      await tester.pumpAndSettle();
+      expect(h.onboardingVisits, ['onboarding']);
+    });
+  }
 
   testWidgets('signing out forgets the account\'s live answer (D20)', (
     tester,
@@ -289,10 +311,12 @@ void main() {
       server: homeJson(path: 'just_me'),
     );
     await tester.pumpAndSettle();
-    expect(h.gateway.count('get_my_home_state'), 0);
+    // Entry gates fix 4: read with the flag off too (it gates home).
+    expect(find.text('Me'), findsNothing);
+    final before = h.gateway.count('get_my_home_state');
     h.pathsV2.state = true;
     await tester.pumpAndSettle();
-    expect(h.gateway.count('get_my_home_state'), greaterThanOrEqualTo(1));
+    expect(h.gateway.count('get_my_home_state'), greaterThan(before));
     expect(find.text('Me'), findsOneWidget);
     expect(find.text('TAB2 me none'), findsOneWidget);
   });

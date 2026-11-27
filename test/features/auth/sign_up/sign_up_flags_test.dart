@@ -142,9 +142,11 @@ void main() {
 
       await _readConfig(prefs, routing, _FlakyGateway());
       expect(routing.flowV2, Environment.flowV2Default);
+      // The new sign-in is the only one (2026-11-26): Welcome stays Welcome
+      // whatever the flag.
       expect(
         appRedirect(routing, RouteNames.welcome),
-        Environment.flowV2Default ? isNull : RouteNames.intro,
+        isNull,
       );
     });
 
@@ -171,7 +173,7 @@ void main() {
           expect(routing.flowV2, buildDefault);
           expect(
             appRedirect(routing, RouteNames.welcome),
-            buildDefault ? isNull : RouteNames.intro,
+            isNull,
           );
         },
       );

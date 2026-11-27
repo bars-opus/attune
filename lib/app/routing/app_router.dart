@@ -11,14 +11,13 @@ import 'package:attune/features/appreciation/presentation/appreciation_jar_scree
 import 'package:attune/features/onboarding/presentation/screens/ask2_flow.dart';
 import 'package:attune/core/moderation/presentation/screens/blocked_accounts_screen.dart';
 import 'package:attune/features/opinions/presentation/screen/muted_authors_screen.dart';
-import 'package:attune/features/auth/intro/intro_screen.dart';
-import 'package:attune/features/auth/log_in/presentation/screens/login_screen.dart';
 import 'package:attune/app/routing/sign_in_redirect.dart';
 import 'package:attune/features/auth/sign_up/presentation/screens/guest_age_gate_screen.dart';
 import 'package:attune/features/auth/sign_up/domain/sign_up_draft.dart';
 import 'package:attune/features/auth/sign_up/presentation/screens/invite_landing_screen.dart';
 import 'package:attune/features/auth/sign_up/presentation/screens/sign_up_flow.dart';
 import 'package:attune/features/auth/sign_up/presentation/screens/under_age_stop_screen.dart';
+import 'package:attune/features/auth/sign_up/presentation/screens/start_intro_screen.dart';
 import 'package:attune/features/auth/sign_up/presentation/screens/welcome_screen.dart';
 import 'package:attune/features/dating/routes/dating_routes.dart';
 import 'package:attune/features/games/paint_ball/presentation/screens/paint_ball_battle_screen.dart';
@@ -31,7 +30,8 @@ import 'package:attune/features/games/snakes_and_ladders/presentation/screens/sn
 import 'package:attune/features/games/constellation/prototype/constellation_prototype_screen.dart';
 import 'package:attune/features/games/dots_and_boxes/prototype/dots_boxes_prototype_screen.dart';
 import 'package:attune/features/games/word_hunt/presentation/screens/word_hunt_game_screen.dart';
-import 'package:attune/features/onboarding/domain/home_state.dart' show AppTab;
+import 'package:attune/features/onboarding/domain/home_state.dart'
+    show AppPath, AppTab;
 import 'package:attune/features/onboarding/presentation/screens/invite_partner_screen.dart';
 import 'package:attune/features/relationships/presentation/screens/join_invite_screen.dart';
 import 'package:attune/features/onboarding/presentation/screens/onboarding_gate_v2.dart';
@@ -160,6 +160,9 @@ import 'package:attune/features/chat/presentation/screens/streak_camera_screen.d
 
 class RouteNames {
   static const String intro = '/intro';
+
+  /// The first screen before any account (StartIntroScreen, 2026-11-26).
+  static const String start = '/start';
   // Spec 1 W2 (§5.4): the v2 sign-in, all behind flow_signin_v2.
   static const String welcome = '/welcome';
   static const String signUp = '/signup';
@@ -422,7 +425,7 @@ final GlobalKey<NavigatorState> appNavigatorKey = GlobalKey<NavigatorState>();
 /// guarantee — it does not mean GoRouter's own boot sequence has fully
 /// settled, which matters most in the first few frames right after
 /// runApp when several .go() calls can be chained in quick succession
-/// (main.dart's deep-link handler landing on OnboardingGate, which then
+/// (main.dart's deep-link handler landing on the onboarding gate, which then
 /// immediately issues its own follow-up .go()). Skipping this produced a
 /// transient "Page not found" GoException that then self-corrected once
 /// the chain finished — jarring even though it wasn't actually broken.
@@ -465,7 +468,8 @@ GoRouter createAppRouter(RoutingNotifier routingNotifier) {
       GoRoute(
         path: RouteNames.intro,
         name: 'intro',
-        builder: (context, state) => const IntroScreen(),
+        // The old intro is gone (2026-11-26): an old link opens the new one.
+        redirect: (context, state) => RouteNames.start,
       ),
       GoRoute(
         path: RouteNames.home,
@@ -482,18 +486,35 @@ GoRouter createAppRouter(RoutingNotifier routingNotifier) {
       // Spec 1 W2 (§5.4): the v2 sign-in routes, reached only under
       // flow_signin_v2 (the redirect above sends a stray visit home).
       GoRoute(
+        path: RouteNames.start,
+        name: 'start',
+        builder: (context, state) => const StartIntroScreen(),
+      ),
+      GoRoute(
         path: RouteNames.welcome,
         name: 'welcome',
-        builder: (context, state) => const WelcomeScreen(),
+        // `back`: the guest tab's own, passed on to sign-up (fix round I-2).
+        builder:
+            (context, state) =>
+                WelcomeScreen(backTo: state.uri.queryParameters['back']),
       ),
       GoRoute(
         path: RouteNames.signUp,
         name: 'signUp',
-        builder:
-            (context, state) => SignUpFlow(
-              entry: SignUpEntry.fromWire(state.uri.queryParameters['entry']),
-              backTo: state.uri.queryParameters['back'],
-            ),
+        builder: (context, state) {
+          final query = state.uri.queryParameters;
+          final entry = SignUpEntry.fromWire(query['entry']);
+          return SignUpFlow(
+            entry: entry,
+            backTo: query['back'],
+            // Owner 2026-11-26: the path Welcome's card chose, for a new
+            // account only.
+            path:
+                entry == SignUpEntry.newAccount
+                    ? AppPath.values.asNameMap()[query['path']]
+                    : null,
+          );
+        },
       ),
       GoRoute(
         path: RouteNames.guestAge,
@@ -522,23 +543,23 @@ GoRouter createAppRouter(RoutingNotifier routingNotifier) {
               ),
             ),
       ),
+      // The old phone login is gone (2026-11-26): an old link to /login
+      // opens the intro, whose "I already have an account" signs in.
       GoRoute(
         path: RouteNames.login,
         name: 'login',
-        builder: (context, state) => const LoginScreen(),
+        redirect: (context, state) => RouteNames.start,
       ),
       GoRoute(
         path: RouteNames.onboarding,
         name: 'onboarding',
-        builder: (context, state) {
-          final previewOnboarding = kDebugMode && state.extra == true;
-          // Spec 1 W3a: the v2 gate under flow_paths_v2.
-          return OnboardingEntry(
-            previewOnboarding: previewOnboarding,
-            // W4b: RI-3's hold refusal (an extra, never from a link).
-            held: state.extra is OnboardingHeld,
-          );
-        },
+        // The v2 gate, whatever the flags say (entry gates fix 4). The old
+        // debug preview (`extra: true`) is gone with the legacy flow.
+        builder:
+            (context, state) => OnboardingEntry(
+              // W4b: RI-3's hold refusal (an extra, never from a link).
+              held: state.extra is OnboardingHeld,
+            ),
       ),
       // Spec 1 W3a (§3.8 R1, §3.12): the invite screen from Me or Settings;
       // `switch=1` makes creating the invite the switch to Relationship,

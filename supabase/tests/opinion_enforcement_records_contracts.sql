@@ -1098,19 +1098,29 @@ DECLARE
   v_err text;
   v_before bigint;
 BEGIN
-  -- Route 1 (the reviewer's): OTP, record_eula_acceptance, set_my_birth_date,
-  -- then complete_sign_up (created:false). The standing is back from the OTP.
+  -- Route 1 (the reviewer's): OTP, then complete_sign_up. Entry gates
+  -- 2026-11-27: record_eula_acceptance no longer creates the users row
+  -- first (eula:no_account, nothing written), so complete_sign_up is the
+  -- account's creation (created:true). The standing is back from the OTP.
   PERFORM pg_temp.carried('79', 3);
   v_u := pg_temp.id('80');
   INSERT INTO auth.users (id, phone, phone_confirmed_at, created_at) VALUES (v_u, '15558604079', now(), now());
   EXECUTE 'SET LOCAL ROLE authenticated';
   PERFORM set_config('request.jwt.claims', json_build_object('sub', v_u, 'role', 'authenticated')::text, true);
-  PERFORM public.record_eula_acceptance('2');
-  PERFORM public.set_my_birth_date(DATE '1990-01-01');
+  BEGIN
+    PERFORM public.record_eula_acceptance('2');
+  EXCEPTION WHEN raise_exception THEN
+    v_err := SQLERRM;
+  END;
+  IF v_err IS DISTINCT FROM 'eula:no_account' THEN
+    RESET ROLE;
+    RAISE EXCEPTION 'CONTRACT VIOLATED: record_eula_acceptance before any account (got %)', coalesce(v_err, 'no error');
+  END IF;
+  v_err := NULL;
   v_res := public.complete_sign_up('W9d route 1', DATE '1990-01-01', '2');
   RESET ROLE;
   PERFORM set_config('request.jwt.claims', '', true);
-  IF v_res ->> 'created' IS DISTINCT FROM 'false' OR pg_temp.standing(v_u) IS DISTINCT FROM '3/true'
+  IF v_res ->> 'created' IS DISTINCT FROM 'true' OR pg_temp.standing(v_u) IS DISTINCT FROM '3/true'
      OR pg_temp.records(pg_temp.h('79')) IS DISTINCT FROM '' THEN
     RAISE EXCEPTION 'CONTRACT VIOLATED: route 1 (eula, birth date, then complete_sign_up) skipped the restore: %', pg_temp.standing(v_u);
   END IF;
@@ -1146,7 +1156,18 @@ BEGIN
   UPDATE auth.users SET phone_confirmed_at = now() WHERE id = v_u;
   EXECUTE 'SET LOCAL ROLE authenticated';
   PERFORM set_config('request.jwt.claims', json_build_object('sub', v_u, 'role', 'authenticated')::text, true);
-  PERFORM public.record_eula_acceptance('2');
+  -- Entry gates 2026-11-27: the v1 EULA gate can no longer create the
+  -- users row (eula:no_account); the client's profile upsert still runs.
+  BEGIN
+    PERFORM public.record_eula_acceptance('2');
+    v_err := NULL;
+  EXCEPTION WHEN raise_exception THEN
+    v_err := SQLERRM;
+  END;
+  IF v_err IS DISTINCT FROM 'eula:no_account' OR EXISTS (SELECT 1 FROM public.users WHERE id = v_u) THEN
+    RESET ROLE;
+    RAISE EXCEPTION 'CONTRACT VIOLATED: the v1 EULA gate created an account (got %)', coalesce(v_err, 'no error');
+  END IF;
   INSERT INTO public.profiles (id, username, bio, avatar_url) VALUES (v_u, NULL, NULL, NULL) ON CONFLICT (id) DO NOTHING;
   RESET ROLE;
   PERFORM set_config('request.jwt.claims', '', true);

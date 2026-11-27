@@ -1,6 +1,7 @@
 // lib/features/timeline/presentation/widgets/moment_card.dart
 
 import 'package:attune/core/providers/run_write.dart';
+import 'package:attune/core/ui/glass/glass_menu.dart';
 import 'package:attune/core/utils/exports/export_screens.dart';
 import 'package:attune/features/timeline/data/models/timeline_event_model.dart';
 import 'package:attune/features/timeline/presentation/providers/timeline_providers.dart';
@@ -159,8 +160,12 @@ class _MomentCardState extends ConsumerState<MomentCard> {
                 ),
               ),
               if (_isOwnEvent && !_isDeleting)
-                PopupMenuButton<String>(
-                  icon: const Icon(Icons.more_horiz, size: 18),
+                GlassMenuButton<String>(
+                  icon: Icon(
+                    Icons.more_horiz,
+                    size: 18,
+                    color: IconTheme.of(context).color,
+                  ),
                   onSelected: (value) {
                     if (value == 'edit') {
                       _editMoment();
@@ -170,8 +175,8 @@ class _MomentCardState extends ConsumerState<MomentCard> {
                   },
                   itemBuilder:
                       (context) => const [
-                        PopupMenuItem(value: 'edit', child: Text('Edit')),
-                        PopupMenuItem(value: 'delete', child: Text('Delete')),
+                        GlassMenuItem(value: 'edit', label: 'Edit'),
+                        GlassMenuItem(value: 'delete', label: 'Delete', destructive: true),
                       ],
                 ),
               if (_isDeleting)

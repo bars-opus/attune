@@ -65,6 +65,13 @@ ON CONFLICT (id) DO NOTHING;
 INSERT INTO public.users (id, phone, display_name)
 SELECT pg_temp.id(n), '+155586020' || n, 'W9b remove ' || n FROM unnest(ARRAY['01', '02']) AS n
 ON CONFLICT (id) DO NOTHING;
+-- Entry gates 2026-11-27: Opinions writes need a complete account (18+
+-- date of birth, EULA 2; private.account_ready).
+UPDATE public.users SET eula_version = '2', eula_accepted_at = now()
+ WHERE id IN (SELECT pg_temp.id(n) FROM unnest(ARRAY['01', '02']) AS n);
+INSERT INTO public.account_birthdates (user_id, birth_date)
+SELECT pg_temp.id(n), DATE '1990-01-01' FROM unnest(ARRAY['01', '02']) AS n
+ON CONFLICT (user_id) DO NOTHING;
 INSERT INTO public.profiles (id)
 SELECT pg_temp.id(n) FROM unnest(ARRAY['01', '02']) AS n
 ON CONFLICT (id) DO NOTHING;

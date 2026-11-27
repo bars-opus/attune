@@ -19,6 +19,14 @@ class PlanningUnauthorized extends PlanningError {
   final bool inactive;
 }
 
+/// The server's account gate refused (entry gates fix round, review M-3):
+/// `account_not_ready`, or a gated table's RLS, both SQLSTATE 42501. The
+/// account still owes consent, a date of birth, a name or a path, or is
+/// held. The UI leaves Planning for the onboarding gate.
+class PlanningAccountNotReady extends PlanningError {
+  const PlanningAccountNotReady();
+}
+
 /// Missing or not yours — the server deliberately does not say which.
 class PlanningNotFound extends PlanningError {
   const PlanningNotFound();
@@ -49,7 +57,9 @@ class PlanningNetwork extends PlanningError {
 PlanningError mapPlanningError(Object error) {
   if (error is PlanningError) return error;
   if (error is PostgrestException) {
-    if (error.code == '42501') return const PlanningUnauthorized(inactive: false);
+    // Planning's own refusals are `planning:*` (below); a bare 42501 is the
+    // account gate (`account_not_ready`) or a gated table's RLS.
+    if (error.code == '42501') return const PlanningAccountNotReady();
     if (error.code == 'P0001' && error.message.startsWith('planning:')) {
       final detail = _decodeHint(error.hint);
       switch (error.message.substring('planning:'.length)) {
@@ -92,6 +102,8 @@ Map<String, dynamic> _decodeHint(String? hint) {
 String planningErrorMessage(PlanningError error) => switch (error) {
       PlanningUnauthorized(inactive: true) => 'Planning is closed for this relationship.',
       PlanningUnauthorized() => 'Please sign in again to keep planning.',
+      // The screens show the localized copy (flow_accountNotReady).
+      PlanningAccountNotReady() => 'Finish setting up your account first.',
       PlanningNotFound() => 'That was removed by your partner.',
       PlanningStaleVersion() => 'Your partner just changed this.',
       PlanningLimitReached(limit: 'blocks_per_entry') => 'This page is full. Remove a block to add another.',

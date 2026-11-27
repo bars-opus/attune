@@ -25,6 +25,8 @@ import 'package:attune/features/planning/presentation/screens/planning_home_scre
     show PlanningHomeTab;
 import 'package:attune/features/auth/sign_up/data/age_gate_store.dart';
 import 'package:attune/features/onboarding/data/onboarding_store.dart';
+import 'package:attune/features/onboarding/presentation/providers/home_state_providers.dart'
+    show homeStateProvider;
 import 'package:flutter/material.dart';
 import 'package:attune/features/safety/data/safety_pin_store.dart';
 import 'package:attune/features/safety/domain/services/quick_exit_service.dart';
@@ -199,11 +201,9 @@ void _initializeDeepLinks() {
 void _handleDeepLink(Uri uri) {
   debugPrint('[deep-link] received ${_redactUri(uri)}');
 
-  if (_isAuthCallback(uri)) {
-    debugPrint('[deep-link] auth callback detected.');
-    unawaited(_handleAuthCallback(uri));
-    return;
-  }
+  // Entry gates fix 6 (2026-11-27): no `attune://auth/callback` session
+  // handler. Sign-in is phone OTP in the app only; a link can never open a
+  // session (email, magic-link and OAuth sign-in are gone).
 
   final planningTab = planningTabFromLink(uri);
   if (planningTab != null) {
@@ -235,9 +235,9 @@ Future<void> _storePendingInviteCode(String code) async {
   // Storing the code alone was previously the entire handler — nothing
   // ever navigated, so scanning the invite QR only did something useful if
   // the user happened to wander into onboarding on their own later. Drive
-  // to /onboarding directly (OnboardingGate reads pendingInviteCode back
-  // out of the same store and, for an unauthenticated visitor, now routes
-  // to /login instead of bouncing to /home — see onboarding_gate.dart).
+  // there directly: RI-1 for a signed-out visitor, /onboarding (whose gate
+  // reads pendingInviteCode back out of the same store only after consent,
+  // the date of birth and the name) for anyone signed in.
   //
   // A single addPostFrameCallback only guarantees one frame has been
   // painted — it does NOT guarantee GoRouter's own boot sequence
@@ -267,8 +267,8 @@ Future<void> _navigateToOnboardingWhenReady() async {
   // PreferencesService, then flip RoutingNotifier synchronously so the
   // very next redirect check already sees isFirstLaunch=false.
   // Spec 1 W2a (§5.2, R3): sign_in_boot.dart clears first launch as above,
-  // then opens RI-1 for a signed-out invitee under flow_signin_v2, today's
-  // /onboarding otherwise.
+  // then opens RI-1 for a signed-out invitee and /onboarding for anyone
+  // signed in (entry gates fix 4: whatever flow_signin_v2 says).
   await openInviteLanding(context);
 }
 
@@ -287,28 +287,19 @@ Future<void> _openPlanningWhenReady(PlanningHomeTab tab) async {
       relationshipId:
           () => container.refresh(planning.currentRelationshipIdProvider.future),
       mapEnabled: () => container.read(coupleMapEnabledProvider.future),
+      // Entry gates fix 5: the router's gate check, on a fresh read of the
+      // home state (the cache when offline): nothing owed, no hold.
+      accountReady: () async {
+        final userId = Supabase.instance.client.auth.currentUser?.id;
+        if (userId == null) return false;
+        await container.read(homeStateProvider(userId).notifier).refresh();
+        return container.read(homeStateProvider(userId)).isComplete;
+      },
     );
   } catch (error) {
-    // Quiet, like the auth callback: a link must never crash the app.
+    // Quiet: a link must never crash the app.
     debugPrint('[deep-link] planning link failed: ${error.runtimeType}');
   }
-}
-
-Future<void> _handleAuthCallback(Uri uri) async {
-  try {
-    await Supabase.instance.client.auth
-        .getSessionFromUrl(uri)
-        .timeout(const Duration(seconds: 30));
-    debugPrint('[deep-link] auth session established.');
-  } catch (error) {
-    debugPrint('[deep-link] auth callback failed: ${error.runtimeType}');
-  }
-}
-
-bool _isAuthCallback(Uri uri) {
-  return uri.scheme == 'attune' &&
-      uri.host == 'auth' &&
-      uri.path == '/callback';
 }
 
 const _inviteLinkHost = 'invite.attune.barsopus.com';

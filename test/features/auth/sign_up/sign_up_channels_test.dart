@@ -5,6 +5,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:attune/features/auth/sign_up/presentation/widgets/one_time_code_field.dart';
 import 'package:attune/core/platform/sim_country.dart';
 import 'package:attune/core/ui/motion/motion_tokens.dart';
 import 'package:attune/features/auth/data/passwordless_auth_service.dart';
@@ -611,8 +612,9 @@ void main() {
     await tester.pump();
     await tester.pump();
     for (final digit in ['1', '2', '3', '4', '5', '6']) {
+      // In the boxes (the countdown's rolling digits are text too).
       expect(
-        find.text(digit),
+        find.descendant(of: find.byType(OneTimeCodeField), matching: find.text(digit)),
         findsOneWidget,
         reason: 'the code filled the boxes',
       );

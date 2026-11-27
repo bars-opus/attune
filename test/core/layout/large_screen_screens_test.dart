@@ -5,9 +5,7 @@ import 'package:attune/app/theme/design_tokens.dart';
 import 'package:attune/core/providers/shared_prefs_provider.dart';
 import 'package:attune/core/utils/bottom_sheet_utils.dart';
 import 'package:attune/core/utils/screen_util_config.dart';
-import 'package:attune/core/widgets/buttons/app_button.dart';
 import 'package:attune/core/widgets/card_inkwell.dart';
-import 'package:attune/features/auth/intro/intro_screen.dart';
 import 'package:attune/features/auth/log_in/presentation/screens/login_profile.dart';
 import 'package:attune/features/settings/screens/settings_screen.dart';
 import 'package:attune/i10n/generated/app_localizations.dart';
@@ -63,40 +61,13 @@ void main() {
   group('the guest landing', () {
     testWidgets('sits in a 600pt column, buttons included', (t) async {
       await _pump(t, _iPad, const Scaffold(body: LoginProfile()));
+      // "Join Attune" (the only sign-in since 2026-11-26).
       final button = t.getRect(
-        find.widgetWithText(AppButton, 'Continue with phone number'),
+        find.ancestor(of: find.text('I already have an account'), matching: find.byType(InkWell)).first,
       );
       expect(button.width, lessThanOrEqualTo(ContentWidth.form));
       expect(button.center.dx, closeTo(1032 / 2, 0.5));
     });
-
-    testWidgets('talks about Attune, not a shop', (t) async {
-      await _pump(t, _phone, const Scaffold(body: LoginProfile()));
-      final overview = find.textContaining('browsing Attune as a guest');
-      expect(overview, findsOneWidget);
-      final text = t.widget<Text>(overview).data!;
-      expect(text, isNot(contains('shop')));
-      expect(text, isNot(contains('business')));
-      expect(text, contains('partner'));
-    });
-  });
-
-  testWidgets('the welcome screen sits in a 600pt column on its green', (
-    t,
-  ) async {
-    await _pump(t, _iPad, const IntroScreen());
-    final carousel = t.getRect(
-      find.byWidgetPredicate(
-        (w) => w is ListView && w.scrollDirection == Axis.horizontal,
-      ),
-    );
-    expect(carousel.width, lessThanOrEqualTo(ContentWidth.form));
-    expect(carousel.center.dx, closeTo(1032 / 2, 0.5));
-    expect(
-      t.getSize(find.byType(Scaffold)).width,
-      1032,
-      reason: 'the green still fills the screen',
-    );
   });
 
   Future<Rect> openSheet(WidgetTester t, Size size) async {

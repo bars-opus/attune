@@ -2494,7 +2494,7 @@ abstract class AppLocalizations {
   /// No description provided for @flow_welcomeCardSemantics.
   ///
   /// In en, this message translates to:
-  /// **'{title}. {line} Opens a preview.'**
+  /// **'{title}. {line}'**
   String flow_welcomeCardSemantics(String title, String line);
 
   /// No description provided for @flow_welcomeGetStarted.
@@ -3163,6 +3163,12 @@ abstract class AppLocalizations {
   /// **'Send by WhatsApp instead'**
   String get flow_phoneWhatsApp;
 
+  /// No description provided for @flow_phoneReadOpinions.
+  ///
+  /// In en, this message translates to:
+  /// **'Not ready to share your number? Read Opinions first.'**
+  String get flow_phoneReadOpinions;
+
   /// No description provided for @flow_whatsAppTitle.
   ///
   /// In en, this message translates to:
@@ -3336,6 +3342,30 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Contact support'**
   String get flow_holdContact;
+
+  /// No description provided for @flow_deleteMyAccount.
+  ///
+  /// In en, this message translates to:
+  /// **'Delete my account'**
+  String get flow_deleteMyAccount;
+
+  /// No description provided for @flow_downloadMyData.
+  ///
+  /// In en, this message translates to:
+  /// **'Download my data'**
+  String get flow_downloadMyData;
+
+  /// No description provided for @flow_accountNotReady.
+  ///
+  /// In en, this message translates to:
+  /// **'Finish setting up your account first.'**
+  String get flow_accountNotReady;
+
+  /// No description provided for @flow_accountNotReadyAction.
+  ///
+  /// In en, this message translates to:
+  /// **'Finish setting up'**
+  String get flow_accountNotReadyAction;
 
   /// No description provided for @flow_signOut.
   ///
@@ -4027,11 +4057,11 @@ abstract class AppLocalizations {
   /// **'Download am: {link}'**
   String flow_inviteMsgPidginGet(String link);
 
-  /// No description provided for @flow_inviteMsgOpenCode.
+  /// No description provided for @flow_inviteMsgTapAgain.
   ///
   /// In en, this message translates to:
-  /// **'Open Attune → I have an invite → {code}'**
-  String flow_inviteMsgOpenCode(String code);
+  /// **'Installed it already? Tap the link again to join me.'**
+  String get flow_inviteMsgTapAgain;
 
   /// No description provided for @flow_inviteMsgFoundMyself.
   ///

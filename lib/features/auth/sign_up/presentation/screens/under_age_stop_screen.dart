@@ -84,7 +84,8 @@ class UnderAgeStopScreen extends StatelessWidget {
       actions: [
         FlowSecondaryButton(
           label: loc.flow_close,
-          onPressed: () => context.go(RouteNames.welcome),
+          // The intro (2026-11-26): Welcome's paths all lead back here.
+          onPressed: () => context.go(RouteNames.start),
         ),
       ],
     );

@@ -22,6 +22,8 @@ class ConsentStep extends StatefulWidget {
     this.updatedTerms = false,
     this.busy = false,
     this.errorText,
+    this.onDeleteAccount,
+    this.onDownloadData,
   });
 
   /// Each keeps the step busy until it has finished.
@@ -30,6 +32,15 @@ class ConsentStep extends StatefulWidget {
   final bool updatedTerms;
   final bool busy;
   final String? errorText;
+
+  /// Entry gates fix round (review I-2): A5c's "Delete my account", the
+  /// app's deletion confirmation, for someone who won't take the new
+  /// terms. Null (A5, no account yet): no link.
+  final VoidCallback? onDeleteAccount;
+
+  /// Owner ruling (fix round): A5c's "Download my data", the export
+  /// screen. Null (A5): no link.
+  final VoidCallback? onDownloadData;
 
   @override
   State<ConsentStep> createState() => _ConsentStepState();
@@ -50,6 +61,8 @@ class _ConsentStepState extends State<ConsentStep> with SubmitOnce {
     final loc = AppLocalizations.of(context)!;
     final theme = Theme.of(context);
     final errorText = widget.errorText;
+    final onDelete = widget.onDeleteAccount;
+    final onDownload = widget.onDownloadData;
     Widget bullet(String text) => Padding(
       padding: const EdgeInsets.only(bottom: 12),
       child: Row(
@@ -109,6 +122,26 @@ class _ConsentStepState extends State<ConsentStep> with SubmitOnce {
               text: errorText,
               style: theme.textTheme.bodyMedium,
               liveRegion: true,
+            ),
+          ],
+          // In the body, not the pinned actions: quiet, and never crowding
+          // Agree and Not now at large text.
+          if (onDelete != null || onDownload != null) ...[
+            const SizedBox(height: 12),
+            Wrap(
+              alignment: WrapAlignment.center,
+              children: [
+                if (onDownload != null)
+                  FlowTextLink(
+                    label: loc.flow_downloadMyData,
+                    onPressed: _busy ? () {} : onDownload,
+                  ),
+                if (onDelete != null)
+                  FlowTextLink(
+                    label: loc.flow_deleteMyAccount,
+                    onPressed: _busy ? () {} : onDelete,
+                  ),
+              ],
             ),
           ],
         ],

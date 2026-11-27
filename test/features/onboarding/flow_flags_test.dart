@@ -1,6 +1,9 @@
 // Spec 1 W3a (§2.5 A-6, §5.3): flow_paths_v2 and flow_couples_v2 as the app
 // reads them: effective (each needs the one before it), the cached copy on
 // the first frame, off when nothing can be read.
+import 'dart:async';
+
+import 'package:attune/core/flags/public_app_config.dart';
 import 'package:attune/core/providers/shared_prefs_provider.dart';
 import 'package:attune/core/services/shared_preferences_service.dart';
 import 'package:attune/features/auth/sign_up/presentation/sign_up_flags.dart';
@@ -126,4 +129,93 @@ void main() {
       expect('${prefs.get(key)}'.toLowerCase(), isNot(contains('dating')));
     }
   });
+
+  // Entry gates fix 4 (owner 2026-11-27): an unread public config is
+  // unknown, never "flags off". flowFlagsKnownProvider used to be true at
+  // once whenever flow_signin_v2 read off, which a prod build with no
+  // cached config does before its first read; the stored invite was then
+  // accepted before the gate's consent and date-of-birth checks.
+  group('flowFlagsKnownProvider (entry gates fix 4)', () {
+    Future<ProviderContainer> known({
+      required PublicAppConfigGateway config,
+      FakeFlowFlagsGateway? flags,
+      bool buildDefault = false,
+      Map<String, Object> prefsValues = const {},
+    }) async {
+      SharedPreferences.setMockInitialValues(prefsValues);
+      final prefs = await SharedPreferences.getInstance();
+      final c = ProviderContainer(
+        overrides: [
+          sharedPreferencesProvider.overrideWithValue(prefs),
+          publicAppConfigGatewayProvider.overrideWithValue(config),
+          flowV2BuildDefaultProvider.overrideWithValue(buildDefault),
+          flowFlagsGatewayProvider.overrideWithValue(
+            flags ?? FakeFlowFlagsGateway(),
+          ),
+        ],
+      );
+      addTearDown(c.dispose);
+      return c;
+    }
+
+    test('before the public config is read: unknown, though the build '
+        'default says flow_signin_v2 is off', () async {
+      final pending = _PendingConfig();
+      final c = await known(config: pending);
+      expect(c.read(signInFlowV2Provider), isFalse);
+      expect(c.read(flowFlagsKnownProvider), isFalse);
+      pending.answer.complete(_config(signIn: false));
+      await c.read(publicAppConfigProvider.future);
+      expect(c.read(flowFlagsKnownProvider), isTrue);
+    });
+
+    test('a failed read with nothing cached stays unknown', () async {
+      final c = await known(config: _PendingConfig()..fail());
+      await c.read(publicAppConfigProvider.future);
+      expect(c.read(signInFlowV2Provider), isFalse);
+      expect(c.read(flowFlagsKnownProvider), isFalse);
+    });
+
+    test('a failed read with a cached config: known (an answer this phone '
+        'has had)', () async {
+      final c = await known(
+        config: _PendingConfig()..fail(),
+        prefsValues: {
+          PublicAppConfigCache.key: '{"flags":{"flow_signin_v2":false}}',
+        },
+      );
+      expect(c.read(flowFlagsKnownProvider), isTrue);
+    });
+
+    test('flow_signin_v2 on: known once the signed-in flags are read too',
+        () async {
+      final flags = FakeFlowFlagsGateway(pathsV2: false);
+      final c = await known(
+        config: _PendingConfig()..answer.complete(_config(signIn: true)),
+        flags: flags,
+      );
+      await c.read(publicAppConfigProvider.future);
+      expect(c.read(signInFlowV2Provider), isTrue);
+      expect(c.read(flowFlagsKnownProvider), isFalse);
+      await c.read(flowFlagsProvider.future);
+      expect(c.read(flowFlagsKnownProvider), isTrue);
+    });
+  });
+}
+
+Map<String, dynamic> _config({required bool signIn}) => {
+  'flags': {'flow_signin_v2': signIn},
+  'config': <String, dynamic>{},
+};
+
+/// The public config, answered when the test says (or failing).
+class _PendingConfig implements PublicAppConfigGateway {
+  final answer = Completer<Map<String, dynamic>>();
+  bool _fails = false;
+
+  void fail() => _fails = true;
+
+  @override
+  Future<Map<String, dynamic>> fetch() =>
+      _fails ? Future.error(StateError('offline')) : answer.future;
 }

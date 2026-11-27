@@ -1,11 +1,9 @@
 // lib/core/utils/export_categories.dart
 export 'package:attune/app/theme/app_colors.dart';
 export 'package:attune/app/theme/app_text_theme.dart';
-export 'package:attune/features/auth/intro/models/intro_feature_model.dart';
 export 'package:attune/app/routing/app_router.dart';
 export 'package:attune/app/theme/app_theme.dart';
 export 'package:attune/core/utils/screen_util_config.dart';
-export 'package:attune/features/auth/intro/intro_screen.dart';
 export 'package:attune/app/theme/design_tokens.dart';
 export 'package:attune/core/widgets/buttons/app_button.dart';
 export 'package:attune/core/widgets/buttons/app_fab.dart';
@@ -47,7 +45,6 @@ export 'package:attune/features/settings/screens/settings_screen.dart';
 export 'package:attune/core/utils/url_launcher_utils.dart';
 export 'package:attune/app/licenses_screen.dart';
 export 'package:attune/core/widgets/app_text_form_field.dart';
-export 'package:attune/features/auth/log_in/presentation/screens/login_screen.dart';
 export 'package:attune/core/widgets/buttons/app_icon_button.dart';
 export 'package:attune/core/utils/validation/validation_result.dart';
 export 'package:attune/core/utils/validation/validation_utils.dart';

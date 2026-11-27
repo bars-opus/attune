@@ -20,6 +20,15 @@ INSERT INTO public.users(id, phone, display_name) VALUES
   ('00000000-0000-0000-0000-00000000e002', '+15559990102', 'E2'),
   ('00000000-0000-0000-0000-00000000e003', '+15559990103', 'E3')
   ON CONFLICT (id) DO NOTHING;
+-- Entry gates 2026-11-27: content writes need a complete account (users row,
+-- 18+ date of birth, EULA 2, no hold; private.account_ready).
+UPDATE public.users SET eula_version = '2', eula_accepted_at = now()
+ WHERE id IN ('00000000-0000-0000-0000-00000000e001', '00000000-0000-0000-0000-00000000e002', '00000000-0000-0000-0000-00000000e003');
+INSERT INTO public.account_birthdates (user_id, birth_date) VALUES
+  ('00000000-0000-0000-0000-00000000e001', DATE '1990-01-01'),
+  ('00000000-0000-0000-0000-00000000e002', DATE '1990-01-01'),
+  ('00000000-0000-0000-0000-00000000e003', DATE '1990-01-01')
+ON CONFLICT (user_id) DO NOTHING;
 
 -- Place updates: the deliberate half of the feature.
 DO $$

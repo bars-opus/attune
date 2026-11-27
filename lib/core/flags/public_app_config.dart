@@ -39,14 +39,12 @@ class PublicAppConfig {
   /// "until the first fetch" means a successful one, so a weak network never
   /// moves the router from the new sign-in back to today's mid-session.
   factory PublicAppConfig.unread({required bool flowSignInV2}) =>
-      PublicAppConfig(
-        flowSignInV2: flowSignInV2,
-        platformAgeSignals: false,
-        supportResourcesV2: false,
-        textScaleV2: false,
-        ageSignalStorefronts: const [],
-        datingOpenCountries: const [],
-      );
+      _UnreadPublicAppConfig(flowSignInV2: flowSignInV2);
+
+  /// True only for [PublicAppConfig.unread]: no answer stands behind it
+  /// (entry gates fix round, review M-5: "known" reads this, not whether
+  /// the cache write after a good read happened to land).
+  bool get isUnread => false;
 
   final bool flowSignInV2;
   final bool platformAgeSignals;
@@ -109,6 +107,22 @@ class PublicAppConfig {
     Object.hashAll(ageSignalStorefronts),
     Object.hashAll(datingOpenCountries),
   );
+}
+
+/// [PublicAppConfig.unread]: equal to the same values read for real, but
+/// marked, so an unread config is never taken for an answer.
+class _UnreadPublicAppConfig extends PublicAppConfig {
+  const _UnreadPublicAppConfig({required super.flowSignInV2})
+    : super(
+        platformAgeSignals: false,
+        supportResourcesV2: false,
+        textScaleV2: false,
+        ageSignalStorefronts: const [],
+        datingOpenCountries: const [],
+      );
+
+  @override
+  bool get isUnread => true;
 }
 
 /// The one network read, so tests can replace it.
@@ -222,6 +236,23 @@ final flowSignInV2Provider = Provider<bool>((ref) {
   if (live != null) return live.flowSignInV2;
   return ref.watch(cachedPublicAppConfigProvider)?.flowSignInV2 ??
       ref.watch(flowV2BuildDefaultProvider);
+});
+
+/// The public config is known (entry gates fix 4): this phone holds an
+/// answer, this run's read (even if its cache write failed: fix round,
+/// review M-5) or an earlier one cached. An unread config, or a failed read
+/// with nothing cached, is unknown, never "everything off": flow_signin_v2's
+/// build default then stands in only for the router, never for a decision
+/// that could take a stored invite.
+final publicAppConfigKnownProvider = Provider<bool>((ref) {
+  final live = ref.watch(publicAppConfigProvider).valueOrNull;
+  if (live != null && !live.isUnread) return true;
+  try {
+    return ref.watch(cachedPublicAppConfigProvider) != null;
+  } catch (_) {
+    // No SharedPreferences in a bare test host.
+    return false;
+  }
 });
 
 /// The Dating open-country list (D15): the Welcome preview, A6 and the Me

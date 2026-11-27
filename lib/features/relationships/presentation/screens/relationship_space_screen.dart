@@ -6,6 +6,7 @@ import 'package:attune/core/metrics/metric_counter.dart';
 import 'package:attune/core/notifications/presentation/widgets/push_ask_row.dart';
 import 'package:attune/core/notifications/services/push_permission_policy.dart';
 import 'package:attune/core/providers/shared_prefs_provider.dart';
+import 'package:attune/core/ui/glass/glass_menu.dart';
 import 'package:attune/core/ui/text/allow_large_text.dart';
 import 'package:attune/features/auth/sign_up/presentation/widgets/flow_buttons.dart';
 import 'package:attune/features/auth/sign_up/presentation/widgets/flow_text_field.dart';
@@ -458,13 +459,19 @@ class _InviteSection extends StatelessWidget {
                   ),
                 ),
                 if (onCancel != null)
-                  PopupMenuButton<void>(
+                  GlassMenuButton<String>(
                     tooltip: loc.flow_inviteMenu,
+                    // PopupMenuButton's own icon and colour.
+                    icon: Icon(
+                      Icons.adaptive.more,
+                      color: IconTheme.of(context).color,
+                    ),
+                    onSelected: (_) => onCancel?.call(),
                     itemBuilder:
                         (_) => [
-                          PopupMenuItem<void>(
-                            onTap: onCancel,
-                            child: Text(loc.flow_cancelThisInvite),
+                          GlassMenuItem(
+                            value: 'cancel',
+                            label: loc.flow_cancelThisInvite,
                           ),
                         ],
                   ),

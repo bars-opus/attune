@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:attune/features/auth/sign_up/domain/phone_entry.dart';
+import 'package:attune/core/widgets/animated_rolling_counter.dart';
 import 'package:attune/features/auth/sign_up/domain/resend_ladder.dart';
 import 'package:attune/features/auth/sign_up/presentation/widgets/flow_buttons.dart';
 import 'package:attune/features/auth/sign_up/presentation/widgets/flow_frame.dart';
@@ -278,11 +279,9 @@ class _CodeStepState extends State<CodeStep> with SubmitOnce {
           ],
           const SizedBox(height: 16),
           if (left > Duration.zero)
-            Text(
-              loc.flow_codeResendIn(ResendLadder.clock(left)),
-              style: theme.textTheme.bodyMedium?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant,
-              ),
+            _ResendCountdown(
+              left: left,
+              line: loc.flow_codeResendIn(ResendLadder.clock(left)),
             )
           else ...[
             FlowTextLink(
@@ -334,6 +333,51 @@ class _CodeStepState extends State<CodeStep> with SubmitOnce {
             onPressed: _busy ? null : _retry,
           ),
       ],
+    );
+  }
+}
+
+/// "Send a new code in 0:45", its time rolling down like an odometer (the
+/// old login screen's countdown, owner 2026-11-26). The localised line is
+/// split around its time, so every language keeps its own wording; a screen
+/// reader hears the line as it is.
+class _ResendCountdown extends StatelessWidget {
+  const _ResendCountdown({required this.left, required this.line});
+
+  final Duration left;
+  final String line;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final clock = ResendLadder.clock(left);
+    final at = line.indexOf(clock);
+    final base = theme.textTheme.bodyMedium?.copyWith(color: theme.colorScheme.onSurfaceVariant);
+    if (at < 0) return Text(line, style: base);
+    return Semantics(
+      label: line,
+      excludeSemantics: true,
+      child: Text.rich(
+        TextSpan(
+          style: base,
+          children: [
+            TextSpan(text: line.substring(0, at)),
+            WidgetSpan(
+              alignment: PlaceholderAlignment.baseline,
+              baseline: TextBaseline.alphabetic,
+              child: AnimatedRollingCounter(
+                count: left.inSeconds,
+                format: (s) => ResendLadder.clock(Duration(seconds: s)),
+                style: base?.copyWith(
+                  color: theme.colorScheme.primary,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+            TextSpan(text: line.substring(at + clock.length)),
+          ],
+        ),
+      ),
     );
   }
 }

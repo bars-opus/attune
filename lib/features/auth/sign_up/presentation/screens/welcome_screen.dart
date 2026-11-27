@@ -5,7 +5,7 @@ import 'package:attune/core/providers/routing_providers.dart';
 import 'package:attune/core/providers/shared_prefs_provider.dart';
 import 'package:attune/features/auth/sign_up/presentation/widgets/flow_buttons.dart';
 import 'package:attune/features/auth/sign_up/presentation/widgets/flow_frame.dart';
-import 'package:attune/features/auth/sign_up/presentation/widgets/path_preview_sheet.dart';
+import 'package:attune/features/onboarding/domain/home_state.dart';
 import 'package:attune/i10n/generated/app_localizations.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -13,11 +13,18 @@ import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:gap/gap.dart';
 import 'package:go_router/go_router.dart';
 
-/// WL1 · Welcome (`/welcome`, Spec 1 §3.1): the three ways in and every
-/// gate before anyone types. Replaces IntroScreen under flow_signin_v2.
-/// Nothing is preselected and nothing here touches the network.
-class WelcomeScreen extends ConsumerWidget {
-  const WelcomeScreen({super.key});
+/// WL1 · Welcome (`/welcome`, Spec 1 §3.1; owner 2026-11-26): "What brings
+/// you to Attune?". Pushed by the intro's Get started; a tap on one of the
+/// three paths starts sign-up for it (A1), and the account is made on that
+/// path, never asked again (A6). Nothing is preselected and nothing here
+/// touches the network. Back returns to the intro, or to [backTo].
+class WelcomeScreen extends ConsumerStatefulWidget {
+  const WelcomeScreen({super.key, this.backTo});
+
+  /// Where A1's Back goes (passed on as sign-up's `back`), and Welcome's
+  /// own when nothing is under it: the guest tab opens Welcome with its
+  /// own (fix round I-2). Null: Welcome, and the intro.
+  final String? backTo;
 
   /// Any button marks first launch done, exactly as IntroScreen does, so
   /// the router doesn't bounce the next route back here. Both providers are
@@ -36,103 +43,133 @@ class WelcomeScreen extends ConsumerWidget {
   }
 
   /// `/signup?entry=…`, with `back` when the first step's back button
-  /// should return somewhere other than Welcome.
-  static String signUpLocation(String entry, {String? back}) =>
+  /// should return somewhere other than Welcome, and `path` (its enum name)
+  /// for the path chosen here.
+  static String signUpLocation(String entry, {String? back, AppPath? path}) =>
       Uri(
         path: RouteNames.signUp,
-        queryParameters: {'entry': entry, if (back != null) 'back': back},
+        queryParameters: {
+          'entry': entry,
+          if (back != null) 'back': back,
+          if (path != null) 'path': path.name,
+        },
       ).toString();
 
-  void _preview(BuildContext context, WidgetRef ref, PathPreviewKind kind) {
-    ref.read(metricCounterProvider).bump(switch (kind) {
-      PathPreviewKind.relationship =>
-        ClientMetricKey.welcomePreviewRelationship,
-      PathPreviewKind.dating => ClientMetricKey.welcomePreviewDating,
-      PathPreviewKind.justMe => ClientMetricKey.welcomePreviewJustMe,
+  @override
+  ConsumerState<WelcomeScreen> createState() => _WelcomeScreenState();
+}
+
+class _WelcomeScreenState extends ConsumerState<WelcomeScreen> {
+  /// A card (or the invite link) was tapped: a second tap does nothing
+  /// (fix round M-3), so one path is counted and opened.
+  bool _leaving = false;
+
+  /// A path card: counted (the keys keep their server names), then A1 for
+  /// that path.
+  void _choose(AppPath path) {
+    if (_leaving) return;
+    _leaving = true;
+    ref.read(metricCounterProvider).bump(switch (path) {
+      AppPath.relationship => ClientMetricKey.welcomePreviewRelationship,
+      AppPath.dating => ClientMetricKey.welcomePreviewDating,
+      AppPath.justMe => ClientMetricKey.welcomePreviewJustMe,
     });
-    showPathPreview(
+    WelcomeScreen.leave(
       context,
-      kind: kind,
-      onGetStarted: () => leave(context, ref, signUpLocation('new')),
+      ref,
+      WelcomeScreen.signUpLocation('new', back: widget.backTo, path: path),
     );
   }
 
+  /// "I have an invite": RI-2 (`/invite`), first launch marked done as a
+  /// card does. No path is chosen, so nothing is counted.
+  void _invite() {
+    if (_leaving) return;
+    _leaving = true;
+    WelcomeScreen.leave(context, ref, RouteNames.invite);
+  }
+
+  /// Back to what pushed Welcome (the intro, the guest tab); reached any
+  /// other way (A1's back), [WelcomeScreen.backTo] or the intro opens in
+  /// its place.
+  void _back() {
+    final router = GoRouter.of(context);
+    router.canPop()
+        ? router.pop()
+        : router.go(widget.backTo ?? RouteNames.start);
+  }
+
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  Widget build(BuildContext context) {
     final loc = AppLocalizations.of(context)!;
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
 
-    return FlowFrame(
-      title: loc.flow_welcomeTitle,
-      body: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          _PathCard(
-            title: loc.flow_pathRelationshipTitle,
-            line: loc.flow_pathRelationshipLine,
-            onTap: () => _preview(context, ref, PathPreviewKind.relationship),
-          ),
-          Gap(Spacing.sm.h),
-          _PathCard(
-            title: loc.flow_pathDatingTitle,
-            line: loc.flow_pathDatingLine,
-            onTap: () => _preview(context, ref, PathPreviewKind.dating),
-          ),
-          Gap(Spacing.sm.h),
-          _PathCard(
-            title: loc.flow_pathJustMeTitle,
-            line: loc.flow_pathJustMeLine,
-            onTap: () => _preview(context, ref, PathPreviewKind.justMe),
-          ),
-          Gap(Spacing.lg.h),
-          FlowPrimaryButton(
-            label: loc.flow_welcomeGetStarted,
-            onPressed: () => leave(context, ref, signUpLocation('new')),
-          ),
-          Gap(Spacing.sm.h),
-          FlowSecondaryButton(
-            label: loc.flow_welcomeHaveAccount,
-            onPressed: () => leave(context, ref, signUpLocation('returning')),
-          ),
-          Gap(Spacing.sm.h),
-          FlowSecondaryButton(
-            label: loc.flow_welcomeHaveInvite,
-            onPressed: () => leave(context, ref, RouteNames.invite),
-          ),
-          FlowTextLink(
-            label: loc.flow_welcomeReadOpinions,
-            onPressed: () => leave(context, ref, RouteNames.guestAge),
-          ),
-          Gap(Spacing.md.h),
-          Text(
-            loc.flow_welcomeFooter,
-            textAlign: TextAlign.center,
-            style: theme.textTheme.bodySmall?.copyWith(
-              color: colorScheme.onSurfaceVariant,
+    final canPop = GoRouter.of(context).canPop();
+
+    return PopScope(
+      // System back as the back button: the intro under Welcome, or the
+      // intro in its place.
+      canPop: canPop,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop) _back();
+      },
+      child: FlowFrame(
+        title: loc.flow_pathTitle,
+        onBack: _back,
+        body: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            _PathCard(
+              title: loc.flow_pathRelationshipTitle,
+              line: loc.flow_pathRelationshipLine,
+              onTap: () => _choose(AppPath.relationship),
             ),
-          ),
-          Wrap(
-            alignment: WrapAlignment.center,
-            children: [
-              // Ruling C6: the shared read-only legal sheets.
-              FlowTextLink(
-                label: loc.flow_linkTerms,
-                onPressed: () => showTermsSheet(context),
+            Gap(Spacing.sm.h),
+            _PathCard(
+              title: loc.flow_pathDatingTitle,
+              line: loc.flow_pathDatingLine,
+              onTap: () => _choose(AppPath.dating),
+            ),
+            Gap(Spacing.sm.h),
+            _PathCard(
+              title: loc.flow_pathJustMeTitle,
+              line: loc.flow_pathJustMeLine,
+              onTap: () => _choose(AppPath.justMe),
+            ),
+            Gap(Spacing.lg.h),
+            Text(
+              loc.flow_welcomeFooter,
+              textAlign: TextAlign.center,
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: colorScheme.onSurfaceVariant,
               ),
-              FlowTextLink(
-                label: loc.flow_linkPrivacy,
-                onPressed: () => showPrivacySheet(context),
-              ),
-            ],
-          ),
-        ],
+            ),
+            Wrap(
+              alignment: WrapAlignment.center,
+              children: [
+                // Ruling C6: the shared read-only legal sheets.
+                FlowTextLink(
+                  label: loc.flow_linkTerms,
+                  onPressed: () => showTermsSheet(context),
+                ),
+                FlowTextLink(
+                  label: loc.flow_linkPrivacy,
+                  onPressed: () => showPrivacySheet(context),
+                ),
+              ],
+            ),
+            // Entry gates (b, owner 2026-11-27): RI-2, quietly, for a code
+            // from an invite message (an iOS install loses the link).
+            FlowTextLink(label: loc.flow_welcomeHaveInvite, onPressed: _invite),
+          ],
+        ),
       ),
     );
   }
 }
 
-/// One of the three equal cards: a button that opens the path's preview.
+/// One of the three equal cards: a button that starts sign-up on its path.
 class _PathCard extends StatelessWidget {
   const _PathCard({
     required this.title,

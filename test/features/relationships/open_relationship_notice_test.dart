@@ -56,10 +56,11 @@ void main() {
     expect(find.text(_server), findsOneWidget);
   });
 
-  test('both auto-accept paths tell the person', () {
+  // Entry gates fix 4 (2026-11-27): the legacy gate's accept is gone;
+  // HomeScreen's is the one auto-accept left (the v2 gate words its own).
+  test('the auto-accept path tells the person', () {
     for (final path in [
       'lib/home/home_screen.dart',
-      'lib/features/onboarding/presentation/screens/onboarding_gate.dart',
     ]) {
       final src = File(path).readAsStringSync();
       expect(src, contains('alreadyInRelationship'), reason: path);

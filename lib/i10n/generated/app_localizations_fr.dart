@@ -1297,7 +1297,7 @@ class AppLocalizationsFr extends AppLocalizations {
 
   @override
   String flow_welcomeCardSemantics(String title, String line) {
-    return '$title. $line Opens a preview.';
+    return '$title. $line';
   }
 
   @override
@@ -1658,6 +1658,9 @@ class AppLocalizationsFr extends AppLocalizations {
   String get flow_phoneWhatsApp => 'Send by WhatsApp instead';
 
   @override
+  String get flow_phoneReadOpinions => 'Not ready to share your number? Read Opinions first.';
+
+  @override
   String flow_whatsAppTitle(String number) {
     return 'Is WhatsApp on $number?';
   }
@@ -1751,6 +1754,18 @@ class AppLocalizationsFr extends AppLocalizations {
 
   @override
   String get flow_holdContact => 'Contact support';
+
+  @override
+  String get flow_deleteMyAccount => 'Delete my account';
+
+  @override
+  String get flow_downloadMyData => 'Download my data';
+
+  @override
+  String get flow_accountNotReady => 'Finish setting up your account first.';
+
+  @override
+  String get flow_accountNotReadyAction => 'Finish setting up';
 
   @override
   String get flow_signOut => 'Sign out';
@@ -2128,9 +2143,7 @@ class AppLocalizationsFr extends AppLocalizations {
   }
 
   @override
-  String flow_inviteMsgOpenCode(String code) {
-    return 'Open Attune → I have an invite → $code';
-  }
+  String get flow_inviteMsgTapAgain => 'Installed it already? Tap the link again to join me.';
 
   @override
   String get flow_inviteMsgFoundMyself => 'I found this myself. I just thought it\'d be nice.';

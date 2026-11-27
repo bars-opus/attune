@@ -224,6 +224,10 @@ class PlanningOutbox {
           break;
         } catch (e) {
           final error = mapPlanningError(e);
+          // Entry gates fix round: the account isn't set up yet (a queued
+          // A5, a hold). Not this op's fault: stop, keep it and the rest
+          // for a later replay, no retries now.
+          if (error is PlanningAccountNotReady) break;
           if (error.isPermanent) {
             dropped.add(op);
             delivered = true; // resolved: never retry a permanent failure

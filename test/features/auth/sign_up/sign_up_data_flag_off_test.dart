@@ -1,96 +1,26 @@
-// Spec 1 W2b, batch 3 extras to Task 6: the shared files Task 6 edits keep
-// today's behaviour with flow_signin_v2 off (EULA v1 through the real
-// service and its RPCs, no account call without a queued A5), the replay
-// runs before today's submission, and a known name with an accepted invite
-// still goes straight to the joined step. The last group pins the batch 3
-// review's fix round 1 (M-2, M-3, M-4, M-5, M-7).
+// Spec 1 W2b, batch 3 extras to Task 6: no account call without a queued
+// A5, and the replay runs before today's submission. The last group pins
+// the batch 3 review's fix round 1 (M-2, M-3, M-4, M-7). Entry gates fix 4
+// (2026-11-27): the EULA sheet's version tests, the legacy flow's joined
+// step and M-5 went with EulaGate and OnboardingFlow.
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:attune/features/auth/data/eula_acceptance_service.dart';
-import 'package:attune/features/auth/presentation/eula_gate.dart';
 import 'package:attune/features/auth/sign_up/data/account_service.dart';
 import 'package:attune/features/auth/sign_up/data/age_gate_store.dart';
-import 'package:attune/features/auth/sign_up/presentation/sign_up_flags.dart';
 import 'package:attune/features/onboarding/data/onboarding_store.dart';
 import 'package:attune/features/onboarding/data/onboarding_submission_service.dart';
 import 'package:attune/features/onboarding/data/onboarding_sync_service.dart';
 import 'package:attune/features/onboarding/domain/onboarding_models.dart';
-import 'package:attune/features/onboarding/presentation/screens/onboarding_flow.dart';
-import 'package:flutter/material.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:http/http.dart' as http;
-import 'package:http/testing.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../../helpers/fake_account_gateway.dart';
 
 const _me = '5f1a0000-0000-0000-0000-0000000000bb';
-
-String _fakeJwt() {
-  String part(Map<String, Object> json) =>
-      base64Url.encode(utf8.encode(jsonEncode(json))).replaceAll('=', '');
-  final exp =
-      DateTime.now().add(const Duration(days: 1)).millisecondsSinceEpoch ~/
-      1000;
-  return '${part({'alg': 'HS256', 'typ': 'JWT'})}.'
-      '${part({'sub': _me, 'exp': exp, 'role': 'authenticated'})}.sig';
-}
-
-/// A signed-in client whose get_eula_acceptance answers [stored].
-Future<(SupabaseClient, List<http.Request>)> _client(String? stored) async {
-  final requests = <http.Request>[];
-  final client = SupabaseClient(
-    'http://localhost:54321',
-    'test-anon-key',
-    httpClient: MockClient((request) async {
-      requests.add(request);
-      if (request.url.path == '/rest/v1/rpc/get_eula_acceptance') {
-        return http.Response(
-          jsonEncode(stored),
-          200,
-          request: request,
-          headers: {'content-type': 'application/json'},
-        );
-      }
-      if (request.url.path == '/rest/v1/rpc/record_eula_acceptance') {
-        return http.Response('', 204, request: request);
-      }
-      return http.Response('not found', 404, request: request);
-    }),
-    authOptions: const AuthClientOptions(autoRefreshToken: false),
-  );
-  final exp = DateTime.now().add(const Duration(days: 1));
-  await client.auth.recoverSession(
-    jsonEncode({
-      'access_token': _fakeJwt(),
-      'token_type': 'bearer',
-      'expires_in': 86400,
-      'expires_at': exp.millisecondsSinceEpoch ~/ 1000,
-      'refresh_token': 'refresh',
-      'user': {
-        'id': _me,
-        'aud': 'authenticated',
-        'phone': '233241234567',
-        'app_metadata': <String, Object>{},
-        'user_metadata': <String, Object>{},
-        'created_at': '2026-07-01T00:00:00Z',
-      },
-    }),
-  );
-  return (client, requests);
-}
-
-List<String> _rpcs(List<http.Request> requests) => [
-  for (final r in requests)
-    if (r.url.path.startsWith('/rest/v1/rpc/'))
-      r.url.path.substring('/rest/v1/rpc/'.length),
-];
 
 class _Submission implements OnboardingSubmissionService {
   _Submission(this.onSubmit);
@@ -133,82 +63,6 @@ void main() {
       prefs,
       scope: '${OnboardingStore.userScopePrefix}.$_me',
     );
-  });
-
-  group('EULA with flow_signin_v2 off: version 1, as today', () {
-    test('a v1 account passes; no version asks; the server is read', () async {
-      final (v1, v1Requests) = await _client('1');
-      addTearDown(v1.dispose);
-      expect(
-        await EulaAcceptanceService(client: v1).needsAcceptance(),
-        isFalse,
-      );
-      expect(_rpcs(v1Requests), ['get_eula_acceptance']);
-
-      final (none, _) = await _client(null);
-      addTearDown(none.dispose);
-      expect(
-        await EulaAcceptanceService(client: none).needsAcceptance(),
-        isTrue,
-      );
-    });
-
-    test('records version 1', () async {
-      final (client, requests) = await _client(null);
-      addTearDown(client.dispose);
-      await EulaAcceptanceService(client: client).recordAcceptance();
-      final record = requests.singleWhere(
-        (r) => r.url.path == '/rest/v1/rpc/record_eula_acceptance',
-      );
-      expect(jsonDecode(record.body), {'p_version': '1'});
-    });
-  });
-
-  group('EULA with flow_signin_v2 on: version 2', () {
-    test('a v1 account is asked once more and records 2', () async {
-      final (client, requests) = await _client('1');
-      addTearDown(client.dispose);
-      final service = EulaAcceptanceService(
-        client: client,
-        version: EulaAcceptanceService.v2Version,
-      );
-      expect(await service.needsAcceptance(), isTrue);
-      await service.recordAcceptance();
-      final record = requests.singleWhere(
-        (r) => r.url.path == '/rest/v1/rpc/record_eula_acceptance',
-      );
-      expect(jsonDecode(record.body), {'p_version': '2'});
-    });
-
-    test('a queued A5 is consent already given: nothing is read', () async {
-      final (client, requests) = await _client(null);
-      addTearDown(client.dispose);
-      await store.savePendingSignUp(pending);
-      expect(
-        await EulaAcceptanceService(
-          client: client,
-          version: EulaAcceptanceService.v2Version,
-        ).needsAcceptance(),
-        isFalse,
-      );
-      expect(_rpcs(requests), isEmpty);
-    });
-
-    test("another account's queued A5 is not this account's consent", () async {
-      final (client, _) = await _client(null);
-      addTearDown(client.dispose);
-      await OnboardingStore(
-        prefs,
-        scope: '${OnboardingStore.userScopePrefix}.someone-else',
-      ).savePendingSignUp(pending);
-      expect(
-        await EulaAcceptanceService(
-          client: client,
-          version: EulaAcceptanceService.v2Version,
-        ).needsAcceptance(),
-        isTrue,
-      );
-    });
   });
 
   group('the replay', () {
@@ -274,32 +128,6 @@ void main() {
       expect(store.pendingSignUp, isNull);
     });
   });
-
-  testWidgets(
-    'a known name with an accepted invite goes straight to the joined step',
-    (tester) async {
-      await store.rememberDisplayName('Ɛsi');
-      await tester.pumpWidget(
-        ProviderScope(
-          child: ScreenUtilInit(
-            designSize: const Size(375, 812),
-            builder:
-                (_, __) => MaterialApp(
-                  home: OnboardingFlow(
-                    store: store,
-                    acceptedPendingInvite: true,
-                    onComplete: () {},
-                  ),
-                ),
-          ),
-        ),
-      );
-      await tester.pumpAndSettle();
-      expect(find.text('What should Attune call you?'), findsNothing);
-      expect(find.text('Are you single or in a relationship?'), findsNothing);
-      expect(find.text('You are connected'), findsOneWidget);
-    },
-  );
 
   group('review fix round 1', () {
     test(
@@ -377,34 +205,6 @@ void main() {
       );
       expect(AgeGateStore.readBlocked(prefs, DateTime.now()), isTrue);
       expect(store.pendingSignUp, isNull);
-    });
-
-    testWidgets("M-5: ensureAccepted's own check asks for the flag's version", (
-      tester,
-    ) async {
-      final versions = <String>[];
-      Widget probe() => MaterialApp(
-        home: Builder(
-          builder: (context) {
-            versions.add(EulaGate.serviceFor(context).version);
-            return const SizedBox();
-          },
-        ),
-      );
-      await tester.pumpWidget(
-        ProviderScope(
-          overrides: [signInFlowV2Provider.overrideWithValue(true)],
-          child: probe(),
-        ),
-      );
-      await tester.pumpWidget(
-        ProviderScope(
-          overrides: [signInFlowV2Provider.overrideWithValue(false)],
-          child: probe(),
-        ),
-      );
-      await tester.pumpWidget(probe());
-      expect(versions, ['2', '1', '1']);
     });
 
     test(

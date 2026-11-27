@@ -13,6 +13,7 @@ import 'package:attune/features/auth/sign_up/data/sign_up_draft_store.dart';
 import 'package:attune/features/auth/sign_up/domain/otp_failure.dart';
 import 'package:attune/features/auth/sign_up/domain/sign_up_draft.dart';
 import 'package:attune/features/onboarding/data/onboarding_store.dart';
+import 'package:attune/features/onboarding/domain/home_state.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -1776,6 +1777,117 @@ void main() {
       expect(await c.resolveVerified(), isA<VerifiedBlocked>());
       expect(rig.auth.signOuts, 1);
       expect(rig.drafts.read(), isNull);
+    });
+  });
+
+  group('owner 2026-11-26: the path chosen on Welcome', () {
+    test('a new account carries it through A4 and a reopen', () async {
+      final rig = _Rig(prefs);
+      final c = rig.coordinator();
+      expect(
+        c.start(SignUpEntry.newAccount, path: AppPath.relationship),
+        SignUpStepId.name,
+      );
+      expect(c.draft.path, AppPath.relationship);
+      await c.saveName('Ɛsi');
+      expect(await c.saveBirthDate(_adult), isTrue);
+      expect(await c.sendCode(phoneE164: _phone, countryIso: 'GH'), isNull);
+      expect(rig.stored!.path, AppPath.relationship);
+      // A bare /signup (the resume) keeps it.
+      final reopened = rig.coordinator();
+      expect(reopened.start(SignUpEntry.newAccount), SignUpStepId.code);
+      expect(reopened.draft.path, AppPath.relationship);
+    });
+
+    test('a card tapped again replaces it', () async {
+      final rig = _Rig(prefs);
+      await throughCode(rig);
+      final reopened = rig.coordinator();
+      reopened.start(SignUpEntry.newAccount, path: AppPath.justMe);
+      expect(reopened.draft.path, AppPath.justMe);
+      expect(rig.stored!.path, AppPath.justMe);
+    });
+
+    test('the returning way and invites never carry one', () async {
+      for (final entry in [SignUpEntry.returning, SignUpEntry.invite]) {
+        SharedPreferences.setMockInitialValues({});
+        final rig = _Rig(await SharedPreferences.getInstance());
+        final c = rig.coordinator();
+        c.start(entry, path: AppPath.justMe);
+        expect(c.draft.path, isNull, reason: entry.wire);
+      }
+      // A new account's draft that becomes the returning way (ruling C4: a
+      // verified draft whose session is gone) drops it.
+      SharedPreferences.setMockInitialValues({});
+      final rig = _Rig(await SharedPreferences.getInstance());
+      await rig.drafts.write(
+        SignUpDraft.start(
+          SignUpEntry.newAccount,
+          now: _now,
+          path: AppPath.justMe,
+        ).copyWith(phoneE164: _phone, verifiedUserId: 'u1'),
+      );
+      final returning = rig.coordinator();
+      expect(returning.start(SignUpEntry.returning), SignUpStepId.phone);
+      expect(returning.draft.entry, SignUpEntry.returning);
+      expect(returning.draft.path, isNull);
+      expect(rig.stored?.path, isNull);
+    });
+
+    test('Dating stays in memory only (D20)', () async {
+      final rig = _Rig(prefs);
+      final c = rig.coordinator();
+      c.start(SignUpEntry.newAccount, path: AppPath.dating);
+      await c.saveName('Ɛsi');
+      await c.saveBirthDate(_adult);
+      await c.sendCode(phoneE164: _phone, countryIso: 'GH');
+      expect(c.draft.path, AppPath.dating);
+      expect(prefs.getString(SignUpDraftStore.key)!.contains('dating'), isFalse);
+    });
+
+    // Fix round M-5: the path goes wherever A1/A2 go ("maybe someone else
+    // on this phone"); A6 then asks after sign-up.
+    test('a long background that drops A1/A2 drops it too', () async {
+      final rig = _Rig(prefs);
+      final c = rig.coordinator();
+      c.start(SignUpEntry.newAccount, path: AppPath.justMe);
+      await c.saveName('Ɛsi');
+      c.wentToBackground();
+      rig.clock = _now.add(const Duration(minutes: 6));
+      expect(c.cameBack(), SignUpStepId.name);
+      expect(c.draft.name, isNull);
+      expect(c.draft.path, isNull);
+    });
+
+    test('"Change it": the same number brings it back with A1/A2; another '
+        'number drops it', () async {
+      final rig = _Rig(prefs);
+      final c = rig.coordinator();
+      c.start(SignUpEntry.newAccount, path: AppPath.relationship);
+      await c.saveName('Ɛsi');
+      await c.saveBirthDate(_adult);
+      await c.sendCode(phoneE164: _phone, countryIso: 'GH');
+      await c.changeNumber();
+      expect(c.draft.path, isNull, reason: 'off the draft, set aside');
+      expect(rig.stored?.path, isNull);
+      await c.sendCode(phoneE164: _phone, countryIso: 'GH');
+      expect(c.draft.name, 'Ɛsi');
+      expect(c.draft.path, AppPath.relationship);
+
+      await c.changeNumber();
+      await c.sendCode(phoneE164: '+233200000000', countryIso: 'GH');
+      expect(c.draft.name, isNull);
+      expect(c.draft.path, isNull);
+    });
+
+    test('queuePath queues Relationship and Just for me, never Dating', () async {
+      final rig = _Rig(prefs);
+      final c = rig.coordinator();
+      c.start(SignUpEntry.newAccount);
+      await c.queuePath('u1', AppPath.dating);
+      expect(rig.store('u1').pendingPath, isNull);
+      await c.queuePath('u1', AppPath.justMe);
+      expect(rig.store('u1').pendingPath, AppPath.justMe);
     });
   });
 }

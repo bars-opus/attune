@@ -85,7 +85,14 @@ void main() {
     await expectFlowGoldens(
       tester,
       'step_consent_updated',
-      () => ConsentStep(updatedTerms: true, onAgree: () {}, onNotNow: () {}),
+      // As the gate shows it: with "Delete my account" (fix round I-2).
+      () => ConsentStep(
+        updatedTerms: true,
+        onAgree: () {},
+        onNotNow: () {},
+        onDeleteAccount: () {},
+        onDownloadData: () {},
+      ),
     );
   });
 

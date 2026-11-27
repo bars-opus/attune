@@ -21,7 +21,9 @@ import 'package:attune/features/auth/sign_up/data/sms_code_listener.dart';
 import 'package:attune/features/auth/sign_up/domain/sign_up_draft.dart';
 import 'package:attune/features/auth/sign_up/presentation/screens/sign_up_flow.dart';
 import 'package:attune/features/auth/sign_up/presentation/screens/under_age_stop_screen.dart';
+import 'package:attune/features/auth/sign_up/presentation/screens/welcome_screen.dart';
 import 'package:attune/features/onboarding/data/onboarding_store.dart';
+import 'package:attune/features/onboarding/domain/home_state.dart';
 import 'package:attune/i10n/generated/app_localizations.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -75,15 +77,6 @@ Future<(GoRouter, SharedPreferences)> _pumpAppRouter(
 
 String _location(GoRouter router) =>
     router.routerDelegate.currentConfiguration.uri.toString();
-
-/// Today's rule (HEAD before Spec 1), written out.
-String? _today(RoutingNotifier r, String location) {
-  if (location == '/_invisible') {
-    return r.isFirstLaunch ? RouteNames.intro : RouteNames.home;
-  }
-  if (r.isFirstLaunch && location != RouteNames.intro) return RouteNames.intro;
-  return null;
-}
 
 /// Every path the app router registers: a child's path joined to its
 /// parent's, each `:param` filled in, as `state.matchedLocation` reads.
@@ -269,28 +262,6 @@ void main() {
       expect(registered, containsAll(_todayPaths));
     });
 
-    test('each one redirects exactly as today, first launch or not, '
-        'signed in or not', () {
-      final checked = registered.where((p) => !flowV2OnlyRoutes.contains(p));
-      expect(checked.length, greaterThanOrEqualTo(_todayPaths.length));
-      for (final firstLaunch in [true, false]) {
-        for (final signedIn in [true, false]) {
-          final r = RoutingNotifier(
-            isFirstLaunch: firstLaunch,
-            currentUserId: () => signedIn ? 'user-1' : null,
-          );
-          for (final location in checked) {
-            expect(
-              appRedirect(r, location),
-              _today(r, location),
-              reason:
-                  '$location (first launch $firstLaunch, '
-                  'signed in $signedIn)',
-            );
-          }
-        }
-      }
-    });
   });
 
   group(
@@ -374,27 +345,42 @@ void main() {
     },
   );
 
-  testWidgets('flag on, first launch: the app router opens Welcome', (
-    tester,
-  ) async {
+  testWidgets('flag on, first launch: the app router opens the intro, and '
+      'Get started opens Welcome on top', (tester) async {
     final notifier = RoutingNotifier(
       isFirstLaunch: true,
       flowV2: true,
       currentUserId: () => null,
     );
     final (router, _) = await _pumpAppRouter(tester, notifier);
-    expect(_location(router), RouteNames.welcome);
+    expect(_location(router), RouteNames.start);
+    expect(find.text('Get started'), findsOneWidget);
+    router.push(RouteNames.welcome);
+    await tester.pumpAndSettle();
+    // A push leaves the reported location alone; Welcome is on screen,
+    // asking the path (owner 2026-11-26).
+    expect(find.text('What brings you to Attune?'), findsOneWidget);
+    // Fix round I-2: /welcome?back= reaches WelcomeScreen.
     expect(
-      find.text('Love, dating and you, in one calm place.'),
-      findsOneWidget,
+      tester.widget<WelcomeScreen>(find.byType(WelcomeScreen)).backTo,
+      isNull,
     );
+    // Its back pops to the intro under it.
+    await tester.tap(find.byTooltip('Back'));
+    await tester.pumpAndSettle();
+    expect(find.text('What brings you to Attune?'), findsNothing);
+    expect(find.text('Get started'), findsOneWidget);
   });
 
-  testWidgets('cold start: an invite link under v2 opens RI-1 and still '
-      'clears first launch (I-2)', (tester) async {
+  // Entry gates fix 4 (2026-11-27): whatever flow_signin_v2 says, as the
+  // new sign-in is the only one (the flag-off /onboarding visit took the
+  // code before consent and the date of birth).
+  for (final flowV2 in [true, false]) {
+  testWidgets('cold start: an invite link (flag ${flowV2 ? 'on' : 'off'}) '
+      'opens RI-1 and still clears first launch (I-2)', (tester) async {
     final notifier = RoutingNotifier(
       isFirstLaunch: true,
-      flowV2: true,
+      flowV2: flowV2,
       currentUserId: () => null,
     );
     final (router, prefs) = await _pumpAppRouter(tester, notifier);
@@ -414,9 +400,10 @@ void main() {
     expect(PreferencesService(prefs).isFirstLaunch, isFalse);
     expect(notifier.isFirstLaunch, isFalse);
   });
+  }
 
   for (final (name, flowV2, userId) in [
-    ('flag off', false, null),
+    ('flag off, signed in', false, 'user-1'),
     ('flag on, signed in', true, 'user-1'),
   ]) {
     testWidgets('an invite link, $name: today\'s /onboarding, first launch '
@@ -498,6 +485,34 @@ void main() {
       SignUpEntry.newAccount,
     );
     expect(find.text('What should we call you?'), findsOneWidget);
+    expect(tester.widget<SignUpFlow>(find.byType(SignUpFlow)).path, isNull);
+
+    router.go('${RouteNames.welcome}?back=%2Fhome%3Ftab%3Dchat');
+    await tester.pumpAndSettle();
+    expect(
+      tester.widget<WelcomeScreen>(find.byType(WelcomeScreen)).backTo,
+      '/home?tab=chat',
+    );
+
+    // Owner 2026-11-26: Welcome's path, for a new account only.
+    for (final (location, path) in [
+      ('${RouteNames.signUp}?entry=new&path=relationship', AppPath.relationship),
+      ('${RouteNames.signUp}?entry=new&path=dating', AppPath.dating),
+      ('${RouteNames.signUp}?entry=new&path=justMe', AppPath.justMe),
+      ('${RouteNames.signUp}?entry=new&path=nonsense', null),
+      ('${RouteNames.signUp}?entry=returning&path=justMe', null),
+      ('${RouteNames.signUp}?entry=invite&path=justMe', null),
+    ]) {
+      router.go(RouteNames.welcome);
+      await tester.pumpAndSettle();
+      router.go(location);
+      await tester.pumpAndSettle();
+      expect(
+        tester.widget<SignUpFlow>(find.byType(SignUpFlow)).path,
+        path,
+        reason: location,
+      );
+    }
   });
 
   testWidgets('/age-stop?from=server opens X1 refused by the server, at once', (
@@ -566,16 +581,20 @@ void main() {
       await AgeGateStore(prefs).block();
       await tester.pumpAndSettle();
       expect(_location(router), RouteNames.ageStop);
-      // X1's Close, to Welcome.
+      // X1's Close, to the intro (2026-11-26: Welcome's paths all lead
+      // back to X1).
       await tester.tap(find.text('Close'));
       await tester.pumpAndSettle();
-      expect(_location(router), RouteNames.welcome);
+      expect(_location(router), RouteNames.start);
       return (router, auth);
     }
 
-    testWidgets('"Get started" opens X1', (tester) async {
+    // Owner 2026-11-26: Welcome's path cards start sign-up.
+    testWidgets('a path card opens X1', (tester) async {
       final (router, _) = await blockedApp(tester, hasAccount: false);
-      await tester.tap(find.text('Get started'));
+      router.push(RouteNames.welcome);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Just for me'));
       await tester.pumpAndSettle();
       expect(_location(router), RouteNames.ageStop);
     });
@@ -583,9 +602,14 @@ void main() {
     testWidgets('"I already have an account" reaches A3 and A4, and an '
         'existing account says Welcome back, then home', (tester) async {
       final (router, auth) = await blockedApp(tester, hasAccount: true);
+      // Owner 2026-11-26: the way lives on the intro, where X1's Close goes.
       await tester.tap(find.text('I already have an account'));
       await tester.pumpAndSettle();
-      expect(_location(router), '${RouteNames.signUp}?entry=returning');
+      // Fix round M-4: its back is the intro.
+      expect(
+        _location(router),
+        '${RouteNames.signUp}?entry=returning&back=%2Fstart',
+      );
       expect(find.text("What's your phone number?"), findsOneWidget);
 
       await tester.enterText(

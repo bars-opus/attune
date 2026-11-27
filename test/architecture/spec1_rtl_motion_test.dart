@@ -38,7 +38,6 @@ const spec1Presentation = <String>[
   'lib/features/auth/sign_up/presentation/widgets/flow_text_field.dart',
   'lib/features/auth/sign_up/presentation/widgets/join_attune_panel.dart',
   'lib/features/auth/sign_up/presentation/widgets/one_time_code_field.dart',
-  'lib/features/auth/sign_up/presentation/widgets/path_preview_sheet.dart',
   'lib/features/auth/sign_up/presentation/widgets/submit_once.dart',
   'lib/features/couple_profile/presentation/about_us_copy.dart',
   'lib/features/couple_profile/presentation/about_us_entry.dart',

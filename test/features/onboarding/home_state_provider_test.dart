@@ -9,6 +9,8 @@ import 'package:attune/features/onboarding/data/home_state_service.dart';
 import 'package:attune/features/onboarding/data/home_state_store.dart';
 import 'package:attune/features/onboarding/data/onboarding_store.dart';
 import 'package:attune/features/onboarding/domain/home_state.dart';
+import 'package:attune/features/onboarding/presentation/providers/flow_flags.dart'
+    show flowPathsV2Provider;
 import 'package:attune/features/onboarding/presentation/providers/home_state_providers.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -21,6 +23,7 @@ const _uid = 'u-w3a';
 Future<(ProviderContainer, FakeHomeStateGateway, SharedPreferences)> _build({
   Map<String, Object> prefsValues = const {},
   Map<String, dynamic>? server,
+  bool pathsV2 = true,
 }) async {
   SharedPreferences.setMockInitialValues(prefsValues);
   final prefs = await SharedPreferences.getInstance();
@@ -29,6 +32,7 @@ Future<(ProviderContainer, FakeHomeStateGateway, SharedPreferences)> _build({
     overrides: [
       sharedPreferencesProvider.overrideWithValue(prefs),
       homeStateServiceProvider.overrideWithValue(HomeStateService(gateway)),
+      flowPathsV2Provider.overrideWithValue(pathsV2),
     ],
   );
   addTearDown(container.dispose);
@@ -209,6 +213,33 @@ void main() {
     await c.read(homeStateProvider(_uid).notifier).refresh();
     expect(prefs.containsKey('attune.onboarding.user.$_uid.mode'), isFalse);
     expect(prefs.getString('attune.onboarding.user.other.mode'), 'couples');
+  });
+
+  // Entry gates fix 4 (2026-11-27): HomeScreen reads the home state with
+  // flow_paths_v2 off too, and the legacy shell still reads the mode then.
+  test('flow_paths_v2 off: the legacy mode stays', () async {
+    final (c, _, prefs) = await _build(
+      prefsValues: {'attune.onboarding.user.$_uid.mode': 'couples'},
+      pathsV2: false,
+    );
+    await c.read(homeStateProvider(_uid).notifier).refresh();
+    expect(prefs.getString('attune.onboarding.user.$_uid.mode'), 'couples');
+    expect(c.read(homeStateProvider(_uid)).known, isTrue);
+  });
+
+  test('localHomeSnapshot reads what the provider composes, without the '
+      'network (the router\'s gate check, entry gates fix 5)', () async {
+    final (c, _, prefs) = await _build(
+      server: homeJson(needs: const ['name', 'path']),
+    );
+    expect(localHomeSnapshot(prefs, _uid).known, isFalse);
+    await c.read(homeStateProvider(_uid).notifier).refresh();
+    final local = localHomeSnapshot(prefs, _uid);
+    final live = c.read(homeStateProvider(_uid));
+    expect(local.needs, live.needs);
+    expect(local.hold, live.hold);
+    expect(local.tab, live.tab);
+    expect(local.isComplete, isFalse);
   });
 
   test('invalidating forgets the live answer (sign-out)', () async {

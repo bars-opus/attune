@@ -31,6 +31,10 @@ import 'package:attune/features/auth/sign_up/presentation/steps/no_account_step.
 import 'package:attune/features/auth/sign_up/presentation/steps/phone_step.dart';
 import 'package:attune/features/auth/sign_up/presentation/widgets/flow_frame.dart';
 import 'package:attune/features/onboarding/data/onboarding_store.dart';
+import 'package:attune/features/onboarding/domain/home_state.dart';
+import 'package:attune/features/onboarding/presentation/path_chooser.dart';
+import 'package:attune/features/onboarding/presentation/providers/flow_flags.dart';
+import 'package:attune/features/onboarding/presentation/providers/home_state_providers.dart';
 import 'package:attune/features/onboarding/presentation/widgets/catch_up_steps.dart'
     show AccountHoldStep;
 import 'package:attune/i10n/generated/app_localizations.dart';
@@ -72,12 +76,16 @@ final signUpCoordinatorProvider = Provider.autoDispose<SignUpCoordinator>((
 /// route, stepped with the shared-axis transition. [entry] is how the
 /// person came in; a draft on this phone can resume where it stopped.
 class SignUpFlow extends ConsumerStatefulWidget {
-  const SignUpFlow({super.key, required this.entry, this.backTo});
+  const SignUpFlow({super.key, required this.entry, this.backTo, this.path});
 
   final SignUpEntry entry;
 
   /// Where the first step's back button goes (`/welcome` by default).
   final String? backTo;
+
+  /// The path chosen on Welcome (owner 2026-11-26), set once A5 has made
+  /// the account; a new account's only.
+  final AppPath? path;
 
   @override
   ConsumerState<SignUpFlow> createState() => _SignUpFlowState();
@@ -156,7 +164,7 @@ class _SignUpFlowState extends ConsumerState<SignUpFlow> {
   void initState() {
     super.initState();
     _listener = ref.read(smsCodeListenerProvider);
-    _step = _c.start(widget.entry);
+    _step = _c.start(widget.entry, path: widget.path);
     if (_c.needsAccountCheck) {
       // Review B5 I-1, I-2: a proven number whose account wasn't read yet
       // opens on the account check while the server is asked; no code.
@@ -424,6 +432,34 @@ class _SignUpFlowState extends ConsumerState<SignUpFlow> {
     });
   }
 
+  /// A3's "Read Opinions first" (owner 2026-11-26): A2 already found an
+  /// adult, so the guest pass G1 gives is granted with that year (as G1
+  /// does), and Opinions opens as a guest.
+  ///
+  /// What is kept: the guest pass, and A2's birth year (the pass's own
+  /// keystore entry), which pre-fills A2 next time. What is not: the name,
+  /// the full date of birth and the Welcome path. No code was sent, so they
+  /// were in memory only and go with this screen (review B5 fix round 5).
+  /// Signing up later from the guest tab starts at Welcome again.
+  ///
+  /// A pass that can't be saved keeps the person on A3 with the save error.
+  Future<void> _readOpinions(DateTime birthDate) async {
+    if (_busy) return;
+    _busy = true;
+    final routing = ref.read(routingNotifierProvider);
+    try {
+      await ref.read(ageGateStoreProvider).passGuestGate(birthDate.year);
+    } catch (error) {
+      debugPrint('[sign-up] guest pass not saved: ${error.runtimeType}');
+      _busy = false;
+      if (mounted) setState(() => _error = _loc.flow_saveFailed);
+      return;
+    }
+    _busy = false;
+    routing.setGuestAgeOk(true);
+    if (mounted) context.go(RouteNames.home);
+  }
+
   Future<void> _changeNumber() async {
     await _c.changeNumber();
     if (mounted) _go(SignUpStepId.phone, forward: false);
@@ -607,7 +643,7 @@ class _SignUpFlowState extends ConsumerState<SignUpFlow> {
   }
 
   /// DM1's system back (fix round 1, ruling I-2): the challenge and the
-  /// draft go, then Welcome.
+  /// draft go, then the way in's back (Welcome by default).
   Future<void> _leaveDormant() async {
     _busy = true;
     try {
@@ -616,7 +652,9 @@ class _SignUpFlowState extends ConsumerState<SignUpFlow> {
       // Nothing on the phone is worth keeping DM1 for.
     }
     _busy = false;
-    if (mounted) context.go(RouteNames.welcome);
+    // Fix round M-4: the way in's own back (the intro for "I already have
+    // an account"), else Welcome.
+    if (mounted) _leave();
   }
 
   /// DM2's "Send code": a new code to the same number, then A4.
@@ -666,6 +704,9 @@ class _SignUpFlowState extends ConsumerState<SignUpFlow> {
       if (mounted) await _welcomeBack();
       return;
     }
+    // Read before A5: completing drops the draft.
+    final path = _c.draft.path;
+    final userId = _c.draft.verifiedUserId;
     CompleteOutcome outcome;
     try {
       outcome = await _c.complete();
@@ -676,7 +717,12 @@ class _SignUpFlowState extends ConsumerState<SignUpFlow> {
     switch (outcome) {
       case CompleteOutcome.done:
       case CompleteOutcome.queued:
-        context.go(RouteNames.home);
+        final next = await _setChosenPath(
+          userId: userId,
+          path: path,
+          accountMade: outcome == CompleteOutcome.done,
+        );
+        if (mounted) context.go(next);
       case CompleteOutcome.notEligible:
         ref.read(routingNotifierProvider).setUnderAgeBlocked(true);
         context.go('${RouteNames.ageStop}?from=server');
@@ -700,6 +746,66 @@ class _SignUpFlowState extends ConsumerState<SignUpFlow> {
     }
   }
 
+  /// The path chosen on Welcome, set as A6 sets it once the account exists
+  /// (owner 2026-11-26), so the gate never asks again. Returns where to go:
+  /// R1 after Relationship (as the gate does), home otherwise; with a
+  /// partner's invite stored, where the gate takes it instead (fix round
+  /// I-1): RI-3 under flow_couples_v2, else home, never R1.
+  ///
+  /// Queued for the replay only when it couldn't reach the server (the
+  /// account only queued, offline, `path:needs_signup`), and never Dating
+  /// (D20). A refusal is not queued (fix round M-1): its replay would be
+  /// refused too, so home, where the gate asks A6. The account is made
+  /// already, so nothing here can undo it: any failure goes home.
+  Future<String> _setChosenPath({
+    required String? userId,
+    required AppPath? path,
+    required bool accountMade,
+  }) async {
+    if (userId == null || path == null) return RouteNames.home;
+    try {
+      var unreached = true;
+      if (accountMade && mounted) {
+        final chosen = await choosePath(
+          context,
+          ref,
+          userId: userId,
+          path: path,
+        );
+        if (chosen == PathChoiceOutcome.done) {
+          return path == AppPath.relationship
+              ? _afterRelationship(userId)
+              : RouteNames.home;
+        }
+        unreached =
+            chosen == PathChoiceOutcome.offline ||
+            chosen == PathChoiceOutcome.needsSignUp;
+      }
+      if (unreached && path != AppPath.dating) {
+        await _c.queuePath(userId, path);
+        // The snapshot reads the queued path: no A6 for it.
+        ref.read(homeStateProvider(userId).notifier).reloadLocal();
+      }
+    } catch (error) {
+      debugPrint('[sign-up] path not set: ${error.runtimeType}');
+    }
+    return RouteNames.home;
+  }
+
+  /// R1 after a Relationship choice, unless a partner's invite is stored:
+  /// then RI-3 (`/join-invite`) under flow_couples_v2, else home, as the
+  /// gate does (onboarding_gate_v2.dart `_next`).
+  String _afterRelationship(String userId) {
+    final store = OnboardingStore(
+      ref.read(sharedPreferencesProvider),
+      scope: '${OnboardingStore.userScopePrefix}.$userId',
+    );
+    if (store.pendingInviteCode == null) return RouteNames.invitePartner;
+    return ref.read(flowCouplesV2Provider)
+        ? RouteNames.joinInvite
+        : RouteNames.home;
+  }
+
   Future<void> _notNow() async {
     setState(() {
       _busy = true;
@@ -717,7 +823,8 @@ class _SignUpFlowState extends ConsumerState<SignUpFlow> {
       }
       return;
     }
-    if (mounted) context.go(RouteNames.welcome);
+    // Fix round M-4: the way in's own back, else Welcome.
+    if (mounted) _leave();
   }
 
   Future<void> _useDifferentNumber() async {
@@ -730,6 +837,18 @@ class _SignUpFlowState extends ConsumerState<SignUpFlow> {
       return;
     }
     if (mounted) _go(SignUpStepId.phone, forward: false);
+  }
+
+  /// A3's "Read Opinions first" (fix round M-2): a new account with A2
+  /// passed and no account proven yet (a signed-in A3 is bounced back by
+  /// the router's resume), on a phone that isn't a guest already (it would
+  /// lead back to where they came from) and isn't under X1's block.
+  bool _offersReadOpinions(SignUpDraft draft) {
+    if (draft.entry != SignUpEntry.newAccount) return false;
+    if (draft.birthDate == null || draft.verifiedUserId != null) return false;
+    final routing = ref.read(routingNotifierProvider);
+    if (routing.guestAgeOk || routing.underAgeBlocked) return false;
+    return !ref.read(ageGateStoreProvider).guestOk;
   }
 
   PhoneCountry? _initialCountry(DeviceCountries? device) {
@@ -799,6 +918,7 @@ class _SignUpFlowState extends ConsumerState<SignUpFlow> {
           },
         );
       case SignUpStepId.phone:
+        final birthDate = draft.birthDate;
         final device = ref.watch(deviceCountryProvider);
         if (device.isLoading) {
           // The SIM answers within a second; the country picker must not
@@ -820,6 +940,12 @@ class _SignUpFlowState extends ConsumerState<SignUpFlow> {
           onSendWhatsApp:
               _offersWhatsApp
                   ? (e164, iso) => _send(e164, iso, channel: 'whatsapp')
+                  : null,
+          // A new account past A2's adult check only, before any account is
+          // proven, on a phone without the guest pass (or the block).
+          onReadOpinions:
+              _offersReadOpinions(draft) && birthDate != null
+                  ? () => _readOpinions(birthDate)
                   : null,
         );
       case SignUpStepId.code:

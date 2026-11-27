@@ -41,8 +41,10 @@ BEGIN
   INSERT INTO auth.users (id, phone, phone_confirmed_at)
   VALUES (pg_temp.id(p_n), '+155582000' || p_n, now());
   IF p_name IS NOT NULL THEN
-    INSERT INTO public.users (id, phone, display_name)
-    VALUES (pg_temp.id(p_n), '+155582000' || p_n, p_name);
+    -- Entry gates 2026-11-27: an account has accepted EULA 2 (complete_sign_up
+    -- requires it); section B2 below takes it away where it tests that.
+    INSERT INTO public.users (id, phone, display_name, eula_version, eula_accepted_at)
+    VALUES (pg_temp.id(p_n), '+155582000' || p_n, p_name, '2', now());
   END IF;
   IF p_age IS NOT NULL THEN
     INSERT INTO public.account_birthdates (user_id, birth_date)
@@ -294,53 +296,83 @@ BEGIN
   END IF;
 END $$;
 
--- Ages, with flow_signin_v2 on (fixtures 11-16).
+-- Ages and consent, with flow_signin_v2 OFF and ON (fixtures 11-19):
+-- entry gates 2026-11-27, the checks never depend on the flag and there is
+-- no 'legacy' answer any more.
 DO $$
 DECLARE
   v_msg text;
+  v_on boolean;
 BEGIN
-  PERFORM pg_temp.flag('flow_signin_v2', true);
   PERFORM pg_temp.person('11', 'Akua NoDob', NULL);    -- acceptor, no DOB
   PERFORM pg_temp.person('12', 'Yaa Minor', 17);       -- acceptor, 17
   PERFORM pg_temp.person('13', 'Kojo NoDob', NULL);    -- inviter, no DOB
   PERFORM pg_temp.person('14', 'Efua Minor', 17);      -- inviter, 17
   PERFORM pg_temp.person('15', 'Nana Adult', 40);      -- acceptor, adult
+  PERFORM pg_temp.person('16', 'Afia OldTerms', 35);   -- acceptor, EULA 1
+  PERFORM pg_temp.person('17', 'Kwesi OldTerms', 36);  -- inviter, EULA 1
+  PERFORM pg_temp.person('18', 'Adwoa NoTerms', 34);   -- acceptor, no EULA at all
+  UPDATE public.users SET eula_version = '1' WHERE id IN (pg_temp.id('16'), pg_temp.id('17'));
+  UPDATE public.users SET eula_version = NULL, eula_accepted_at = NULL WHERE id = pg_temp.id('18');
   PERFORM pg_temp.invite('13', '13', 'NODOB2', interval '1 hour');
   PERFORM pg_temp.invite('14', '14', 'MINOR2', interval '1 hour');
+  PERFORM pg_temp.invite('17', '17', 'TERMS2', interval '1 hour');
 
-  v_msg := pg_temp.accept_error('11', 'K7P2QM');
-  IF v_msg IS DISTINCT FROM 'invite:age_required' THEN
-    RAISE EXCEPTION 'CONTRACT VIOLATED: an acceptor without a DOB (got %)', coalesce(v_msg, 'no error');
-  END IF;
-  v_msg := pg_temp.accept_error('12', 'K7P2QM');
-  IF v_msg IS DISTINCT FROM 'invite:not_possible' THEN
-    RAISE EXCEPTION 'CONTRACT VIOLATED: a 17-year-old acceptor (got %)', coalesce(v_msg, 'no error');
-  END IF;
-  v_msg := pg_temp.accept_error('15', 'NODOB2');
-  IF v_msg IS DISTINCT FROM 'invite:not_possible' THEN
-    RAISE EXCEPTION 'CONTRACT VIOLATED: an inviter without a DOB (got %)', coalesce(v_msg, 'no error');
-  END IF;
-  v_msg := pg_temp.accept_error('15', 'MINOR2');
-  IF v_msg IS DISTINCT FROM 'invite:not_possible' THEN
-    RAISE EXCEPTION 'CONTRACT VIOLATED: a 17-year-old inviter (got %)', coalesce(v_msg, 'no error');
-  END IF;
+  FOREACH v_on IN ARRAY ARRAY[false, true] LOOP
+    PERFORM pg_temp.flag('flow_signin_v2', v_on);
+    v_msg := pg_temp.accept_error('11', 'K7P2QM');
+    IF v_msg IS DISTINCT FROM 'invite:age_required' THEN
+      RAISE EXCEPTION 'CONTRACT VIOLATED: an acceptor without a DOB, flag %, (got %)', v_on, coalesce(v_msg, 'no error');
+    END IF;
+    v_msg := pg_temp.accept_error('12', 'K7P2QM');
+    IF v_msg IS DISTINCT FROM 'invite:not_possible' THEN
+      RAISE EXCEPTION 'CONTRACT VIOLATED: a 17-year-old acceptor, flag %, (got %)', v_on, coalesce(v_msg, 'no error');
+    END IF;
+    v_msg := pg_temp.accept_error('16', 'K7P2QM');
+    IF v_msg IS DISTINCT FROM 'invite:consent_required' THEN
+      RAISE EXCEPTION 'CONTRACT VIOLATED: an acceptor on EULA 1, flag %, (got %)', v_on, coalesce(v_msg, 'no error');
+    END IF;
+    v_msg := pg_temp.accept_error('18', 'K7P2QM');
+    IF v_msg IS DISTINCT FROM 'invite:consent_required' THEN
+      RAISE EXCEPTION 'CONTRACT VIOLATED: an acceptor with no EULA, flag %, (got %)', v_on, coalesce(v_msg, 'no error');
+    END IF;
+    v_msg := pg_temp.accept_error('15', 'NODOB2');
+    IF v_msg IS DISTINCT FROM 'invite:not_possible' THEN
+      RAISE EXCEPTION 'CONTRACT VIOLATED: an inviter without a DOB, flag %, (got %)', v_on, coalesce(v_msg, 'no error');
+    END IF;
+    v_msg := pg_temp.accept_error('15', 'MINOR2');
+    IF v_msg IS DISTINCT FROM 'invite:not_possible' THEN
+      RAISE EXCEPTION 'CONTRACT VIOLATED: a 17-year-old inviter, flag %, (got %)', v_on, coalesce(v_msg, 'no error');
+    END IF;
+    v_msg := pg_temp.accept_error('15', 'TERMS2');
+    IF v_msg IS DISTINCT FROM 'invite:not_possible' THEN
+      RAISE EXCEPTION 'CONTRACT VIOLATED: an inviter on EULA 1, flag %, (got %)', v_on, coalesce(v_msg, 'no error');
+    END IF;
 
-  -- The eligibility both edge functions check first.
-  IF public.relationship_invite_eligibility(pg_temp.id('15')) <> 'ok'
-     OR public.relationship_invite_eligibility(pg_temp.id('13')) <> 'age_required'
-     OR public.relationship_invite_eligibility(pg_temp.id('14')) <> 'not_possible'
-     OR public.relationship_invite_eligibility(pg_temp.id('03')) <> 'signup_incomplete' THEN
-    RAISE EXCEPTION 'CONTRACT VIOLATED: relationship_invite_eligibility with the flag on';
+    -- The eligibility both edge functions check first: the same answers
+    -- with the flag off as on, and never 'legacy'.
+    IF public.relationship_invite_eligibility(pg_temp.id('15')) <> 'ok'
+       OR public.relationship_invite_eligibility(pg_temp.id('13')) <> 'age_required'
+       OR public.relationship_invite_eligibility(pg_temp.id('14')) <> 'not_possible'
+       OR public.relationship_invite_eligibility(pg_temp.id('16')) <> 'consent_required'
+       OR public.relationship_invite_eligibility(pg_temp.id('18')) <> 'consent_required'
+       OR public.relationship_invite_eligibility(pg_temp.id('03')) <> 'signup_incomplete' THEN
+      RAISE EXCEPTION 'CONTRACT VIOLATED: relationship_invite_eligibility with the flag %', v_on;
+    END IF;
+  END LOOP;
+
+  -- Nothing was linked by any of the refusals.
+  IF EXISTS (SELECT 1 FROM public.relationships
+              WHERE id IN (pg_temp.rel('01'), pg_temp.rel('13'), pg_temp.rel('14'), pg_temp.rel('17'))
+                AND (status <> 'pending' OR user_b IS NOT NULL)) THEN
+    RAISE EXCEPTION 'CONTRACT VIOLATED: a refused accept linked someone';
   END IF;
-  PERFORM pg_temp.flag('flow_signin_v2', false);
-  IF public.relationship_invite_eligibility(pg_temp.id('03')) <> 'legacy'
-     OR public.relationship_invite_eligibility(pg_temp.id('14')) <> 'legacy' THEN
-    RAISE EXCEPTION 'CONTRACT VIOLATED: relationship_invite_eligibility with the flag off is not legacy';
-  END IF;
-  -- With the flag off, no age check: a person without a DOB still links.
-  v_msg := pg_temp.accept_error('11', 'NODOB2');
-  IF v_msg IS NOT NULL THEN
-    RAISE EXCEPTION 'CONTRACT VIOLATED: the flag-off accept checked ages (%)', v_msg;
+  -- No function body still reads the flag for these checks.
+  IF position('flow_signin_v2' IN (SELECT p.prosrc FROM pg_proc AS p
+               WHERE p.oid = 'public.accept_relationship_invite_v2(uuid,text)'::regprocedure)) > 0
+     OR position('flow_signin_v2' IN (SELECT p.prosrc FROM pg_proc AS p
+               WHERE p.oid = 'public.relationship_invite_eligibility(uuid)'::regprocedure)) > 0 THEN
+    RAISE EXCEPTION 'CONTRACT VIOLATED: the invite checks still depend on flow_signin_v2';
   END IF;
 END $$;
 

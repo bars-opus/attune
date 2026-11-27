@@ -70,7 +70,10 @@ void main() {
           in Directory(
             'supabase/functions',
           ).listSync(recursive: true).whereType<File>())
-        if (RegExp(
+        // Text only: the deploy builds a binary IP table in here, and the
+        // CSAM stub keeps a test image (prompts are .txt and stay in).
+        if (!RegExp(r'\.(bin|gif|png|jpe?g|webp)$').hasMatch(f.path) &&
+            RegExp(
           r'couple_profile|about_us|aboutUs',
           caseSensitive: false,
         ).hasMatch(f.readAsStringSync()))

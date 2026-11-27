@@ -269,7 +269,12 @@ void main() {
       await tester.pump();
       expect(codes, ['654321']);
       for (final digit in ['6', '5', '4', '3', '2', '1']) {
-        expect(find.text(digit), findsOneWidget, reason: 'still in the boxes');
+        // In the boxes (the countdown's rolling digits are text too).
+        expect(
+          find.descendant(of: find.byType(OneTimeCodeField), matching: find.text(digit)),
+          findsOneWidget,
+          reason: 'still in the boxes',
+        );
       }
 
       await tester.pumpAndSettle();

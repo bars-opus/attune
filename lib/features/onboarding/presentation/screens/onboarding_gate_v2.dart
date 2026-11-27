@@ -25,7 +25,6 @@ import 'package:attune/features/onboarding/presentation/path_chooser.dart';
 import 'package:attune/features/onboarding/presentation/providers/flow_flags.dart';
 import 'package:attune/features/onboarding/presentation/providers/home_state_providers.dart';
 import 'package:attune/features/onboarding/presentation/screens/invite_partner_screen.dart';
-import 'package:attune/features/onboarding/presentation/screens/onboarding_gate.dart';
 import 'package:attune/features/onboarding/presentation/widgets/catch_up_steps.dart';
 import 'package:attune/features/onboarding/presentation/widgets/couples_joined_step.dart';
 import 'package:attune/features/onboarding/presentation/widgets/onboarding_deck_card.dart';
@@ -33,25 +32,20 @@ import 'package:attune/features/onboarding/presentation/widgets/onboarding_deck_
 import 'package:attune/features/onboarding/presentation/widgets/path_step.dart';
 import 'package:attune/features/relationships/data/relationship_invite_service.dart';
 import 'package:attune/features/safety/data/safety_sign_out.dart';
+import 'package:attune/features/settings/widgets/delete_account_action.dart';
 import 'package:attune/home/home_seams.dart';
 import 'package:attune/i10n/generated/app_localizations.dart';
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/semantics.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
-/// `/onboarding` (Spec 1 §5.2): the v2 gate under flow_paths_v2, today's
-/// OnboardingGate otherwise (and for the debug preview).
+/// `/onboarding` (Spec 1 §5.2): the v2 gate, whatever the flow flags say
+/// (entry gates fix 4, 2026-11-27: the new sign-in is the only one, so
+/// the legacy gate, its flow and the EULA sheet are gone).
 class OnboardingEntry extends ConsumerWidget {
-  const OnboardingEntry({
-    super.key,
-    this.previewOnboarding = false,
-    this.held = false,
-  });
-
-  final bool previewOnboarding;
+  const OnboardingEntry({super.key, this.held = false});
 
   /// RI-3's accept was refused with account:hold (W4b): the v2 gate's H1
   /// path ([OnboardingGateV2.held]).
@@ -59,15 +53,15 @@ class OnboardingEntry extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final preview = kDebugMode && previewOnboarding;
-    // Batch-5 review I-1 (D9): neither gate (both can accept a stored
-    // invite) until the signed-in flags are known; unknown is not off. The
-    // read is bounded by its gateway (10 s); a failed read is the gate's
-    // offline step, whose Try again reads them again.
-    if (!preview &&
-        ref.read(homeAuthProvider).currentUser != null &&
+    // Batch-5 review I-1 (D9): no gate (it can take a stored invite) until
+    // the flags are known; unknown is not off, and since the entry gates
+    // fix an unread public config is unknown too. The reads are bounded by
+    // their gateways (10 s); a failed read is the gate's offline step,
+    // whose Try again reads them again.
+    if (ref.read(homeAuthProvider).currentUser != null &&
         !ref.watch(flowFlagsKnownProvider)) {
-      if (ref.watch(flowFlagsProvider).isLoading) {
+      if (ref.watch(flowFlagsProvider).isLoading ||
+          ref.watch(publicAppConfigProvider).isLoading) {
         return Scaffold(
           body: Center(
             child: CircularProgressIndicator(
@@ -78,14 +72,14 @@ class OnboardingEntry extends ConsumerWidget {
         );
       }
       return CheckOfflineStep(
-        onRetry: () => ref.invalidate(flowFlagsProvider),
+        onRetry: () {
+          ref.invalidate(publicAppConfigProvider);
+          ref.invalidate(flowFlagsProvider);
+        },
         onSignOut: () => ref.read(catchUpSignOutProvider)(),
       );
     }
-    if (!preview && ref.watch(flowPathsV2Provider)) {
-      return OnboardingGateV2(held: held);
-    }
-    return OnboardingGate(previewOnboarding: previewOnboarding);
+    return OnboardingGateV2(held: held);
   }
 }
 
@@ -590,6 +584,11 @@ class _OnboardingGateV2State extends ConsumerState<OnboardingGateV2> {
     await _acceptStoredInvite(userId, typed: true);
   }
 
+  /// Owner ruling (fix round): "Download my data" from A5c and H1. The
+  /// router keeps the export open while the account owes the gate.
+  void _downloadData() =>
+      unawaited(GoRouter.of(context).push(RouteNames.dataExport));
+
   @override
   Widget build(BuildContext context) {
     final user = ref.read(homeAuthProvider).currentUser;
@@ -602,13 +601,19 @@ class _OnboardingGateV2State extends ConsumerState<OnboardingGateV2> {
         ),
       ),
       _Step.offline => CheckOfflineStep(onRetry: _resolve, onSignOut: _signOut),
-      _Step.hold => AccountHoldStep(onSignOut: _signOut),
+      _Step.hold => AccountHoldStep(
+        onSignOut: _signOut,
+        onDeleteAccount: () => DeleteAccountAction.confirmAndDelete(context),
+        onDownloadData: _downloadData,
+      ),
       _Step.update => UpdateAppStep(onSignOut: _signOut),
       _Step.consent => ConsentStep(
         updatedTerms: true,
         errorText: _error,
         onAgree: _acceptTerms,
         onNotNow: _signOut,
+        onDeleteAccount: () => DeleteAccountAction.confirmAndDelete(context),
+        onDownloadData: _downloadData,
       ),
       _Step.birthDate => BirthDateStep(
         order: birthDateOrderFor(Localizations.localeOf(context)),

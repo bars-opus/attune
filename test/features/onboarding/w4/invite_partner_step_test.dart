@@ -144,7 +144,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(
       share.whatsAppTexts.single,
-      contains('Open Attune \u2192 I have an invite \u2192 K7P2QM'),
+      contains('Installed it already? Tap the link again to join me.'),
     );
     expect(h.metrics, contains('invite_shared:whatsapp'));
   });

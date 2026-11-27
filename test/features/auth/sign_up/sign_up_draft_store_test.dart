@@ -4,6 +4,7 @@ import 'dart:math';
 
 import 'package:attune/features/auth/sign_up/data/sign_up_draft_store.dart';
 import 'package:attune/features/auth/sign_up/domain/sign_up_draft.dart';
+import 'package:attune/features/onboarding/domain/home_state.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -185,5 +186,100 @@ void main() {
 
   test('the device key never names Dating (D20)', () {
     expect(SignUpDraftStore.key.contains('dating'), isFalse);
+  });
+
+  // Owner 2026-11-26: the path chosen on Welcome rides on the draft.
+
+  test('the chosen path round-trips once a code was sent', () async {
+    final store = SignUpDraftStore(prefs, now: () => now);
+    final draft = SignUpDraft.start(
+      SignUpEntry.newAccount,
+      now: now,
+      path: AppPath.justMe,
+    ).copyWith(phoneE164: '+233244123456', lastSentAt: now, sendCount: 1);
+    await store.write(draft);
+    expect(store.read()!.path, AppPath.justMe);
+    expect(
+      jsonDecode(prefs.getString(SignUpDraftStore.key)!)['path'],
+      'just_me',
+    );
+    expect(
+      SignUpDraft.fromJson(
+        draft.withPath(AppPath.relationship).toJson(),
+      )!.path,
+      AppPath.relationship,
+    );
+    expect(SignUpDraft.fromJson(draft.withPath(null).toJson())!.path, isNull);
+  });
+
+  test('a Dating path is never written to the phone (D20)', () async {
+    final store = SignUpDraftStore(prefs, now: () => now);
+    final draft = SignUpDraft.start(
+      SignUpEntry.newAccount,
+      now: now,
+      path: AppPath.dating,
+    ).copyWith(phoneE164: '+233244123456', lastSentAt: now, sendCount: 1);
+    expect(draft.path, AppPath.dating, reason: 'kept in memory');
+    await store.write(draft);
+    expect(prefs.getString(SignUpDraftStore.key)!.contains('dating'), isFalse);
+    expect(store.read()!.path, isNull);
+    // A hand-written Dating value is not read back either.
+    final json = draft.toJson()..['path'] = 'dating';
+    expect(SignUpDraft.fromJson(json)!.path, isNull);
+  });
+
+  // Fix round M-5: the path follows A1/A2 (review B5 I-6, I-8): kept
+  // wherever they are kept, dropped wherever they are dropped for "maybe
+  // someone else on this phone".
+  test('the path goes wherever A1 and A2 go', () {
+    final draft = SignUpDraft.start(
+      SignUpEntry.newAccount,
+      now: now,
+      path: AppPath.relationship,
+    ).copyWith(
+      name: 'Ama',
+      birthDate: DateTime.utc(1990, 1, 1),
+      phoneE164: '+233244123456',
+      lastSentAt: now,
+      sendCount: 1,
+      verifiedUserId: 'u1',
+    );
+    for (final (what, moved) in [
+      ('copyWith', draft.copyWith(channel: 'whatsapp')),
+      ('withoutCode', draft.withoutCode()),
+      ('withNumber, the same number', draft.withNumber('+233244123456')),
+      ('keepable', draft.keepable!),
+    ]) {
+      expect(moved.name, 'Ama', reason: what);
+      expect(moved.path, AppPath.relationship, reason: what);
+    }
+    for (final (what, moved) in [
+      ('copyWith a new number', draft.copyWith(phoneE164: '+233200000000')),
+      ('withoutCode, no number', draft.withoutCode(keepPhone: false)),
+      ('withNumber, another number', draft.withNumber('+233200000000')),
+      ('withNumber(null)', draft.withNumber(null)),
+      ('withoutNameAndDate', draft.withoutNameAndDate()),
+      (
+        'keepable, account only',
+        draft.withoutCode().copyWith(verifiedUserId: 'u1').keepable!,
+      ),
+    ]) {
+      expect(moved.name, isNull, reason: what);
+      expect(moved.path, isNull, reason: what);
+      expect(moved.entry, SignUpEntry.newAccount, reason: what);
+    }
+    // A first number takes the A1, A2 and path given before it.
+    final first = SignUpDraft.start(
+      SignUpEntry.newAccount,
+      now: now,
+      path: AppPath.justMe,
+    ).copyWith(name: 'Ama').withNumber('+233244123456');
+    expect(first.name, 'Ama');
+    expect(first.path, AppPath.justMe);
+    final cleared = draft.withPath(null);
+    expect(cleared.path, isNull);
+    expect(cleared.name, 'Ama');
+    expect(cleared.verifiedUserId, 'u1');
+    expect(cleared.lastSentAt, now);
   });
 }

@@ -150,6 +150,11 @@ Future<_Gate> _pumpGate(
         path: '/age-stop',
         builder: (_, s) => Scaffold(body: Text('X1 ${s.uri.query}')),
       ),
+      // Fix round (owner ruling): A5c's and H1's "Download my data".
+      GoRoute(
+        path: RouteNames.dataExport,
+        builder: (_, __) => const Scaffold(body: Text('EXPORT')),
+      ),
     ],
   );
   addTearDown(router.dispose);
@@ -241,6 +246,59 @@ void main() {
     expect(g.signOuts, ['out']);
   });
 
+  // Entry gates fix round (review I-2): someone who won't take the new
+  // terms, or whose account is held, can still erase it in the app.
+  for (final (name, server, title) in [
+    ('A5c (updated terms)', homeJson(needs: ['consent']), "We've updated our terms"),
+    ('H1 (a hold)', homeJson(hold: true), null),
+  ]) {
+    testWidgets('$name offers "Delete my account", which opens the '
+        'deletion confirmation', (tester) async {
+      await _pumpGate(tester, server: server);
+      if (title != null) expect(find.text(title), findsOneWidget);
+      final link = find.widgetWithText(TextButton, 'Delete my account');
+      expect(link, findsOneWidget);
+      await tester.ensureVisible(link);
+      await tester.tap(link);
+      await _settle(tester, steps: 4);
+      expect(find.text('Delete your account?'), findsOneWidget);
+      expect(find.text('Delete permanently'), findsOneWidget);
+    });
+  }
+
+  // Owner ruling (fix round): beside it, "Download my data" opens the
+  // export route, which stays open while the account owes the gate.
+  for (final (name, server) in [
+    ('A5c (updated terms)', homeJson(needs: ['consent'])),
+    ('H1 (a hold)', homeJson(hold: true)),
+  ]) {
+    testWidgets('$name offers "Download my data", which opens the export', (
+      tester,
+    ) async {
+      final g = await _pumpGate(tester, server: server);
+      final link = find.widgetWithText(TextButton, 'Download my data');
+      expect(link, findsOneWidget);
+      await tester.ensureVisible(link);
+      await tester.tap(link);
+      await _settle(tester, steps: 4);
+      expect(find.text('EXPORT'), findsOneWidget);
+      // Pushed on the gate: Back returns to it.
+      expect(
+        g.router.routerDelegate.currentConfiguration.matches.last
+            .matchedLocation,
+        RouteNames.dataExport,
+      );
+    });
+  }
+
+  testWidgets('the other gate steps offer no deletion or export link', (
+    tester,
+  ) async {
+    await _pumpGate(tester, server: homeJson(needs: ['birth_date']));
+    expect(find.text('Delete my account'), findsNothing);
+    expect(find.text('Download my data'), findsNothing);
+  });
+
   testWidgets('no account and nothing queued: back to sign-up (M-5)', (
     tester,
   ) async {
@@ -273,6 +331,53 @@ void main() {
     // queued) and the server still has no account: A6.
     expect(find.text('What brings you to Attune?'), findsOneWidget);
     expect(g.store.pendingSignUp, isNotNull);
+  });
+
+  // Owner 2026-11-26: the path chosen on Welcome, queued by sign-up when
+  // it couldn't be set, means the gate never asks A6 for it.
+  testWidgets('a path queued by sign-up is replayed, never asked (A6)', (
+    tester,
+  ) async {
+    final g = await _pumpGate(
+      tester,
+      server: homeJson(path: null, needs: ['path']),
+      prefsValues: {'attune.onboarding.user.$_uid.pending_path': 'just_me'},
+      setUp:
+          (gw) =>
+              gw.onSetPath =
+                  (p) => gw.state = homeJson(path: p['p_path'] as String),
+    );
+    expect(find.text('What brings you to Attune?'), findsNothing);
+    expect(g.gateway.calls.firstWhere((c) => c.$1 == 'set_my_path').$2, {
+      'p_path': 'just_me',
+      'p_confirmed': false,
+    });
+    expect(g.store.pendingPath, isNull);
+    expect(find.text('HOME'), findsOneWidget);
+  });
+
+  testWidgets('a queued A5 with the Welcome path queued: no A6 either', (
+    tester,
+  ) async {
+    final g = await _pumpGate(
+      tester,
+      server: homeJson(
+        hasAccount: false,
+        path: null,
+        needs: ['consent', 'birth_date', 'name', 'path'],
+      ),
+      prefsValues: {
+        'attune.onboarding.user.$_uid.pending_sign_up':
+            '{"display_name":"Ama","birth_date":"1990-01-01"}',
+        'attune.onboarding.user.$_uid.pending_path': 'relationship',
+      },
+      accounts: FakeAccountGateway()..failWith = TimeoutException('offline'),
+    );
+    expect(find.text('What brings you to Attune?'), findsNothing);
+    expect(g.store.pendingSignUp, isNotNull);
+    expect(g.store.pendingPath, AppPath.relationship);
+    expect(g.gateway.count('set_my_path'), 0);
+    expect(find.text('HOME'), findsOneWidget);
   });
 
   testWidgets('needs [birth_date]: "Add your date of birth", then home', (
@@ -1107,7 +1212,12 @@ void main() {
   testWidgets('H1, update and offline meet the guidelines', (tester) async {
     final semantics = tester.ensureSemantics();
     for (final screen in <Widget Function()>[
-      () => AccountHoldStep(onSignOut: () {}),
+      // As the gate shows it: with "Delete my account" (fix round I-2).
+      () => AccountHoldStep(
+        onSignOut: () {},
+        onDeleteAccount: () {},
+        onDownloadData: () {},
+      ),
       () => UpdateAppStep(onSignOut: () {}),
       () => CheckOfflineStep(onRetry: () {}, onSignOut: () {}),
     ]) {
@@ -1145,7 +1255,12 @@ void main() {
     await expectFlowGoldens(
       tester,
       'h1_hold',
-      () => AccountHoldStep(onSignOut: () {}),
+      // As the gate shows it: with "Delete my account" (fix round I-2).
+      () => AccountHoldStep(
+        onSignOut: () {},
+        onDeleteAccount: () {},
+        onDownloadData: () {},
+      ),
     );
     await expectFlowGoldens(
       tester,

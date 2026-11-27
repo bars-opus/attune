@@ -49,12 +49,14 @@ void main() {
     expect(find.text('Following'), findsOneWidget);
     expect(find.text('Discover'), findsOneWidget);
     expect(find.text('Forums'), findsNothing);
-    expect(find.text('Hello!'), findsNothing);
+    expect(find.text('Join Attune'), findsNothing);
 
+    // The guest's second tab is "Join Attune", the new sign-in's ways in
+    // (the old phone login is gone, 2026-11-26).
     await tester.tap(find.text('Chat').last);
-    await pumpUntilFound(tester, find.text('Hello!'));
+    await pumpUntilFound(tester, find.text('Join Attune'));
 
-    expect(find.text('Hello!'), findsOneWidget);
-    expect(find.text('Continue with phone number'), findsOneWidget);
+    expect(find.text('Join Attune'), findsOneWidget);
+    expect(find.text('I already have an account'), findsOneWidget);
   });
 }

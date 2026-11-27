@@ -39,6 +39,11 @@ const REFUSALS: Record<string, { status: number; message: string }> = {
   "invite:phone_required": { status: 403, message: "invite:phone_required" },
   "invite:age_required": { status: 428, message: "invite:age_required" },
   "invite:not_possible": { status: 403, message: "invite:not_possible" },
+  // Entry gates 2026-11-27: the acceptor has not accepted EULA 2 or later.
+  // The eligibility guard answers this first (409 signup:incomplete); the
+  // SQL function's own refusal reads the same, so the app finishes sign-up
+  // and keeps the invite.
+  "invite:consent_required": { status: 409, message: "signup:incomplete" },
   // The acceptor's own open hold (Task 1 ruling I-3); an inviter's is the
   // uniform invite:invalid.
   "account:hold": { status: 403, message: "account:hold" },
@@ -104,14 +109,13 @@ export async function acceptInvite(
   supabase: any,
   userId: string,
   rawCode: unknown,
-  ensureUserRow: () => Promise<void>,
 ): Promise<AcceptResult> {
   const inviteCode = normalizeInviteCode(rawCode);
   if (!inviteCode) throw new HttpError("Invite code is required", 400);
 
-  // Flag off: today's missing-row insert. Flag on: an account must exist
-  // (409 signup:incomplete); the ages are the SQL function's.
-  await ensureInviteAccount(supabase, userId, ensureUserRow);
+  // An account with current consent must exist (409 signup:incomplete;
+  // nothing is ever created here); the ages are the SQL function's too.
+  await ensureInviteAccount(supabase, userId);
 
   // The attempt, before the accept and only once: true is the go-ahead;
   // false is past the limit; anything else fails closed (no accept).

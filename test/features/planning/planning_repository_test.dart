@@ -58,9 +58,26 @@ void main() {
       final e = await errorFor(_planning('limit_reached', 'not json'));
       expect((e as PlanningLimitReached).limit, 'unknown');
     });
-    test('42501 is unauthorized', () async {
-      final e = await errorFor(const PostgrestException(message: 'denied', code: '42501'));
-      expect(e, isA<PlanningUnauthorized>());
+    // Entry gates fix round (review M-3): the server's account gate raises
+    // account_not_ready (42501), and the gated tables' RLS refuses with
+    // 42501 too. Planning's own refusals come as planning:*, so a bare
+    // 42501 means the account isn't set up yet.
+    test('42501 (account_not_ready or RLS) is account-not-ready', () async {
+      for (final message in [
+        'account_not_ready',
+        'new row violates row-level security policy for table "x"',
+        'denied',
+      ]) {
+        final e = await errorFor(PostgrestException(message: message, code: '42501'));
+        expect(e, isA<PlanningAccountNotReady>(), reason: message);
+        expect(e.isPermanent, isTrue);
+      }
+    });
+    test('account-not-ready says to finish setting up, never "sign in"', () {
+      expect(
+        planningErrorMessage(const PlanningAccountNotReady()),
+        'Finish setting up your account first.',
+      );
     });
     test('integrity violations are permanent invalid input, not network', () async {
       final e = await errorFor(const PostgrestException(message: 'check', code: '23514'));
@@ -79,6 +96,7 @@ void main() {
         PlanningLimitReached('blocks_per_entry'), PlanningLimitReached('pinned_per_category'),
         PlanningLimitReached('zzz'),
         PlanningInvalidInput('title'), PlanningInvalidInput('zzz'), PlanningNetwork('x'),
+        PlanningAccountNotReady(),
       ];
       for (final e in all) {
         final m = planningErrorMessage(e);

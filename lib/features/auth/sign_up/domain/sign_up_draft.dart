@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:math';
 
+import 'package:attune/features/onboarding/domain/home_state.dart';
 import 'package:flutter/foundation.dart';
 
 /// How someone entered `/signup` (Spec 1 §5.4).
@@ -31,6 +32,7 @@ class SignUpDraft {
     required this.entry,
     required this.deviceNonce,
     required this.createdAt,
+    this.path,
     this.name,
     this.birthDate,
     this.phoneE164,
@@ -47,10 +49,12 @@ class SignUpDraft {
     SignUpEntry entry, {
     required DateTime now,
     Random? random,
+    AppPath? path,
   }) => SignUpDraft(
     entry: entry,
     deviceNonce: newNonce(random),
     createdAt: now.toUtc(),
+    path: path,
   );
 
   /// 16 random bytes, base64url without padding (22 characters).
@@ -63,6 +67,14 @@ class SignUpDraft {
   final SignUpEntry entry;
   final String deviceNonce;
   final DateTime createdAt;
+
+  /// The path chosen on Welcome (owner 2026-11-26), set once the account
+  /// exists, so A6 is never asked. A new account's only. It goes wherever
+  /// A1 and A2 go (fix round M-5): dropped with them when the number
+  /// changes, since it may be someone else's choice (review B5 I-6, I-8).
+  /// Dating stays in memory only (D20: [toJson] never writes it), so a
+  /// reopened draft asks A6 after sign-up instead.
+  final AppPath? path;
   final String? name;
 
   /// A UTC date (midnight).
@@ -124,6 +136,7 @@ class SignUpDraft {
       entry: entry ?? base.entry,
       deviceNonce: deviceNonce,
       createdAt: createdAt,
+      path: base.path,
       name: name ?? base.name,
       birthDate: birthDate ?? base.birthDate,
       phoneE164: base.phoneE164,
@@ -144,6 +157,7 @@ class SignUpDraft {
       entry: entry,
       deviceNonce: deviceNonce,
       createdAt: createdAt,
+      path: path,
       name: name,
       birthDate: birthDate,
       phoneE164: phoneE164,
@@ -159,6 +173,7 @@ class SignUpDraft {
   /// number's too); the way in, the nonce, its date and the country stay.
   /// The same number changes nothing. A draft with no number yet gives
   /// its first one the A1 and A2 typed before it (they come before A3).
+  /// The Welcome path goes with A1 and A2 (fix round M-5).
   SignUpDraft withNumber(String? phoneE164, {String? countryIso}) {
     if (phoneE164 == this.phoneE164) {
       return countryIso == null ? this : copyWith(countryIso: countryIso);
@@ -168,6 +183,7 @@ class SignUpDraft {
       entry: entry,
       deviceNonce: deviceNonce,
       createdAt: createdAt,
+      path: first ? path : null,
       name: first ? name : null,
       birthDate: first ? birthDate : null,
       phoneE164: phoneE164,
@@ -177,7 +193,8 @@ class SignUpDraft {
 
   /// A1 and A2 dropped as well as the code: they were typed for a number
   /// that isn't the one verified now, maybe by someone else on this phone
-  /// (review B5 I-6), so A1 and A2 are asked again.
+  /// (review B5 I-6), so A1 and A2 are asked again. The Welcome path goes
+  /// too (fix round M-5): A6 asks it after sign-up.
   SignUpDraft withoutNameAndDate() => SignUpDraft(
     entry: entry,
     deviceNonce: deviceNonce,
@@ -186,10 +203,29 @@ class SignUpDraft {
     countryIso: countryIso,
   );
 
+  /// The draft with [path] as its chosen path (null: none), all else kept.
+  SignUpDraft withPath(AppPath? path) => SignUpDraft(
+    entry: entry,
+    deviceNonce: deviceNonce,
+    createdAt: createdAt,
+    path: path,
+    name: name,
+    birthDate: birthDate,
+    phoneE164: phoneE164,
+    countryIso: countryIso,
+    channel: channel,
+    lastSentAt: lastSentAt,
+    sendCount: sendCount,
+    verifiedUserId: verifiedUserId,
+    accountChecked: accountChecked,
+  );
+
   Map<String, dynamic> toJson() => {
     'entry': entry.wire,
     'device_nonce': deviceNonce,
     'created_at': createdAt.toUtc().toIso8601String(),
+    // D20: never a Dating value on the phone.
+    'path': path == AppPath.dating ? null : path?.wire,
     'name': name,
     'birth_date': birthDate == null ? null : dateOnly(birthDate!),
     'phone': phoneE164,
@@ -210,10 +246,12 @@ class SignUpDraft {
     DateTime? at(Object? value) =>
         value is String ? DateTime.tryParse(value) : null;
     final birth = at(json['birth_date']);
+    final path = AppPath.fromWire(json['path']);
     return SignUpDraft(
       entry: SignUpEntry.fromWire(json['entry']),
       deviceNonce: nonce,
       createdAt: created,
+      path: path == AppPath.dating ? null : path,
       name: json['name'] as String?,
       birthDate:
           birth == null

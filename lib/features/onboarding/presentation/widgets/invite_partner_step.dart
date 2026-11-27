@@ -179,7 +179,6 @@ class _InvitePartnerStepState extends ConsumerState<InvitePartnerStep> {
     loc,
     register: _register,
     link: RelationshipInvite.linkFor(code),
-    code: code,
     partnerFirstName: _partnerName,
     foundItMyself: _foundItMyself,
   );

@@ -238,7 +238,8 @@ void main() {
 
       await tester.tap(find.text('Close'));
       await tester.pumpAndSettle();
-      expect(h.location, '/welcome');
+      // The intro, not Welcome (whose paths all lead back to X1).
+      expect(h.location, '/start');
       semantics.dispose();
     },
   );

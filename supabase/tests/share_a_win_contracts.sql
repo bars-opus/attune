@@ -15,6 +15,17 @@ INSERT INTO public.users (id, phone, display_name, timezone) VALUES
   ('9fd00000-0000-0000-0000-0000000000d4', '+233599620004', 'Pat', NULL),
   ('9fd00000-0000-0000-0000-0000000000e5', '+233599620005', 'Pip', NULL)
 ON CONFLICT (id) DO NOTHING;
+-- Entry gates 2026-11-27: content writes need a complete account (users row,
+-- 18+ date of birth, EULA 2, no hold; private.account_ready).
+UPDATE public.users SET eula_version = '2', eula_accepted_at = now()
+ WHERE id IN ('9fd00000-0000-0000-0000-0000000000a1', '9fd00000-0000-0000-0000-0000000000b2', '9fd00000-0000-0000-0000-0000000000c3', '9fd00000-0000-0000-0000-0000000000d4', '9fd00000-0000-0000-0000-0000000000e5');
+INSERT INTO public.account_birthdates (user_id, birth_date) VALUES
+  ('9fd00000-0000-0000-0000-0000000000a1', DATE '1990-01-01'),
+  ('9fd00000-0000-0000-0000-0000000000b2', DATE '1990-01-01'),
+  ('9fd00000-0000-0000-0000-0000000000c3', DATE '1990-01-01'),
+  ('9fd00000-0000-0000-0000-0000000000d4', DATE '1990-01-01'),
+  ('9fd00000-0000-0000-0000-0000000000e5', DATE '1990-01-01')
+ON CONFLICT (user_id) DO NOTHING;
 INSERT INTO public.relationships (id, user_a, user_b, status, started_at, created_at, invite_accepted_at) VALUES
   ('9fd10000-0000-0000-0000-000000000001', '9fd00000-0000-0000-0000-0000000000a1', '9fd00000-0000-0000-0000-0000000000b2', 'active', CURRENT_DATE - 50, now() - interval '50 days', now()),
   ('9fd10000-0000-0000-0000-000000000002', '9fd00000-0000-0000-0000-0000000000d4', '9fd00000-0000-0000-0000-0000000000e5', 'paused', CURRENT_DATE - 50, now() - interval '50 days', now());

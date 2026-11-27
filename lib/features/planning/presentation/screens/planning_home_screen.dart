@@ -2,6 +2,7 @@ import 'package:attune/core/widgets/app_content_width.dart';
 import 'dart:async';
 
 import 'package:attune/core/providers/couple_name_provider.dart';
+import 'package:attune/core/ui/glass/glass_menu.dart';
 import 'package:attune/app/theme/design_tokens.dart';
 import 'package:attune/core/utils/exports/export_screens.dart';
 import 'package:attune/core/widgets/app_tabs.dart';
@@ -105,7 +106,6 @@ class _PlanningHomeScreenState extends ConsumerState<PlanningHomeScreen> {
       }
     }
   }
-
 
   @override
   void initState() {
@@ -448,8 +448,13 @@ class _CategoryTile extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           children: [
             if (category.hasNew) const PlanningNewDot(),
-            PopupMenuButton<_CategoryAction>(
+            GlassMenuButton<_CategoryAction>(
               tooltip: 'More for ${category.name}',
+              // PopupMenuButton's own icon and colour.
+              icon: Icon(
+                Icons.adaptive.more,
+                color: IconTheme.of(context).color,
+              ),
               onSelected:
                   (a) => switch (a) {
                     _CategoryAction.open => onOpen(),
@@ -460,29 +465,29 @@ class _CategoryTile extends StatelessWidget {
                   },
               itemBuilder:
                   (_) => [
-                    const PopupMenuItem(
+                    const GlassMenuItem(
                       value: _CategoryAction.open,
-                      child: Text('Open'),
+                      label: 'Open',
                     ),
                     if (onMoveUp != null)
-                      const PopupMenuItem(
+                      const GlassMenuItem(
                         value: _CategoryAction.up,
-                        child: Text('Move up'),
+                        label: 'Move up',
                       ),
                     if (onMoveDown != null)
-                      const PopupMenuItem(
+                      const GlassMenuItem(
                         value: _CategoryAction.down,
-                        child: Text('Move down'),
+                        label: 'Move down',
                       ),
                     if (onHide != null)
-                      const PopupMenuItem(
+                      const GlassMenuItem(
                         value: _CategoryAction.hide,
-                        child: Text('Hide'),
+                        label: 'Hide',
                       ),
                     if (onUnhide != null)
-                      const PopupMenuItem(
+                      const GlassMenuItem(
                         value: _CategoryAction.unhide,
-                        child: Text('Show again'),
+                        label: 'Show again',
                       ),
                   ],
             ),

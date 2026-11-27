@@ -1,8 +1,9 @@
-// Spec 1 W4a (§4.5; replaces the W2 interim guard's tests). Both invite
-// functions ask public.relationship_invite_eligibility first: legacy runs
-// today's ensureUserRow; with flow_signin_v2 on, no users row is ever made
-// (D8): no account is 409 signup:incomplete; the inviter's age rule is 428
-// / 403; an unreadable answer is 503 flags:unavailable, never legacy.
+// Spec 1 W4a (§4.5; replaces the W2 interim guard's tests), entry gates
+// 2026-11-27. Both invite functions ask public.relationship_invite_eligibility
+// first, whatever flow_signin_v2 says, and no users row is ever made here
+// (D8): no account or no current consent is 409 signup:incomplete; the
+// inviter's age rule is 428 / 403; an unreadable answer (the retired
+// 'legacy' among them) is 503 flags:unavailable.
 import { HttpError } from "../_shared/attune_auth.ts";
 import {
   AGE_REQUIRED,
@@ -31,15 +32,6 @@ function fakeClient(answer: Answer) {
   return { calls, tables, client };
 }
 
-function ensureUserRowSpy() {
-  const spy = { calls: 0, run: () => Promise.resolve() };
-  spy.run = () => {
-    spy.calls++;
-    return Promise.resolve();
-  };
-  return spy;
-}
-
 async function refusalOf(run: () => Promise<unknown>): Promise<HttpError> {
   try {
     await run();
@@ -57,41 +49,42 @@ Deno.test("the codes are the app's", () => {
   if (NOT_POSSIBLE !== "invite:not_possible") throw new Error(NOT_POSSIBLE);
 });
 
-Deno.test("legacy (flag off): today's ensureUserRow runs once", async () => {
-  const { calls, client } = fakeClient({ data: "legacy", error: null });
-  const ensureUserRow = ensureUserRowSpy();
-  const answer = await ensureInviteAccount(client, "u1", ensureUserRow.run);
-  if (answer !== "legacy") throw new Error(`answered ${answer}`);
-  if (ensureUserRow.calls !== 1) throw new Error(`ensureUserRow ran ${ensureUserRow.calls} times`);
+Deno.test("the retired legacy answer fails closed: 503, nothing created", async () => {
+  const { calls, tables, client } = fakeClient({ data: "legacy", error: null });
+  const refusal = await refusalOf(() => ensureInviteAccount(client, "u1"));
+  if (refusal.status !== 503 || refusal.message !== "flags:unavailable") {
+    throw new Error(`got ${refusal.status} ${refusal.message}`);
+  }
   if (calls.length !== 1 || calls[0].fn !== "relationship_invite_eligibility") {
     throw new Error(`asked ${JSON.stringify(calls)}`);
   }
   if (JSON.stringify(calls[0].params) !== JSON.stringify({ p_user: "u1" })) {
     throw new Error(`asked for ${JSON.stringify(calls[0].params)}`);
   }
+  if (tables.length) throw new Error(`touched ${tables}`);
 });
 
-Deno.test("flag on, no account: 409 signup:incomplete and no ensureUserRow (D8)", async () => {
-  const { client } = fakeClient({ data: "signup_incomplete", error: null });
-  const ensureUserRow = ensureUserRowSpy();
-  const refusal = await refusalOf(() => ensureInviteAccount(client, "u1", ensureUserRow.run));
-  if (refusal.status !== 409 || refusal.message !== "signup:incomplete") {
-    throw new Error(`got ${refusal.status} ${refusal.message}`);
+Deno.test("no account, or no current consent: 409 signup:incomplete, nothing created (D8)", async () => {
+  for (const answer of ["signup_incomplete", "consent_required"] as const) {
+    const { tables, client } = fakeClient({ data: answer, error: null });
+    const refusal = await refusalOf(() => ensureInviteAccount(client, "u1"));
+    if (refusal.status !== 409 || refusal.message !== "signup:incomplete") {
+      throw new Error(`${answer}: got ${refusal.status} ${refusal.message}`);
+    }
+    if (tables.length) throw new Error(`${answer}: touched ${tables}`);
   }
-  if (ensureUserRow.calls !== 0) throw new Error("ensureUserRow ran with the flag on");
 });
 
-Deno.test("flag on, an account: the answer, and no ensureUserRow", async () => {
+Deno.test("an account: the answer, for the caller's age rule", async () => {
   for (const answer of ["ok", "age_required", "not_possible"] as const) {
-    const { client } = fakeClient({ data: answer, error: null });
-    const ensureUserRow = ensureUserRowSpy();
-    const got = await ensureInviteAccount(client, "u1", ensureUserRow.run);
+    const { tables, client } = fakeClient({ data: answer, error: null });
+    const got = await ensureInviteAccount(client, "u1");
     if (got !== answer) throw new Error(`${answer}: answered ${got}`);
-    if (ensureUserRow.calls !== 0) throw new Error(`${answer}: ensureUserRow ran`);
+    if (tables.length) throw new Error(`${answer}: touched ${tables}`);
   }
 });
 
-Deno.test("an unreadable answer fails closed: 503 flags:unavailable, no ensureUserRow", async () => {
+Deno.test("an unreadable answer fails closed: 503 flags:unavailable", async () => {
   for (const [label, answer] of [
     ["an error", { data: null, error: { message: "permission denied" } }],
     ["a thrown call", new Error("network")],
@@ -99,12 +92,10 @@ Deno.test("an unreadable answer fails closed: 503 flags:unavailable, no ensureUs
     ["no answer", { data: null, error: null }],
   ] as const) {
     const { client } = fakeClient(answer);
-    const ensureUserRow = ensureUserRowSpy();
-    const refusal = await refusalOf(() => ensureInviteAccount(client, "u1", ensureUserRow.run));
+    const refusal = await refusalOf(() => ensureInviteAccount(client, "u1"));
     if (refusal.status !== 503 || refusal.message !== "flags:unavailable") {
       throw new Error(`${label}: got ${refusal.status} ${refusal.message}`);
     }
-    if (ensureUserRow.calls !== 0) throw new Error(`${label}: ensureUserRow ran`);
   }
 });
 
@@ -118,29 +109,26 @@ Deno.test("the inviter's age rule: 428 without a date of birth, 403 under 18", a
     throw new Error(`got ${minor.status} ${minor.message}`);
   }
   requireInviterAge("ok");
-  requireInviterAge("legacy");
 });
 
 // The wiring: create-relationship-invite asks first, applies the age rule
 // at once, and reads or writes nothing before; accept-invite asks before
-// its one SQL call. ensureUserRow is only ever the guard's flag-off path.
+// its one SQL call. Neither has a users-row writer any more.
 Deno.test("both invite functions ask before any relationship read or write", async () => {
   const create = await Deno.readTextFile(new URL("../create-relationship-invite/index.ts", import.meta.url));
   if (!create.includes('import { ensureInviteAccount, requireInviterAge } from "../_shared/sign_up_guard.ts";')) {
     throw new Error("create-relationship-invite: does not import the guard and the age rule");
   }
-  const call = "const eligibility = await ensureInviteAccount(supabase, user.id, () => ensureUserRow(supabase, user));\n    requireInviterAge(eligibility);";
+  const call = "const eligibility = await ensureInviteAccount(supabase, user.id);\n    requireInviterAge(eligibility);";
   const at = create.indexOf(call);
   if (at < 0) throw new Error("create-relationship-invite: does not ask, then apply the age rule");
   for (const later of ['.from("relationships")', ".insert(", ".update("]) {
     const first = create.indexOf(later);
     if (first >= 0 && first < at) throw new Error(`create-relationship-invite: ${later} comes before the guard`);
   }
-  const bare = create.split("\n").filter((line) => /ensureUserRow\(supabase, user\)/.test(line));
-  if (bare.length !== 1) throw new Error(`create-relationship-invite: ensureUserRow outside the guard: ${bare.join(" | ")}`);
 
   const accept = await Deno.readTextFile(new URL("./accept.ts", import.meta.url));
-  const guard = accept.indexOf("await ensureInviteAccount(supabase, userId, ensureUserRow);");
+  const guard = accept.indexOf("await ensureInviteAccount(supabase, userId);");
   const rpc = accept.indexOf('supabase.rpc("accept_relationship_invite_v2"');
   if (guard < 0 || rpc < 0 || guard > rpc) throw new Error("accept-invite: the guard does not come before the accept");
   // Task 1 fix round 1: the shared attempt budget is spent after the guard
@@ -151,7 +139,7 @@ Deno.test("both invite functions ask before any relationship read or write", asy
     throw new Error("accept-invite still reads or writes relationships itself (D7: the SQL function does)");
   }
   const index = await Deno.readTextFile(new URL("./index.ts", import.meta.url));
-  if (!index.includes("() => ensureUserRow(supabase, user),")) {
-    throw new Error("accept-invite: ensureUserRow is not handed to the guard");
+  if (!index.includes("await acceptInvite(supabase, user.id, body.invite_code);")) {
+    throw new Error("accept-invite: index does not hand the call to acceptInvite");
   }
 });

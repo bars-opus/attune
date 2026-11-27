@@ -1,6 +1,7 @@
 import 'package:attune/core/widgets/app_content_width.dart';
 import 'package:attune/core/utils/date_formatter.dart';
 import 'package:attune/core/notes/note_section.dart';
+import 'package:attune/core/ui/glass/glass_menu.dart';
 import 'package:attune/core/widgets/bottom_sheet_header.dart';
 import 'package:attune/core/utils/bottom_sheet_utils.dart';
 import 'package:attune/app/theme/app_theme.dart';
@@ -223,7 +224,7 @@ class _PlanningCategoryScreenState
         ),
 
         actions: [
-          PopupMenuButton<_Menu>(
+          GlassMenuButton<_Menu>(
             tooltip: 'Category options',
             icon: const Icon(
               Icons.more_vert,
@@ -231,32 +232,33 @@ class _PlanningCategoryScreenState
             onSelected: _menu,
             itemBuilder:
                 (_) => [
-                  const PopupMenuItem(
+                  const GlassMenuItem(
                     value: _Menu.closed,
-                    child: Text('Done & archived'),
+                    label: 'Done & archived',
                   ),
                   if (_category.templateEntryId != null && !_isNotes)
-                    const PopupMenuItem(
+                    const GlassMenuItem(
                       value: _Menu.editTemplate,
-                      child: Text('Edit template'),
+                      label: 'Edit template',
                     ),
-                  const PopupMenuItem(
+                  const GlassMenuItem(
                     value: _Menu.edit,
-                    child: Text('Rename or restyle'),
+                    label: 'Rename or restyle',
                   ),
-                  PopupMenuItem(
+                  GlassMenuItem(
                     value: _Menu.hide,
-                    child: Text(_category.hidden ? 'Show on Planning' : 'Hide'),
+                    label: _category.hidden ? 'Show on Planning' : 'Hide',
                   ),
                   if (_category.isStarter && !_isNotes)
-                    const PopupMenuItem(
+                    const GlassMenuItem(
                       value: _Menu.reset,
-                      child: Text('Reset template'),
+                      label: 'Reset template',
                     ),
                   if (!_category.isStarter)
-                    const PopupMenuItem(
+                    const GlassMenuItem(
                       value: _Menu.delete,
-                      child: Text('Delete category'),
+                      label: 'Delete category',
+                      destructive: true,
                     ),
                 ],
           ),

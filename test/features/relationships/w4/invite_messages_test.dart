@@ -16,18 +16,17 @@ void main() {
         loc,
         register: register,
         link: _link,
-        code: 'K7P2QM',
         partnerFirstName: name,
         foundItMyself: found,
       );
 
-  test('Simple, named: the spec text, the code in the last line', () {
+  test('Simple, named: the spec text, the link with the code, then tap again', () {
     expect(
       message(InviteRegister.simple, name: 'Ama'),
       "Hi Ama, I'd like us to try Attune together. It's a private space just "
       'for the two of us.\n'
       'Get the app: $_link\n'
-      'Open Attune \u2192 I have an invite \u2192 K7P2QM',
+      'Installed it already? Tap the link again to join me.',
     );
   });
 
@@ -37,13 +36,13 @@ void main() {
       'Hey Ama! I found an app for couples and thought of us. Private, just '
       'you and me.\n'
       'Get it here: $_link\n'
-      'Open Attune \u2192 I have an invite \u2192 K7P2QM',
+      'Installed it already? Tap the link again to join me.',
     );
     expect(
       message(InviteRegister.pidgin, name: 'Ama'),
       'Ama, make we try Attune. Na private space for only you and me.\n'
       'Download am: $_link\n'
-      'Open Attune \u2192 I have an invite \u2192 K7P2QM',
+      'Installed it already? Tap the link again to join me.',
     );
   });
 
@@ -79,8 +78,9 @@ void main() {
     for (final register in InviteRegister.values) {
       for (final name in [null, 'Ama']) {
         final text = message(register, name: name, found: true);
-        expect(text, contains('K7P2QM'));
         expect(text, contains(_link));
+        // The code travels in the link (2026-11-26: no code line).
+        expect(text, contains('/i/K7P2QM'));
         expect(
           text.toLowerCase(),
           isNot(

@@ -216,8 +216,10 @@ class SignUpCoordinator {
   /// A1/A2 that "Change it" took off the draft, with the number they were
   /// given for (review B5 I-8). Nothing shows them; they come back only
   /// when A3 sends that same number again, and any other number ends
-  /// them. Held by this flow only, never written to the phone.
-  ({String phoneE164, String? name, DateTime? birthDate})? _setAside;
+  /// them. Held by this flow only, never written to the phone. The
+  /// Welcome path goes with them (fix round M-5).
+  ({String phoneE164, String? name, DateTime? birthDate, AppPath? path})?
+  _setAside;
 
   /// When the app went to the background, while it is there (fix round 5).
   DateTime? _awaySince;
@@ -254,6 +256,7 @@ class SignUpCoordinator {
     if (!away.isNegative && away <= unboundAwayLimit) return null;
     _epoch++;
     _setAside = null;
+    // The Welcome path goes with A1/A2 (fix round M-5): A6 asks it later.
     _draft = _draft.keepable ?? SignUpDraft.start(_draft.entry, now: _now());
     unawaited(_save());
     if (_draft.verifiedUserId != null) return _afterNoAccount;
@@ -262,8 +265,22 @@ class SignUpCoordinator {
         : SignUpStepId.name;
   }
 
-  /// Loads or starts the draft and says where the flow opens.
-  SignUpStepId start(SignUpEntry entry) {
+  /// Loads or starts the draft and says where the flow opens. [path]: the
+  /// one just chosen on Welcome (owner 2026-11-26). It is kept only on a
+  /// new account's draft: without one, a draft resumed as a new account
+  /// keeps its own; the returning way and invites never carry one.
+  SignUpStepId start(SignUpEntry entry, {AppPath? path}) {
+    final step = _open(entry);
+    final chosen =
+        _draft.entry == SignUpEntry.newAccount ? path ?? _draft.path : null;
+    if (chosen != _draft.path) {
+      _draft = _draft.withPath(chosen);
+      unawaited(_save());
+    }
+    return step;
+  }
+
+  SignUpStepId _open(SignUpEntry entry) {
     final existing = _drafts.read();
     final userId = _auth.currentUserId;
     if (existing != null &&
@@ -407,10 +424,12 @@ class SignUpCoordinator {
       if (setAside != null && setAside.phoneE164 == phoneE164) {
         draft =
             draft.name == null && draft.birthDate == null
-                ? draft.copyWith(
-                  name: setAside.name,
-                  birthDate: setAside.birthDate,
-                )
+                ? draft
+                    .copyWith(
+                      name: setAside.name,
+                      birthDate: setAside.birthDate,
+                    )
+                    .withPath(setAside.path)
                 : draft.withoutNameAndDate();
       }
     }
@@ -668,6 +687,14 @@ class SignUpCoordinator {
     return outcome;
   }
 
+  /// The path chosen on Welcome, kept for the replay when the account or
+  /// set_my_path couldn't be reached (§3.14, as A6 queues it). Never
+  /// Dating (D20): the gate asks A6 for it after sign-up instead.
+  Future<void> queuePath(String userId, AppPath path) async {
+    if (path == AppPath.dating) return;
+    await _onboardingStoreFor(userId).savePendingPath(path);
+  }
+
   /// A5c: EULA v2 for an existing account. Throws AccountOffline.
   Future<void> acceptUpdatedTerms() => _accounts.acceptUpdatedTerms();
 
@@ -714,6 +741,7 @@ class SignUpCoordinator {
               phoneE164: phone,
               name: _draft.name,
               birthDate: _draft.birthDate,
+              path: _draft.path,
             );
     _draft = _draft.withoutNameAndDate().withNumber(null);
   }

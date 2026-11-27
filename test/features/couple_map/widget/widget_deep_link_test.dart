@@ -25,6 +25,10 @@ Future<GoRouter> pump(WidgetTester t, {String initial = '/'}) async {
             (_, s) =>
                 Text('planning ${s.extra} ${s.uri.queryParameters['tab']}'),
       ),
+      GoRoute(
+        path: RouteNames.onboarding,
+        builder: (_, __) => const Text('gate'),
+      ),
     ],
   );
   await t.pumpWidget(MaterialApp.router(routerConfig: router));
@@ -37,12 +41,14 @@ Future<bool> open(
   bool signedIn = true,
   Future<String?> Function()? rel,
   bool flag = true,
+  Future<bool> Function()? ready,
 }) => openPlanningFromLink(
   r,
   PlanningHomeTab.map,
   signedIn: () => signedIn,
   relationshipId: rel ?? () async => 'r1',
   mapEnabled: () async => flag,
+  accountReady: ready ?? () async => true,
 );
 
 void main() {
@@ -135,6 +141,51 @@ void main() {
   testWidgets('already on Planning: no second copy pushed', (t) async {
     final r = await pump(t, initial: RouteNames.planning);
     expect(await open(r), isFalse);
+  });
+
+  // Entry gates fix 5 (owner 2026-11-27): the widget goes through the
+  // same check as the router. An account that still owes the gate
+  // (consent, date of birth, name, path or a hold), or whose state can't
+  // be read, gets the gate, never Planning.
+  testWidgets('an account that still owes the gate: the gate, not Planning',
+      (t) async {
+    final r = await pump(t);
+    expect(await open(r, ready: () async => false), isFalse);
+    await t.pumpAndSettle();
+    expect(find.text('gate'), findsOneWidget);
+    expect(find.textContaining('planning'), findsNothing);
+  });
+
+  testWidgets('a failed account check fails closed', (t) async {
+    final r = await pump(t);
+    expect(
+      await open(r, ready: () async => throw Exception('offline')),
+      isFalse,
+    );
+    await t.pumpAndSettle();
+    expect(find.textContaining('planning'), findsNothing);
+  });
+
+  testWidgets('quick exit during the account check still wins', (t) async {
+    final r = await pump(t);
+    final check = Completer<bool>();
+    final pending = open(r, ready: () => check.future);
+    r.go(RouteNames.neutralScreen);
+    await t.pumpAndSettle();
+    check.complete(false);
+    expect(await pending, isFalse);
+    await t.pumpAndSettle();
+    expect(find.text('neutral'), findsOneWidget);
+  });
+
+  test('main.dart passes the home-state check', () {
+    final source = File('lib/main.dart').readAsStringSync();
+    final opener = source.substring(
+      source.indexOf('Future<void> _openPlanningWhenReady'),
+    );
+    expect(opener, contains('accountReady:'));
+    expect(opener, contains('homeStateProvider('));
+    expect(opener, contains('.isComplete'));
   });
 
   test('main.dart routes planning links before invites', () {

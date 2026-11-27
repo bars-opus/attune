@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:attune/core/ui/motion/motion_tokens.dart';
@@ -63,6 +64,13 @@ class _OneTimeCodeFieldState extends State<OneTimeCodeField>
     vsync: this,
     duration: const Duration(milliseconds: 300),
   );
+
+  /// The caret blinking in the box the next digit goes to (from the old
+  /// login screen's look, owner 2026-11-26); steady with reduce motion. A
+  /// timer, as EditableText's own cursor: nothing animates between blinks,
+  /// so the screen (and a test's pumpAndSettle) can settle.
+  Timer? _blink;
+  bool _caretOn = true;
   String? _lastCompleted;
   FocusNode? _ownFocus;
 
@@ -76,6 +84,26 @@ class _OneTimeCodeFieldState extends State<OneTimeCodeField>
   void initState() {
     super.initState();
     widget.controller.addListener(_changed);
+    _focus.addListener(_focusChanged);
+  }
+
+  void _focusChanged() {
+    if (!mounted) return;
+    setState(() {});
+    _syncBlink();
+  }
+
+  void _syncBlink() {
+    final blinking = _focus.hasFocus && widget.enabled && !widget.accepted && !reduceMotionOf(context);
+    if (blinking && _blink == null) {
+      _blink = Timer.periodic(const Duration(milliseconds: 530), (_) {
+        if (mounted) setState(() => _caretOn = !_caretOn);
+      });
+    } else if (!blinking && _blink != null) {
+      _blink?.cancel();
+      _blink = null;
+      if (!_caretOn) setState(() => _caretOn = true);
+    }
   }
 
   @override
@@ -95,6 +123,9 @@ class _OneTimeCodeFieldState extends State<OneTimeCodeField>
     if (widget.shakeCount != oldWidget.shakeCount && !reduceMotionOf(context)) {
       _shake.forward(from: 0);
     }
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _syncBlink();
+    });
     if (oldWidget.enabled && !widget.enabled) {
       _refocus = _focus.hasFocus;
     } else if (!oldWidget.enabled && widget.enabled && _refocus) {
@@ -109,7 +140,9 @@ class _OneTimeCodeFieldState extends State<OneTimeCodeField>
   @override
   void dispose() {
     widget.controller.removeListener(_changed);
+    _focus.removeListener(_focusChanged);
     _shake.dispose();
+    _blink?.cancel();
     _ownFocus?.dispose();
     super.dispose();
   }
@@ -153,12 +186,39 @@ class _OneTimeCodeFieldState extends State<OneTimeCodeField>
             borderRadius: BorderRadius.circular(12),
             border: Border.all(color: color, width: active || hasError ? 2 : 1),
           ),
-          child: Text(
-            filled ? code[index] : '',
-            style: theme.textTheme.headlineSmall?.copyWith(
-              color: colorScheme.onSurface,
-              fontWeight: FontWeight.w600,
+          // A digit pops into its box; the box waiting for the next one
+          // shows a blinking caret (from the old login screen's look).
+          child: AnimatedSwitcher(
+            duration: reduceMotionOf(context) ? Duration.zero : const Duration(milliseconds: 180),
+            switchInCurve: Curves.easeOutBack,
+            transitionBuilder: (child, animation) => FadeTransition(
+              opacity: animation,
+              child: ScaleTransition(scale: Tween(begin: 0.6, end: 1.0).animate(animation), child: child),
             ),
+            child: filled
+                ? Text(
+                    code[index],
+                    key: ValueKey('d$index${code[index]}'),
+                    style: theme.textTheme.headlineSmall?.copyWith(
+                      color: colorScheme.onSurface,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  )
+                : active && _focus.hasFocus && !widget.accepted
+                ? AnimatedOpacity(
+                    key: ValueKey('c$index'),
+                    opacity: _caretOn ? 1 : 0,
+                    duration: const Duration(milliseconds: 120),
+                    child: Container(
+                      width: 2,
+                      height: boxHeight * 0.42,
+                      decoration: BoxDecoration(
+                        color: flowAccent(context),
+                        borderRadius: BorderRadius.circular(1),
+                      ),
+                    ),
+                  )
+                : SizedBox.shrink(key: ValueKey('e$index')),
           ),
         ),
       );

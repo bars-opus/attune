@@ -93,10 +93,11 @@ class AuthOperations {
   final Ref ref;
 
   /// Single in-flight auth operation lock. Prevents two concurrent operations
-  /// (e.g. user mashes "Sign in with Google" then "Sign in with Apple")
-  /// from racing to toggle the shared `isLoadingProvider`, where the first
-  /// to finish would prematurely clear the loading state while the second
-  /// is still mid-flight.
+  /// (e.g. two sign-out taps) from racing to toggle the shared
+  /// `isLoadingProvider`, where the first to finish would prematurely clear
+  /// the loading state while the second is still mid-flight. Entry gates
+  /// fix 6 (2026-11-27): sign-out is the one operation left; email and
+  /// OAuth sign-in are gone.
   bool _busy = false;
 
   AuthOperations(this.ref);
@@ -120,38 +121,6 @@ class AuthOperations {
       _busy = false;
       ref.read(isLoadingProvider.notifier).state = false;
     }
-  }
-
-  // ==================== EMAIL/PASSWORD ====================
-
-  Future<void> signInWithEmail(String email, String password) {
-    return _exclusive(() async {
-      final authService = ref.read(authServiceProvider);
-      await authService.signInWithEmail(email: email, password: password);
-    });
-  }
-
-  Future<AuthResponse> signUpWithEmail(String email, String password) {
-    return _exclusive(() async {
-      final authService = ref.read(authServiceProvider);
-      return authService.signUpWithEmail(email: email, password: password);
-    });
-  }
-
-  // ==================== OAUTH ====================
-
-  Future<void> signInWithGoogle() {
-    return _exclusive(() async {
-      final authService = ref.read(authServiceProvider);
-      await authService.signInWithGoogle();
-    });
-  }
-
-  Future<void> signInWithApple() {
-    return _exclusive(() async {
-      final authService = ref.read(authServiceProvider);
-      await authService.signInWithApple();
-    });
   }
 
   // ==================== OTHER ====================
@@ -264,20 +233,6 @@ class AuthOperations {
         }
         rethrow;
       }
-    });
-  }
-
-  Future<void> updatePassword(String newPassword) {
-    return _exclusive(() async {
-      final authService = ref.read(authServiceProvider);
-      await authService.updatePassword(newPassword);
-    });
-  }
-
-  Future<void> resetPassword(String email) {
-    return _exclusive(() async {
-      final authService = ref.read(authServiceProvider);
-      await authService.resetPassword(email);
     });
   }
 }

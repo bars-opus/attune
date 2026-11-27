@@ -1,21 +1,16 @@
 // Spec 1 W2b (§3.3, §3.14): the sign-up RPCs, the queued A5 and its
-// replay, EULA v2, and today's onboarding not asking the name twice.
+// replay. Entry gates fix 4 (2026-11-27): the EULA sheet's version tests
+// and the legacy flow's name-step tests went with EulaGate and
+// OnboardingFlow.
 import 'dart:async';
 
-import 'package:attune/features/auth/data/eula_acceptance_service.dart';
-import 'package:attune/features/auth/presentation/eula_gate.dart';
 import 'package:attune/features/auth/sign_up/data/account_service.dart';
 import 'package:attune/features/auth/sign_up/data/age_gate_store.dart';
-import 'package:attune/features/auth/sign_up/presentation/sign_up_flags.dart';
 import 'package:attune/features/onboarding/data/onboarding_store.dart';
 import 'package:attune/features/onboarding/data/onboarding_submission_service.dart';
 import 'package:attune/features/onboarding/data/onboarding_sync_service.dart';
 import 'package:attune/features/onboarding/domain/home_state.dart';
 import 'package:attune/features/onboarding/domain/onboarding_models.dart';
-import 'package:attune/features/onboarding/presentation/screens/onboarding_flow.dart';
-import 'package:flutter/material.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -174,105 +169,6 @@ void main() {
         isFalse,
         reason: 'the injected stop replaced the default',
       );
-    });
-  });
-
-  group('EULA v2', () {
-    test('asks only for a missing or older version, compared as numbers', () {
-      expect(
-        EulaAcceptanceService.needsFor(stored: null, version: '1'),
-        isTrue,
-      );
-      expect(
-        EulaAcceptanceService.needsFor(stored: '1', version: '1'),
-        isFalse,
-      );
-      expect(
-        EulaAcceptanceService.needsFor(stored: '2', version: '1'),
-        isFalse,
-        reason: 'never asks someone to step down',
-      );
-      expect(EulaAcceptanceService.needsFor(stored: '1', version: '2'), isTrue);
-      expect(
-        EulaAcceptanceService.needsFor(stored: 'v1', version: '1'),
-        isTrue,
-      );
-      expect(EulaAcceptanceService().version, '1');
-    });
-
-    testWidgets('EulaGate asks for v2 under flow_signin_v2, v1 otherwise', (
-      tester,
-    ) async {
-      late String on;
-      late String off;
-      late String bare;
-      await tester.pumpWidget(
-        ProviderScope(
-          overrides: [signInFlowV2Provider.overrideWithValue(true)],
-          child: MaterialApp(
-            home: Builder(
-              builder: (context) {
-                on = EulaGate.versionFor(context);
-                return const SizedBox();
-              },
-            ),
-          ),
-        ),
-      );
-      await tester.pumpWidget(
-        ProviderScope(
-          overrides: [signInFlowV2Provider.overrideWithValue(false)],
-          child: MaterialApp(
-            home: Builder(
-              builder: (context) {
-                off = EulaGate.versionFor(context);
-                return const SizedBox();
-              },
-            ),
-          ),
-        ),
-      );
-      await tester.pumpWidget(
-        MaterialApp(
-          home: Builder(
-            builder: (context) {
-              bare = EulaGate.versionFor(context);
-              return const SizedBox();
-            },
-          ),
-        ),
-      );
-      expect((on, off, bare), ('2', '1', '1'));
-    });
-  });
-
-  group("today's onboarding after a v2 sign-up", () {
-    Widget app(OnboardingStore store) => ProviderScope(
-      child: ScreenUtilInit(
-        designSize: const Size(375, 812),
-        builder:
-            (_, __) => MaterialApp(
-              home: OnboardingFlow(store: store, onComplete: () {}),
-            ),
-      ),
-    );
-
-    testWidgets('skips the name step when A1 already took the name', (
-      tester,
-    ) async {
-      await store.rememberDisplayName('عائشة');
-      await tester.pumpWidget(app(store));
-      await tester.pumpAndSettle();
-      expect(find.text('What should Attune call you?'), findsNothing);
-      expect(find.text('Are you single or in a relationship?'), findsOneWidget);
-    });
-
-    testWidgets('with no name stored it starts at the name step, as today', (
-      tester,
-    ) async {
-      await tester.pumpWidget(app(store));
-      await tester.pumpAndSettle();
-      expect(find.text('What should Attune call you?'), findsOneWidget);
     });
   });
 }

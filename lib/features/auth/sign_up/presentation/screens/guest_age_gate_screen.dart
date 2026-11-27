@@ -91,7 +91,8 @@ class _GuestAgeGateScreenState extends ConsumerState<GuestAgeGateScreen> {
     return FlowFrame(
       title: loc.flow_guestAgeTitle,
       hint: loc.flow_guestAgeHint,
-      onBack: () => context.go(RouteNames.welcome),
+      // The intro (2026-11-26): Welcome is the path question now.
+      onBack: () => context.go(RouteNames.start),
       body: FlowTextField(
         controller: _year,
         label: loc.flow_guestAgeLabel,

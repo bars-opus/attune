@@ -3,6 +3,7 @@ import 'package:attune/app/theme/design_tokens.dart';
 import 'package:gap/gap.dart';
 import 'package:attune/core/widgets/feedback/export_extensions.dart';
 import 'package:attune/core/widgets/card_inkwell.dart';
+import 'package:attune/core/ui/glass/glass_menu.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:uuid/uuid.dart';
@@ -417,25 +418,27 @@ class _EntryBody extends ConsumerWidget {
               titleId == null || titleName == null ? null : PlanningCategoryTitle(categoryId: titleId, name: titleName),
           actions: [
             if (async.valueOrNull case final d?)
-              PopupMenuButton<_EntryMenu>(
+              GlassMenuButton<_EntryMenu>(
                 tooltip: 'Plan options',
                 icon: const Icon(Icons.more_vert), // vertical in app bars, on every platform
+                // PopupMenuButton did nothing with no rows; a template has none.
+                enabled: !d.entry.isTemplate,
                 onSelected: (m) => _menu(context, ref, d, m),
                 itemBuilder:
                     (_) => [
                       if (!d.entry.isTemplate && d.entry.status == 'active')
-                        const PopupMenuItem(value: _EntryMenu.done, child: Text('Mark done')),
+                        const GlassMenuItem(value: _EntryMenu.done, label: 'Mark done'),
                       if (!d.entry.isTemplate && d.entry.status != 'active')
-                        const PopupMenuItem(value: _EntryMenu.reopen, child: Text('Reopen')),
+                        const GlassMenuItem(value: _EntryMenu.reopen, label: 'Reopen'),
                       // Spec 7 (B9 (c)): archived quietly, no notice to anyone.
                       if (!d.entry.isTemplate && d.entry.status != 'archived')
-                        const PopupMenuItem(value: _EntryMenu.putAway, child: Text('Put away gently')),
+                        const GlassMenuItem(value: _EntryMenu.putAway, label: 'Put away gently'),
                       if (!d.entry.isTemplate)
-                        const PopupMenuItem(value: _EntryMenu.next, child: Text('Start next one')),
+                        const GlassMenuItem(value: _EntryMenu.next, label: 'Start next one'),
                       if (!d.entry.isTemplate && d.entry.split == null)
-                        const PopupMenuItem(value: _EntryMenu.splitOn, child: Text('Split costs')),
+                        const GlassMenuItem(value: _EntryMenu.splitOn, label: 'Split costs'),
                       if (!d.entry.isTemplate && d.entry.split != null)
-                        const PopupMenuItem(value: _EntryMenu.splitOff, child: Text('Stop splitting costs')),
+                        const GlassMenuItem(value: _EntryMenu.splitOff, label: 'Stop splitting costs'),
                     ],
               ),
           ],

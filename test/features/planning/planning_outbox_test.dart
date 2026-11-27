@@ -77,6 +77,21 @@ void main() {
     expect(sleeps, isEmpty, reason: 'permanent errors are never retried');
   });
 
+  // Entry gates fix round: an edit queued while the account was still being
+  // set up (a queued A5) waits for it; it is never dropped as permanent.
+  test('account not ready: stop at once, keep the op and the rest', () async {
+    behaviour = (_) => const PlanningAccountNotReady();
+    final o = make();
+    await o.enqueue(_tick('i1'));
+    await o.enqueue(_tick('i2'));
+    final r = await o.replay();
+    expect(sent, hasLength(1));
+    expect(sleeps, isEmpty);
+    expect(r.dropped, isEmpty);
+    expect(r.remaining, 2);
+    expect(await o.pending(), hasLength(2));
+  });
+
   test('network errors back off with jitter within bounds, then stop and keep the rest', () async {
     behaviour = (_) => const PlanningNetwork('offline');
     final o = make();

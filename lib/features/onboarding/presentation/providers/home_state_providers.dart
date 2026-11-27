@@ -5,6 +5,8 @@ import 'package:attune/features/onboarding/data/home_state_service.dart';
 import 'package:attune/features/onboarding/data/home_state_store.dart';
 import 'package:attune/features/onboarding/data/onboarding_store.dart';
 import 'package:attune/features/onboarding/domain/home_state.dart';
+import 'package:attune/features/onboarding/presentation/providers/flow_flags.dart'
+    show flowPathsV2Provider;
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -137,16 +139,9 @@ class HomeStateNotifier extends FamilyNotifier<HomeSnapshot, String> {
 
   HomeSnapshot _compose() {
     final server = _server;
-    final HomeSnapshot base;
-    if (server != null) {
-      base = HomeSnapshot.fromServer(server);
-    } else {
-      final cache = HomeStateStore(_prefs, userId: arg).read();
-      base =
-          cache == null ? HomeSnapshot.unknown : HomeSnapshot.fromCache(cache);
-    }
+    if (server == null) return localHomeSnapshot(_prefs, arg);
     final store = _store;
-    return base.withQueued(
+    return HomeSnapshot.fromServer(server).withQueued(
       signUp: store.pendingSignUp != null,
       path: store.pendingPath,
     );
@@ -187,11 +182,25 @@ class HomeStateNotifier extends FamilyNotifier<HomeSnapshot, String> {
       await HomeStateStore(_prefs, userId: arg).write(answer);
       // Spec §5.5: the v2 home replaces OnboardingMode for this account;
       // the legacy sync rebuilds it if flow_paths_v2 is switched off.
+      // Entry gates (2026-11-27): HomeScreen reads the home state with the
+      // flag off too (the v2 gate is the only one), and the legacy shell
+      // still reads the mode then, so it goes only under the flag.
       final legacyMode =
           'attune.onboarding.${OnboardingStore.userScopePrefix}.$arg.mode';
-      if (_prefs.containsKey(legacyMode)) await _prefs.remove(legacyMode);
+      if (_pathsV2() && _prefs.containsKey(legacyMode)) {
+        await _prefs.remove(legacyMode);
+      }
     } catch (error) {
       debugPrint('[home-state] cache write failed: ${error.runtimeType}');
+    }
+  }
+
+  /// flow_paths_v2, effective; on when it can't be read (today's rule).
+  bool _pathsV2() {
+    try {
+      return ref.read(flowPathsV2Provider);
+    } catch (_) {
+      return true;
     }
   }
 
@@ -204,3 +213,22 @@ final homeStateProvider =
     NotifierProvider.family<HomeStateNotifier, HomeSnapshot, String>(
       HomeStateNotifier.new,
     );
+
+/// [userId]'s home state from the phone alone: the last server answer's
+/// cache (which [HomeStateNotifier.apply] writes before anything reads it)
+/// plus the queued A5 and A6. The router's gate check reads it
+/// (RoutingNotifier.localHome, entry gates fix 5), so the router and the
+/// gate never disagree about what the account still owes.
+HomeSnapshot localHomeSnapshot(SharedPreferences prefs, String userId) {
+  final cache = HomeStateStore(prefs, userId: userId).read();
+  final base =
+      cache == null ? HomeSnapshot.unknown : HomeSnapshot.fromCache(cache);
+  final store = OnboardingStore(
+    prefs,
+    scope: '${OnboardingStore.userScopePrefix}.$userId',
+  );
+  return base.withQueued(
+    signUp: store.pendingSignUp != null,
+    path: store.pendingPath,
+  );
+}

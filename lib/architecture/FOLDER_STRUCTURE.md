@@ -62,7 +62,6 @@ nanoembryo/
 │   │   │   ├── providers/
 │   │   │   │   └── auth_provider.dart # Authentication state
 │   │   │   ├── screens/
-│   │   │   │   ├── login_screen.dart
 │   │   │   │   ├── signup_screen.dart
 │   │   │   │   └── forgot_password_screen.dart
 │   │   │   └── widgets/

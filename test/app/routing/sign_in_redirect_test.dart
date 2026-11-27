@@ -27,78 +27,39 @@ RoutingNotifier _routing({
   currentUserId: () => signedIn ? 'user-1' : null,
 );
 
-/// Routes that exist today, before Spec 1.
-const _existing = [
-  '/_invisible',
-  RouteNames.intro,
-  RouteNames.home,
-  RouteNames.login,
-  RouteNames.onboarding,
-  RouteNames.settings,
-  RouteNames.safetyResources,
-  '/chatScreen',
-];
-
-/// Today's rule, written out, so the flag-off branch is compared with it.
-String? _today(RoutingNotifier r, String location) {
-  if (location == '/_invisible') {
-    return r.isFirstLaunch ? RouteNames.intro : RouteNames.home;
-  }
-  if (r.isFirstLaunch && location != RouteNames.intro) return RouteNames.intro;
-  return null;
-}
-
 void main() {
-  group('flag off: today, byte for byte', () {
-    for (final firstLaunch in [true, false]) {
-      for (final signedIn in [true, false]) {
-        test('first launch $firstLaunch, signed in $signedIn', () {
-          final r = _routing(
-            flowV2: false,
-            firstLaunch: firstLaunch,
-            signedIn: signedIn,
-          );
-          for (final location in _existing) {
-            expect(
-              appRedirect(r, location),
-              _today(r, location),
-              reason: location,
-            );
-          }
-        });
-      }
-    }
-
-    test('a v2-only route reached with the flag off goes where today goes', () {
-      for (final location in flowV2OnlyRoutes) {
-        expect(appRedirect(_routing(flowV2: false), location), RouteNames.home);
-        expect(
-          appRedirect(_routing(flowV2: false, firstLaunch: true), location),
-          RouteNames.intro,
-        );
-      }
-    });
-
-    test('an invite link keeps today\'s /onboarding', () {
+  // The old phone login and its flag-off routing are gone (2026-11-26): the
+  // flag no longer changes where sign-in goes, and since the entry gates
+  // fix (2026-11-27) not where an invite link goes either.
+  group('flag off', () {
+    test('an invite link opens RI-1 signed out, /onboarding signed in', () {
+      expect(inviteLinkLocation(_routing(flowV2: false)), RouteNames.invite);
       expect(
-        inviteLinkLocation(_routing(flowV2: false)),
+        inviteLinkLocation(_routing(flowV2: false, signedIn: true)),
         RouteNames.onboarding,
       );
     });
   });
 
   group('flag on', () {
-    test('first launch opens Welcome, not IntroScreen', () {
+    test('first launch opens the intro (/start), not IntroScreen', () {
       expect(
         appRedirect(_routing(firstLaunch: true), '/_invisible'),
-        RouteNames.welcome,
+        RouteNames.start,
       );
-      expect(appRedirect(_routing(), '/_invisible'), RouteNames.home);
+      expect(appRedirect(_routing(signedIn: true), '/_invisible'), RouteNames.home);
+    });
+
+    test('anyone not signed in starts at the intro at every launch; a '
+        'returning guest opens the guest home (entry gates a, 2026-11-27)', () {
+      expect(appRedirect(_routing(), '/_invisible'), RouteNames.start);
+      expect(appRedirect(_routing(guestOk: true), '/_invisible'), RouteNames.home);
     });
 
     test('while first launch is on, only the pre-auth routes are open', () {
       final r = _routing(firstLaunch: true);
       for (final location in [
+        RouteNames.start,
         RouteNames.welcome,
         RouteNames.signUp,
         RouteNames.guestAge,
@@ -114,15 +75,15 @@ void main() {
         RouteNames.settings,
         RouteNames.login,
       ]) {
-        expect(appRedirect(r, location), RouteNames.welcome, reason: location);
+        expect(appRedirect(r, location), RouteNames.start, reason: location);
       }
     });
 
-    test('every way to IntroScreen lands on Welcome', () {
-      expect(appRedirect(_routing(), RouteNames.intro), RouteNames.welcome);
+    test('every way to IntroScreen lands on the intro (/start)', () {
+      expect(appRedirect(_routing(), RouteNames.intro), RouteNames.start);
       expect(
         appRedirect(_routing(firstLaunch: true), RouteNames.intro),
-        RouteNames.welcome,
+        RouteNames.start,
       );
     });
 
@@ -298,15 +259,11 @@ void main() {
       expect(appRedirect(_routing(guestOk: true), RouteNames.home), isNull);
     });
 
-    test('the flag off ignores a draft entirely', () {
-      prefs.setString(SignUpDraftStore.key, jsonEncode(codeSent.toJson()));
-      final r = RoutingNotifier(prefs: prefs, currentUserId: () => null);
-      expect(appRedirect(r, RouteNames.home), isNull);
-    });
 
-    test('LoginScreen is replaced by Welcome', () {
-      expect(appRedirect(_routing(), RouteNames.login), RouteNames.welcome);
-      expect(appRedirect(_routing(flowV2: false), RouteNames.login), isNull);
+    test('LoginScreen is replaced by the intro (/start)', () {
+      expect(appRedirect(_routing(), RouteNames.login), RouteNames.start);
+      // Flag or not: the old LoginScreen is gone (2026-11-26).
+      expect(appRedirect(_routing(flowV2: false), RouteNames.login), RouteNames.start);
     });
 
     test('C9: a block written after boot (the replay\'s under-18 stop) '

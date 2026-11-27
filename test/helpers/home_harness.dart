@@ -4,6 +4,7 @@ import 'dart:async';
 
 import 'package:attune/app/theme/app_theme.dart';
 import 'package:attune/core/flags/couple_link_flag.dart';
+import 'package:attune/core/flags/public_app_config.dart';
 import 'package:attune/core/providers/shared_prefs_provider.dart';
 import 'package:attune/core/services/user_timezone_reporter.dart';
 import 'package:attune/core/utils/screen_util_config.dart';
@@ -24,6 +25,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'fake_home_state.dart';
+import 'flow_harness.dart' show FakePublicConfigGateway;
 import 'fake_reminder_rpc.dart';
 
 User testUser(String id) => User(
@@ -180,6 +182,11 @@ Future<HomeHarness> pumpHome(
         flowFlagsKnownProvider.overrideWithValue(true),
       ],
       signInFlowV2Provider.overrideWithValue(signInV2),
+      // Entry gates fix 4: an unread public config is unknown, so the real
+      // flags (realFlags) need it answered.
+      publicAppConfigGatewayProvider.overrideWithValue(
+        FakePublicConfigGateway(),
+      ),
       homeOpinionsTabProvider.overrideWithValue(const Text('OPINIONS')),
       homeTabTwoBuilderProvider.overrideWithValue(
         tabTwo ?? (tab, home, _) => TabTwoProbe(tab: tab, home: home),

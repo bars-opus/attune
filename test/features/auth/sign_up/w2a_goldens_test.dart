@@ -18,27 +18,6 @@ void main() {
     await expectFlowGoldens(tester, 'welcome', () => const WelcomeScreen());
   });
 
-  testWidgets('WL1 Dating preview', (tester) async {
-    await expectFlowGoldens(
-      tester,
-      'welcome_preview_dating',
-      () => const WelcomeScreen(),
-      openCountries: const ['GB', 'GH'],
-      before: (tester) async {
-        // At 2.0 the card is below the fold: a blind tap misses it. Scroll
-        // only when it is off screen, so the other backdrops stay at the top.
-        await Scrollable.ensureVisible(
-          tester.element(find.text('Single and open to dating')),
-          alignmentPolicy: ScrollPositionAlignmentPolicy.keepVisibleAtEnd,
-        );
-        await tester.pumpAndSettle();
-        await tester.tap(find.text('Single and open to dating'));
-        await tester.pumpAndSettle();
-        expect(find.text('Introductions, not swiping'), findsOneWidget);
-      },
-    );
-  });
-
   testWidgets('G1 guest age gate, with an error', (tester) async {
     await expectFlowGoldens(
       tester,

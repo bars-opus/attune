@@ -16,6 +16,9 @@ import 'package:go_router/go_router.dart';
 /// their prefix is added to TextScalePolicy.auditedRoutePrefixes).
 const _notYetAudited = {
   'intro',
+  // The first-launch intro (2026-11-26): a fixed-layout scene, audited when
+  // it is redesigned.
+  'start',
   'login',
   'profile',
   'pulse',

@@ -11,9 +11,21 @@ import 'package:flutter/material.dart';
 /// H1 · Account check (Spec 1 §3.15): any hold. No reason, no motion.
 /// W6a reuses it for the hook's `account_review`.
 class AccountHoldStep extends StatefulWidget {
-  const AccountHoldStep({super.key, required this.onSignOut});
+  const AccountHoldStep({
+    super.key,
+    required this.onSignOut,
+    this.onDeleteAccount,
+    this.onDownloadData,
+  });
 
   final FutureOr<void> Function() onSignOut;
+
+  /// Entry gates fix round (review I-2): "Delete my account", the app's
+  /// deletion confirmation; a held account can still erase itself.
+  final VoidCallback? onDeleteAccount;
+
+  /// Owner ruling (fix round): "Download my data", the export screen.
+  final VoidCallback? onDownloadData;
 
   @override
   State<AccountHoldStep> createState() => _AccountHoldStepState();
@@ -24,13 +36,41 @@ class _AccountHoldStepState extends State<AccountHoldStep> with SubmitOnce {
   Widget build(BuildContext context) {
     final loc = AppLocalizations.of(context)!;
     final theme = Theme.of(context);
+    final onDelete = widget.onDeleteAccount;
+    final onDownload = widget.onDownloadData;
     return FlowFrame(
       title: loc.flow_holdTitle,
-      body: Text(
-        loc.flow_holdBody,
-        style: theme.textTheme.bodyLarge?.copyWith(
-          color: theme.colorScheme.onSurface,
-        ),
+      body: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(
+            loc.flow_holdBody,
+            style: theme.textTheme.bodyLarge?.copyWith(
+              color: theme.colorScheme.onSurface,
+            ),
+          ),
+          // In the body, not the pinned actions: quiet, and never crowding
+          // the buttons at large text.
+          if (onDelete != null || onDownload != null) ...[
+            const SizedBox(height: 12),
+            Wrap(
+              children: [
+                if (onDownload != null)
+                  FlowTextLink(
+                    label: loc.flow_downloadMyData,
+                    alignment: AlignmentDirectional.centerStart,
+                    onPressed: submitting ? () {} : onDownload,
+                  ),
+                if (onDelete != null)
+                  FlowTextLink(
+                    label: loc.flow_deleteMyAccount,
+                    alignment: AlignmentDirectional.centerStart,
+                    onPressed: submitting ? () {} : onDelete,
+                  ),
+              ],
+            ),
+          ],
+        ],
       ),
       actions: [
         FlowPrimaryButton(

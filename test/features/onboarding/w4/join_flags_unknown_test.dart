@@ -1,8 +1,10 @@
 // Batch-5 review I-1 (D9, D8): while the signed-in flags are unknown (a
-// fresh install, no cache) nothing accepts a stored invite: HomeScreen's
-// legacy branch waits and OnboardingEntry builds neither gate. Unknown is
-// not off. Once the flags arrive: couples v2 opens RI-3; off runs today's
-// accept, once. The code is kept meanwhile.
+// fresh install, no cache) nothing accepts a stored invite: HomeScreen
+// waits and OnboardingEntry builds no gate. Unknown is not off. Once the
+// flags arrive: couples v2 opens RI-3; off runs the accept, once, for a
+// complete account only. The code is kept meanwhile. Entry gates fix 4
+// (2026-11-27): the v2 gate is the only one, and with flow_signin_v2 off
+// the flags are known only once the public config has been read.
 import 'dart:async';
 
 import 'package:attune/app/routing/app_router.dart';
@@ -18,7 +20,6 @@ import 'package:attune/features/onboarding/data/onboarding_store.dart';
 import 'package:attune/features/onboarding/data/onboarding_sync_service.dart';
 import 'package:attune/features/onboarding/presentation/providers/flow_flags.dart';
 import 'package:attune/features/onboarding/presentation/screens/invite_partner_screen.dart';
-import 'package:attune/features/onboarding/presentation/screens/onboarding_gate.dart';
 import 'package:attune/features/onboarding/presentation/screens/onboarding_gate_v2.dart';
 import 'package:attune/home/home_seams.dart';
 import 'package:attune/i10n/generated/app_localizations.dart';
@@ -52,6 +53,16 @@ class _PendingFlags implements FlowFlagsGateway {
   }
 }
 
+/// The public config, answered when the test says.
+class _PendingConfig implements PublicAppConfigGateway {
+  _PendingConfig(this.answer);
+
+  final Completer<Map<String, dynamic>> answer;
+
+  @override
+  Future<Map<String, dynamic>> fetch() => answer.future;
+}
+
 Future<void> _settle(WidgetTester tester, {int steps = 10}) async {
   for (var i = 0; i < steps; i++) {
     await tester.pump(const Duration(milliseconds: 100));
@@ -61,6 +72,7 @@ Future<void> _settle(WidgetTester tester, {int steps = 10}) async {
 Future<(_PendingFlags, FakeInvites, HomeHarness)> _pumpHome(
   WidgetTester tester, {
   bool signInV2 = true,
+  List<String> needs = const [],
 }) async {
   final flags = _PendingFlags();
   final invites = FakeInvites();
@@ -73,7 +85,7 @@ Future<(_PendingFlags, FakeInvites, HomeHarness)> _pumpHome(
       _slot: _stored(),
       'attune.onboarding.user.$_uid.completed': true,
     },
-    server: homeJson(path: 'just_me'),
+    server: homeJson(path: 'just_me', needs: needs),
     overrides: [
       flowFlagsGatewayProvider.overrideWithValue(flags),
       invitePartnerServiceProvider.overrideWithValue(invites),
@@ -125,10 +137,10 @@ void main() {
     expect(invites.accepted, ['K7P2QM']);
   });
 
-  // Task 6 re-review R-1: with flow_signin_v2 off (today's production) the
-  // signed-in flags can't turn anything on, so they are known at once:
-  // today's legacy accept runs with no flags answer at all.
-  testWidgets('HomeScreen, sign-in v2 off, no flags answer: today\'s accept', (
+  // Task 6 re-review R-1: with flow_signin_v2 off the signed-in flags can't
+  // turn anything on, so once the public config is read they are known:
+  // the accept (for this complete account) runs with no flags answer.
+  testWidgets('HomeScreen, sign-in v2 off, no flags answer: the accept', (
     tester,
   ) async {
     final (flags, invites, h) = await _pumpHome(tester, signInV2: false);
@@ -137,11 +149,30 @@ void main() {
     expect(_code(h.prefs), isNull);
   });
 
+  // Entry gates fix 4 (audit: home_screen.dart:428): with the flags off
+  // the legacy branch accepted a stored code before consent and the date
+  // of birth. Now only a complete account's code is taken; the gate takes
+  // anyone else's, after the name.
+  for (final need in ['consent', 'birth_date', 'name']) {
+    testWidgets('HomeScreen, flags off, the account owes $need: no accept, '
+        'the code is kept', (tester) async {
+      final (_, invites, h) = await _pumpHome(
+        tester,
+        signInV2: false,
+        needs: [need],
+      );
+      expect(invites.accepted, isEmpty);
+      expect(_code(h.prefs), 'K7P2QM');
+      expect(h.onboardingVisits, ['onboarding']);
+    });
+  }
+
   group('OnboardingEntry', () {
     Future<(_PendingFlags, FakeInvites, RoutingNotifier)> pumpEntry(
       WidgetTester tester, {
       bool signInV2 = true,
       int settleSteps = 10,
+      PublicAppConfigGateway? config,
     }) async {
       tester.view.physicalSize = const Size(390, 844);
       tester.view.devicePixelRatio = 1;
@@ -187,7 +218,7 @@ void main() {
             ),
             invitePartnerServiceProvider.overrideWithValue(invites),
             publicAppConfigGatewayProvider.overrideWithValue(
-              FakePublicConfigGateway(),
+              config ?? FakePublicConfigGateway(),
             ),
             routingNotifierProvider.overrideWith((ref) => routing),
             signInFlowV2Provider.overrideWithValue(signInV2),
@@ -210,11 +241,10 @@ void main() {
       return (flags, invites, routing);
     }
 
-    testWidgets('flags unknown: neither gate, nothing accepted', (
+    testWidgets('flags unknown: no gate, nothing accepted', (
       tester,
     ) async {
       final (_, invites, _) = await pumpEntry(tester);
-      expect(find.byType(OnboardingGate), findsNothing);
       expect(find.byType(OnboardingGateV2), findsNothing);
       expect(
         find.bySemanticsLabel('Checking your account\u2026'),
@@ -223,24 +253,41 @@ void main() {
       expect(invites.accepted, isEmpty);
     });
 
-    testWidgets('sign-in v2 off, no flags answer: today\'s gate at once', (
-      tester,
-    ) async {
-      // The first frame: the legacy gate (its own services, so it is not
-      // driven further here; HomeScreen's case above shows the accept).
+    testWidgets('sign-in v2 off, no flags answer: the v2 gate once the '
+        'public config is read (entry gates fix 4)', (tester) async {
       final (flags, _, _) = await pumpEntry(
         tester,
         signInV2: false,
-        settleSteps: 0,
+        settleSteps: 1,
       );
       expect(flags.answer.isCompleted, isFalse);
-      expect(find.byType(OnboardingGate), findsOneWidget);
+      expect(find.byType(OnboardingGateV2), findsOneWidget);
+      expect(find.text("We couldn't check your account"), findsNothing);
+      // The complete account then goes home (the gate's own timers run out).
+      await _settle(tester, steps: 40);
+      expect(find.text('HOME'), findsOneWidget);
+    });
+
+    testWidgets('sign-in v2 off but the public config unread (a prod build '
+        'before its first read): no gate yet, nothing accepted (entry gates '
+        'fix 4)', (tester) async {
+      final config = Completer<Map<String, dynamic>>();
+      final (_, invites, _) = await pumpEntry(
+        tester,
+        signInV2: false,
+        config: _PendingConfig(config),
+      );
       expect(find.byType(OnboardingGateV2), findsNothing);
       expect(
         find.bySemanticsLabel('Checking your account\u2026'),
-        findsNothing,
+        findsOneWidget,
       );
-      expect(find.text("We couldn't check your account"), findsNothing);
+      expect(invites.accepted, isEmpty);
+      config.complete({'flags': {'flow_signin_v2': false}});
+      await tester.pump(const Duration(milliseconds: 100));
+      expect(find.byType(OnboardingGateV2), findsOneWidget);
+      await _settle(tester, steps: 40);
+      expect(find.text('HOME'), findsOneWidget);
     });
 
     testWidgets('the flags read fails: the offline step; Try again reads '
@@ -249,7 +296,7 @@ void main() {
       flags.answer.completeError(Exception('offline'));
       await _settle(tester);
       expect(find.text("We couldn't check your account"), findsOneWidget);
-      expect(find.byType(OnboardingGate), findsNothing);
+      expect(find.byType(OnboardingGateV2), findsNothing);
       expect(invites.accepted, isEmpty);
       flags.answer =
           Completer()

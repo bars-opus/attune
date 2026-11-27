@@ -48,12 +48,15 @@ class JoinAttunePanel extends StatelessWidget {
           Gap(Spacing.lg.h),
           FlowPrimaryButton(
             label: loc.flow_welcomeGetStarted,
+            // Fix round I-2 (owner 2026-11-26): the path is chosen on
+            // Welcome, as from the intro; Welcome's own back and A1's both
+            // return to this tab.
             onPressed:
                 () => context.go(
-                  WelcomeScreen.signUpLocation(
-                    'new',
-                    back: homeLocation(tab: AppTab.chat),
-                  ),
+                  Uri(
+                    path: RouteNames.welcome,
+                    queryParameters: {'back': homeLocation(tab: AppTab.chat)},
+                  ).toString(),
                 ),
           ),
           const Gap(Spacing.sm),

@@ -2,6 +2,7 @@ import 'package:attune/core/widgets/app_content_width.dart';
 import 'dart:async';
 import 'dart:typed_data';
 
+import 'package:attune/core/ui/glass/glass_menu.dart';
 import 'package:attune/core/utils/date_formatter.dart';
 import 'package:attune/core/utils/exports/export_screens.dart';
 import 'package:attune/features/planning/domain/code_point_limit.dart';
@@ -236,7 +237,7 @@ class _JournalEntryScreenState extends ConsumerState<JournalEntryScreen> {
               centerTitle: false,
               actions: [
                 if (async.valueOrNull case final d?)
-                  PopupMenuButton<_EntryMenu>(
+                  GlassMenuButton<_EntryMenu>(
                     tooltip: 'Entry options',
                     icon: const Icon(Icons.more_vert),
                     onSelected: (m) => switch (m) {
@@ -247,15 +248,15 @@ class _JournalEntryScreenState extends ConsumerState<JournalEntryScreen> {
                     },
                     itemBuilder: (_) => [
                       if (d.entry.pinnedAt == null)
-                        const PopupMenuItem(value: _EntryMenu.pin, child: Text('Pin'))
+                        const GlassMenuItem(value: _EntryMenu.pin, label: 'Pin')
                       else
-                        const PopupMenuItem(value: _EntryMenu.unpin, child: Text('Unpin')),
-                      const PopupMenuItem(value: _EntryMenu.delete, child: Text('Delete')),
+                        const GlassMenuItem(value: _EntryMenu.unpin, label: 'Unpin'),
+                      const GlassMenuItem(value: _EntryMenu.delete, label: 'Delete', destructive: true),
                       // Spec 1 W9c: always there (batch-8 ruling I-4: support
                       // never waits for journal_ai_insights).
-                      PopupMenuItem(
+                      GlassMenuItem(
                         value: _EntryMenu.support,
-                        child: Text(AppLocalizations.of(context)!.support_needSupportNow),
+                        label: AppLocalizations.of(context)!.support_needSupportNow,
                       ),
                     ],
                   ),
@@ -313,17 +314,21 @@ class _JournalEntryScreenState extends ConsumerState<JournalEntryScreen> {
       itemBuilder: (context, i) {
         final b = d.blocks[i];
         final name = b.isPhoto ? 'photo' : 'text';
-        final menu = PopupMenuButton<_BlockMenu>(
+        final menu = GlassMenuButton<_BlockMenu>(
           tooltip: 'Options for $name',
+          // PopupMenuButton's own icon and colour.
+          icon: Icon(Icons.adaptive.more, color: IconTheme.of(context).color),
+          // PopupMenuButton did nothing with no rows; a lone block has none.
+          enabled: d.blocks.length > 1,
           onSelected: (m) => switch (m) {
             _BlockMenu.up => _guard(() => _ctl.moveBlock(b.id, i - 1)),
             _BlockMenu.down => _guard(() => _ctl.moveBlock(b.id, i + 1)),
             _BlockMenu.remove => _guard(() => _ctl.deleteBlock(b.id)),
           },
           itemBuilder: (_) => [
-            if (i > 0) const PopupMenuItem(value: _BlockMenu.up, child: Text('Move up')),
-            if (i < d.blocks.length - 1) const PopupMenuItem(value: _BlockMenu.down, child: Text('Move down')),
-            if (d.blocks.length > 1) const PopupMenuItem(value: _BlockMenu.remove, child: Text('Remove')),
+            if (i > 0) const GlassMenuItem(value: _BlockMenu.up, label: 'Move up'),
+            if (i < d.blocks.length - 1) const GlassMenuItem(value: _BlockMenu.down, label: 'Move down'),
+            if (d.blocks.length > 1) const GlassMenuItem(value: _BlockMenu.remove, label: 'Remove', destructive: true),
           ],
         );
         final body = b.isText

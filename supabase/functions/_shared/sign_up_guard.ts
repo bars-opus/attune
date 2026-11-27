@@ -1,18 +1,18 @@
 // Spec 1 W4a (§4.5): what both invite functions check before anything else,
 // replacing the W2 interim guard. The decision is the database's
-// (public.relationship_invite_eligibility, service role), so the flag read,
-// the account and the date of birth are one answer:
-//   legacy             flow_signin_v2 effectively off: today's ensureUserRow
-//                      inserts a missing users row, exactly as before.
+// (public.relationship_invite_eligibility, service role), so the account,
+// the date of birth and the consent are one answer. Since the 2026-11-27
+// entry gates it no longer depends on flow_signin_v2 and no function here
+// ever creates a users row (only complete_sign_up does, D8):
 //   signup_incomplete  no users row: 409 signup:incomplete; nothing is
-//                      written (D8: a users row is only ever made by
-//                      complete_sign_up, which needs a date of birth).
-//   age_required       no date of birth (a legacy account).
+//                      written.
+//   consent_required   EULA 2 or later not accepted: also 409
+//                      signup:incomplete, which the app already resolves by
+//                      finishing sign-up (the gate's consent step).
+//   age_required       no date of birth (a pre-Spec-1 account).
 //   not_possible       under 18.
-//   ok                 an adult account.
-// An answer that can't be read fails closed (503 flags:unavailable): it is
-// never taken as legacy, which would let ensureUserRow create a row with
-// no date of birth.
+//   ok                 an adult account that has consented.
+// An answer that can't be read fails closed (503 flags:unavailable).
 import { HttpError } from "./attune_auth.ts";
 
 /// The refusal for a signed-in caller with no account yet; the app keeps
@@ -28,16 +28,16 @@ export const AGE_REQUIRED = "invite:age_required";
 export const NOT_POSSIBLE = "invite:not_possible";
 
 export type InviteEligibility =
-  | "legacy"
   | "ok"
   | "signup_incomplete"
+  | "consent_required"
   | "age_required"
   | "not_possible";
 
 const ANSWERS: readonly string[] = [
-  "legacy",
   "ok",
   "signup_incomplete",
+  "consent_required",
   "age_required",
   "not_possible",
 ];
@@ -56,21 +56,17 @@ export async function readInviteEligibility(supabase: any, userId: string): Prom
   return result.data as InviteEligibility;
 }
 
-/// Legacy: runs [ensureUserRow]. No account: HttpError(409,
-/// signup:incomplete), nothing written. Otherwise the answer, for the
-/// caller's own age rule.
+/// No account, or no current consent: HttpError(409, signup:incomplete),
+/// nothing written. Otherwise the answer, for the caller's own age rule.
 export async function ensureInviteAccount(
   // deno-lint-ignore no-explicit-any
   supabase: any,
   userId: string,
-  ensureUserRow: () => Promise<void>,
 ): Promise<InviteEligibility> {
   const eligibility = await readInviteEligibility(supabase, userId);
-  if (eligibility === "legacy") {
-    await ensureUserRow();
-    return eligibility;
+  if (eligibility === "signup_incomplete" || eligibility === "consent_required") {
+    throw new HttpError(SIGNUP_INCOMPLETE, 409);
   }
-  if (eligibility === "signup_incomplete") throw new HttpError(SIGNUP_INCOMPLETE, 409);
   return eligibility;
 }
 

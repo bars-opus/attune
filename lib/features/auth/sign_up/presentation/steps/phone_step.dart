@@ -28,6 +28,7 @@ class PhoneStep extends StatefulWidget {
     this.busy = false,
     this.sendError,
     this.onSendWhatsApp,
+    this.onReadOpinions,
   });
 
   final PhoneCountry? initialCountry;
@@ -46,6 +47,11 @@ class PhoneStep extends StatefulWidget {
   /// on this number; the step stays busy until it has finished. Null hides
   /// it.
   final FutureOr<void> Function(String e164, String countryIso)? onSendWhatsApp;
+
+  /// Owner 2026-11-26: "Not ready to share your number? Read Opinions
+  /// first." under the send buttons, for a new account past A2's adult
+  /// check. Null hides it.
+  final VoidCallback? onReadOpinions;
 
   @override
   State<PhoneStep> createState() => _PhoneStepState();
@@ -331,6 +337,14 @@ class _PhoneStepState extends State<PhoneStep> with SubmitOnce {
                   busy: runningTag == #whatsApp,
                   onPressed: _busy ? null : () => _sendWhatsApp(inner),
                 ),
+          ),
+        if (widget.onReadOpinions != null)
+          // Quiet: a text link, never while a send is out.
+          FlowTextLink(
+            label: loc.flow_phoneReadOpinions,
+            onPressed: () {
+              if (!_busy) widget.onReadOpinions!();
+            },
           ),
       ],
     );

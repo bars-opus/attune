@@ -446,15 +446,21 @@ BEGIN
   UPDATE public.users SET phone = '+15558100193' WHERE id = v_squat2;
   PERFORM pg_temp.make_account(v_owner2, '+15558100193', NULL);
 
-  -- 1. record_eula_acceptance, as the real owner.
+  -- 1. The real owner's first users row. Entry gates 2026-11-27:
+  --    record_eula_acceptance no longer creates rows, so this is
+  --    complete_sign_up, the one writer that does.
   PERFORM pg_temp.as_user(v_owner1);
   BEGIN
-    PERFORM public.record_eula_acceptance('1');
+    PERFORM public.complete_sign_up('Ama Owner W1', DATE '1990-01-01', '2');
   EXCEPTION WHEN unique_violation THEN
     RESET ROLE;
     RAISE EXCEPTION 'CONTRACT VIOLATED: a squatted number blocked the real owner''s sign-up (%)', SQLERRM;
   END;
   RESET ROLE;
+  -- complete_sign_up counts signup_completed; section E reads today's
+  -- metrics from zero, so this fixture's count is taken back out.
+  DELETE FROM public.metric_counters
+   WHERE day = (now() AT TIME ZONE 'utc')::date AND key = 'signup_completed';
   IF (SELECT phone FROM public.users WHERE id = v_owner1) IS DISTINCT FROM '+15558100192'
      OR (SELECT phone FROM public.users WHERE id = v_squat1) IS DISTINCT FROM pg_temp.park(v_squat1, 1) THEN
     RAISE EXCEPTION 'CONTRACT VIOLATED: sign-up did not take the Auth phone from the squatter (owner %, squatter %)',
@@ -583,8 +589,12 @@ BEGIN
   -- P1 after the pass: the real owner of the squatted number signs up.
   INSERT INTO auth.users (id, phone, phone_confirmed_at) VALUES ('5f1a0000-0000-0000-0000-000000000081', '+15558100195', now());
   PERFORM pg_temp.as_user('5f1a0000-0000-0000-0000-000000000081');
-  PERFORM public.record_eula_acceptance('1');
+  -- Entry gates 2026-11-27: complete_sign_up, the one users-row writer.
+  PERFORM public.complete_sign_up('Kojo Owner W1', DATE '1990-01-01', '2');
   RESET ROLE;
+  -- As in B5: this fixture's signup_completed count is taken back out.
+  DELETE FROM public.metric_counters
+   WHERE day = (now() AT TIME ZONE 'utc')::date AND key = 'signup_completed';
   IF (SELECT phone FROM public.users WHERE id = '5f1a0000-0000-0000-0000-000000000081') IS DISTINCT FROM '+15558100195' THEN
     RAISE EXCEPTION 'CONTRACT VIOLATED: the real owner could not sign up after the reconciliation';
   END IF;

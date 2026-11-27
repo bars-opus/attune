@@ -6,6 +6,16 @@
 BEGIN;
 INSERT INTO auth.users (id) VALUES ('9f700000-0000-0000-0000-0000000000a1'), ('9f700000-0000-0000-0000-0000000000b2')
 ON CONFLICT (id) DO NOTHING;
+-- Entry gates 2026-11-27: save_loving_now needs a complete account (users
+-- row, 18+ date of birth, EULA 2; private.account_ready).
+INSERT INTO public.users (id, phone, display_name, eula_version, eula_accepted_at) VALUES
+  ('9f700000-0000-0000-0000-0000000000a1', '+233599710001', 'Ama', '2', now()),
+  ('9f700000-0000-0000-0000-0000000000b2', '+233599710002', 'Kofi', '2', now())
+ON CONFLICT (id) DO UPDATE SET eula_version = '2', eula_accepted_at = now();
+INSERT INTO public.account_birthdates (user_id, birth_date) VALUES
+  ('9f700000-0000-0000-0000-0000000000a1', DATE '1990-01-01'),
+  ('9f700000-0000-0000-0000-0000000000b2', DATE '1990-01-01')
+ON CONFLICT (user_id) DO NOTHING;
 
 CREATE FUNCTION pg_temp.as_user(p uuid) RETURNS void LANGUAGE plpgsql AS $$
 BEGIN

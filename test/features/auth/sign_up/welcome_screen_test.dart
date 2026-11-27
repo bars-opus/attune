@@ -1,4 +1,5 @@
-// Spec 1 W2a: WL1 Welcome, its three previews, and RI-1/RI-2.
+// Spec 1 W2a: WL1 Welcome and RI-1/RI-2. Owner 2026-11-26: Welcome is the
+// path question; a card starts sign-up on its path (no preview).
 import 'dart:async';
 
 import 'package:attune/core/providers/shared_prefs_provider.dart';
@@ -8,7 +9,6 @@ import 'package:attune/features/auth/sign_up/domain/country_names.dart';
 import 'package:attune/features/auth/sign_up/domain/invite_code.dart';
 import 'package:attune/features/auth/sign_up/presentation/screens/invite_landing_screen.dart';
 import 'package:attune/features/auth/sign_up/presentation/screens/welcome_screen.dart';
-import 'package:attune/features/auth/sign_up/presentation/widgets/path_preview_sheet.dart';
 import 'package:attune/features/onboarding/data/onboarding_store.dart';
 import 'package:attune/app/routing/routing_notifier.dart';
 import 'package:flutter/material.dart';
@@ -28,32 +28,6 @@ class _SlowFirstLaunch extends PreferencesService {
     await super.setFirstLaunchCompleted();
   }
 }
-
-/// Opens the Dating card's preview, scrolling to the card first when large
-/// text has pushed it below the fold.
-Future<void> _openDating(WidgetTester tester) async {
-  await Scrollable.ensureVisible(
-    tester.element(find.text('Single and open to dating')),
-    alignmentPolicy: ScrollPositionAlignmentPolicy.keepVisibleAtEnd,
-  );
-  await tester.pumpAndSettle();
-  await tester.tap(find.text('Single and open to dating'));
-  await tester.pumpAndSettle();
-}
-
-/// The preview's own fade (reduce motion), read where it is painted.
-double _previewFade(WidgetTester tester) =>
-    tester
-        .widget<FadeTransition>(
-          find
-              .ancestor(
-                of: find.byType(PathPreviewSheet),
-                matching: find.byType(FadeTransition),
-              )
-              .first,
-        )
-        .opacity
-        .value;
 
 void main() {
   test('country lists read as a sentence', () {
@@ -84,19 +58,16 @@ void main() {
     expect(normalizeInviteCode('K7P2QM1'), isNull);
   });
 
-  testWidgets('the three ways in, nothing preselected, every gate before typing', (
+  testWidgets('asks what brings you, three paths, nothing preselected', (
     tester,
   ) async {
     final semantics = tester.ensureSemantics();
     await pumpFlowScreen(tester, () => const WelcomeScreen());
-    expect(
-      find.text('Love, dating and you, in one calm place.'),
-      findsOneWidget,
-    );
+    expect(find.text('What brings you to Attune?'), findsOneWidget);
     for (final label in [
-      'In a relationship. A private space for you and your partner. Opens a preview.',
-      "Single and open to dating. A few introductions a day. Only when it's mutual. Opens a preview.",
-      'Just for me. Your journal, quizzes and Healing. Opens a preview.',
+      'In a relationship. A private space for you and your partner.',
+      "Single and open to dating. A few introductions a day. Only when it's mutual.",
+      'Just for me. Your journal, quizzes and Healing.',
     ]) {
       expect(find.bySemanticsLabel(label), findsOneWidget);
     }
@@ -110,13 +81,59 @@ void main() {
     semantics.dispose();
   });
 
-  for (final (button, target) in [
-    ('Get started', '/signup?entry=new'),
-    ('I already have an account', '/signup?entry=returning'),
-    ('I have an invite', '/invite'),
-    ('Read Opinions first', '/guest-age'),
+  testWidgets('the intro has the other ways in: none of them here', (
+    tester,
+  ) async {
+    await pumpFlowScreen(tester, () => const WelcomeScreen());
+    for (final gone in [
+      'Get started',
+      'I already have an account',
+      'Read Opinions first',
+    ]) {
+      expect(find.text(gone), findsNothing, reason: gone);
+    }
+  });
+
+  // Entry gates (b, owner 2026-11-27): RI-2 is reachable from Welcome, so
+  // a code typed from an invite message (an iOS install loses the link, the
+  // Play referrer only prefills) has a way in before sign-up.
+  testWidgets('a quiet "I have an invite" link sits at the bottom, under '
+      'the Terms and Privacy links', (tester) async {
+    await pumpFlowScreen(tester, () => const WelcomeScreen());
+    final link = find.widgetWithText(TextButton, 'I have an invite');
+    expect(link, findsOneWidget);
+    expect(find.widgetWithText(FilledButton, 'I have an invite'), findsNothing);
+    await tester.ensureVisible(link);
+    await tester.pumpAndSettle();
+    expect(
+      tester.getTopLeft(link).dy,
+      greaterThan(tester.getTopLeft(find.text('Privacy')).dy),
+    );
+  });
+
+  testWidgets('"I have an invite" marks first launch done and opens RI-2', (
+    tester,
+  ) async {
+    final h = await pumpFlowScreen(
+      tester,
+      () => const WelcomeScreen(),
+      routing: RoutingNotifier(isFirstLaunch: true, flowV2: true),
+    );
+    await tester.ensureVisible(find.text('I have an invite'));
+    await tester.tap(find.text('I have an invite'));
+    await tester.pumpAndSettle();
+    expect(h.location, '/invite');
+    expect(PreferencesService(h.prefs).isFirstLaunch, isFalse);
+    expect(h.routing.isFirstLaunch, isFalse);
+    expect(h.metrics, isEmpty, reason: 'no path was chosen');
+  });
+
+  for (final (card, target) in [
+    ('In a relationship', '/signup?entry=new&path=relationship'),
+    ('Single and open to dating', '/signup?entry=new&path=dating'),
+    ('Just for me', '/signup?entry=new&path=justMe'),
   ]) {
-    testWidgets('"$button" marks first launch done and opens $target', (
+    testWidgets('"$card" marks first launch done and opens $target', (
       tester,
     ) async {
       final h = await pumpFlowScreen(
@@ -125,147 +142,77 @@ void main() {
         routing: RoutingNotifier(isFirstLaunch: true, flowV2: true),
       );
       expect(PreferencesService(h.prefs).isFirstLaunch, isTrue);
-      await tester.ensureVisible(find.text(button));
-      await tester.tap(find.text(button));
+      await tester.ensureVisible(find.text(card));
+      await tester.tap(find.text(card));
       await tester.pumpAndSettle();
       expect(h.location, target);
+      expect(find.byType(BottomSheet), findsNothing, reason: 'no preview');
       expect(PreferencesService(h.prefs).isFirstLaunch, isFalse);
       expect(h.routing.isFirstLaunch, isFalse);
     });
   }
 
-  testWidgets(
-    'a card opens its preview; the Dating one names the open countries',
-    (tester) async {
-      final semantics = tester.ensureSemantics();
-      final h = await pumpFlowScreen(
-        tester,
-        () => const WelcomeScreen(),
-        openCountries: const ['GB', 'GH'],
-      );
-      await tester.tap(find.text('Single and open to dating'));
-      await tester.pumpAndSettle();
-      expect(find.text('Introductions, not swiping'), findsOneWidget);
-      expect(
-        find.text('Dating is open in the UK and Ghana. More countries later.'),
-        findsOneWidget,
-      );
-      expect(h.metrics, ['welcome_preview:dating']);
-      // A screen reader hears that a sheet opened, and what it is (M-4).
-      expect(
-        tester.getSemantics(
-          find
-              .descendant(
-                of: find.byType(PathPreviewSheet),
-                matching: find.byType(Material),
-              )
-              .first,
-        ),
-        containsSemantics(
-          scopesRoute: true,
-          namesRoute: true,
-          label: 'Introductions, not swiping',
-        ),
-      );
-      await expectFlowGuidelines(tester);
-      semantics.dispose();
-
-      await tester.tap(find.text('Close'));
-      await tester.pumpAndSettle();
-      expect(find.text('Introductions, not swiping'), findsNothing);
-    },
-  );
-
-  testWidgets('with no open-country list the line is left out', (tester) async {
-    await pumpFlowScreen(tester, () => const WelcomeScreen());
-    await tester.tap(find.text('Single and open to dating'));
-    await tester.pumpAndSettle();
-    expect(find.textContaining('Dating is open in'), findsNothing);
-  });
-
-  testWidgets("a preview's Get started starts sign-up", (tester) async {
-    final h = await pumpFlowScreen(tester, () => const WelcomeScreen());
+  // Fix round I-2: the guest tab's Get started opens Welcome with its own
+  // back, which A1's Back then returns to.
+  testWidgets('a back given to Welcome goes on to sign-up', (tester) async {
+    final h = await pumpFlowScreen(
+      tester,
+      () => const WelcomeScreen(backTo: '/home?tab=chat'),
+    );
     await tester.tap(find.text('Just for me'));
     await tester.pumpAndSettle();
-    expect(find.text('A private space for you'), findsOneWidget);
-    await tester.tap(find.text('Get started').last);
-    await tester.pumpAndSettle();
-    expect(h.location, '/signup?entry=new');
+    final uri = Uri.parse(h.location);
+    expect(uri.path, '/signup');
+    expect(uri.queryParameters, {
+      'entry': 'new',
+      'back': '/home?tab=chat',
+      'path': 'justMe',
+    });
   });
 
-  testWidgets('the preview opens in 300 ms and closes in 200 ms', (
+  testWidgets('with nothing under it, a given back is where Back goes', (
     tester,
   ) async {
-    await pumpFlowScreen(tester, () => const WelcomeScreen());
-    await tester.tap(find.text('In a relationship'));
-    await tester.pump();
-    double slide() =>
-        tester
-            .widget<SlideTransition>(
-              find
-                  .ancestor(
-                    of: find.text('A space for the two of you'),
-                    matching: find.byType(SlideTransition),
-                  )
-                  .first,
-            )
-            .position
-            .value
-            .dy;
-    await tester.pump(const Duration(milliseconds: 150));
-    expect(slide(), greaterThan(0), reason: 'still sliding in');
-    await tester.pump(const Duration(milliseconds: 100));
-    expect(slide(), greaterThan(0), reason: 'still sliding at 250 ms (M-3)');
-    await tester.pump(const Duration(milliseconds: 50));
-    expect(slide(), 0);
-
-    await tester.tap(find.text('Close'));
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 190));
-    expect(find.text('A space for the two of you'), findsOneWidget);
-    await tester.pump(const Duration(milliseconds: 10));
-    await tester.pump(const Duration(milliseconds: 16));
-    expect(find.text('A space for the two of you'), findsNothing);
+    final h = await pumpFlowScreen(
+      tester,
+      () => const WelcomeScreen(backTo: '/home?tab=chat'),
+    );
+    await tester.tap(find.byTooltip('Back'));
+    await tester.pumpAndSettle();
+    expect(h.location, '/home?tab=chat');
   });
 
-  testWidgets(
-    'with reduce motion the preview fades in 150 ms and never slides',
-    (tester) async {
-      await pumpFlowScreen(
-        tester,
-        () => const WelcomeScreen(),
-        reduceMotion: true,
-      );
-      await tester.tap(find.text('In a relationship'));
-      await tester.pump();
-      await tester.pump(const Duration(milliseconds: 75));
-      expect(
-        find.ancestor(
-          of: find.text('A space for the two of you'),
-          matching: find.byType(SlideTransition),
+  // Fix round M-3: one navigation and one count, however fast the taps.
+  testWidgets('a second tap while leaving does nothing', (tester) async {
+    final gate = Completer<void>();
+    final h = await pumpFlowScreen(
+      tester,
+      () => const WelcomeScreen(),
+      routing: RoutingNotifier(isFirstLaunch: true, flowV2: true),
+      overrides: [
+        preferencesServiceProvider.overrideWith(
+          (ref) => _SlowFirstLaunch(ref.watch(sharedPreferencesProvider), gate),
         ),
-        findsNothing,
-      );
-      // Halfway, not 20 times faster (review M-2).
-      expect(_previewFade(tester), inExclusiveRange(0.3, 0.7));
-      await tester.pump(const Duration(milliseconds: 75));
-      await tester.pump();
-      expect(find.text('A space for the two of you'), findsOneWidget);
-      expect(_previewFade(tester), 1);
+      ],
+    );
+    await tester.tap(find.text('In a relationship'));
+    await tester.pump();
+    await tester.tap(find.text('Just for me'));
+    await tester.pump();
+    gate.complete();
+    await tester.pumpAndSettle();
+    expect(h.location, '/signup?entry=new&path=relationship');
+    expect(h.metrics, ['welcome_preview:relationship']);
+  });
 
-      await tester.tap(find.text('Close'));
-      await tester.pump();
-      await tester.pump(const Duration(milliseconds: 140));
-      expect(
-        find.text('A space for the two of you'),
-        findsOneWidget,
-        reason: 'still fading out',
-      );
-      await tester.pump(const Duration(milliseconds: 10));
-      await tester.pump(const Duration(milliseconds: 16));
-      expect(find.text('A space for the two of you'), findsNothing);
-    },
-  );
+  testWidgets('back with nothing under Welcome opens the intro', (
+    tester,
+  ) async {
+    final h = await pumpFlowScreen(tester, () => const WelcomeScreen());
+    await tester.tap(find.byTooltip('Back'));
+    await tester.pumpAndSettle();
+    expect(h.location, '/start');
+  });
 
   testWidgets('RI-2 asks for the code, refuses a bad one, then shows RI-1', (
     tester,
@@ -369,31 +316,10 @@ void main() {
   ]) {
     testWidgets('"$card" counts $key (M-3)', (tester) async {
       final h = await pumpFlowScreen(tester, () => const WelcomeScreen());
+      await tester.ensureVisible(find.text(card));
       await tester.tap(find.text(card));
       await tester.pumpAndSettle();
       expect(h.metrics, [key]);
-    });
-  }
-
-  for (final scale in [1.3, 2.0]) {
-    testWidgets('at text size $scale the preview keeps both buttons on screen '
-        '(M-5)', (tester) async {
-      await pumpFlowScreen(
-        tester,
-        () => const WelcomeScreen(),
-        textScale: scale,
-        openCountries: const ['GB', 'GH'],
-      );
-      await _openDating(tester);
-      final screen = Offset.zero & tester.view.physicalSize;
-      for (final button in [
-        find.widgetWithText(FilledButton, 'Get started').last,
-        find.widgetWithText(OutlinedButton, 'Close'),
-      ]) {
-        final rect = tester.getRect(button);
-        expect(screen.contains(rect.topLeft), isTrue, reason: '$rect');
-        expect(screen.contains(rect.bottomRight), isTrue, reason: '$rect');
-      }
     });
   }
 
@@ -411,8 +337,8 @@ void main() {
         ),
       ],
     );
-    await tester.ensureVisible(find.text('Get started'));
-    await tester.tap(find.text('Get started'));
+    await tester.ensureVisible(find.text('Just for me'));
+    await tester.tap(find.text('Just for me'));
     await tester.pump();
     // Something else (an invite link, the flag going off) moves on while the
     // write is still going.

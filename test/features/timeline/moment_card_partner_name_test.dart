@@ -1,3 +1,4 @@
+import 'package:attune/core/ui/glass/glass_menu.dart';
 import 'package:attune/features/timeline/data/models/timeline_event_model.dart';
 import 'package:attune/features/timeline/presentation/providers/timeline_providers.dart';
 import 'package:attune/features/timeline/presentation/widgets/moment_card.dart';
@@ -68,7 +69,7 @@ void main() {
           ),
         ),
       );
-      await tester.tap(find.byType(PopupMenuButton<String>));
+      await tester.tap(find.byType(GlassMenuButton<String>));
       await tester.pumpAndSettle();
       await tester.tap(find.text('Delete').last);
       await tester.pumpAndSettle();

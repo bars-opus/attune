@@ -3,6 +3,8 @@ import 'dart:async';
 
 import 'package:attune/features/auth/sign_up/data/age_gate_store.dart';
 import 'package:attune/features/auth/sign_up/data/sign_up_draft_store.dart';
+import 'package:attune/features/onboarding/presentation/providers/home_state_providers.dart'
+    show HomeSnapshot, localHomeSnapshot;
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -82,6 +84,19 @@ class RoutingNotifier extends ChangeNotifier {
     if (draft == null) return false;
     final userId = currentUserId;
     return userId == null ? draft.awaitingCode : draft.verifiedUserId == userId;
+  }
+
+  /// The signed-in account's home state as this phone holds it (entry
+  /// gates fix 5): the gate's own source (the last server answer's cache
+  /// plus the queued A5 and A6), read at each redirect like the draft
+  /// above. Null when signed out, or while nothing is known yet (no answer
+  /// cached): then HomeScreen and the gate decide.
+  HomeSnapshot? get localHome {
+    final prefs = _prefs;
+    final userId = currentUserId;
+    if (prefs == null || userId == null) return null;
+    final home = localHomeSnapshot(prefs, userId);
+    return home.known ? home : null;
   }
 
   void setFlowV2(bool value) {

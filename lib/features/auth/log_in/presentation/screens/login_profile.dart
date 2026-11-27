@@ -1,11 +1,8 @@
 import 'package:attune/core/widgets/app_content_width.dart';
 import 'package:attune/features/settings/utility/settings_exports.dart';
-import 'package:flutter/foundation.dart';
-import 'package:share_plus/share_plus.dart';
 import 'package:attune/app/documentations/user_manual/data/manual_documentation_registry.dart';
 import 'package:attune/app/documentations/user_manual/models/documentation_model.dart';
 import 'package:attune/features/auth/intro/widgets/intro_guide_widget.dart';
-import 'package:attune/features/auth/sign_up/presentation/sign_up_flags.dart';
 import 'package:attune/features/auth/sign_up/presentation/widgets/join_attune_panel.dart';
 
 class LoginProfile extends ConsumerStatefulWidget {
@@ -71,10 +68,8 @@ class _LoginProfileState extends ConsumerState<LoginProfile> {
     final textTheme = Theme.of(context).textTheme;
     final loc = AppLocalizations.of(context)!;
 
-    final overview = loc.authGuestOverview(AppConstants.appName);
-    // Spec 1 W2b (§3.2 G2): under flow_signin_v2 this tab is "Join Attune"
-    // with the three ways in; the topic cards and the legal link stay.
-    final flowV2 = ref.watch(signInFlowV2Provider);
+    // Spec 1 W2b (§3.2 G2): this tab is "Join Attune" with the three ways
+    // in; the topic cards and the legal link stay.
 
     return Material(
       color: colorScheme.neutral,
@@ -98,109 +93,9 @@ class _LoginProfileState extends ConsumerState<LoginProfile> {
                         onPressed: () => context.push('/settings'),
                       ),
                     ),
-                    if (flowV2)
-                      const JoinAttunePanel()
-                    else ...[
-                    Gap(Spacing.lg.h),
-                    Center(
-                      child: Text(
-                        loc.authGuestHello,
-                        style: textTheme.titleLarge?.copyWith(
-                          fontWeight: FontWeight.w700,
-                          color: colorScheme.onSurface,
-                          fontSize: FontSizeTokens.xxl.sp,
-                        ),
-                      ),
-                    ),
-
-                    Gap(Spacing.md.h),
-                    GestureDetector(
-                      onTap: () {
-                        BottomSheetUtils.showDocumentationBottomSheet(
-                          context: context,
-                          widget: ReadAll(body: overview),
-                        );
-                      },
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            overview,
-                            style: textTheme.bodyMedium?.copyWith(
-                              color: colorScheme.onSurface,
-                              height: TextHeightTokens.relaxed,
-                            ),
-                            maxLines: 4,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                          Text(
-                            loc.commonLearnMore,
-                            style: textTheme.bodyMedium?.copyWith(
-                              color: colorScheme.primary,
-                              fontWeight: FontWeight.bold,
-                              fontSize: FontSizeTokens.xs.sp,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    Gap(Spacing.md.h),
-
-                    AppButton(
-                      center: false,
-                      elevation: 0,
-                      prefixIconColor: colorScheme.surface,
-                      label: 'Continue with phone number',
-                      // The EULA is NOT shown here. Whether someone is new or
-                      // returning is only knowable after OTP verification, so
-                      // prompting first meant returning users re-accepted on
-                      // every sign-in (and nothing was ever recorded). Consent
-                      // now happens once, post-verification, in LoginScreen —
-                      // see EulaAcceptanceService.
-                      onPressed: () {
-                        BottomSheetUtils.showDocumentationBottomSheet(
-                          context: context,
-                          padding: 0,
-                          backgroundColor: colorScheme.neutral,
-                          widget: LoginScreen(),
-                        );
-                      },
-                      iconData: Icons.phone_android_outlined,
-                      borderRadius: BorderRadiusTokens.xlAll,
-                      size: ButtonSize.small,
-                      width: double.infinity,
-                      padding: Spacing.horizontalMd,
-                      height: OnboardingTokens.actionButtonHeight.h,
-
-                      textColor: colorScheme.surface,
-                      customColor: colorScheme.primary,
-                    ),
-                    Gap(Spacing.md.h - 3),
-
-                    AppButton(
-                      height: OnboardingTokens.actionButtonHeight.h,
-                      label: 'Invite a friend',
-                      onPressed: () {
-                        // Debug-only UI preview; release builds keep the real share action.
-                        if (kDebugMode) {
-                          context.push(RouteNames.onboarding, extra: true);
-                          return;
-                        }
-
-                        Share.share(
-                          'I found ${AppConstants.appName}. It helps people understand relationship patterns and grow with more clarity. ${AppConstants.websiteUrl}',
-                          subject: 'Try ${AppConstants.appName}',
-                        );
-                      },
-                      borderRadius: BorderRadiusTokens.xlAll,
-                      variant: ButtonVariant.outline,
-                      size: ButtonSize.small,
-                      width: double.infinity,
-                      outlineColor: colorScheme.onSurface,
-                      textColor: colorScheme.onSurface,
-                    ),
-
-                    ],
+                    // The new sign-in is the only one (2026-11-26): "Join Attune"
+                    // with the three ways in.
+                    const JoinAttunePanel(),
                     // Gap(Spacing.xl.h),
                     Gap(Spacing.xxl.h),
                     SizedBox(

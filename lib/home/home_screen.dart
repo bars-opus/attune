@@ -96,7 +96,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
   ProviderSubscription<bool>? _pathsSubscription;
 
   /// Batch-5 review I-1: the signed-in flags becoming known (a fresh
-  /// install's first answer) lets the legacy branch's waiting accept run.
+  /// install's first answer) lets a waiting stored invite go on.
   ProviderSubscription<bool>? _flagsKnownSubscription;
 
   /// Bumped by each new `/home?tab=` request, so the keyed shell opens Tab 2.
@@ -127,8 +127,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
       previous,
       next,
     ) {
-      // Under flow_paths_v2 the paths listener above reconciles.
-      if (!mounted || previous == true || !next || _pathsV2) return;
+      if (!mounted || previous == true || !next) return;
       _reconcileGateData();
     });
     _reconcileGateData();
@@ -202,7 +201,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     _homeSubscription = ref.listenManual<HomeSnapshot>(
       homeStateProvider(userId),
       (_, next) {
-        if (!mounted || !_pathsV2 || _scopeUserId != userId) return;
+        if (!mounted || _scopeUserId != userId) return;
         setState(() => _gateData = _v2GateData(_gateData.store, next));
       },
     );
@@ -345,97 +344,68 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
             ? OnboardingStore.anonymousScope
             : '${OnboardingStore.userScopePrefix}.$userId';
     final store = OnboardingStore(prefs, scope: scope);
-    // Spec 1 W3a (§5.5): under flow_paths_v2 the home state decides.
-    if (_pathsV2 && userId != null && userId.isNotEmpty) {
+    // Spec 1 W3a (§5.5): the home state decides; since the entry gates fix
+    // (2026-11-27) with flow_paths_v2 off too, as the v2 gate is the only
+    // one.
+    if (userId != null && userId.isNotEmpty) {
       return _v2GateData(store, ref.read(homeStateProvider(userId)));
     }
     return _HomeGateData(store: store, isComplete: store.isComplete);
   }
 
-  /// `isComplete` under flow_paths_v2 is "nothing is missing and no hold"
-  /// (spec §5.5). Until this phone has any v2 answer for the account, the
-  /// legacy flag stands in, so an account that is set up doesn't flash
-  /// through /onboarding; the first server answer then decides.
+  /// `isComplete` is "nothing is missing and no hold" (spec §5.5). Until
+  /// this phone has any v2 answer for the account, the legacy flag stands
+  /// in, so an account that is set up doesn't flash through /onboarding;
+  /// the first server answer then decides. The v2 home (its tab layout)
+  /// is flow_paths_v2's alone: with it off the legacy shell shows.
   _HomeGateData _v2GateData(OnboardingStore store, HomeSnapshot home) =>
       _HomeGateData(
         store: store,
         isComplete: home.known ? home.isComplete : store.isComplete,
-        home: home,
+        home: _pathsV2 ? home : null,
       );
 
-  /// Background upgrade of the synchronously-seeded _gateData: pays off any
-  /// pending onboarding submission, retries a stashed invite code, and —
-  /// only when the local flag says NOT complete — asks the server whether
-  /// this account actually finished onboarding elsewhere (resolveIsComplete
-  /// beats the local read: see its own doc for why "false" is the one
-  /// direction that can't be trusted). A locally-complete flag is already
-  /// maximally trusted (see _loadGateDataSync) and skips the network call
-  /// entirely — nothing about the shell can regress from true to false, so
-  /// there's nothing to reconcile.
+  /// Background upgrade of the synchronously-seeded _gateData: pays off
+  /// what the phone owes (a queued A5, A6 or onboarding submission), reads
+  /// the server's home state (whose listener updates _gateData), and only
+  /// then, for a complete account, retries a stashed invite code.
   Future<void> _reconcileGateData() async {
     final store = _gateData.store;
     final userId = _scopeUserId;
 
     if (userId == null || userId.isEmpty) return;
 
-    // Spec 1 W3a: under flow_paths_v2 the queued A5 and A6 are replayed
-    // first, then the server's home state decides (it can also close the
-    // home again: a new need, a hold).
-    if (_pathsV2) {
-      final home = ref.read(homeStateProvider(userId).notifier);
-      try {
-        await _syncService
-            .flush(store, onPathSynced: home.apply)
-            .timeout(const Duration(seconds: 20));
-      } catch (_) {}
-      if (!mounted || _scopeUserId != userId) return;
-      await _refreshHomeState();
-      if (!mounted || _scopeUserId != userId) return;
-      // Ruling (B3 fix round, D9/§5.2/§3.14): a stored invite waits for a
-      // complete account on the server (its name and date of birth); until
-      // then the v2 gate accepts it, after the name.
-      if (store.pendingInviteCode != null &&
-          store.pendingSignUp == null &&
-          ref.read(homeStateProvider(userId)).isComplete) {
-        // Spec 1 W4b (D9): under flow_couples_v2 a stored code is joined
-        // only from RI-3, after an explicit tap; never here.
-        if (ref.read(flowCouplesV2Provider)) {
-          await _openJoinInvite();
-          return;
-        }
-        await _acceptPendingInvite(store);
-        await _refreshHomeState();
+    // Spec 1 W3a: the queued A5 and A6 are replayed first, then the
+    // server's home state decides (it can also close the home again: a new
+    // need, a hold). Entry gates fix 4 (2026-11-27): with flow_paths_v2 off
+    // too; the legacy accept that took a stored invite before consent and
+    // the date of birth is gone.
+    final home = ref.read(homeStateProvider(userId).notifier);
+    try {
+      await _syncService
+          .flush(store, onPathSynced: home.apply)
+          .timeout(const Duration(seconds: 20));
+    } catch (_) {}
+    if (!mounted || _scopeUserId != userId) return;
+    await _refreshHomeState();
+    if (!mounted || _scopeUserId != userId) return;
+    // Ruling (B3 fix round, D9/§5.2/§3.14): a stored invite waits for a
+    // complete account on the server (its name and date of birth); until
+    // then the v2 gate accepts it, after the name. Batch-5 review I-1:
+    // never while the flags are unknown (unknown is not off); their first
+    // answer reconciles again (_flagsKnownSubscription).
+    if (store.pendingInviteCode != null &&
+        store.pendingSignUp == null &&
+        ref.read(homeStateProvider(userId)).isComplete &&
+        ref.read(flowFlagsKnownProvider)) {
+      // Spec 1 W4b (D9): under flow_couples_v2 a stored code is joined
+      // only from RI-3, after an explicit tap; never here.
+      if (ref.read(flowCouplesV2Provider)) {
+        await _openJoinInvite();
+        return;
       }
-      return;
-    }
-
-    // Fire-and-forget: the shell has already rendered, and a failed flush
-    // keeps the payload for the next launch.
-    unawaited(_syncService.flush(store));
-
-    // A pending invite code can outlive the /onboarding visit that stashed
-    // it — e.g. the app was killed after main.dart's deep-link handler
-    // stored the code but before OnboardingGate/OnboardingFlow ever
-    // consumed it. Every real HomeScreen load (launch, resume, sign-in —
-    // see didChangeAppLifecycleState/_authSubscription above) is a chance
-    // to retry it here, the same way OnboardingGate does for a visitor who
-    // arrives already authenticated. Best-effort: a failure just leaves the
-    // code for the next load rather than blocking the shell — already not
-    // blocking the first paint now that this runs after render, not before.
-    // Batch-5 review I-1 (D9): never while the signed-in flags are unknown
-    // (unknown is not off); the code waits, and the flags' first answer
-    // reconciles again (_flagsKnownSubscription).
-    if (store.pendingInviteCode != null && ref.read(flowFlagsKnownProvider)) {
       await _acceptPendingInvite(store);
-    }
-
-    if (_gateData.isComplete) return;
-
-    final resolved = await store.resolveIsComplete(userId);
-    if (resolved && mounted && _scopeUserId == userId) {
-      setState(() {
-        _gateData = _HomeGateData(store: store, isComplete: true);
-      });
+      await _refreshHomeState();
     }
   }
 
@@ -450,10 +420,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen>
     unawaited(GoRouter.of(context).push(RouteNames.joinInvite));
   }
 
-  /// Mirrors OnboardingGate's own _acceptPendingInvite — kept as a
-  /// duplicate rather than a shared helper since the two call sites own
-  /// their OnboardingStore instances independently and neither is in a
-  /// position to depend on the other's widget tree.
+  /// Mirrors the gate's own accept (OnboardingGateV2._acceptStoredInvite):
+  /// kept as a duplicate rather than a shared helper since the two call
+  /// sites own their OnboardingStore instances independently. Reached only
+  /// for a complete account (see _reconcileGateData).
   Future<void> _acceptPendingInvite(OnboardingStore store) async {
     final code = store.pendingInviteCode;
     if (code == null) return;

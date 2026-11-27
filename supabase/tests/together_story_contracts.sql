@@ -5,6 +5,15 @@ INSERT INTO public.users (id, phone, display_name) VALUES
   ('7f300000-0000-0000-0000-0000000000a1', '+233310000001', 'Ama'),
   ('7f300000-0000-0000-0000-0000000000b2', '+233310000002', 'Kofi'),
   ('7f300000-0000-0000-0000-0000000000c3', '+233310000003', 'Stranger') ON CONFLICT (id) DO NOTHING;
+-- Entry gates 2026-11-27: content writes need a complete account (users row,
+-- 18+ date of birth, EULA 2, no hold; private.account_ready).
+UPDATE public.users SET eula_version = '2', eula_accepted_at = now()
+ WHERE id IN ('7f300000-0000-0000-0000-0000000000a1', '7f300000-0000-0000-0000-0000000000b2', '7f300000-0000-0000-0000-0000000000c3');
+INSERT INTO public.account_birthdates (user_id, birth_date) VALUES
+  ('7f300000-0000-0000-0000-0000000000a1', DATE '1990-01-01'),
+  ('7f300000-0000-0000-0000-0000000000b2', DATE '1990-01-01'),
+  ('7f300000-0000-0000-0000-0000000000c3', DATE '1990-01-01')
+ON CONFLICT (user_id) DO NOTHING;
 INSERT INTO public.relationships (id, user_a, user_b, status, started_at, created_at)
 VALUES ('7f400000-0000-0000-0000-000000000001', '7f300000-0000-0000-0000-0000000000a1',
         '7f300000-0000-0000-0000-0000000000b2', 'active', now(), now()) ON CONFLICT (id) DO NOTHING;

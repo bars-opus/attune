@@ -1,3 +1,4 @@
+import 'package:attune/core/ui/glass/glass_menu.dart';
 import 'package:attune/features/safety/presentation/outside_perspective_screen.dart';
 import 'package:flutter/material.dart';
 
@@ -7,9 +8,9 @@ class ToolkitOverflowButton extends StatelessWidget {
   const ToolkitOverflowButton({super.key});
 
   @override
-  Widget build(BuildContext context) => PopupMenuButton<int>(
+  Widget build(BuildContext context) => GlassMenuButton<int>(
     tooltip: 'More',
-    icon: const Icon(Icons.more_vert),
+    icon: Icon(Icons.more_vert, color: IconTheme.of(context).color),
     onSelected:
         (_) => Navigator.of(context).push(
           MaterialPageRoute<void>(
@@ -18,7 +19,7 @@ class ToolkitOverflowButton extends StatelessWidget {
         ),
     itemBuilder:
         (_) => const [
-          PopupMenuItem(value: 0, child: Text('A trained outside perspective')),
+          GlassMenuItem(value: 0, label: 'A trained outside perspective'),
         ],
   );
 }

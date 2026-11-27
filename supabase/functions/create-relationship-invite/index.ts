@@ -25,12 +25,12 @@ Deno.serve(async (req) => {
     const user = await requireUser(req);
     const supabase = serviceRoleClient();
 
-    // Spec 1 W4a (§4.5): with flow_signin_v2 off, today's missing-row
-    // insert. On: no users row is ever created here (D8); the inviter needs
-    // an account (409 signup:incomplete), a date of birth (428
-    // invite:age_required) and to be 18 or over (403 invite:not_possible),
-    // before anything is read or written.
-    const eligibility = await ensureInviteAccount(supabase, user.id, () => ensureUserRow(supabase, user));
+    // Spec 1 W4a (§4.5), entry gates 2026-11-27: whatever flow_signin_v2
+    // says, no users row is ever created here (D8); the inviter needs an
+    // account with current consent (409 signup:incomplete), a date of
+    // birth (428 invite:age_required) and to be 18 or over (403
+    // invite:not_possible), before anything is read or written.
+    const eligibility = await ensureInviteAccount(supabase, user.id);
     requireInviterAge(eligibility);
 
     // A user already in an active relationship must never be able to mint
@@ -145,28 +145,6 @@ Deno.serve(async (req) => {
     return createErrorResponse(error);
   }
 });
-
-async function ensureUserRow(
-  supabase: ReturnType<typeof serviceRoleClient>,
-  user: { id: string; email: string | null; phone: string | null },
-) {
-  // Spec 1 W1a: users.mode is retired, so it is never written, and the name
-  // is left empty for onboarding to fill: a phone number is never a display
-  // name. ignoreDuplicates so this only ever INSERTs a missing row. The
-  // phone passed is GoTrue getUser's, confirmed or not; the users insert
-  // guard (users_phone_from_auth) stores the verified Auth phone or NULL.
-  const { error } = await supabase
-    .from("users")
-    .upsert(
-      {
-        id: user.id,
-        phone: user.phone,
-        display_name: "",
-      },
-      { onConflict: "id", ignoreDuplicates: true },
-    );
-  if (error) throw error;
-}
 
 function generateInviteCode(): string {
   const values = crypto.getRandomValues(new Uint32Array(INVITE_CODE_LENGTH));

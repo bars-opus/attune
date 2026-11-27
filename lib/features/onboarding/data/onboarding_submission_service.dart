@@ -40,7 +40,8 @@ class OnboardingSubmissionService {
     try {
       // Spec 1 W1a: the client may update only its name (users.phone is
       // copied from auth.users, users.mode is retired, and the row itself is
-      // created by record_eula_acceptance, which the EULA gate runs first).
+      // created only by complete_sign_up at A5; record_eula_acceptance only
+      // updates an existing row since the entry gates fix).
       await client
           .from('users')
           .update({'display_name': name})

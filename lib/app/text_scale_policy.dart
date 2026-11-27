@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:attune/core/flags/public_app_config.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter/widgets.dart';
@@ -266,7 +268,12 @@ class _RootTextScaleClampState extends State<RootTextScaleClamp> {
       });
       return;
     }
-    setState(() => _scale = _compute());
+    // Outside a frame the router can still announce a route mid-build (the
+    // first build at boot, now that `/start` drops to 1.0): a microtask
+    // runs right after that build and still before the next frame.
+    scheduleMicrotask(() {
+      if (mounted && _compute() != _scale) setState(() => _scale = _compute());
+    });
   }
 
   void _waitToRise() {

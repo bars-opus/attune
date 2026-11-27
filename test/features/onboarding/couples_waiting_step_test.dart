@@ -114,11 +114,6 @@ void main() {
     expect(finished, 1);
   });
 
-  test('onboarding finishes "on my own" as personal, never pending (final review I-1)', () {
-    final src = File('lib/features/onboarding/presentation/screens/onboarding_flow.dart').readAsStringSync();
-    expect(RegExp(r'onUseAlone: \(\) \{\s*setState\(\(\) => _mode = OnboardingMode\.personal\);\s*_finish\(\);').hasMatch(src), isTrue);
-  });
-
   testWidgets('no clock from the server: treated as just started', (t) async {
     await _pump(t, null);
     expect(find.text('Continue'), findsOneWidget);
